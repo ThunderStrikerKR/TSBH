@@ -1,4 +1,5 @@
 //! Low-level UI primitives independent of composite screens and controls.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Stroke,Ui,UiBuilder,Vec2};
 
@@ -184,7 +185,7 @@ pub(crate) fn date_navigation_segmented_surface_with_state<R>(
     add_segments:impl FnOnce(&mut Ui,Rect)->R,
     state:impl FnOnce(&R)->crate::highlight::States
 )->(Rect,R){
-    let (outer,_)=ui.allocate_exact_size(size,Sense::hover());
+    let (outer,_)=ui.shared_allocate_exact_size(size,Sense::hover());
     #[cfg(test)]
     crate::ui_test_support::record_component_geometry("segmented frame",outer,ui.clip_rect(),None);
     let inner=outer.shrink(theme::FRAME_STROKE_WIDTH);
@@ -245,7 +246,7 @@ pub(crate) fn section_divider_symmetric(ui:&mut Ui,gap:f32)->(Rect,Rect){
 }
 
 fn allocate_section_divider(ui:&mut Ui,top_gap:f32,bottom_gap:f32)->(Rect,Rect){
-    let (strip,_)=ui.allocate_exact_size(
+    let (strip,_)=ui.shared_allocate_exact_size(
         Vec2::new(ui.available_width(),top_gap+theme::SOFT_DIVIDER_WIDTH
             +bottom_gap),Sense::hover()
     );
@@ -269,7 +270,7 @@ pub fn soft_divider(ui: &mut Ui) {
 pub fn form_field_label_sized(ui:&mut Ui,label:&str,width:f32)->Response {
     let galley=typography::field_label_galley(ui,label);
     let width=width.max(1.0).min(ui.available_width().max(1.0));
-    let (rect,response)=ui.allocate_exact_size(
+    let (rect,response)=ui.shared_allocate_exact_size(
         Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover()
     );
     let pos=egui::pos2(rect.left(),
