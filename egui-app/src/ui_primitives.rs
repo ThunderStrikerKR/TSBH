@@ -199,7 +199,7 @@ pub(crate) fn date_navigation_segmented_surface_with_state<R>(
         ui,id_salt,inner,Layout::left_to_right(Align::Center)
     );
     segments.apply_shared_width(CardWidthPolicy::Fixed,inner.width());
-    segments.set_height(inner.height());
+    crate::ui_layout::set_fixed_height(segments,inner.height());
     segments.spacing_mut().item_spacing=Vec2::ZERO;
     let content=add_segments(&mut segments,inner);
     let stroke=crate::highlight::prioritized_stroke(
@@ -316,7 +316,7 @@ pub(crate) enum CardWidthPolicy {
 }
 pub(crate) fn apply_width_policy(ui:&mut Ui,policy:CardWidthPolicy,target:f32){
     if !target.is_finite(){return;}
-    let width=target.max(0.0);
+    let width=crate::ui_layout::aligned_extent(target.max(0.0));
     match policy{
         CardWidthPolicy::FitContent=>{},
         CardWidthPolicy::FillAvailable=>ui.set_min_width(width),
