@@ -116,7 +116,7 @@ fn edit_input_width(
 }
 fn section(ui:&mut Ui,title:&str,body:impl FnOnce(&mut Ui)){
     crate::settings_help::heading(ui,title);
-    ui.add_space(theme::SPACE_8);
+    crate::ui_primitives::section_divider(ui);
     body(ui);
 }
 fn card(ui:&mut Ui,title:&str,body:impl FnOnce(&mut Ui)){
@@ -547,15 +547,18 @@ impl SettingsView{
         if self.tab==SettingsTab::Basic{
             self.show_basic(ui,editable,Arc::clone(&gateway));
         }else{
+            let has_save=self.tab==SettingsTab::Files;
+            let body_height=(ui.available_height()-if has_save{
+                theme::SETTINGS_BASIC_SAVE_RESERVE
+            }else{0.0}).max(1.0);
             crate::scrollbar::apply_management_scroll_role(ui,crate::scrollbar::ManagementScrollRole::Standard);
             crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                 .id_salt(("settings-view",self.tab.label()))
+                .max_height(body_height)
                 .auto_shrink([false,false])
                 .show(ui,|scroll|{
                     match self.tab{
-                        SettingsTab::Files=>self.show_files(
-                            scroll,editable,Arc::clone(&gateway)
-                        ),
+                        SettingsTab::Files=>self.show_files(scroll,editable),
                         SettingsTab::Data=>self.show_data(
                             scroll,Arc::clone(&gateway)
                         ),
@@ -563,14 +566,26 @@ impl SettingsView{
                         SettingsTab::Basic=>unreachable!(),
                     }
                 });
+            if has_save{self.save_bar(ui,gateway);}
         }
         });
     }
-    /// A compact two-pane basic page: work/sender information on the left,
-    /// scalable bank accounts on the right. No outer scrolling is introduced.
+    /// Keep the save control outside the page viewport. The account list
+    /// has its own bounded viewport; the page can still scroll at small sizes.
     fn show_basic(&mut self,ui:&mut Ui,editable:bool,gateway:Arc<dyn BandoGateway>){
+        let body_height=(ui.available_height()-theme::SETTINGS_BASIC_SAVE_RESERVE).max(1.0);
+        crate::scrollbar::apply_management_scroll_role(ui,crate::scrollbar::ManagementScrollRole::Standard);
+        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
+            .id_salt("settings-basic-body")
+            .max_height(body_height)
+            .auto_shrink([false,false])
+            .show(ui,|body|{
+                self.show_basic_body(body,editable,Arc::clone(&gateway),body_height);
+            });
+        self.save_bar(ui,gateway);
+    }
+    fn show_basic_body(&mut self,ui:&mut Ui,editable:bool,gateway:Arc<dyn BandoGateway>,body_height:f32){
         let available_width=ui.available_width();
-        let available_height=ui.available_height();
         if available_width>=theme::SETTINGS_BASIC_SPLIT_MIN_WIDTH{
             let left_width=theme::SETTINGS_BASIC_LEFT_PANE_WIDTH;
             let right_width=crate::card::remaining_column_width(available_width,left_width,theme::SPACE_12).max(1.0);
@@ -586,7 +601,7 @@ impl SettingsView{
                     right.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,right_width);
                     self.show_accounts(
                         right,editable,
-                        (available_height-theme::SETTINGS_BASIC_SAVE_RESERVE).max(0.0)
+                        body_height
                     );
                 });
             });
@@ -595,11 +610,8 @@ impl SettingsView{
             ui.add_space(theme::SPACE_12);
             self.show_sender_settings(ui,editable);
             ui.add_space(theme::SPACE_12);
-            let remaining=(ui.available_height()
-                -theme::SETTINGS_BASIC_SAVE_RESERVE).max(0.0);
-            self.show_accounts(ui,editable,remaining);
+            self.show_accounts(ui,editable,body_height);
         }
-        self.save_bar(ui,gateway);
     }
     fn show_work_settings(
         &mut self,ui:&mut Ui,editable:bool,gateway:Arc<dyn BandoGateway>
@@ -663,6 +675,7 @@ impl SettingsView{
                         >=2.0*(theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH+
                             theme::MODAL_FORM_WIDE_LABEL_WIDTH+theme::SPACE_8)+theme::SPACE_12;
                     let fixed_height=theme::SETTINGS_ACCOUNT_PANEL_FIXED_HEIGHT
+                        +theme::SECTION_DIVIDER_HEIGHT
                         +if wide_recommendations{0.0}
                          else{theme::SETTINGS_ACCOUNT_STACKED_EXTRA_HEIGHT};
                     let list_height=(card_budget-fixed_height).clamp(
@@ -794,7 +807,7 @@ impl SettingsView{
         }
         self.draft["accounts"]=json!(accounts);
     }
-    fn show_files(&mut self,ui:&mut Ui,editable:bool,gateway:Arc<dyn BandoGateway>){
+    fn show_files(&mut self,ui:&mut Ui,editable:bool){
         let sections=[
             ("excelDirectory","Excel 보관함 위치",
               "설정되지 않음","보관함 폴더 선택"),
@@ -803,19 +816,16 @@ impl SettingsView{
             ("orderImageInboxDirectory","발주 이미지 자동 수신 폴더",
               "미설정: 이미지 폴더 자동 수신 중지","수신 폴더 선택"),
         ];
-        // React files tab has ONE section.card with three consecutive
-        // information groups separated by whitespace, not three boxes.
-        crate::card::measured_management_section_card(ui,|form|{
+        // Each folder is an independent setting group using the same card
+        // header and body geometry as the basic and data tabs.
         for (index,(key,title,empty,button)) in sections.iter().enumerate(){
-            if index>0{
-                crate::ui_primitives::section_divider(form);
-            }
-            section(form,title,|area|{
+            if index>0{ui.add_space(theme::SPACE_12);}
+            card(ui,title,|area|{
                 let value=field(&self.draft,key);
                 let displayed=if value.is_empty(){*empty}else{value.as_str()};
                 area.add(crate::ui_primitives::truncated_label(typography::body(displayed)));
                 area.add_space(theme::SPACE_8);
-                area.horizontal_wrapped(|buttons|{
+                area.with_layout(Layout::right_to_left(Align::Center).with_main_wrap(true),|buttons|{
                     if crate::button::action(
                         buttons,button,ButtonRole::Standard,
                         editable&&self.folder_picker.is_none()
@@ -840,8 +850,6 @@ impl SettingsView{
                 });
             });
         }
-        self.save_bar(form,gateway);
-        });
     }
     fn save_bar(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
         ui.add_space(theme::SPACE_8);
@@ -918,10 +926,12 @@ impl SettingsView{
             }
             if let Some(filename)=chosen_backup{self.restore_target=Some(filename);}
         });
-        ui.add_space(theme::SPACE_12);
-        // React shows the heading and its on-demand help, not a filesystem
-        // debug path in the regular settings body.
-        card(ui,"업무 데이터 저장",|_panel|{});
+        // A help-only card has no usable content while contextual help is
+        // suspended. Keep its entry ready for the approved help review.
+        if crate::settings_help::HELP_ICONS_ENABLED{
+            ui.add_space(theme::SPACE_12);
+            card(ui,"업무 데이터 저장",|_panel|{});
+        }
     }
     pub fn has_data_modal(&self)->bool{
         self.archive_open||self.restore_target.is_some()||self.reload_confirmation
@@ -1066,11 +1076,15 @@ impl SettingsView{
             ).unwrap_or(Value::Null);
             let version=config.get("version").and_then(Value::as_str)
                 .unwrap_or("확인 불가");
-            area.label(typography::body(&format!("현재 버전: v{version}")));
-            area.label(typography::body(&format!(
-                "빌드 ID: {}",
-                option_env!("BANDO_BUILD_ID").unwrap_or("미지정")
-            )));
+            crate::popup::modal_form_row_spacing(area);
+            crate::popup::modal_labeled_row(area,"현재 버전",|line|{
+                line.label(typography::body(&format!("v{version}")));
+            });
+            crate::popup::modal_labeled_row(area,"빌드 ID",|line|{
+                line.add(crate::ui_primitives::truncated_label(typography::body(
+                    option_env!("BANDO_BUILD_ID").unwrap_or("미지정")
+                )));
+            });
         });
     }
 }
