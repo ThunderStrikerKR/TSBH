@@ -374,7 +374,9 @@ fn reconcile_field_audits(units:&[u16],events:&[&Value],candidates:&BTreeMap<Spa
             "type"=>candidate["method"]=="explicit_binding"&&candidate["kind"]=="type_change"
                 &&cell["field"].as_str()==Some(final_value),
             "product"=>target["productId"].as_str()==Some(final_value)
-                && candidate["afterValue"]["productId"].as_str()==Some(final_value),
+                && candidate["afterValue"]["productId"].as_str()==Some(final_value)
+                &&event["sourceRaw"].as_str().is_some_and(|raw|
+                    super::corrections::product_source_matches(raw,target,s.0,s.1)),
             "variant"=>target["variantId"].as_str()==Some(final_value)
                 &&candidate["afterValue"]["variantId"].as_str()==Some(final_value)
                 &&target["productId"].as_str().is_some_and(|id|events.iter().all(|e|
@@ -1086,6 +1088,13 @@ mod tests{
         let mut other=p.clone();
         other["recognitionAuditEvents"][0]["initialAnalysis"]["changed"]=json!(true);
         assert_eq!(compare(&other).unwrap()["auditCoverage"],"incomplete_history");
+    }
+    #[test]
+    fn external_product_substitution_cannot_become_a_model_correction(){
+        let p=field_audit_fixture("709","709","product","product",
+            json!({"name":"BD 708","productId":"old"}),
+            json!({"name":"BD 707","productId":"external"}));
+        assert_eq!(field_observation(&p,"product")["outcome"],"changed_requires_review");
     }
     #[test]
     fn equal_candidate_duplicate_links_and_unwritten_quantity_do_not_vote(){
