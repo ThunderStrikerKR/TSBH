@@ -1087,11 +1087,7 @@ impl SettingsView{
     }
     fn show_system(&mut self,ui:&mut Ui){
         card(ui,"프로그램 정보",|area|{
-            let config:Value=serde_json::from_str(
-                include_str!("../../src-tauri/tauri.conf.json")
-            ).unwrap_or(Value::Null);
-            let version=config.get("version").and_then(Value::as_str)
-                .unwrap_or("확인 불가");
+            let version=env!("CARGO_PKG_VERSION");
             crate::popup::modal_form_row_spacing(area);
             crate::popup::modal_labeled_row(area,"현재 버전",|line|{
                 line.label(typography::body(&format!("v{version}")));
