@@ -136,6 +136,27 @@ pub fn reception_goods_viewport(
     content(&mut child);
 }
 
+/// Review cards scroll within the reserved body, never enlarging the outer
+/// section frame beyond its splitter. The actual remaining height wins.
+pub fn reception_review_scroll(
+    ui:&mut Ui,section_height:f32,id_salt:impl std::hash::Hash,
+    content:impl FnOnce(&mut Ui),
+){
+    let height=docked_section_body_height(section_height)
+        .min(ui.available_height().max(0.0));
+    let (rect,_)=ui.allocate_exact_size(
+        Vec2::new(ui.available_width().max(0.0),height),Sense::hover()
+    );
+    if !rect.is_positive(){return;}
+    let mut child=ui.new_child(UiBuilder::new().id_salt("reception-review-viewport")
+        .max_rect(rect).layout(Layout::top_down(Align::Min)));
+    child.set_clip_rect(rect.intersect(ui.clip_rect()));
+    child.set_width(rect.width());
+    child.set_height(rect.height());
+    scroll_area(ScrollAxes::Vertical).id_salt(id_salt)
+        .max_height(height).auto_shrink([false,false]).show(&mut child,content);
+}
+
 /// Docked reception goods own their fixed viewport; the manual worksheet
 /// scrolls its complete card stack instead. Both use the same item table
 /// spacing and minimum-width rules without introducing another child ID.
@@ -180,17 +201,9 @@ pub fn reception_docked_goods_scroll(
     });
 }
 
-/// The message editor/footer uses a 12pt spacer with a 1pt centered divider.
-/// The caller subtracts the SAME token before sizing the editable canvas.
+/// Use the same 8/1/8pt clearance as the reception section header.
 pub fn reception_message_footer_gap(ui:&mut Ui){
-    let (gap_rect,_)=ui.allocate_exact_size(
-        Vec2::new(ui.available_width(),theme::RECEPTION_MESSAGE_ACTION_GAP),Sense::hover()
-    );
-    let y=gap_rect.center().y;
-    ui.painter().line_segment(
-        [egui::pos2(gap_rect.left(),y),egui::pos2(gap_rect.right(),y)],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-    );
+    crate::ui_primitives::section_divider_symmetric(ui,theme::RECEPTION_SECTION_DIVIDER_GAP);
 }
 
 /// The 6pt split interaction region is always the workspace (CANVAS)
@@ -332,10 +345,11 @@ pub fn management_toolbar_trailing_rect(
 /// Shared source-card geometry, reserving the same chrome across stages.
 pub fn reception_source_client_rect(body:Rect)->Rect{
     let gap=theme::SPACE_8;
-    let height=(body.height()-4.0*gap-theme::ACTION_STANDARD_HEIGHT)
+    // The section divider already owns the leading clearance. Reserve only
+    // the card-to-document, document-to-action and final action gaps.
+    let height=(body.height()-3.0*gap-theme::ACTION_STANDARD_HEIGHT)
         .max(0.0).min(theme::ACTION_STANDARD_HEIGHT+2.0*gap);
-    Rect::from_min_size(egui::pos2(body.left(),body.top()+gap),
-        Vec2::new(body.width(),height))
+    Rect::from_min_size(body.min,Vec2::new(body.width(),height))
 }
 
 /// Shared item-table to freight-group transition; call once per group,

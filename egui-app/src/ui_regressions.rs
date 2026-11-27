@@ -1882,6 +1882,36 @@ pub(crate) mod general_screen_geometry_tests {
     }
 
     #[test]
+    fn reception_client_and_footer_share_visible_divider_clearance(){
+        let ctx=test_context();
+        let screen=Vec2::new(900.0,700.0);
+        let work=Rect::from_min_max(egui::pos2(24.0,24.0),egui::pos2(876.0,676.0));
+        let trace=render(&ctx,screen,work,|ui|{
+            reception_section_with_header(ui,"발주 원문",280.0,|_|{},|body|{
+                body.spacing_mut().item_spacing.y=0.0;
+                let (rect,_)=body.allocate_exact_size(Vec2::new(body.available_width(),150.0),Sense::hover());
+                let client=crate::ui_layout::reception_source_client_rect(rect);
+                record("visible client card",client);
+            });
+            reception_section_with_header(ui,"복사용 자동 메시지",280.0,|_|{},|body|{
+                body.spacing_mut().item_spacing.y=0.0;
+                let (rect,_)=body.allocate_exact_size(Vec2::new(body.available_width(),90.0),Sense::hover());
+                record("message canvas",rect);
+                let _=crate::card::reception_document_viewport(body,rect,"footer-test","footer-scroll",|_|{});
+                crate::ui_layout::reception_message_footer_gap(body);
+                let (actions,_)=body.allocate_exact_size(Vec2::new(body.available_width(),theme::ACTION_STANDARD_HEIGHT),Sense::hover());
+                record("message actions",actions);
+            });
+        });
+        let divider=first(&trace,"source divider");
+        let client=first(&trace,"visible client card");
+        let canvas=first(&trace,"message canvas");
+        let actions=first(&trace,"message actions");
+        assert!((client.top()-divider.bottom()-theme::RECEPTION_SECTION_DIVIDER_GAP).abs()<0.5);
+        assert!((actions.top()-canvas.bottom()-theme::RECEPTION_MESSAGE_ACTION_GAP).abs()<0.5);
+    }
+
+    #[test]
     fn actual_master_card_boundary_survives_loading_to_empty_transition(){
         let screen=Vec2::new(1920.0,1080.0);
         let work=Rect::from_min_max(egui::pos2(380.0,80.0),egui::pos2(1902.0,1062.0));

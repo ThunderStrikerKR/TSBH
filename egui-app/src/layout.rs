@@ -248,7 +248,16 @@ impl LayoutState {
         let lower = minimum[0] + minimum[1];
         let upper = (space - minimum[2]).max(lower);
         let second_end = requested_second_end.clamp(lower, upper).min(space);
-        let first = (space * self.detail_review_ratio).clamp(
+        // In the default layout the four recipient rows determine its
+        // height, not a percentage of the window. Preserve deliberate
+        // splitter overrides and the independent second boundary.
+        let default_first_axis = (self.detail_review_ratio - DETAIL_REVIEW_RATIO).abs() < 0.00001;
+        let requested_first = if default_first_axis {
+            second_end - minimum[1]
+        } else {
+            space * self.detail_review_ratio
+        };
+        let first = requested_first.clamp(
             minimum[0].min(second_end),
             (second_end - minimum[1]).max(minimum[0].min(second_end)),
         );
@@ -287,6 +296,9 @@ impl LayoutState {
             default_heights[0] + default_heights[1] - original[0] - original[1]
         };
         self.resize_detail_pair(original, index, delta);
+        if index == 0 {
+            self.detail_review_ratio = DETAIL_REVIEW_RATIO;
+        }
     }
 
     pub fn resize_vertical(&mut self, current_first: f32, delta: f32, available: f32) {
@@ -381,6 +393,16 @@ mod geometry_contract {
                     "height={height}: source axis={source_axis}, items axis={items_axis}");
             }
             assert!(recipient + 0.01 >= minimum[1]);
+        }
+    }
+
+    #[test]
+    fn default_recipient_card_fits_four_rows_without_extra_vertical_space() {
+        for height in [700.0, 800.0, 1000.0, 1200.0] {
+            let layout=LayoutState::default();
+            let [_,recipient,_]=layout.detail_heights(height);
+            let minimum=detail_min_heights(height-2.0*SPLITTER);
+            assert!((recipient-minimum[1]).abs()<0.02);
         }
     }
 

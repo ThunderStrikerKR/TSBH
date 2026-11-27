@@ -454,7 +454,7 @@ pub(crate) fn reception_section_with_header(
         // Docked panes have an explicit viewport budget; zero requests a natural card.
         let policy=if minimum_height>0.0{CardHeightPolicy::FillAvailable}
             else{CardHeightPolicy::FitContent};
-        apply_height_policy(ui,policy,(minimum_height-height_inset).max(48.0));
+        apply_height_policy(ui,policy,(minimum_height-height_inset).max(0.0));
         let body_item_spacing=theme::SPACING;
         ui.spacing_mut().item_spacing.y=0.0;
         let _header=ui.allocate_ui_with_layout(
@@ -518,18 +518,19 @@ pub(crate) fn reception_document_viewport<R>(
     paint_source_document_surface(ui,rect);
     let inner=reception_document_inner_rect(rect)?;
     let clip=ui.clip_rect().intersect(inner);
-    Some(ui.scope_builder(
+    // All callers already reserve the document rectangle. A scope_builder
+    // would report the inset child back to the parent and can change the
+    // cursor used by the following footer. Keep scroll layout isolated.
+    let mut canvas=ui.new_child(
         UiBuilder::new().id_salt(canvas_id).max_rect(inner)
-            .layout(Layout::top_down(Align::Min)),
-        |canvas|{
-            canvas.set_clip_rect(clip);
-            canvas.set_width(inner.width());
-            canvas.set_height(inner.height());
-            scroll_area(ScrollAxes::Vertical).id_salt(scroll_id)
-                .max_height(inner.height()).auto_shrink([false,false])
-                .show(canvas,content).inner
-        }
-    ).inner)
+            .layout(Layout::top_down(Align::Min))
+    );
+    canvas.set_clip_rect(clip);
+    canvas.set_width(inner.width());
+    canvas.set_height(inner.height());
+    Some(scroll_area(ScrollAxes::Vertical).id_salt(scroll_id)
+        .max_height(inner.height()).auto_shrink([false,false])
+        .show(&mut canvas,content).inner)
 }
 
 /// The 70pt client identification band is INFORMATION, not an editable

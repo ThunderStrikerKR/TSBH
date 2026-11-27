@@ -6684,13 +6684,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Vec2::new(ui.available_width(),available_body),Sense::hover()
                 );
                 let gap=theme::SPACE_8;
-                let card_height=(available_body-3.0*gap-theme::ACTION_STANDARD_HEIGHT)
-                    .max(0.0)
-                    .min(theme::ACTION_STANDARD_HEIGHT+2.0*theme::SPACE_8);
-                let card_rect=Rect::from_min_size(
-                    egui::pos2(body_rect.left(),body_rect.top()+gap),
-                    Vec2::new(body_rect.width(),card_height)
-                );
+                let card_rect=crate::ui_layout::reception_source_client_rect(body_rect);
                 let active=self.active_id.as_deref()
                     .and_then(|id|self.drafts.iter().find(|row|row.id==id));
                 let linked_id=active.and_then(|row|row.client_id.as_deref());
@@ -6740,8 +6734,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Sense::hover(),
                 );
                 let has_source = !self.raw_source.trim().is_empty();
-                // Equal visible 8pt clearances: body top -> client,
-                // client -> document, document -> action, action -> bottom.
+                // The section divider already reserves the leading 8pt.
+                // Keep 8pt between the client, document and action.
                 // Short panes preserve these gaps and reduce editor height,
                 // never overlap adjacent cards or change the dock splitter.
                 let gap = theme::SPACE_8;
@@ -6781,7 +6775,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     }
                 }
                 let editor_top = if has_source {
-                    body_rect.top() + gap + client_card_height + gap
+                    body_rect.top() + client_card_height + gap
                 } else {
                     body_rect.top()
                 };
@@ -7463,10 +7457,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     pane.set_width(review_rect.width());
                     pane.set_height(review_rect.height());
                     Self::section(pane,"확인할 내용",review_height,|ui|{
-                        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                            .max_height(crate::card::docked_section_body_height(review_height))
-                            .id_salt(("native-workflow-issues",group.id.as_str()))
-                            .show(ui,|issues|{
+                        crate::ui_layout::reception_review_scroll(ui,review_height,
+                            ("native-workflow-issues",group.id.as_str()),|issues|{
                                 for issue in &group.issues{
                                     let Some(label)=workflow_board::workflow_issue_label(issue)else{continue};
                                     let tone=match issue["severity"].as_str(){
@@ -7948,9 +7940,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     pane.set_width(review_rect.width());
                     pane.set_height(review_rect.height());
                     Self::section(pane,"확인할 내용",review_height,|ui|{
-                        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                            .max_height(crate::card::docked_section_body_height(review_height))
-                            .show(ui,|issues|{
+                        crate::ui_layout::reception_review_scroll(ui,review_height,
+                            ("pending-hover-review-issues",draft.id.as_str()),|issues|{
                                 if let Some(rows)=recognition.get("issues")
                                     .and_then(serde_json::Value::as_array){
                                     for item in rows{
@@ -8179,11 +8170,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         }
                     }
                 }, |ui| {
-                    crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                        .id_salt(("reception-review-content-scroll",self.active_id.as_deref()))
-                        .max_height(crate::card::docked_section_body_height(review_height))
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
+                    crate::ui_layout::reception_review_scroll(ui,review_height,
+                        ("reception-review-content-scroll",self.active_id.as_deref()), |ui| {
                     if let Some(analysis)=&self.analysis {
                         let other_ready=self.inline_editor.is_none()
                             &&self.manual_workspace.is_none()
