@@ -97,7 +97,7 @@ pub fn reception_recipient_navigator(
         |segments,inner|{
             let mut selected=None;
             segments.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,inner.width());
-            segments.set_height(inner.height());
+            crate::ui_layout::set_fixed_height(segments,inner.height());
             segments.spacing_mut().item_spacing=Vec2::ZERO;
 
             let previous=date_navigation_segment_button(
