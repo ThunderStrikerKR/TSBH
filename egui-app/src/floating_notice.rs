@@ -470,6 +470,8 @@ pub fn show(ctx: &Context) {
         .interactable(active.tone==Tone::Error || galley.size().y > size.y-2.0*pad_y)
         .show(ctx, |ui| {
             let (rect, _) = ui.allocate_exact_size(size,Sense::hover());
+            #[cfg(test)]
+            crate::ui_test_support::record_component_geometry("notice",rect,ui.clip_rect(),None);
             let painter = ui.painter().clone();
             // Soft 3pt/down shadow separates overlapping fields from their
             // floating result, without changing the approved grey palette.
