@@ -576,6 +576,7 @@ pub struct FreightManager {
     gateway: Arc<dyn BandoGateway>,
     write_receiver: Option<Receiver<Result<Value,String>>>,
     write_action: Option<String>,
+    tariff_before:Option<Value>,
     notice: Option<String>,
     pending: BTreeMap<String,String>,
     selected: BTreeSet<String>,
@@ -614,6 +615,8 @@ impl ReceptionRateEditor{
     pub(crate) fn new(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,target:Value)->Self{
         Self{manager:FreightManager::new(gateway,ctx),target,initialized:false}
     }
+
+    pub(crate) fn take_tariff_before(&mut self)->Option<Value>{self.manager.take_tariff_before()}
 
     /// None = open; Some(false) = cancelled; Some(true) = verified master save.
     pub(crate) fn show(&mut self,ctx:&egui::Context,area:egui::Rect)->Option<bool>{
@@ -693,6 +696,7 @@ impl FreightManager {
             gateway,
             write_receiver: None,
             write_action: None,
+            tariff_before:None,
             notice: None,
             pending: BTreeMap::new(),
             selected: BTreeSet::new(),
@@ -789,6 +793,7 @@ impl FreightManager {
     }
     pub fn has_rate_modal(&self)->bool{self.rate_editor.is_some()}
     pub fn last_error(&self)->Option<&str>{self.error.as_deref()}
+    pub(crate) fn take_tariff_before(&mut self)->Option<Value>{self.tariff_before.take()}
 
     pub(crate) fn suspend_navigation(&mut self,now:std::time::Instant){self.tab_snapshots.suspend(now);}
     fn sync_tab_navigation(&mut self){
@@ -870,6 +875,14 @@ impl FreightManager {
             match receiver.try_recv(){
                 Ok(Ok(result))=>{
                     if result["state"].is_object() && result["projection"].is_object(){
+                        if let Some(before)=self.state.as_ref(){
+                            let after=&result["state"];
+                            if self.tariff_before.is_none() &&
+                                (before["shipping"]!=after["shipping"]||before["products"]!=after["products"]){
+                                // Only the tariff dependency inputs cross the view boundary.
+                                self.tariff_before=Some(json!({"shipping":before["shipping"],"products":before["products"]}));
+                            }
+                        }
                         self.state=Some(result["state"].clone());self.display_cache.invalidate();self.assignment_cache.invalidate();
                         self.projection=Some(result["projection"].clone());
                         self.error=None;
