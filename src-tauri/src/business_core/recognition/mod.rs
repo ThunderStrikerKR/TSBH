@@ -914,11 +914,15 @@ fn recipient_owner_index(
     if !candidates.admits(candidate,evidence_index)||!features.positions_valid{
         return OwnerChoice::retained(previous+1,"incomplete_candidates_legacy");
     }
+    // All the preceding handoff gates have passed: the pre-weight engine
+    // chose the following recipient. Its support and the margin fallback
+    // must refer to that same incumbent, not the preceding recipient.
     let w=OWNER_WEIGHTS;
-    let a=ownership_score(events,features,evidence_index,anchors[previous],true,w);
-    let b=ownership_score(events,features,evidence_index,next_anchor_index,false,w);
-    let wins=exceeds_margin(b,a,w.margin);
-    OwnerChoice::compared(if wins{previous+1}else{previous},if wins{"weighted_handoff"}else{"insufficient_margin"},(previous,a),(previous+1,b))
+    let a=ownership_score(events,features,evidence_index,anchors[previous],false,w).total;
+    let b=ownership_score(events,features,evidence_index,next_anchor_index,true,w).total;
+    let wins=exceeds_margin(a,b,w.margin);
+    OwnerChoice::compared(if wins{previous}else{previous+1},
+        if wins{"weighted_previous"}else{"legacy_handoff_retained"},(previous,a),(previous+1,b))
 }
 // Shared provisional ownership weights, not calibrated probabilities.
 // Stage 05 validates the profile independently of the hard field gates.
@@ -938,8 +942,17 @@ const OWNER_WEIGHTS:OwnerWeights=OwnerWeights{
     paragraph:36,line:18,scalar:12,rank:12,legacy:12,margin:10,
     repeat:52,local:48,order:8,
 };
+// Carry the component values used by the selection gates alongside the
+// total, so the same candidate pair is never evaluated twice.
+struct OwnershipScore {
+    total:i64,
+    structural:i64,
+    same_paragraph:bool,
+    line:i64,
+    rank:i64,
+}
 fn ownership_score(events:&[Evidence],features:&DocumentFeatures,
-    field:usize,anchor:usize,legacy:bool,w:OwnerWeights)->i64{
+    field:usize,anchor:usize,legacy:bool,w:OwnerWeights)->OwnershipScore{
     let (line,rank,same_paragraph)=features.relation(events,field,anchor);
     let p=features.positions[field];
     let a=features.positions[anchor];
@@ -948,12 +961,14 @@ fn ownership_score(events:&[Evidence],features:&DocumentFeatures,
         else if a[1].0<=p[0].0{p[0].0-a[1].0}else{0};
     let decay=|weight:i64,distance:u64,scale:u64|
         weight/(1+distance.saturating_div(scale).min(1024) as i64);
-    i64::from(same_paragraph)*w.paragraph
+    let structural=features.structural_ownership_score(field,anchor,w);
+    let total=i64::from(same_paragraph)*w.paragraph
         +decay(w.line,line.unsigned_abs(),1)
         +decay(w.scalar,gap as u64,24)
         +decay(w.rank,rank.unsigned_abs(),1)
         +i64::from(legacy)*w.legacy
-        +features.structural_ownership_score(field,anchor,w)
+        +structural;
+    OwnershipScore{total,structural,same_paragraph,line,rank}
 }
 fn exceeds_margin(challenger:i64,incumbent:i64,margin:i64)->bool{
     challenger-incumbent>=margin
@@ -961,10 +976,10 @@ fn exceeds_margin(challenger:i64,incumbent:i64,margin:i64)->bool{
 // Detached quantities use the common distance features, with an explicit
 // provisional direction bonus for a repeated product-then-quantity layout.
 fn quantity_link_score(events:&[Evidence],features:&DocumentFeatures,p:usize,q:usize)->i64{
-    let (line,rank,_)=features.relation(events,p,q);
-    ownership_score(events,features,p,q,false,OWNER_WEIGHTS)
+    let score=ownership_score(events,features,p,q,false,OWNER_WEIGHTS);
+    score.total
         +if events[p].end<=events[q].start{18}else{0}
-        +if line==1&&rank==1{12}else{0}
+        +if score.line==1&&score.rank==1{12}else{0}
 }
 // Preflight all inline quantity claims before any item is mutated.
 fn conflicting_inline_quantities(hits:&[ProductHit])->HashSet<usize>{
@@ -1028,17 +1043,16 @@ fn product_owner_index(anchors:&[usize],events:&[Evidence],features:&DocumentFea
     }
     let a=anchors[previous];let b=anchors[next];
     if events[a].kind!="name"||events[b].kind!="name"{return OwnerChoice::retained(legacy,"non_name_anchor");}
-    let (_,_,same_a)=features.relation(events,hit.evidence,a);
-    let (_,_,same_b)=features.relation(events,hit.evidence,b);
     let w=OWNER_WEIGHTS;
-    let structure_a=features.structural_ownership_score(hit.evidence,a,w);
-    let structure_b=features.structural_ownership_score(hit.evidence,b,w);
+    let a_score=ownership_score(events,features,hit.evidence,a,legacy==previous,w);
+    let b_score=ownership_score(events,features,hit.evidence,b,legacy==next,w);
+    let (same_a,same_b)=(a_score.same_paragraph,b_score.same_paragraph);
+    let (structure_a,structure_b)=(a_score.structural,b_score.structural);
     // In a shared paragraph, proximity alone cannot flip ownership.
     // A complete, independently repeated structure must distinguish the
     // candidates. Never cross a paragraph in favor of a structural guess.
     if same_a==same_b&&(!same_a||structure_a==structure_b){return OwnerChoice::retained(legacy,"no_distinguishing_structure");}
-    let score_a=ownership_score(events,features,hit.evidence,a,legacy==previous,w);
-    let score_b=ownership_score(events,features,hit.evidence,b,legacy==next,w);
+    let (score_a,score_b)=(a_score.total,b_score.total);
     let (owner,reason)=if exceeds_margin(score_a,score_b,w.margin)&&same_a&&(same_a!=same_b||structure_a>structure_b){(previous,"weighted_previous")}
     else if exceeds_margin(score_b,score_a,w.margin)&&same_b&&(same_a!=same_b||structure_b>structure_a){(next,"weighted_next")}
     else{(legacy,"margin_or_structure_protection")};
@@ -2736,6 +2750,24 @@ mod tests {
         assert!(exceeds_margin(50,40,OWNER_WEIGHTS.margin));
         assert!(!exceeds_margin(49,40,OWNER_WEIGHTS.margin));
         assert!(!exceeds_margin(40,50,OWNER_WEIGHTS.margin));
+    }
+    #[test]
+    fn recipient_handoff_scores_and_margin_use_the_same_legacy_incumbent(){
+        let raw="김가상\n서울특별시 마포구 월드컵로 20\n010-1234-5678\n\n경기도 성남시 분당구 불정로 6\n010-2345-6789\n박가상";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        let anchors=&doc.features.anchors;
+        assert_eq!(anchors.len(),2);
+        let i=doc.events.iter().position(|e|e.kind=="mobile"&&e.value=="010-2345-6789").unwrap();
+        let choice=recipient_owner_index(anchors,&doc.events,i,&doc.geometry,&doc.delivery,&doc.features,&doc.exclusions);
+        let w=OWNER_WEIGHTS;
+        let a=ownership_score(&doc.events,&doc.features,i,anchors[0],false,w).total;
+        let b=ownership_score(&doc.events,&doc.features,i,anchors[1],true,w).total;
+        let without_support=ownership_score(&doc.events,&doc.features,i,anchors[1],false,w).total;
+        assert_eq!(b-without_support,w.legacy);
+        assert_eq!(choice.scores,Some([(0,a),(1,b)]));
+        assert_eq!(choice.owner,if exceeds_margin(a,b,w.margin){0}else{1});
+        assert_eq!(choice.owner,1);
     }
     #[test]
     fn address_and_phone_before_next_name_use_new_paragraph_and_proximity(){
