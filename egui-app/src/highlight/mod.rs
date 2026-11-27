@@ -76,6 +76,20 @@ pub(crate) fn light_button(ui:&mut Ui,rest:Color32){
     widgets.active.weak_bg_fill=fill;
     widgets.open.weak_bg_fill=fill;
 }
+pub(crate) fn native_widgets(visuals:&mut egui::Visuals){
+    let hover=palette(Role::Hover);
+    let fill=palette(Role::RowHover).fill.unwrap_or(theme::BUTTON_HOVER_BG);
+    visuals.widgets.hovered.bg_fill=fill;
+    visuals.widgets.hovered.weak_bg_fill=fill;
+    visuals.widgets.hovered.bg_stroke=hover.stroke.unwrap_or(Stroke::NONE);
+    visuals.widgets.hovered.fg_stroke=Stroke::new(1.5,theme::TEXT);
+    visuals.widgets.hovered.expansion=0.0;
+    visuals.widgets.active.bg_fill=theme::INPUT;
+    visuals.widgets.active.bg_stroke=palette(Role::Focus).stroke.unwrap_or(Stroke::NONE);
+    // Text selection is distinct from a committed order selection.
+    visuals.selection.bg_fill=theme::SELECTION.linear_multiply(0.3);
+    visuals.selection.stroke=Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::SELECTION);
+}
 pub(crate) fn dropdown_options(ui:&mut Ui){
     let visuals=ui.visuals_mut();
     let selected=palette(Role::Selected);
