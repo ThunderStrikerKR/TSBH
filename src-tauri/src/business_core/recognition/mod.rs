@@ -456,6 +456,7 @@ fn delivery_boundary(line:&str,phone:&Regex)->bool{
 struct CachedProductDecision{
     output:Value,
     candidates:Vec<model::SourceCandidate>,
+    truncated:bool,
 }
 struct ProductSearch<'a,'s>{
     state:&'s Value,
@@ -479,7 +480,8 @@ impl<'a,'s> ProductSearch<'a,'s>{
         }
         self.decisions.entry(text).or_insert_with(||{
             let decision=model::decide(text,state,client);
-            CachedProductDecision{output:model::decision_json(&decision),candidates:decision.source_candidates}
+            CachedProductDecision{output:model::decision_json(&decision),candidates:decision.source_candidates,
+                truncated:decision.source_truncated}
         })
     }
     fn quantities(&mut self,text:&'a str)->&[quantity::Quantity]{
@@ -563,7 +565,7 @@ fn split_product_records<'a>(lines:Vec<Line<'a>>,label:&Regex,phone:&Regex,
             let independently_grounded=decision["productId"].as_str().is_some_and(|id|
                 result.candidates.iter().any(|c|c.literal&&c.product_id==id&&
                     c.span.0==0&&Some(c.span.1)==end));
-            if !registered||!bounded||!independently_grounded{valid=false;break;}
+            if result.truncated||!registered||!bounded||!independently_grounded{valid=false;break;}
             ranges.push((begin,q.end));start=q.end;
         }
         if valid{
@@ -1021,7 +1023,11 @@ struct DocumentFeatures{
     positions_valid:bool,
     anchors:Vec<usize>,
     roles:Vec<&'static str>,
+    event_roles:Vec<Option<&'static str>>,
     ranges:Vec<(usize,usize)>,
+    partial_order:Vec<(&'static str,&'static str,usize)>,
+    local_blocks:Vec<(usize,usize,&'static str)>,
+    repeat_segments:Vec<(usize,usize)>,
     period:usize,
     exact_repeat:usize,
     incomplete_tail:usize,
@@ -1073,7 +1079,7 @@ fn near_role_block(a:&[&str],b:&[&str])->&'static str{
     if short[i..]==long[i+1..]{kind}else{"different"}
 }
 impl DocumentFeatures{
-    fn new(raw:&str,events:&[Evidence],deferred:&DeferredCandidates)->Self{
+    fn new(raw:&str,events:&[Evidence],hits:&[ProductHit],deferred:&DeferredCandidates)->Self{
         let mut ordered=(0..events.len()).collect::<Vec<_>>();
         ordered.sort_by_key(|&i|(events[i].start,events[i].end));
         let mut ranks=vec![0;events.len()];
@@ -1086,13 +1092,22 @@ impl DocumentFeatures{
         let positions=event_positions(raw,events);
         let invalid_positions=positions.is_none();
         let positions=positions.unwrap_or_else(||vec![[(0,0);2];events.len()]);
+        let mut event_roles=events.iter().map(|e|structural_role(e.kind)).collect::<Vec<_>>();
+        // Common goods have different ownership semantics from individual
+        // goods. Explicit per-recipient quantity differs from a common
+        // document total. Preserve that distinction, not the item count.
+        for hit in hits{
+            if hit.common{
+                event_roles[hit.evidence]=Some(if hit.each{"E"}else{"C"});
+            }
+        }
         let mut roles=Vec::new();
         let mut ranges:Vec<(usize,usize)>=Vec::new();
         let mut last_end=0usize;
         let mut ambiguous=invalid_positions||deferred.truncated||deferred.entries.values().any(|r|!r.hard());
         for (rank,&i) in ordered.iter().enumerate(){
             let event=&events[i];
-            let Some(role)=structural_role(event.kind)else{continue};
+            let Some(role)=event_roles[i]else{continue};
             if event.start<last_end{ambiguous=true;}
             last_end=last_end.max(event.end);
             // Collapse adjacent product/quantity runs, retaining the raw
@@ -1101,7 +1116,8 @@ impl DocumentFeatures{
             // Optional notes and blank separators do not by themselves
             // make a new role section or a new pattern identity.
             let merge=matches!((roles.last().copied(),role),
-                (Some("P"),"P"|"Q")|(Some("T"),"T"));
+                (Some("P"),"P"|"Q")|(Some("C"),"C"|"Q")|
+                (Some("E"),"E"|"Q")|(Some("T"),"T"));
             if merge{ranges.last_mut().unwrap().1=rank+1;}
             else{roles.push(role);ranges.push((rank,rank+1));}
         }
@@ -1121,7 +1137,26 @@ impl DocumentFeatures{
         }
         let exact_repeat=if period>0&&roles.len()%period==0{roles.len()/period}else{0};
         let incomplete_tail=if period>0{roles.len()%period}else{0};
-        Self{ordered,ranks,positions,positions_valid:!invalid_positions,anchors,roles,ranges,period,exact_repeat,incomplete_tail,ambiguous}
+        // Build bounded partial-order and block evidence once, alongside
+        // the structural identity. Evaluation only serializes these.
+        let mut partial=std::collections::BTreeMap::new();
+        for (i,&a) in roles.iter().enumerate(){
+            for &b in roles.iter().skip(i+1).take(2){*partial.entry((a,b)).or_insert(0usize)+=1;}
+        }
+        let partial_order=partial.into_iter().map(|((a,b),count)|(a,b,count)).collect();
+        let mut starts=roles.iter().enumerate().filter_map(|(i,r)|(*r=="N").then_some(i)).collect::<Vec<_>>();
+        starts.push(roles.len());
+        let mut local_blocks=Vec::new();
+        if starts[0]>0{local_blocks.push((0,starts[0],"prefix"));}
+        for (i,w) in starts.windows(2).enumerate(){
+            let relation=if i>0{near_role_block(&roles[starts[i-1]..w[0]],&roles[w[0]..w[1]])}else{"first"};
+            local_blocks.push((w[0],w[1],relation));
+        }
+        let repeat_segments=if period>0&&(exact_repeat>1||incomplete_tail>0){
+            (0..roles.len()/period).map(|i|(i*period,(i+1)*period)).collect()
+        }else{Vec::new()};
+        Self{ordered,ranks,positions,positions_valid:!invalid_positions,anchors,roles,event_roles,ranges,
+            partial_order,local_blocks,repeat_segments,period,exact_repeat,incomplete_tail,ambiguous}
     }
     fn utf16_span(&self,index:usize)->(usize,usize){
         (self.positions[index][0].1,self.positions[index][1].1)
@@ -1134,7 +1169,7 @@ impl DocumentFeatures{
     // and unknown roles cannot be promoted to independent learning.
     fn evaluation(&self,events:&[Evidence],geometry:&SourceGeometry)->Value{
         if events.len()>4096{
-            return json!({"version":1,"evaluationKey":null,"trainingKey":null,
+            return json!({"version":2,"evaluationKey":null,"trainingKey":null,
                 "status":"event_budget_exceeded"});
         }
         let cycle=if self.exact_repeat>0{&self.roles[..self.period]}else{self.roles.as_slice()};
@@ -1142,13 +1177,7 @@ impl DocumentFeatures{
             let first=&events[self.ordered[a]];let last=&events[self.ordered[b-1]];
             json!({"start":first.start,"end":last.end,"line":first.line,"paragraph":first.paragraph})
         }).collect::<Vec<_>>();
-        // Adjacent and skip-one relations preserve local order without
-        // quadratic enumeration. Distances remain separate from keys.
-        let mut partial=std::collections::BTreeMap::<(&str,&str),usize>::new();
-        for (i,&a) in self.roles.iter().enumerate(){
-            for &b in self.roles.iter().skip(i+1).take(2){*partial.entry((a,b)).or_default()+=1;}
-        }
-        let partial=partial.into_iter().map(|((a,b),count)|json!([a,b,count])).collect::<Vec<_>>();
+        let partial=&self.partial_order;
         let mut relations=Vec::new();
         for (i,&from) in self.ordered.iter().enumerate(){
             for &to in self.ordered.iter().skip(i+1).take(2){
@@ -1165,24 +1194,15 @@ impl DocumentFeatures{
             }
         }
         let observed=self.ordered.iter().map(|&i|json!({
-            "index":i,"role":structural_role(events[i].kind).unwrap_or("optional"),
+            "index":i,"role":self.event_roles[i].unwrap_or("optional"),
             "utf16Start":self.positions[i][0].1,"utf16End":self.positions[i][1].1
         })).collect::<Vec<_>>();
-        let mut starts=self.roles.iter().enumerate().filter_map(|(i,r)|(*r=="N").then_some(i)).collect::<Vec<_>>();
-        starts.push(self.roles.len());
-        let mut local=Vec::new();
-        for (i,w) in starts.windows(2).enumerate(){
-            let block=&self.roles[w[0]..w[1]];
-            let relation=if i>0{near_role_block(&self.roles[starts[i-1]..w[0]],block)}else{"first"};
-            local.push(json!({"startRole":w[0],"endRole":w[1],"relation":relation}));
-        }
-        let repeat_segments=if self.period>0&&(self.exact_repeat>1||self.incomplete_tail>0){
-            (0..self.roles.len()/self.period).map(|i|json!({
-                "startRole":i*self.period,"endRole":(i+1)*self.period
-            })).collect::<Vec<_>>()
-        }else{Vec::new()};
-        json!({"version":1,"coordinateUnit":"utf8_byte",
-            "evaluationKey":if self.ambiguous||cycle.is_empty()||self.incomplete_tail>0{Value::Null}else{json!([1,cycle])},
+        let local=self.local_blocks.iter().map(|&(a,b,relation)|
+            json!({"startRole":a,"endRole":b,"relation":relation})).collect::<Vec<_>>();
+        let repeat_segments=self.repeat_segments.iter().map(|&(a,b)|
+            json!({"startRole":a,"endRole":b})).collect::<Vec<_>>();
+        json!({"version":2,"coordinateUnit":"utf8_byte",
+            "evaluationKey":if self.ambiguous||cycle.is_empty()||self.incomplete_tail>0{Value::Null}else{json!([2,cycle])},
             "roles":self.roles,"observed":observed,"segments":segments,"period":self.period,
             "exactRepeatCount":self.exact_repeat,"incompleteTail":self.incomplete_tail,
             "repeatSegments":repeat_segments,"localBlocks":local,"relations":relations,
@@ -1466,6 +1486,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         // Never synthesize a new string and then treat its indexes as offsets
         // into raw: UTF-8/UTF-16 source-evidence contract must be lossless.
         let cached=search.result(skip_until).clone();
+        exclusions.truncated|=cached.truncated;
         let matched=cached.output;
         let mut quantity_values = if trimmed.contains('|') {
             let model_end=matched.get("evidence").and_then(Value::as_object)
@@ -1604,7 +1625,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
     }
     retain_unclassified_fragments(raw,&lines,&non_delivery_segments,spans,&mut exclusions);
     let delivery=DeliveryGeometry::new(&events);
-    let features=DocumentFeatures::new(raw,&events,&exclusions);
+    let features=DocumentFeatures::new(raw,&events,&product_hits,&exclusions);
     ExtractedDocument{raw,lines,events,product_hits,geometry,delivery,exclusions,features}
 }
 fn analyze(raw:&str,state:&Value,client:Option<&Value>)->Result<Value,String>{
@@ -1950,7 +1971,7 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     // corresponding product in Rust must not reverse the public array order.
     if span_changed&&features.ordered.windows(2).any(|w|{
         let a=&events[w[0]];let b=&events[w[1]];
-        (a.start,a.end)>(b.start,b.end)
+        (a.start,a.end,w[0])>(b.start,b.end,w[1])
     }){
         features.ordered.sort_by_key(|&i|(events[i].start,events[i].end,i));
     }
@@ -2482,25 +2503,54 @@ mod tests {
         }).collect::<Vec<_>>();
         let raw="x".repeat(kinds.len()*3);
         let geometry=SourceGeometry::new(&raw);
-        let features=DocumentFeatures::new(&raw,&events,&DeferredCandidates::default());
+        let features=DocumentFeatures::new(&raw,&events,&[],&DeferredCandidates::default());
         assert_eq!(features.anchors,vec![0,6]);
         assert_eq!(features.roles,vec!["N","T","P","N","T","P"]);
         assert_eq!(features.exact_repeat,2);
         assert_eq!(features.period,3);
         assert_eq!(features.relation(&events,6,1),(-5,-5,false));
         let eval=features.evaluation(&events,&geometry);
-        assert_eq!(eval["evaluationKey"],json!([1,["N","T","P"]]));
+        assert_eq!(eval["evaluationKey"],json!([2,["N","T","P"]]));
         assert!(eval["trainingKey"].is_null());
-        let incomplete=DocumentFeatures::new(&raw,&events[..7],&DeferredCandidates::default());
+        let incomplete=DocumentFeatures::new(&raw,&events[..7],&[],&DeferredCandidates::default());
         assert_eq!(incomplete.incomplete_tail,1);
         assert_eq!(incomplete.exact_repeat,0);
         let mut uncertain=DeferredCandidates::default();
         uncertain.truncated=true;
-        assert!(DocumentFeatures::new(&raw,&events,&uncertain).evaluation(&events,&geometry)["evaluationKey"].is_null());
+        assert!(DocumentFeatures::new(&raw,&events,&[],&uncertain).evaluation(&events,&geometry)["evaluationKey"].is_null());
         assert!(incomplete.evaluation(&events[..7],&geometry)["evaluationKey"].is_null());
         assert_eq!(near_role_block(&["N","T","A"],&["N","A","T"]),"adjacent_swap");
         assert_eq!(near_role_block(&["N","T"],&["N","A","T"]),"one_extra");
         assert_eq!(near_role_block(&["N","A","T"],&["N","T"]),"one_missing");
+    }
+    #[test]
+    fn common_and_per_recipient_goods_do_not_share_individual_pattern_identity(){
+        let kinds=["name","mobile","product","quantity","product","quantity"];
+        let events=kinds.iter().enumerate().map(|(i,&kind)|Evidence{
+            kind,value:String::new(),start:i*3,end:i*3+1,line:i,paragraph:0,
+            reason:"synthetic",recipient:None,item_id:None
+        }).collect::<Vec<_>>();
+        let raw="x".repeat(kinds.len()*3);
+        let geometry=SourceGeometry::new(&raw);
+        let deferred=DeferredCandidates::default();
+        let make_hit=|evidence:usize,common:bool,each:bool|ProductHit{
+            evidence,source_start:events[evidence].start,line:events[evidence].line,
+            raw:String::new(),decision:Value::Null,source_candidates:Vec::new(),source_len:1,
+            quantities:vec![evidence+1],common,each
+        };
+        let ordinary=DocumentFeatures::new(&raw,&events,&[],&deferred);
+        let common=DocumentFeatures::new(&raw,&events,&[make_hit(2,true,false),make_hit(4,true,false)],&deferred);
+        let each=DocumentFeatures::new(&raw,&events,&[make_hit(2,true,true),make_hit(4,true,true)],&deferred);
+        assert_eq!(ordinary.roles,vec!["N","T","P"]);
+        assert_eq!(common.roles,vec!["N","T","C"]);
+        assert_eq!(each.roles,vec!["N","T","E"]);
+        let key=|f:&DocumentFeatures|f.evaluation(&events,&geometry)["evaluationKey"].clone();
+        assert_ne!(key(&ordinary),key(&common));
+        assert_ne!(key(&common),key(&each));
+        assert_ne!(key(&ordinary),key(&each));
+        let fewer=DocumentFeatures::new(&raw,&events[..4],&[],&deferred);
+        assert_eq!(key(&ordinary),fewer.evaluation(&events[..4],&geometry)["evaluationKey"]);
+        assert!(ordinary.partial_order.iter().any(|&(a,b,_)|a=="N"&&b=="T"));
     }
     #[test]
     fn output_evidence_reuses_indexed_utf16_positions(){
@@ -2534,7 +2584,7 @@ mod tests {
             Evidence{kind:"mobile",value:"T".into(),start:6,end:7,line:1,paragraph:0,
                 reason:"synthetic",recipient:None,item_id:None}
         ];
-        let f=DocumentFeatures::new(raw,&events,&DeferredCandidates::default());
+        let f=DocumentFeatures::new(raw,&events,&[],&DeferredCandidates::default());
         assert_eq!(f.positions,vec![[(1,2),(2,3)],[(3,4),(4,5)]]);
         let e=f.evaluation(&events,&SourceGeometry::new(raw));
         assert_eq!(e["relations"][0]["utf16Gap"],1);
