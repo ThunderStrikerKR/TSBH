@@ -38,7 +38,7 @@ fn remote_notice(analysis:&ReceptionAnalysis,selected_recipient:usize)->Option<&
 #[derive(Clone,Debug,PartialEq)]
 struct ReviewKey {
     id:String,raw:String,order_type:String,client_id:Option<String>,
-    recipients:Value,client_match:Value,price:Option<Value>,
+    recipients:Value,client_match:Value,price:Option<Value>,client_selection:Option<String>,
 }
 impl ReviewKey {
     // Compare the actual borrowed inputs before allocating any owned key.
@@ -48,7 +48,7 @@ impl ReviewKey {
         self.order_type==source.order_type && self.client_id==source.client_id &&
         &self.recipients==analysis.recognition.get("recipients").unwrap_or(&Value::Null) &&
         &self.client_match==source.client_match.as_ref().unwrap_or(&analysis.client_match) &&
-        self.price.as_ref()==source.pricing_preview.as_ref()
+        self.price.as_ref()==source.pricing_preview.as_ref() && self.client_selection==source.client_selection
     }
 }
 #[derive(Default)]
@@ -94,6 +94,16 @@ impl ReviewPanel {
         &mut self,ctx:&egui::Context,gateway:Arc<dyn BandoGateway>,
         source:Option<&WorkingReception>,analysis:Option<&ReceptionAnalysis>,
     ){
+        self.refresh_inner(ctx,gateway,source,analysis,true);
+    }
+    pub fn refresh_preview(&mut self,ctx:&egui::Context,gateway:Arc<dyn BandoGateway>,
+        source:Option<&WorkingReception>,analysis:Option<&ReceptionAnalysis>){
+        self.refresh_inner(ctx,gateway,source,analysis,false);
+    }
+    fn refresh_inner(
+        &mut self,ctx:&egui::Context,gateway:Arc<dyn BandoGateway>,
+        source:Option<&WorkingReception>,analysis:Option<&ReceptionAnalysis>,render_message:bool,
+    ){
         let (Some(source),Some(analysis))=(source,analysis) else {
             self.clear();return;
         };
@@ -109,7 +119,7 @@ impl ReviewPanel {
             order_type:source.order_type.clone(),client_id:source.client_id.clone(),
             recipients:analysis.recognition.get("recipients").cloned().unwrap_or(Value::Null),
             client_match:source.client_match.clone().unwrap_or_else(||analysis.client_match.clone()),
-            price:source.pricing_preview.clone(),
+            price:source.pricing_preview.clone(),client_selection:source.client_selection.clone(),
         };
             let same_source=self.key.as_ref().is_some_and(|last|
                 last.id==key.id && last.raw==key.raw);
@@ -177,7 +187,7 @@ impl ReviewPanel {
                     let response=gateway.execute(ReadOperation::OrderIssuesWithActions,request)?;
                     let issues=response.get("issues").and_then(Value::as_array)
                         .cloned().ok_or("확인할 내용을 불러오지 못했습니다.")?;
-                    let message=(||->Result<String,String>{
+                    let message=if render_message{(||->Result<String,String>{
                         let settings=gateway.load_settings()?;
                         let settings=settings.get("settings").filter(|v|v.is_object())
                             .ok_or("자동 메시지 설정을 확인할 수 없습니다.")?;
@@ -186,7 +196,7 @@ impl ReviewPanel {
                         }))?;
                         rendered["requestText"].as_str().map(str::to_owned)
                             .ok_or_else(||"문의 메시지 생성 결과를 확인할 수 없습니다.".into())
-                    })();
+                    })()}else{Ok(String::new())};
                     Ok((issues,message))
             });
         }
@@ -200,6 +210,18 @@ impl ReviewPanel {
                 self.ready=false;self.error=Some(error);
             }
             None=>{}
+        }
+    }
+    pub fn show_preview(&self,ui:&mut Ui,source:&WorkingReception,
+        analysis:&ReceptionAnalysis,selected_recipient:usize){
+        // Never paint an old source's results or a false empty-success
+        // state. A separate panel instance owns this advisory query.
+        if self.key.as_ref().is_some_and(|key|key.matches(source,analysis))&&
+            (self.ready()||self.error.is_some()){
+            let _=self.show_with_client_actions(ui,analysis,selected_recipient,false,false);
+        }else{
+            crate::status_notice::management_body_state_overlay(ui,
+                ui.available_rect_before_wrap(),Some("확인할 내용을 조회 중입니다."));
         }
     }
     pub fn ready(&self)->bool{self.ready && !self.pending.required() && self.error.is_none()}
