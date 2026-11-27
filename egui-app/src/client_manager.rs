@@ -1,6 +1,7 @@
 //! Native client manager: semantic parity with React ClientManager.
 //! Layout uses shared management components; validation and persistence are
 //! delegated to the Rust catalog client rules via BandoGateway.
+use crate::ui_layout::SharedUiClipExt as _;
 use crate::{automatic_message_manager::AutomaticMessageManager,
     client_search_tags, gateway::{BandoGateway,ReadOperation},
     theme::{self,ButtonRole}, typography};
@@ -535,7 +536,7 @@ impl ClientManager {
                         let row_rect=crate::table::fixed_row_rect(origin,index,first,table_width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT);
                         first_row_left.get_or_insert(row_rect.left());
                         crate::table::row_scope(table,("client-management-fixed-row",index),row_rect,|row|{
-                                row.set_clip_rect(rows_clip);
+                                row.restrict_shared_clip(rows_clip);
                                 if let Some(client)=rows.get(index).and_then(|&i|clients.get(i)){
                                     #[cfg(test)]
                                     crate::ui_test_support::record("data row",row_rect);
