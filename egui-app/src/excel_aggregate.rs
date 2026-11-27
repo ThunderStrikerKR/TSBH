@@ -89,7 +89,8 @@ fn checked_target_in(j:&jobs::Job,isolated:Option<&Path>)->Result<PathBuf,String
 }
 struct Temp(PathBuf);
 impl Drop for Temp{fn drop(&mut self){let _=fs::remove_file(&self.0);}}
-fn read_legacy_reply(base:&Path,record:&serde_json::Value,row:&serde_json::Value,cache:&mut HashMap<String,serde_json::Value>)->Result<Vec<String>,String>{
+type LegacyRows=HashMap<String,HashMap<u64,Vec<String>>>;
+fn read_legacy_reply(base:&Path,record:&serde_json::Value,row:&serde_json::Value,cache:&mut LegacyRows)->Result<Vec<String>,String>{
     let id=record["id"].as_str().ok_or("원본 회신 ID 누락")?;
     let digest=id.strip_prefix("factory-reply-").filter(|s|s.len()==64&&s.bytes().all(|c|c.is_ascii_hexdigit()))
         .ok_or("기존 회신 원본 ID를 검증할 수 없습니다.")?;
@@ -106,13 +107,17 @@ fn read_legacy_reply(base:&Path,record:&serde_json::Value,row:&serde_json::Value
         }
         let source=crate::native_workbooks::read_factory_reply("original.xlsx",&bytes)?;
         if source["id"].as_str()!=Some(id){return Err("회신 원본 식별자 불일치".into())}
-        cache.insert(id.to_owned(),source);
+        let mut index=HashMap::new();
+        for row in source["sourceRows"].as_array().ok_or("회신 원본 행 누락")?{
+            let number=row["row"].as_u64().ok_or("회신 원본 행 번호 오류")?;
+            let v=row["aggregateValues"].as_array().ok_or("회신 원본 열 누락")?;
+            let values=v.iter().map(|x|x.as_str().map(str::to_owned).ok_or_else(||"회신 원본 값 오류".to_owned())).collect::<Result<Vec<_>,_>>()?;
+            index.entry(number).or_insert(values);
+        }
+        cache.insert(id.to_owned(),index);
     }
-    let source=cache.get(id).ok_or("회신 원본 캐시 누락")?;
-    let original=source["sourceRows"].as_array().and_then(|rows|rows.iter().find(|r|r["row"]==row["row"]))
-        .ok_or("회신 원본 행 누락")?;
-    let v=original["aggregateValues"].as_array().ok_or("회신 원본 열 누락")?;
-    v.iter().map(|x|x.as_str().map(str::to_owned).ok_or_else(||"회신 원본 값 오류".into())).collect()
+    let number=row["row"].as_u64().ok_or("회신 원본 행 번호 오류")?;
+    cache.get(id).and_then(|rows|rows.get(&number)).cloned().ok_or_else(||"회신 원본 행 누락".into())
 }
 #[cfg(test)]
 fn crash_checkpoint(stage:&str){
@@ -121,16 +126,33 @@ fn crash_checkpoint(stage:&str){
     fs::write(root.join("crash-ready"),stage).expect("write crash checkpoint");
     loop{std::thread::sleep(Duration::from_millis(100));}
 }
+#[cfg(test)]
 pub(crate) fn publish(conn:&mut Connection,requested:&jobs::Job,base:&Path)->Result<(),String>{
     publish_with(conn,requested,base,|_|Ok(()))
 }
-fn publish_with<F>(conn:&mut Connection,requested:&jobs::Job,base:&Path,mut checkpoint:F)->Result<(),String>
+#[cfg(test)]
+fn publish_with<F>(conn:&mut Connection,requested:&jobs::Job,base:&Path,checkpoint:F)->Result<(),String>
 where F:FnMut(&str)->Result<(),String>{
-    // Capture generation and projected rows from a consistent SQLite read.
+    publish_cached(conn,requested,base,&mut HashMap::new(),checkpoint)
+}
+struct Prepared{revision:i64,binding:Vec<String>,target:PathBuf,temp:Temp,hash:String}
+type PreparedCache=HashMap<String,Prepared>;
+fn publish_cached<F>(conn:&mut Connection,requested:&jobs::Job,base:&Path,prepared:&mut PreparedCache,mut checkpoint:F)->Result<(),String>
+where F:FnMut(&str)->Result<(),String>{
     let tx=conn.transaction().map_err(err)?;
+    let candidate=prepared.remove(&requested.path);
     let Some(j)=jobs::current(&tx,requested)? else{return Ok(())};
     if j.desired<=j.saved{return Ok(())}
     let binding=jobs::legacy_ids(&tx,&j)?;
+    let cached=candidate.filter(|p|p.revision==j.desired&&p.binding==binding);
+    let stage=if let Some(p)=cached{
+        tx.commit().map_err(err)?;
+        // Retained bytes are never trusted without rechecking the hash and
+        // destination. A missing/damaged temp is discarded on this attempt.
+        if checked_target(&j)?!=p.target||file_hash(&p.temp.0)?!=p.hash{return Err("재시도 임시 Excel 검증 실패".into())}
+        checkpoint("reuse_prepared")?;
+        p
+    }else{
     let mut cache=HashMap::new();
     let rows=jobs::daily_rows_with_binding(&tx,&j,&binding,|record,row|read_legacy_reply(base,record,row,&mut cache))?;
     tx.commit().map_err(err)?;
@@ -157,24 +179,34 @@ where F:FnMut(&str)->Result<(),String>{
     checkpoint("after_temp_write")?;
     let hash=format!("{:x}",Sha256::digest(&bytes));
     if file_hash(&tmp.0)?!=hash{return Err("임시 취합 Excel 해시 불일치".into())}
+    Prepared{revision:j.desired,binding:binding.clone(),target,temp:tmp,hash}
+    };
     checkpoint("before_commit_lock")?;
     // Hold only the short final publish transaction; concurrent writers cannot
     // replace a newer generation with this obsolete snapshot.
     let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(err)?;
     let Some(latest)=jobs::current(&tx,&j)? else{return Ok(())};
     if latest.desired!=j.desired||latest.saved>=j.desired||jobs::legacy_ids(&tx,&j)?!=binding{return Ok(())}
-    if checked_target(&j)?!=target{return Err("취합 보관함 경로 변경".into())}
+    if checked_target(&j)?!=stage.target{return Err("취합 보관함 경로 변경".into())}
     // Same-directory rename replaces the destination without truncating it
     // first. On Windows a sharing violation leaves the previous file intact.
     #[cfg(test)]
     crash_checkpoint("before_replace");
     checkpoint("before_replace")?;
-    fs::rename(&tmp.0,&target).map_err(err)?;
+    if let Err(e)=fs::rename(&stage.temp.0,&stage.target){
+        // Bounded retention: only verified files for failed replacements,
+        // at most eight; drop removes the temporary file on eviction.
+        if prepared.len()>=8{
+            if let Some(key)=prepared.keys().next().cloned(){prepared.remove(&key);}
+        }
+        prepared.insert(j.path.clone(),stage);
+        return Err(err(e))
+    }
     #[cfg(test)]
     crash_checkpoint("after_replace");
     #[cfg(unix)]
-    fs::File::open(dir).and_then(|f|f.sync_all()).map_err(err)?;
-    jobs::mark_saved(&tx,&j,&hash)?;
+    fs::File::open(stage.target.parent().ok_or("취합 저장 폴더 누락")?).and_then(|f|f.sync_all()).map_err(err)?;
+    jobs::mark_saved(&tx,&j,&stage.hash)?;
     #[cfg(test)]
     crash_checkpoint("after_mark_before_commit");
     tx.commit().map_err(err)?;
@@ -206,9 +238,10 @@ fn clean_stale_temps(conn:&mut Connection,min_age:Duration)->Result<(),String>{
     }
     Ok(())
 }
-fn run(reconcile:bool)->Result<Option<Duration>,String>{
+fn run(reconcile:bool,prepared:&mut PreparedCache)->Result<Option<Duration>,String>{
     let (mut conn,base)=crate::factory_reply_inbox::open_db()?;
     if reconcile{
+        prepared.clear();
         let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(err)?;
         let configured=jobs::archive_directory_v2(&tx)?.filter(|p|!p.trim().is_empty()).map(PathBuf::from);
         let root=if crate::business_state::test_launch(){Some(crate::business_state::test_directory("Excel")?)}else{
@@ -221,12 +254,14 @@ fn run(reconcile:bool)->Result<Option<Duration>,String>{
     }else{jobs::initialize(&conn)?;}
     let now=Utc::now().timestamp();
     for job in jobs::pending_initialized(&conn,now,16)?{
-        if let Err(e)=publish(&mut conn,&job,&base){
+        if let Err(e)=publish_cached(&mut conn,&job,&base,prepared,|_|Ok(())){
             jobs::mark_failed(&conn,&job,Utc::now().timestamp(),&e)?;
         }
     }
     let now=Utc::now().timestamp();
-    Ok(jobs::next_due(&conn)?.map(|due|Duration::from_secs(due.saturating_sub(now).max(0) as u64)))
+    let next=jobs::next_due(&conn)?;
+    if next.is_none(){prepared.clear();}
+    Ok(next.map(|due|Duration::from_secs(due.saturating_sub(now).max(0) as u64)))
 }
 /// Start once on the first application frame, not once per poll interval.
 pub fn start(){
@@ -254,7 +289,8 @@ pub(crate) fn notify(reconcile:bool){
     if let Some(Some(tx))=WORKER.get(){let _=tx.try_send(());}
 }
 fn worker_loop(rx:Receiver<()>){
-    worker_loop_with(rx,&RECONCILE_REQUESTED,WORKER_ERROR_RETRY,run);
+    let mut prepared=HashMap::new();
+    worker_loop_with(rx,&RECONCILE_REQUESTED,WORKER_ERROR_RETRY,|reconcile|run(reconcile,&mut prepared));
 }
 fn worker_loop_with<F>(rx:Receiver<()>,requested_flag:&AtomicBool,error_retry:Duration,mut run_work:F)
 where F:FnMut(bool)->Result<Option<Duration>,String>{
@@ -385,13 +421,22 @@ mod tests{
         let mut f=Fixture::new();f.update(1);publish(&mut f.conn,&f.job,&f.root).unwrap();
         let old=fs::read(&f.job.path).unwrap();
         let lock=fs::OpenOptions::new().read(true).share_mode(0).open(&f.job.path).unwrap();
-        f.update(2);let e=publish(&mut f.conn,&f.job,&f.root).unwrap_err();
+        let mut prepared=HashMap::new();
+        f.update(2);let e=publish_cached(&mut f.conn,&f.job,&f.root,&mut prepared,|_|Ok(())).unwrap_err();
+        assert_eq!(prepared.len(),1);
+        let retained=prepared[&f.job.path].temp.0.clone();assert!(retained.is_file());
         jobs::mark_failed(&f.conn,&f.job,100,&e).unwrap();
         assert_eq!(jobs::current(&f.conn,&f.job).unwrap().unwrap().saved,1);
         drop(lock);assert_eq!(fs::read(&f.job.path).unwrap(),old);
         assert!(jobs::jobs(&f.conn,104,false).unwrap().is_empty());
         let pending=jobs::jobs(&f.conn,105,false).unwrap();assert_eq!(pending.len(),1);
-        publish(&mut f.conn,&pending[0],&f.root).unwrap();
+        let mut reused=false;
+        publish_cached(&mut f.conn,&pending[0],&f.root,&mut prepared,|stage|{
+            if stage=="reuse_prepared"{reused=true;}
+            assert_ne!(stage,"before_temp_open");
+            Ok(())
+        }).unwrap();
+        assert!(reused);assert!(prepared.is_empty());assert!(!retained.exists());
         assert_eq!(jobs::current(&f.conn,&f.job).unwrap().unwrap().saved,2);
     }
     #[test]
