@@ -1907,7 +1907,8 @@ fn field_blend_record(units:&[u16],first:&Value,projection:&Value,shadow:&Value,
         v["supportVersion"]==4&&v["featureVersion"]==1&&v["contributionVersion"]==2&&
         v["contextQuality"]["status"]=="diagnostic_screen_pass"&&v["candidateIds"]==loc["candidates"]);
     let report=reports.next()?;if reports.next().is_some(){return None;}
-    if shadow_top(report,&allowed)!=selected["diagnosticCandidate"].as_str(){return None;}
+    let top=shadow_top(report,&allowed)?;
+    if Some(top)!=selected["diagnosticCandidate"].as_str(){return None;}
     let mut sample=shadow_distribution(report,&allowed,actual)?;
     sample.label=label;
     let old=allowed.iter().position(|id|*id==old)?;
@@ -2724,6 +2725,43 @@ mod tests{
         let evaluated=assert_equivalent(&p);
         assert_eq!(evaluated["combinedEvaluation"]["status"],"compared_diagnostic_only");
         assert_eq!(evaluated["combinedEvaluation"]["groups"][0]["evaluated"],1);
+    }
+    #[test]
+    fn field_blend_calibration_weights_and_outside_are_independent(){
+        for task in ["type","product","variant","quantity"]{
+            let group=(task.to_owned(),"base".to_owned(),"traced_partial".to_owned());
+            let make=|actual|FieldBlendRecord{old:0,shadow:ShadowCalibrationSample{
+                distribution:vec![0.05,0.94,0.01],actual,label:"explicit_correction"}};
+            let mut cal=FieldCalibration::default();
+            assert!(cal.blend_sample(&make(1)).is_none());
+            for _ in 0..MIN_CALIBRATION_ORDERS{cal.add_order(&[make(1)]);}
+            let mut fits=BTreeMap::<FieldGroup,BlendFit>::new();
+            let mut fit=BlendFit::default();
+            for _ in 0..MIN_BLEND_ORDERS{fit.add_order(&[cal.blend_sample(&make(1)).unwrap()]);}
+            assert!(fit.weight().is_some());
+            fits.insert(group.clone(),fit);
+            assert_eq!(fits.len(),1);
+            let sample=cal.blend_sample(&make(1)).unwrap();
+            assert!((sample.legacy.iter().sum::<f64>()-1.0).abs()<1e-10);
+            assert_eq!(field_blend_top(&sample,1.0),Some(1));
+            let outside=BlendSample{legacy:vec![0.0,0.0,1.0],shadow:vec![0.0,0.0,1.0],
+                actual:2,label:"explicit_correction",legacy_choice:0,transfer_block:None};
+            assert_eq!(field_blend_top(&outside,1.0),None);
+        }
+    }
+    #[test]
+    fn field_blend_rejects_overlapping_time_windows_and_duplicate_orders(){
+        let mut config=json!({"fitStart":"2026-01-01T00:00:00Z","weightStart":"2026-02-01T00:00:00Z",
+            "testStart":"2026-03-01T00:00:00Z","testEnd":"2026-04-01T00:00:00Z",
+            "evaluationAsOf":"2026-05-01T00:00:00Z","clientBuildVersion":"test"});
+        let order=json!({"id":"a"});
+        let result=learn_field_blend_weights(&json!({"config":config,"orders":[order.clone()]})).unwrap();
+        assert_eq!(result["models"],json!([]));
+        assert_eq!(result["excludedOrders"],1);
+        assert_eq!(result["automaticChangeAuthorized"],false);
+        assert!(learn_field_blend_weights(&json!({"config":config,"orders":[order.clone(),order.clone()]})).is_err());
+        config["weightStart"]=config["testStart"].clone();
+        assert!(learn_field_blend_weights(&json!({"config":config,"orders":[order]})).is_err());
     }
     #[test]
     fn performance_shadow_grid_matches_reference_losses(){
