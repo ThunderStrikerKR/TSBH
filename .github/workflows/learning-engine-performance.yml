@@ -26,11 +26,12 @@ jobs:
         shell: pwsh
         run: |
           # A Cargo filter matching no tests can still return exit code zero.
-          # Require all four P08-07 regression tests before accepting this job.
+          # Require the P08 regression tests before accepting this job.
           $listed = cargo test --manifest-path egui-app/Cargo.toml performance_ -- --list
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $expected = @(
             'performance_shared_context_benchmark',
+            'performance_streamed_fact_proof_preserves_v1_bytes',
             'performance_incremental_facts_preserve_unchanged_rows',
             'performance_combined_confirmation_shares_exact_comparison',
             'performance_shadow_grid_matches_reference_losses'
@@ -51,6 +52,10 @@ jobs:
           cargo test --manifest-path egui-app/Cargo.toml recognition_learning_store_tests -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml learning_two_database_disk_replay_uses_real_snapshot_and_audit_paths -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml learning_raw_audit_digest_detects_same_id_edits_missing_rows_and_null -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml audit_batch_reads_complete_selected_pages_and_rejects_oversized_history -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml blend_registry_stores_immutable_revisions_and_separate_selection -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
