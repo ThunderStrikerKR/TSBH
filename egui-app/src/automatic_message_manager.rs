@@ -709,25 +709,14 @@ impl AutomaticMessageManager {
         &mut self,ctx:&Context,area:egui::Rect,gateway:Arc<dyn BandoGateway>
     ){
         let Some(destination)=self.pending.clone()else{return;};
-        let mut cancel=false;let mut discard=false;let mut save=false;
         crate::popup::modal_backdrop(ctx,"message-editor-leave-backdrop",false);
-        crate::popup::show_decision_window(ctx,"저장하지 않은 변경사항","message-editor-leave",area,|dialog|{
-            crate::popup::decision_workspace(dialog,|decision|{
-                cancel=decision.header("저장하지 않은 변경사항","취소",!self.busy()
-                );
-                decision.body(|dialog|{
-                    dialog.label(typography::body(
-                        "자동 메시지 편집 변경사항을 저장할까요?"
-                    ));
-                });
-                decision.actions(|actions|{
-                    save=crate::button::action(actions,"저장하고 이동",ButtonRole::Primary,
-                        self.writable()&&!self.busy()).clicked();
-                    discard=crate::button::action(actions,"저장 안 함",ButtonRole::Danger,
-                        !self.busy()).clicked();
-                });
-            });
-        });
+        let decision=crate::popup::show_save_confirmation(
+            ctx,area,"message-editor-leave","저장하지 않은 변경사항",
+            "자동 메시지 편집 변경사항을 저장할까요?","저장하고 이동",!self.busy(),self.writable()&&!self.busy()
+        );
+        let cancel=decision==crate::popup::ChangeDecision::Cancel;
+        let discard=decision==crate::popup::ChangeDecision::Discard;
+        let save=decision==crate::popup::ChangeDecision::Save;
         if cancel{self.pending=None;}
         else if discard{
             self.discard_active();
