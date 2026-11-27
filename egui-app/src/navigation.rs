@@ -1,5 +1,4 @@
 //! Shared date selection, segmented navigation and recipient/count traversal.
-use crate::ui_layout::geometry::SharedUiClipExt as _;
 use crate::ui_layout::geometry::SharedPainterClipExt as _;
 use crate::ui_layout::geometry::SharedAllocationExt as _;
 use crate::ui_layout::geometry::AlignedUiBuilderExt as _;

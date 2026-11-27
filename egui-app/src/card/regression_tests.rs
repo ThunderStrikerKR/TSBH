@@ -4,7 +4,6 @@
 use eframe::egui::{self,Color32,Frame,Rect,Sense,Vec2};
 
 use crate::{theme};
-use crate::ui_primitives::*;
 
 
 

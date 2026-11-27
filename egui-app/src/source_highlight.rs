@@ -655,8 +655,9 @@ pub fn layout(
     layout_with_states(raw,spans,selected_recipient,active,None,None,width,font,color)
 }
 
-/// Used only by the manual source viewer, not by normal Reception.
-pub fn layout_manual(
+/// Test-only reference for manual source layout without recommendations.
+#[cfg(test)]
+pub(crate) fn layout_manual(
     raw:&str,spans:&[LinkedSpan],
     selected_recipient:Option<&str>,active:Option<&LinkKey>,
     assigned_ids:&HashSet<String>,width:f32,font:FontId,color:Color32
@@ -749,9 +750,9 @@ pub fn block_shapes(
     )
 }
 
-/// Evidence fill + 1pt outlined state for the manual classification popup.
-/// Reception still calls block_shapes() without a manual-state override.
-pub fn block_shapes_manual(
+/// Test-only reference for manual evidence painting without recommendations.
+#[cfg(test)]
+fn block_shapes_manual(
     raw:&str,galley:&egui::Galley,galley_pos:egui::Pos2,
     spans:&[LinkedSpan],selected_recipient:Option<&str>,
     active:Option<&LinkKey>,assigned_ids:&HashSet<String>,clip:egui::Rect,
