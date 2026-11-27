@@ -25,7 +25,7 @@ impl AlignedUiBuilderExt for UiBuilder{
 /// Size constraints use the same logical lattice as explicit placements.
 /// Keep egui's next-widget-relative semantics: a fixed constraint sets
 /// both bounds, while a minimum reservation must still permit growth.
-pub(crate) fn aligned_extent(value:f32)->f32{
+fn aligned_extent(value:f32)->f32{
     use egui::emath::GuiRounding as _;
     value.round_ui()
 }
