@@ -43,9 +43,16 @@ pub(crate) fn attach_recognition_baseline(order:&mut Value,source:&WorkingRecept
     let Some(first)=source.analysis_evidence.as_ref().filter(|v|
         v["recipients"].is_array() && v["candidates"].is_array())
     else{return;};
+    // Capture the exact accepted audit identities at confirmation. A
+    // later DB read cannot interpret missing rows as no user intervention.
+    let audit_ids=source.edit_history.iter().filter(|event|
+        event["sourceRaw"].as_str()==Some(source.raw.as_str())&&
+        &event["initialAnalysis"]==first)
+        .map(|event|event["id"].clone()).collect::<Vec<_>>();
     if let Some(object)=order.as_object_mut(){
         object.insert("recognitionBaseline".into(),json!({
             "schemaVersion":1,
+            "auditEventIds":audit_ids,
             "initialAnalysis":first,
             "sourceInputMethod":source.source_input_method,
             "finalClientId":source.client_id,
