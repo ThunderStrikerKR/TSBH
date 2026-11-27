@@ -1191,7 +1191,8 @@ pub(crate) fn sync_recognition_learning(ids:&[String])->Result<Value,String>{
 pub(crate) fn recognition_learning_support(input:&Value)->Result<Value,String>{
     let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
     if !mode.trim().eq_ignore_ascii_case("local"){return Err("학습 지지도는 로컬 DB에서만 조회합니다.".into());}
-    PreviewStore::recognition_learning_support(input)
+    PreviewStore::recognition_learning_support(input,|orders|
+        recognition::execute("evaluate_shadow_predictions",serde_json::json!({"orders":orders})))
 }
 
 pub(crate) fn recognition_learning_integrity()->Result<Value,String>{

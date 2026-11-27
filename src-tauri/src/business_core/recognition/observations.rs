@@ -782,9 +782,185 @@ pub(super) fn compare(payload:&Value)->Result<Value,String>{
         "finalClientSelection":baseline.get("finalClientSelection")}))
 }
 
+// Evaluate paired observations on each tier separately; do not pool tiers.
+#[derive(Default)]
+struct PairedEvaluation{
+    eligible:u64,paired:u64,legacy_correct:u64,shadow_correct:u64,
+    both_correct:u64,legacy_only:u64,shadow_only:u64,both_wrong:u64,
+    abstained:u64,outside:u64,orders:u64,paired_orders:u64,
+    order_legacy_sum:f64,order_shadow_sum:f64,
+}
+impl PairedEvaluation{
+    fn observe(&mut self,legacy:&str,actual:&str,predicted:Option<&str>,outside:bool){
+        self.eligible+=1;self.outside+=u64::from(outside);
+        let Some(predicted)=predicted else{self.abstained+=1;return;};
+        self.paired+=1;
+        let old=legacy==actual;let new=predicted==actual;
+        self.legacy_correct+=u64::from(old);self.shadow_correct+=u64::from(new);
+        match (old,new){(true,true)=>self.both_correct+=1,(true,false)=>self.legacy_only+=1,
+            (false,true)=>self.shadow_only+=1,(false,false)=>self.both_wrong+=1}
+    }
+    fn merge_order(&mut self,o:Self){
+        if o.eligible==0{return;}
+        self.orders+=1;self.eligible+=o.eligible;self.paired+=o.paired;
+        self.legacy_correct+=o.legacy_correct;self.shadow_correct+=o.shadow_correct;
+        self.both_correct+=o.both_correct;self.legacy_only+=o.legacy_only;
+        self.shadow_only+=o.shadow_only;self.both_wrong+=o.both_wrong;
+        self.abstained+=o.abstained;self.outside+=o.outside;
+        if o.paired>0{
+            self.paired_orders+=1;
+            self.order_legacy_sum+=o.legacy_correct as f64/o.paired as f64;
+            self.order_shadow_sum+=o.shadow_correct as f64/o.paired as f64;
+        }
+    }
+    fn wire(&self)->Value{
+        let fraction=|n:u64,d:u64|(d>0).then(||n as f64/d as f64);
+        json!({"eligibleObservations":self.eligible,"pairedObservations":self.paired,
+            "eligibleOrders":self.orders,"pairedOrders":self.paired_orders,
+            "shadowAbstentions":self.abstained,"outsideCandidateObservations":self.outside,
+            "coverage":fraction(self.paired,self.eligible),
+            "legacyAgreement":fraction(self.legacy_correct,self.paired),
+            "shadowAgreement":fraction(self.shadow_correct,self.paired),
+            "bothAgree":self.both_correct,"legacyOnlyAgrees":self.legacy_only,
+            "shadowOnlyAgrees":self.shadow_only,"bothDisagree":self.both_wrong,
+            "orderMacroLegacyAgreement":(self.paired_orders>0).then(||self.order_legacy_sum/self.paired_orders as f64),
+            "orderMacroShadowAgreement":(self.paired_orders>0).then(||self.order_shadow_sum/self.paired_orders as f64)})
+    }
+}
+fn shadow_top<'a>(report:&'a Value,allowed:&BTreeSet<&str>)->Option<&'a str>{
+    let mass=report["totalSupportMass"].as_f64().filter(|v|v.is_finite()&&*v>0.0)?;
+    let outside=report["outsideCandidateSupportMass"].as_f64().filter(|v|v.is_finite()&&*v>=0.0)?;
+    let mut scores=Vec::new();let mut seen=BTreeSet::new();
+    for c in report["candidates"].as_array()?{
+        let id=c["candidate"].as_str().filter(|id|allowed.contains(id))?;
+        let score=c["supportMass"].as_f64().filter(|v|v.is_finite()&&*v>=0.0)?;
+        if !seen.insert(id){return None;}
+        scores.push((id,score));
+    }
+    if &seen!=allowed || (scores.iter().map(|x|x.1).sum::<f64>()+outside-mass).abs()>1e-7*mass.max(1.0){return None;}
+    scores.sort_by(|a,b|b.1.total_cmp(&a.1));
+    let (id,score)=*scores.first()?;
+    (score>outside+1e-10&&scores.get(1).is_none_or(|x|score>x.1+1e-10)).then_some(id)
+}
+pub(super) fn evaluate_shadow(payload:&Value)->Result<Value,String>{
+    let orders=payload["orders"].as_array().filter(|v|v.len()<=250).ok_or("평가 주문 한도 오류")?;
+    let mut seen=BTreeSet::new();
+    let mut totals=BTreeMap::<(String,String,String),PairedEvaluation>::new();
+    let mut skipped=0u64;let mut labels_excluded=0u64;
+    let mut missing_prediction=0u64;let mut invalid_join=0u64;
+    let date=|v:&Value|v.as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
+    for order in orders{
+        let id=order["id"].as_str().filter(|s|!s.is_empty()).ok_or("평가 주문 ID 오류")?;
+        if !seen.insert(id){return Err("평가 주문 ID 중복".into());}
+        let snap=&order["confirmationSnapshot"];
+        let first=&snap["recognitionBaseline"]["initialAnalysis"];
+        let capture=&first["initialPredictionCapture"];
+        let shadow=&capture["learningShadow"];
+        let (Some(start),Some(end),Some(predicted),Some(confirmed))=(date(&capture["analysisStartedAt"]),
+            date(&capture["analysisCompletedAt"]),date(&shadow["capturedAt"]),date(&order["confirmedAt"]))
+            else{skipped+=1;continue;};
+        if order["learningActive"]!=true || order["deletedAt"].as_str().is_some_and(|v|!v.is_empty()) ||
+            capture["origin"]!="native_reception_worker" || capture["orderId"].as_str()!=Some(id) ||
+            capture["schemaVersion"]!=1 || shadow["status"]!="captured_shadow_support" ||
+            shadow["sourceDigestsMatched"]!=true || shadow["decisionChanged"]!=false ||
+            shadow["modelId"].as_str().is_none_or(|s|!s.starts_with("shadow-")||s.len()!=71) ||
+            snap["at"]!=order["confirmedAt"] || !(start<=end&&end<=predicted&&predicted<confirmed){
+            skipped+=1;continue;
+        }
+        let Some(events)=order["recognitionAuditEvents"].as_array()else{skipped+=1;continue;};
+        if events.iter().any(|e|date(&e["at"]).is_none_or(|t|t<=predicted||t>confirmed)){
+            skipped+=1;continue;
+        }
+        let compared=compare(order)?;
+        if compared["auditCoverage"]!="verified_manifest"{skipped+=1;continue;}
+        let raw=snap["raw"].as_str().ok_or("평가 원문 누락")?;
+        let units=raw.encode_utf16().collect::<Vec<_>>();
+        let projection=super::learning_context::lookup(&json!({"raw":raw,"initialAnalysis":first}))?;
+        let mut per_order=BTreeMap::<(String,String,String),PairedEvaluation>::new();
+        let mut used=BTreeSet::new();
+        for obs in rows(&compared["observations"]){
+            let label=match obs["outcome"].as_str(){
+                Some("explicit_correction_observed") if obs["eligibleForCandidateLearning"]==true=>"explicit_correction",
+                Some("unchanged_observed") if obs["eligibleForCandidateLearning"]==true=>"unchanged_proxy",
+                _=>{labels_excluded+=1;continue;}
+            };
+            let (Some(old),Some(actual),Some(s),Some(task))=(singleton(&obs["initialCandidates"]),
+                singleton(&obs["finalCandidates"]),position(&units,&obs["source"]),obs["task"].as_str())
+                else{labels_excluded+=1;continue;};
+            if label=="explicit_correction" && (singleton(&obs["positiveCandidates"])!=Some(actual)||
+                singleton(&obs["negativeCandidates"])!=Some(old)||old==actual){labels_excluded+=1;continue;}
+            if !used.insert((s,task)){return Err("평가 관측 위치 중복".into());}
+            let expected=if task=="recipient_ownership"{&projection["entries"]}else{&projection["fieldEntries"]};
+            let mut matches=rows(expected).filter(|v|position(&units,&v["source"])==Some(s)&&
+                (task=="recipient_ownership"||v["task"].as_str()==Some(task)));
+            let Some(expected)=matches.next()else{invalid_join+=1;continue;};
+            if matches.next().is_some(){invalid_join+=1;continue;}
+            let mut loc=rows(&shadow["locations"]).filter(|v|v["task"].as_str()==Some(task)&&position(&units,v)==Some(s));
+            let location=loc.next();
+            if loc.next().is_some(){invalid_join+=1;continue;}
+            let mut tiers=BTreeSet::new();
+            for context in rows(&expected["contexts"]){
+                let (Some(key),Some(level))=(context["key"].as_str(),context["level"].as_str())else{invalid_join+=1;continue;};
+                if !tiers.insert(level){invalid_join+=1;continue;}
+                let counter=per_order.entry((task.to_owned(),level.to_owned(),label.to_owned())).or_default();
+                let Some(location)=location else{missing_prediction+=1;counter.observe(old,actual,None,false);continue;};
+                let allowed=rows(&location["candidates"]).filter_map(Value::as_str).collect::<BTreeSet<_>>();
+                if allowed.is_empty() || allowed.len()!=rows(&location["candidates"]).count()||!allowed.contains(old) ||
+                    !rows(&location["contextKeys"]).any(|v|v.as_str()==Some(key)){
+                    invalid_join+=1;counter.observe(old,actual,None,false);continue;
+                }
+                let mut reports=rows(&shadow["contexts"]).filter(|r|r["task"].as_str()==Some(task)&&
+                    r["contextKey"].as_str()==Some(key)&&
+                    rows(&r["candidateIds"]).filter_map(Value::as_str).collect::<BTreeSet<_>>()==allowed);
+                let report=reports.next();
+                let top=if reports.next().is_none(){report.and_then(|r|shadow_top(r,&allowed))}else{None};
+                counter.observe(old,actual,top,!allowed.contains(actual));
+            }
+        }
+        for (key,value) in per_order{totals.entry(key).or_default().merge_order(value);}
+    }
+    let groups=totals.into_iter().map(|((task,level,label),v)|json!({"task":task,"contextLevel":level,
+        "labelKind":label,"metrics":v.wire()})).collect::<Vec<_>>();
+    Ok(json!({"status":"paired_shadow_diagnostic_only","uniqueOrders":seen.len(),
+        "excludedOrders":skipped,"excludedUnverifiedLabels":labels_excluded,
+        "missingPredictionTierObservations":missing_prediction,"invalidJoinObservations":invalid_join,
+        "groups":groups,"representativeLabelsVerified":false,"historicalModelVerified":false,
+        "sourceProvenanceVerified":false,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn paired_metrics_keep_abstentions_and_order_weights_separate(){
+        let mut a=PairedEvaluation::default();
+        a.observe("old","new",Some("new"),false);
+        a.observe("old","old",None,false);
+        let mut b=PairedEvaluation::default();
+        for _ in 0..3{b.observe("old","old",Some("new"),false);}
+        let mut total=PairedEvaluation::default();
+        total.merge_order(a);total.merge_order(b);
+        let v=total.wire();
+        assert_eq!(v["pairedObservations"],4);
+        assert_eq!(v["eligibleObservations"],5);
+        assert_eq!(v["coverage"],0.8);
+        assert_eq!(v["shadowAgreement"],0.25);
+        assert_eq!(v["legacyAgreement"],0.75);
+        assert_eq!(v["orderMacroShadowAgreement"],0.5);
+        assert_eq!(v["orderMacroLegacyAgreement"],0.5);
+        assert_eq!(v["shadowOnlyAgrees"],1);assert_eq!(v["legacyOnlyAgrees"],3);
+    }
+    #[test]
+    fn shadow_top_rejects_tie_outside_mass_and_inconsistent_totals(){
+        let allowed=BTreeSet::from(["a","b"]);
+        let r=|a:f64,b:f64,o:f64|json!({"totalSupportMass":a+b+o,"outsideCandidateSupportMass":o,
+            "candidates":[{"candidate":"a","supportMass":a},{"candidate":"b","supportMass":b}]});
+        assert_eq!(shadow_top(&r(2.0,1.0,0.0),&allowed),Some("a"));
+        assert_eq!(shadow_top(&r(1.0,1.0,0.0),&allowed),None);
+        assert_eq!(shadow_top(&r(2.0,1.0,3.0),&allowed),None);
+        let mut bad=r(2.0,1.0,0.0);bad["totalSupportMass"]=json!(9.0);
+        assert_eq!(shadow_top(&bad,&allowed),None);
+    }
     fn owner_fixture()->Value{
         // Emoji makes the UTF-16 positions differ from byte offsets.
         let raw="😀김가상\n010-1234-5678\n박가상";
