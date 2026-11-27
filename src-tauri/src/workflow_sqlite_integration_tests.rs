@@ -1044,26 +1044,24 @@ fn native_brand_sqlite_delete_checks_links_stale_entity_and_reopen(){
         .find(|b|b["name"]=="SYNTHETIC_DELETE_BRAND_148").unwrap().clone();
     let id=brand["id"].as_str().unwrap();
     let request=json!({"expectedRevision":created["revision"],"action":"delete_brand",
-        "data":{"brandId":id,"expectedEntity":brand}});
+        "data":{"brandId":id,"expectedEntity":brand,"expectedProductIds":[]}});
     let mut stale=request.clone();
     stale["data"]["expectedEntity"]["name"]=json!("stale");
     assert!(bando_data_access::patch_product_v2(&mut conn,&stale).is_err());
     assert_eq!(get_snapshot(&conn).unwrap(),created);
     let mut linked=stage_three(&created,"POSTPAID");
-    let old_link=linked["products"][0].get("brandId").cloned();
     linked["products"][0]["brandId"]=json!(id);
     let linked=write_snapshot(&mut conn,linked,created["revision"].as_u64().unwrap(),true).unwrap();
-    assert!(bando_data_access::patch_product_v2(&mut conn,&request).unwrap_err().contains("연결된 상품"));
+    assert!(bando_data_access::patch_product_v2(&mut conn,&request).unwrap_err().contains("연결 상품 목록이 변경"));
     assert_eq!(get_snapshot(&conn).unwrap(),linked);
-    let mut unlinked=linked.clone();
-    if let Some(old)=old_link{unlinked["products"][0]["brandId"]=old;}
-    else{unlinked["products"][0].as_object_mut().unwrap().remove("brandId");}
-    let unlinked=write_snapshot(&mut conn,unlinked,linked["revision"].as_u64().unwrap(),true).unwrap();
-    let deleted=bando_data_access::patch_product_v2(&mut conn,&request).unwrap();
-    let mut expected=unlinked.clone();
-    expected["revision"]=json!(unlinked["revision"].as_u64().unwrap()+1);
+    let mut approved=request.clone();
+    approved["data"]["expectedProductIds"]=json!([linked["products"][0]["id"]]);
+    let deleted=bando_data_access::patch_product_v2(&mut conn,&approved).unwrap();
+    let mut expected=linked.clone();
+    expected["revision"]=json!(linked["revision"].as_u64().unwrap()+1);
     expected["brands"].as_array_mut().unwrap().retain(|b|b["id"]!=id);
-    assert_eq!(deleted,expected,"only the selected brand and revision may change");
+    expected["products"][0]["brandId"]=Value::Null;
+    assert_eq!(deleted,expected,"only the selected brand, approved product link and revision may change");
     assert!(bando_data_access::patch_product_v2(&mut conn,&request).is_err());
     assert_eq!(get_snapshot(&conn).unwrap(),deleted);
     drop(conn);
