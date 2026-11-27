@@ -22,7 +22,7 @@ bando-data-access = { path = "../crates/bando-data-access" }
 calamine = "0.38"
 sha2 = "0.10"
 open = "5"
-rust_xlsxwriter = "0.91"
+rust_xlsxwriter = "=0.104.0"
 uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(windows)'.dependencies]
