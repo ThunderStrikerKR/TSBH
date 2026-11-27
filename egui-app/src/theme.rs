@@ -867,6 +867,36 @@ impl VisualState{
     }
 }
 
+/// Native checkbox selection is a persistent state; pointer/focus outlines are transient.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub(crate) struct CheckboxPalette {
+    pub fill:Color32,pub outline:Stroke,pub mark:Stroke,
+}
+pub(crate) fn checkbox_palette(checked:bool,state:VisualState)->Option<CheckboxPalette>{
+    // Unchecked and disabled widgets retain native egui appearance and accessibility.
+    if !checked || state==VisualState::Disabled{return None;}
+    let outline=match state{
+        VisualState::Hovered=>Stroke::new(BUTTON_HOVER_BORDER_WIDTH,SELECTION),
+        _=>Stroke::new(SELECTION_STROKE_WIDTH,SELECTED_ORDER),
+    };
+    Some(CheckboxPalette{
+        fill:CHECKBOX_CHECKED_BG,outline,
+        mark:Stroke::new(CHECKBOX_CHECKED_STROKE_WIDTH,CHECKBOX_CHECKED_MARK),
+    })
+}
+
+/// Scroll rail geometry is a semantic role, not a screen-local style.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum ScrollRailRole{Standard,Table}
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub(crate) struct ScrollRailGeometry{
+    pub width:f32,pub minimum_handle:f32,pub inner_margin:f32,pub outer_margin:f32,
+}
+pub(crate) const fn scroll_rail_geometry(role:ScrollRailRole)->ScrollRailGeometry{
+    let margin=match role{ScrollRailRole::Standard=>SPACE_4,ScrollRailRole::Table=>0.0};
+    ScrollRailGeometry{width:10.0,minimum_handle:44.0,inner_margin:margin,outer_margin:margin}
+}
+
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub(crate) enum SurfaceRole{
     Workspace,Header,Panel,Section,Summary,Input,Inset,Modal,ModalSection,
