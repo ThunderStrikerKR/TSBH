@@ -1045,7 +1045,29 @@ pub(crate) fn read_recognition_owner_statistics(ids:&[String])->Result<Value,Str
     if !mode.trim().eq_ignore_ascii_case("local"){
         return Err("귀속 학습 검증은 로컬 DB에서만 지원합니다.".into());
     }
-    let orders=crate::business_state::read_owner_snapshots(ids)?;
+    let mut orders=crate::business_state::read_owner_snapshots(ids)?;
+    // Audit history lives in the isolated reception DB. Read only the
+    // selected order IDs with bounded keyset pages, never the full history.
+    // Missing/failed history is an error, not an invented clean observation.
+    for order in &mut orders{
+        if order["confirmationSnapshot"]["recognitionBaseline"]["schemaVersion"]!=1
+            || order["deletedAt"].as_str().is_some_and(|v|!v.trim().is_empty()){continue;}
+        let order_id=order["id"].as_str().ok_or("확정 주문 ID 누락")?;
+        let mut events=Vec::new();
+        let mut cursor=Value::Null;
+        loop{
+            let page=PreviewStore::read_reception_audit_page(
+                &serde_json::json!({"orderId":order_id,"limit":250,"cursor":cursor}))?;
+            let batch=page["events"].as_array().ok_or("정정 감사 조회 결과 오류")?;
+            if events.len()+batch.len()>1000{return Err("주문별 정정 감사는 최대 1000건입니다.".into());}
+            events.extend(batch.iter().cloned());
+            let next=page["nextCursor"].clone();
+            if next.is_null(){break;}
+            if batch.is_empty()||next==cursor{return Err("정정 감사 조회 커서가 진행되지 않습니다.".into());}
+            cursor=next;
+        }
+        order["recognitionAuditEvents"]=serde_json::json!(events);
+    }
     let requested=ids.iter().collect::<std::collections::BTreeSet<_>>().len();
     let missing=requested.saturating_sub(orders.len());
     let mut summary=recognition::execute("summarize_owner_statistics",
