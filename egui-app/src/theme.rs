@@ -165,9 +165,9 @@ pub const ORANGE_EMPHASIS_BG: Color32 = Color32::from_rgb(59, 43, 27); // #3B2B1
 // Orange confirmation surfaces share a single palette regardless of
 // whether the trigger is a persistent review card or a one-touch hover.
 pub const ORANGE_EMPHASIS_TEXT:Color32=Color32::from_rgb(255,228,188);
-// A small checked icon needs stronger contrast than a full-row tint.
-pub const CHECKBOX_CHECKED_BG:Color32=Color32::from_rgb(140,76,16);
-pub const CHECKBOX_CHECKED_MARK:Color32=ORANGE_EMPHASIS_TEXT;
+// Checkbox marks are neutral; row/option selection retains its independent orange palette.
+pub const CHECKBOX_CHECKED_BG:Color32=RAISED;
+pub const CHECKBOX_CHECKED_MARK:Color32=BRIGHT;
 pub const CHECKBOX_CHECKED_STROKE_WIDTH:f32=2.0;
 pub const ONE_TOUCH_BG:Color32=ORANGE_EMPHASIS_BG;
 pub const ONE_TOUCH_TEXT:Color32=ORANGE_EMPHASIS_TEXT;
@@ -867,7 +867,7 @@ impl VisualState{
     }
 }
 
-/// Native checkbox selection is a persistent state; pointer/focus outlines are transient.
+/// Checkbox selection uses a neutral mark, not the orange row selection palette.
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub(crate) struct CheckboxPalette {
     pub fill:Color32,pub outline:Stroke,pub mark:Stroke,
@@ -877,7 +877,7 @@ pub(crate) fn checkbox_palette(checked:bool,state:VisualState)->Option<CheckboxP
     if !checked || state==VisualState::Disabled{return None;}
     let outline=match state{
         VisualState::Hovered=>Stroke::new(BUTTON_HOVER_BORDER_WIDTH,SELECTION),
-        _=>Stroke::new(SELECTION_STROKE_WIDTH,SELECTED_ORDER),
+        _=>Stroke::new(FRAME_STROKE_WIDTH,BORDER),
     };
     Some(CheckboxPalette{
         fill:CHECKBOX_CHECKED_BG,outline,
@@ -1024,7 +1024,9 @@ mod shared_visual_role_contract_tests{
         let selected=checkbox_palette(true,VisualState::Selected).unwrap();
         let hovered=checkbox_palette(true,VisualState::Hovered).unwrap();
         assert_eq!(selected.fill,CHECKBOX_CHECKED_BG);
-        assert_eq!(selected.outline.color,SELECTED_ORDER);
+        assert_eq!(selected.outline.color,BORDER);
+        assert_eq!(selected.fill,RAISED);
+        assert_eq!(selected.mark.color,BRIGHT);
         assert_eq!(hovered.outline.color,SELECTION);
         assert_eq!(selected.fill,hovered.fill);
         assert_eq!(selected.mark,hovered.mark);
