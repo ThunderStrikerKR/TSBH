@@ -2021,23 +2021,25 @@ fn query_learning_audit_digests(conn:&Connection,ids:&[String])->Result<std::col
 }
 
 fn query_reception_audit_batch(conn:&Connection,ids:&[String])->Result<std::collections::BTreeMap<String,Vec<Value>>,String>{
-    let unique=ids.iter().collect::<std::collections::BTreeSet<_>>();
+    let unique=ids.iter().map(String::as_str).collect::<std::collections::BTreeSet<_>>();
     if unique.len()>250||unique.iter().any(|id|id.trim().is_empty()){
         return Err("감사 조회 주문 범위 오류".into());
     }
-    let mut out=std::collections::BTreeMap::new();
+    let mut out=unique.iter().map(|id|((*id).to_owned(),Vec::<Value>::new())).collect::<std::collections::BTreeMap<_,_>>();
+    if unique.is_empty(){return Ok(out);}
     let mut total_rows=0usize;let mut total_bytes=0usize;
     let has_context:i64=conn.query_row(
         "SELECT count(*) FROM pragma_table_info('reception_edit_audit') WHERE name='context_json'",
         [],|r|r.get(0)).map_err(|e|e.to_string())?;
     let context=if has_context==1{"context_json"}else{"NULL"};
+    let placeholders=vec!["?";unique.len()].join(",");
     let sql=format!("SELECT id,order_id,source_raw,initial_analysis_json,before_rows_json,after_rows_json,recorded_at,{context}
-        FROM reception_edit_audit WHERE order_id=?1 ORDER BY recorded_at,id LIMIT 1001");
+        FROM reception_edit_audit WHERE order_id IN ({placeholders}) ORDER BY order_id,recorded_at,id LIMIT 4001");
     let mut stmt=conn.prepare(&sql).map_err(|e|e.to_string())?;
-    for id in unique{
-        let mut rows=stmt.query(params![id]).map_err(|e|e.to_string())?;
-        let mut events=Vec::new();
-        while let Some(row)=rows.next().map_err(|e|e.to_string())?{
+    let mut rows=stmt.query(rusqlite::params_from_iter(unique.iter().copied())).map_err(|e|e.to_string())?;
+    while let Some(row)=rows.next().map_err(|e|e.to_string())?{
+            let id=row.get::<_,String>(1).map_err(|e|e.to_string())?;
+            let events=out.get_mut(&id).ok_or("정정 감사 주문 범위 오류")?;
             total_rows+=1;
             for col in [2,3,4,5,7]{
                 match row.get_ref(col).map_err(|e|e.to_string())?{
@@ -2060,8 +2062,6 @@ fn query_reception_audit_batch(conn:&Connection,ids:&[String])->Result<std::coll
                 "sourceRaw":row.get::<_,String>(2).map_err(|e|e.to_string())?,
                 "initialAnalysis":parse(3)?,"beforeRows":parse(4)?,"afterRows":parse(5)?,
                 "at":row.get::<_,String>(6).map_err(|e|e.to_string())?,"context":context}));
-        }
-        out.insert(id.clone(),events);
     }
     Ok(out)
 }
@@ -2669,6 +2669,10 @@ mod reception_edit_audit_tests {
         assert_eq!(batch["o"][250]["id"],"e0250");
         assert!(batch["empty"].is_empty());
         assert!(!batch.contains_key("other"));
+        let all=query_reception_audit_batch(&conn,&["other".into(),"empty".into(),"o".into()]).unwrap();
+        assert_eq!(all["o"],batch["o"]);
+        assert_eq!(all["empty"],batch["empty"]);
+        assert_eq!(all["other"][0]["id"],"other");
         for i in 251..1001{
             conn.execute("INSERT INTO reception_edit_audit VALUES (?1,'o','709','{}','[]','[]','t',NULL)",
                 params![format!("e{i:04}")]).unwrap();
