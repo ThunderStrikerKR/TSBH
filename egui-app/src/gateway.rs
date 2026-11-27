@@ -1269,6 +1269,8 @@ pub(crate) fn recognition_learning_support(input:&Value)->Result<Value,String>{
             recognition::execute("calibrate_legacy_scores",serde_json::json!({"orders":orders,"config":config}))
         }else if let Some(config)=input.get("shadowCandidateCalibration"){
             recognition::execute("calibrate_shadow_candidates",serde_json::json!({"orders":orders,"config":config}))
+        }else if let Some(config)=input.get("fieldBlendWeightLearning"){
+            recognition::execute("learn_field_blend_weights",serde_json::json!({"orders":orders,"config":config}))
         }else if let Some(config)=input.get("blendWeightLearning"){
             recognition::execute("learn_blend_weights",serde_json::json!({"orders":orders,"config":config}))
         }else{recognition::execute("evaluate_shadow_predictions",serde_json::json!({"orders":orders}))}
