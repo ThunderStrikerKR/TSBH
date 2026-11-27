@@ -3,6 +3,15 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 
+// Exact evidence collected before the name ranking and business filters.
+// These are hypotheses, not permission to select a SKU. Keep the source
+// span relative to the original search slice and distinguish aliases.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct SourceCandidate {
+    pub(super) product_id:String,
+    pub(super) span:(usize,usize),
+    pub(super) literal:bool,
+}
 #[derive(Clone, Debug)]
 pub(crate) struct Decision {
     pub(crate) product_id: Option<String>,
@@ -16,6 +25,7 @@ pub(crate) struct Decision {
     pub(crate) candidates: Vec<Value>,
     pub(crate) alias_id: Option<String>,
     pub(crate) span: Option<(usize, usize)>,
+    pub(super) source_candidates:Vec<SourceCandidate>,
 }
 
 fn str_field<'a>(v: &'a Value, name: &str) -> &'a str {
@@ -394,9 +404,8 @@ fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
     if priority == 1 && xs.len() > 1 { return vec![]; }
     xs
 }
-fn name_entries<'a>(text: &str, ps: &[&'a Value],
+fn name_entries<'a>(text: &str, mut entries:Vec<Entry<'a>>,
     verified: &HashSet<String>) -> Vec<Entry<'a>> {
-    let mut entries: Vec<_> = ps.iter().filter_map(|p| evidence(text, p, verified)).collect();
     if no_holes(text) {
         entries.retain(|e| top(e.p, verified) != Some("PERFORATED"));
     } else if with_holes(text) {
@@ -473,11 +482,21 @@ fn conductor_semantic_entries<'a>(text: &str, ps: &[&'a Value]) -> Vec<Entry<'a>
 pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
     let ps = products(state);
     let verified = verified_bases(&ps);
-    let entries = name_entries(text, &ps, &verified);
+    let raw_entries:Vec<_>=ps.iter().filter_map(|p|evidence(text,p,&verified)).collect();
+    let mut source_candidates=raw_entries.iter().map(|e|SourceCandidate{
+        product_id:str_field(e.p,"id").to_owned(),span:e.span,literal:true
+    }).collect::<Vec<_>>();
+    let entries = name_entries(text, raw_entries, &verified);
     // parser.ts:487-510 filters brand/catalog and DEMO before options.
     let (mut entries,known_brand) =
         filter_business_candidates(text,state,&ps,entries);
     let aliases = alias_entries(text, state, client_id, &ps);
+    for (a,p) in &aliases{
+        if let Some(span)=find_term(text,str_field(a,"text"),true){
+            source_candidates.push(SourceCandidate{
+                product_id:str_field(p,"id").to_owned(),span,literal:false});
+        }
+    }
     let mut hint=code_color_hint(text,&ps);
     if let Some((base,_,term))=hint.clone() {
         // parser.ts::protectedCode guards against reinterpreting the final
@@ -650,6 +669,7 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
                 .unwrap_or_else(|| text.to_owned())),
         reason, candidates, alias_id: first_alias.map(|a|str_field(a,"id").to_owned()),
         span,
+        source_candidates,
     }
 }
 pub(crate) fn decision_json(decision: &Decision) -> Value {
