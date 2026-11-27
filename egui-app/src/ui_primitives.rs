@@ -275,55 +275,17 @@ pub fn form_field_label(ui:&mut Ui,label:&str)->Response {
 
 /// A selected item's fixed blue outline, with caller-owned inset and corner geometry.
 pub(crate) fn paint_selection_outline(painter:&egui::Painter,rect:Rect,radius:impl Into<egui::CornerRadius>){
-    painter.rect_stroke(rect,radius,Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION),egui::StrokeKind::Inside);
+    crate::highlight::paint_outline(painter,rect,radius,crate::highlight::Role::ChooserSelected);
 }
 
-pub(crate) fn button_hover_palette(hovered:bool,focused:bool)->(Option<Color32>,Option<Stroke>){
-    let fill=hovered.then_some(BUTTON_HOVER_TINT);
-    let border=if focused||hovered{Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,SELECTION))}
-        else{None};
-    (fill,border)
+pub(crate) use crate::highlight::button_hover_palette;
+pub(crate) fn paint_action_hover_corners(ui:&Ui,response:&Response,corners:egui::CornerRadius){
+    crate::highlight::action_hover(ui,response,corners,false);
 }
-
-/// Paint-only hover emphasis for every actionable rectangular control,
-/// including buttons with explicit fills that bypass egui's hovered fill.
-//// No layout, font metrics, border rect or hit area changes on hover.
-/// Hover paint must use the SAME corner geometry as its button.
-/// A rectangular highlight inside a rounded date group leaves blue diagonal
-/// slivers and gets clipped by the group's outer border.
-pub(crate) fn paint_action_hover_corners(
-    ui:&Ui,response:&Response,corners:egui::CornerRadius
-){
-    paint_action_hover_surface(ui,response,corners,false);
+pub(crate) fn paint_action_hover_surface(ui:&Ui,response:&Response,corners:egui::CornerRadius,light_surface:bool){
+    crate::highlight::action_hover(ui,response,corners,light_surface);
 }
-/// Preserve full widget geometry; parent scroll/pane clipping remains the
-/// only clipping boundary. Light buttons paint their blue fill behind text.
-pub(crate) fn paint_action_hover_surface(
-    ui:&Ui,response:&Response,corners:egui::CornerRadius,light_surface:bool
-){
-    if !response.hovered() && !response.has_focus(){return;}
-    let rect=response.rect;
-    let Some(paint)=highlight_painter(ui,rect)else{return;};
-    let (mut fill,mut border)=button_hover_palette(response.hovered(),response.has_focus());
-    if light_surface{
-        fill=None;
-        border=Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::BUTTON_HOVER_LIGHT_BORDER));
-    }
-    if let Some(fill)=fill{
-        paint.rect_filled(rect,corners,fill);
-    }
-    if let Some(stroke)=border{
-        paint.rect_stroke(rect,corners,stroke,egui::StrokeKind::Inside);
-    }
-}
-
-
-/// Keep antialiasing and the complete inside stroke; never shrink or
-/// intersect the drawing geometry with its own tight text/widget clip.
-pub(crate) fn highlight_painter(ui:&Ui,rect:Rect)->Option<egui::Painter>{
-    (rect.is_positive()&&rect.intersects(ui.clip_rect()))
-        .then(||ui.painter().clone())
-}
+pub(crate) use crate::highlight::painter as highlight_painter;
 
 #[cfg(test)]
 mod shared_hover_clip_tests{
