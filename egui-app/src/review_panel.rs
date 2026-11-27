@@ -867,7 +867,7 @@ mod tests {
             id:"a".into(),raw:"원문".into(),order_type:"AGENCY".into(),
             client_id:Some("c1".into()),
             recipients:json!([{"id":"r1","name":"원본"}]),
-            client_match:Value::Null,price:None
+            client_match:Value::Null,price:None,client_selection:None
         };
         let mut changed=first.clone();
         changed.recipients[0]["name"]=json!("수정");
