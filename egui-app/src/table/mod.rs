@@ -1,5 +1,6 @@
 //! Shared table renderer: surface, header, row/viewport geometry and sort hit testing.
 //! Screens retain column data, stable IDs and business sort state.
+use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Color32,Rect,Stroke,Ui,Vec2};
 use crate::ui_primitives::UiWidthPolicyExt;
 use crate::{theme,typography};
@@ -412,7 +413,7 @@ pub(crate) fn registry_tag_cell(ui:&Ui,rect:Rect,tags:&[String],id:impl std::has
     paint_tag_blocks(ui,rect.shrink2(Vec2::new(theme::SPACE_8,0.0)),tags,id);
 }
 pub(crate) fn registry_actions<R>(ui:&mut Ui,cell:Rect,draw:impl FnOnce(&mut Ui)->R)->R{
-    ui.scope_builder(egui::UiBuilder::new().max_rect(crate::ui_layout::aligned_rect(cell.shrink2(Vec2::new(theme::MANAGEMENT_TABLE_ACTION_INSET,0.0))))
+    ui.scope_builder(egui::UiBuilder::new().aligned_max_rect(crate::ui_layout::aligned_rect(cell.shrink2(Vec2::new(theme::MANAGEMENT_TABLE_ACTION_INSET,0.0))))
         .layout(egui::Layout::right_to_left(Align::Center)),|actions|{
             actions.set_clip_rect(actions.clip_rect().intersect(cell));
             draw(actions)
@@ -493,7 +494,7 @@ pub(crate) fn variable_rows_snapshot<R>(
             Vec2::new(viewport.width,(offsets[last]-offsets[first]).max(0.0)));
         let visible_rect=crate::ui_layout::aligned_rect(visible_rect);
         let clip=strict_viewport_clip(body,visible);
-        body.scope_builder(egui::UiBuilder::new().id_salt(rows_id).max_rect(visible_rect),|visible|{
+        body.scope_builder(egui::UiBuilder::new().id_salt(rows_id).aligned_max_rect(visible_rect),|visible|{
             visible.spacing_mut().item_spacing.y=0.0;
             visible.set_clip_rect(clip);
             visible.skip_ahead_auto_ids(first);
@@ -511,7 +512,7 @@ pub(crate) fn fixed_row_rect(origin:egui::Pos2,index:usize,first:usize,width:f32
 pub(crate) fn row_scope<R>(
     ui:&mut Ui,id:impl std::hash::Hash,rect:Rect,draw:impl FnOnce(&mut Ui)->R,
 )->egui::InnerResponse<R>{
-    ui.scope_builder(egui::UiBuilder::new().id_salt(id).max_rect(crate::ui_layout::aligned_rect(rect))
+    ui.scope_builder(egui::UiBuilder::new().id_salt(id).aligned_max_rect(crate::ui_layout::aligned_rect(rect))
         .layout(egui::Layout::top_down(egui::Align::Min)),draw)
 }
 #[derive(Clone,Copy)]
@@ -670,7 +671,7 @@ pub(crate) fn virtual_fixed_rows<R>(
         body.scope_builder(
             egui::UiBuilder::new()
                 .id_salt("virtual-fixed-rows")
-                .max_rect(visible_rect),
+                .aligned_max_rect(visible_rect),
             |visible|{
                 visible.spacing_mut().item_spacing.y=0.0;
                 visible.set_clip_rect(clip);
@@ -1365,7 +1366,7 @@ mod tag_block_table_tests{
 pub(crate) fn control_cell<R>(ui:&mut Ui,id:impl std::hash::Hash,rect:Rect,clip:Rect,
     layout:egui::Layout,enabled:bool,fixed_width:bool,draw:impl FnOnce(&mut Ui)->R)->R{
     let rect=crate::ui_layout::aligned_rect(rect);
-    let mut builder=egui::UiBuilder::new().id_salt(id).max_rect(rect).layout(layout);
+    let mut builder=egui::UiBuilder::new().id_salt(id).aligned_max_rect(rect).layout(layout);
     if !enabled{builder=builder.disabled();}
     ui.scope_builder(builder,|control|{
         control.set_clip_rect(clip.intersect(control.clip_rect()));
