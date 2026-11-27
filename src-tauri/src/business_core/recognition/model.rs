@@ -540,18 +540,42 @@ fn conductor_semantic_entries<'a>(text: &str, ps: &[&'a Value]) -> Vec<Entry<'a>
             && str_field(p,"name").contains("보면대"))
         .map(|p|Entry{p,priority:1,span:(m.start(),m.end())}).collect()
 }
-pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
-    let ps = products(state);
-    let verified = verified_bases(&ps);
+// The original catalog matcher remains the only source of literal and
+// alias hypotheses. This batch is independent of a selected product.
+pub(super) struct ProductHypotheses<'a>{
+    ps:Vec<&'a Value>,
+    verified:HashSet<String>,
+    raw_entries:Vec<Entry<'a>>,
+    aliases:Vec<(&'a Value,&'a Value,(usize,usize))>,
+    literal_count:usize,
+    literal_truncated:bool,
+    pub(super) source_candidates:Vec<SourceCandidate>,
+    pub(super) source_truncated:bool,
+}
+pub(super) fn collect<'a>(text:&str,state:&'a Value,client_id:&str)->ProductHypotheses<'a>{
+    let ps=products(state);
+    let verified=verified_bases(&ps);
     let mut source_candidates=Vec::new();
     let mut source_truncated=false;
-    let raw_entries:Vec<_>=ps.iter().filter_map(|p|
+    let raw_entries=ps.iter().filter_map(|p|
         evidence(text,p,&verified,&mut source_candidates,&mut source_truncated)).collect();
-    let entries = name_entries(text, raw_entries, &verified,&source_candidates,source_truncated);
-    // parser.ts:487-510 filters brand/catalog and DEMO before options.
-    let (mut entries,known_brand) =
-        filter_business_candidates(text,state,&ps,entries);
+    // Preserve the original literal-only rank input and budget. Aliases
+    // are collected before ranking but must not change literal ranking.
+    let literal_count=source_candidates.len();
+    let literal_truncated=source_truncated;
     let aliases=alias_entries(text,state,client_id,&ps,&mut source_candidates,&mut source_truncated);
+    ProductHypotheses{ps,verified,raw_entries,aliases,literal_count,literal_truncated,
+        source_candidates,source_truncated}
+}
+pub(crate) fn decide(text:&str,state:&Value,client_id:&str)->Decision{
+    evaluate(text,state,collect(text,state,client_id))
+}
+pub(super) fn evaluate<'a>(text:&str,state:&'a Value,hypotheses:ProductHypotheses<'a>)->Decision{
+    let ProductHypotheses{ps,verified,raw_entries,aliases,literal_count,literal_truncated,
+        source_candidates,source_truncated}=hypotheses;
+    let entries=name_entries(text,raw_entries,&verified,&source_candidates[..literal_count],literal_truncated);
+    // parser.ts:487-510 filters brand/catalog and DEMO before options.
+    let (mut entries,known_brand)=filter_business_candidates(text,state,&ps,entries);
     let mut hint=code_color_hint(text,&ps);
     if let Some((base,_,term))=hint.clone() {
         // parser.ts::protectedCode guards against reinterpreting the final
@@ -744,6 +768,23 @@ pub(crate) fn decision_json(decision: &Decision) -> Value {
 #[cfg(test)]
 mod option_boundary_tests {
     use super::*;
+    #[test]
+    fn discovery_keeps_literal_and_alias_hypotheses_before_selection(){
+        let state=json!({"products":[
+            {"id":"a","name":"GT-1","variants":[]},
+            {"id":"b","name":"GT-2","variants":[]}
+        ],"aliases":[{"id":"alias","text":"GT-1","productId":"b"}]});
+        let text="GT-1 2개";
+        let batch=collect(text,&state,"");
+        assert!(batch.source_candidates.iter().any(|c|c.product_id=="a"&&c.literal));
+        assert!(batch.source_candidates.iter().any(|c|c.product_id=="b"&&!c.literal));
+        assert!(!batch.source_truncated);
+        let expected=decision_json(&decide(text,&state,""));
+        let decision=evaluate(text,&state,batch);
+        assert_eq!(decision_json(&decision),expected);
+        assert_eq!(decision.kind,"CONFLICT");
+        assert!(decision.product_id.is_none());
+    }
     #[test]
     fn descriptive_product_rank_requires_nested_and_distinct_evidence(){
         let a=json!({"id":"a","name":"A / 접이식 탁상용 기타 스탠드"});

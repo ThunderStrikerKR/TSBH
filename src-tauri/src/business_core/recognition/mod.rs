@@ -70,9 +70,9 @@ impl CommonCandidates {
             }
         }
     }
-    fn record_products(&mut self,raw:&str,offset:usize,len:usize,result:&CachedProductDecision){
-        self.truncated|=result.truncated;
-        for c in &result.candidates{
+    fn record_products(&mut self,raw:&str,offset:usize,len:usize,source:&[model::SourceCandidate],truncated:bool){
+        self.truncated|=truncated;
+        for c in source{
             let (a,b)=c.span;
             if a>=b||b>len||raw.get(offset+a..offset+b).is_none(){
                 self.truncated=true;continue;
@@ -526,17 +526,36 @@ impl<'a,'s> ProductSearch<'a,'s>{
         &self.result(text).output
     }
     fn result(&mut self,text:&'a str)->&CachedProductDecision{
+        self.result_with_registration(text,None)
+    }
+    // If the slice is first encountered here, register the raw hypotheses
+    // before evaluation. If segmentation already needed a decision, reuse
+    // its exact retained hypothesis pool instead of another catalog scan.
+    fn result_with_registration(&mut self,text:&'a str,
+        registration:Option<(&str,usize,&mut CommonCandidates)>)->&CachedProductDecision{
         let state=self.state;
         let client=self.client_id;
-        // Bound retained decisions for unusually large documents.
         if self.decisions.len()>=512&&!self.decisions.contains_key(text){
             self.decisions.clear();
         }
-        self.decisions.entry(text).or_insert_with(||{
-            let decision=model::decide(text,state,client);
-            CachedProductDecision{output:model::decision_json(&decision),candidates:decision.source_candidates,
-                truncated:decision.source_truncated}
-        })
+        match self.decisions.entry(text){
+            std::collections::hash_map::Entry::Occupied(entry)=>{
+                let result=entry.into_mut();
+                if let Some((raw,offset,candidates))=registration{
+                    candidates.record_products(raw,offset,text.len(),&result.candidates,result.truncated);
+                }
+                result
+            }
+            std::collections::hash_map::Entry::Vacant(entry)=>{
+                let batch=model::collect(text,state,client);
+                if let Some((raw,offset,candidates))=registration{
+                    candidates.record_products(raw,offset,text.len(),&batch.source_candidates,batch.source_truncated);
+                }
+                let decision=model::evaluate(text,state,batch);
+                entry.insert(CachedProductDecision{output:model::decision_json(&decision),
+                    candidates:decision.source_candidates,truncated:decision.source_truncated})
+            }
+        }
     }
     fn quantities(&mut self,text:&'a str)->&[quantity::Quantity]{
         if self.quantities.len()>=512&&!self.quantities.contains_key(text){
@@ -726,8 +745,7 @@ fn resolve_name_proposal<'a>(raw:&str,line:&Line<'a>,proposal:NameProposal,
     let text=&line.text[a..b];
     let offset=line.start+a;
     let _=candidates.register(raw,"name",offset,line.start+b);
-    let matched=search.result(text);
-    candidates.record_products(raw,offset,text.len(),matched);
+    let matched=search.result_with_registration(text,Some((raw,offset,candidates)));
     let signal=product_signal(text,&matched.output,state);
     let chosen=match boundary{
         NameBoundary::SeparatedSuffix=>true,
@@ -1858,10 +1876,9 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         let skip_until = ts_semantics::table_product_prefix(trimmed);
         // Never synthesize a new string and then treat its indexes as offsets
         // into raw: UTF-8/UTF-16 source-evidence contract must be lossless.
-        let cached=search.result(skip_until).clone();
-        let offset = line.text.find(trimmed).unwrap_or(0);
-        exclusions.record_products(raw,line.start+offset,skip_until.len(),&cached);
-        let matched=cached.output;
+        let offset=line.text.find(trimmed).unwrap_or(0);
+        let matched=search.result_with_registration(skip_until,
+            Some((raw,line.start+offset,&mut exclusions))).output.clone();
         let mut quantity_values = if trimmed.contains('|') {
             let model_end=matched.get("evidence").and_then(Value::as_object)
                 .and_then(|o|o.get("end")).and_then(Value::as_u64)
@@ -3111,6 +3128,20 @@ mod tests {
                 candidates:vec![model::SourceCandidate{product_id:"pgt".into(),span,literal}],truncated:false};
             assert!(!name_beats_partial_alias("김가상님",true,&matched));
         }
+    }
+    #[test]
+    fn registration_reuses_the_same_cached_product_hypotheses(){
+        let state=state();
+        let raw="709 1개\n709 1개";
+        let mut search=ProductSearch::new(&state,"");
+        let mut candidates=CommonCandidates::default();
+        let first=search.result_with_registration("709 1개",Some((raw,0,&mut candidates))).output.clone();
+        let second_offset=raw.rfind("709").unwrap();
+        let second=search.result_with_registration("709 1개",Some((raw,second_offset,&mut candidates))).output.clone();
+        assert_eq!(first,second);
+        assert_eq!(search.decisions.len(),1);
+        assert_eq!(candidates.entries[&("product",0,3)].products.get("p709"),Some(&true));
+        assert_eq!(candidates.entries[&("product",second_offset,second_offset+3)].products.get("p709"),Some(&true));
     }
     #[test]
     fn inferred_name_discovery_preserves_losing_type_before_projection(){
