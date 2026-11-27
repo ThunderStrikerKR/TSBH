@@ -1110,7 +1110,9 @@ impl PreviewStore {
         if pending!=0{return Err("복구 대기 주문이 있어 전체 평가를 보류합니다.".into());}
         let source=crate::business_state::open_business_read_snapshot()?;
         let started=chrono::Utc::now().to_rfc3339();
+        let elapsed=std::time::Instant::now();
         let mut cursor=String::new();
+        let lifecycle=crate::business_state::learning_lifecycle_index(&source)?;
         let mut totals=recognition_learning_store::CombinedPerformance::default();
         loop{
             let ledger=recognition_learning_store::order_page(&tx,&scope,&cursor,25)?;
@@ -1119,7 +1121,7 @@ impl PreviewStore {
                 .into_iter().take(25).collect::<Vec<_>>();
             if ids.is_empty(){break;}
             if totals.scanned+ids.len() as u64>100_000{return Err("전체 평가 100000건 안전 한도 초과".into());}
-            let sources=crate::business_state::learning_sources(&source,&ids)?;
+            let sources=crate::business_state::learning_sources_indexed(&source,&ids,Some(&lifecycle))?;
             let digests=learning_source_digests(&tx,&sources)?;
             totals.scanned+=ids.len() as u64;
             totals.inactive+=(ids.len()-digests.len()) as u64;
@@ -1140,6 +1142,7 @@ impl PreviewStore {
         report["fullSnapshotScanCompleted"]=json!(true);
         report["allActiveOrdersHaveEvaluationRecords"]=json!(totals.unsynchronized==0&&totals.missing==0);
         report["snapshotStartedAt"]=json!(started);
+        report["scanElapsedMs"]=json!(elapsed.elapsed().as_millis() as u64);
         report["crossDatabaseAtomicSnapshot"]=json!(false);
         if crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
             return Err("전체 평가 중 업무 DB 변경".into());

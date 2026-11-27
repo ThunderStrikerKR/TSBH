@@ -4847,13 +4847,20 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.analysis_pending = false;
             match result {
                 Ok(mut analysis) => {
-                    let original_evidence=analysis.recognition.clone();
-                    // Keep the trace only in immutable first-analysis evidence.
-                    // The display projection must not retain a second copy.
-                    if let Some(view)=analysis.recognition.as_object_mut(){
-                        view.remove("recipientOwnerTrace");
-                        view.remove("classificationCandidateTrace");
-                    }
+                    let needs_evidence=self.active_id.as_deref().and_then(|id|
+                        self.drafts.iter().find(|item|item.id==id)).is_some_and(|item|
+                        item.analysis_raw.as_deref()!=Some(self.raw_source.as_str())||item.analysis_evidence.is_none());
+                    let traces=analysis.recognition.as_object_mut().map(|view|
+                        [view.remove("recipientOwnerTrace"),view.remove("classificationCandidateTrace")]);
+                    let original_evidence=if needs_evidence{
+                        let mut evidence=analysis.recognition.clone();
+                        if let (Some(view),Some(traces))=(evidence.as_object_mut(),traces){
+                            for (key,value) in ["recipientOwnerTrace","classificationCandidateTrace"].into_iter().zip(traces){
+                                if let Some(value)=value{view.insert(key.into(),value);}
+                            }
+                        }
+                        Some(evidence)
+                    }else{None};
                     if let Some(order_id)=self.active_id.as_deref(){
                         if let Err(error)=analysis.scope_display(order_id,&self.raw_source){
                             self.analysis=None;
@@ -4872,7 +4879,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             // An employee-corrected manual model can be
                             // projected onto the new read result. The immutable
                             // first recognition is kept separately for audit.
-                            preserve_first_recognition(item,&self.raw_source,original_evidence,timing,shadow);
+                            if let Some(evidence)=original_evidence{
+                                preserve_first_recognition(item,&self.raw_source,evidence,timing,shadow);
+                            }
                             item.analysis_raw = Some(self.raw_source.clone());
                             item.client_match = Some(analysis.client_match.clone());
                             if item.client_selection.as_deref()==Some("MANUAL") &&

@@ -1810,11 +1810,18 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
 pub(super) fn run_blend_shadow(payload:&Value)->Result<Value,String>{
     let raw=payload["raw"].as_str().filter(|s|!s.is_empty()&&s.len()<=128*1024).ok_or("그림자 원문 오류")?;
     let first=&payload["initialAnalysis"];let shadow=&payload["learningShadow"];
-    let model=&payload["model"];
+    let units=raw.encode_utf16().collect::<Vec<_>>();
+    let owner_index=OwnerIndex::new(&units,&first["recipients"]);
+    let observations=owner_observations_indexed(&units,first,&owner_index,&owner_index);
+    run_blend_prepared(first,shadow,&payload["model"],&payload["predictionAt"],&payload["clientBuildVersion"],
+        &units,&owner_index,&observations)
+}
+fn run_blend_prepared(first:&Value,shadow:&Value,model:&Value,prediction_at:&Value,build:&Value,
+    units:&[u16],owner_index:&OwnerIndex<'_>,observations:&[Value])->Result<Value,String>{
     let date=|v:&Value|v.as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
-    let now=date(&payload["predictionAt"]).ok_or("그림자 예측 시각 오류")?;
+    let now=date(prediction_at).ok_or("그림자 예측 시각 오류")?;
     let available=date(&model["availableAfter"]).ok_or("그림자 모델 시각 오류")?;
-    if available>=now||model["schemaVersion"]!=1||model["clientBuildVersion"]!=payload["clientBuildVersion"]||
+    if available>=now||model["schemaVersion"]!=1||&model["clientBuildVersion"]!=build||
         model["scorePolicyVersion"]!=OWNER_SCORE_POLICY||model["captureVersion"]!=4||model["supportVersion"]!=4||
         model["featureVersion"]!=1||model["contributionVersion"]!=2||model["safetyPolicyVersion"]!=1||
         model["explicitToWeakRatio"].as_f64()!=Some(3.0)||model["automaticChangeAuthorized"]!=false||
@@ -1824,9 +1831,6 @@ pub(super) fn run_blend_shadow(payload:&Value)->Result<Value,String>{
         first["recipientOwnerTrace"]["scorePolicyVersion"]!=OWNER_SCORE_POLICY{
         return Err("그림자 모델 버전 또는 시각 불일치".into());
     }
-    let units=raw.encode_utf16().collect::<Vec<_>>();
-    let owner_index=OwnerIndex::new(&units,&first["recipients"]);
-    let observations=owner_observations_indexed(&units,first,&owner_index,&owner_index);
     if observations.len()>64{return Err("결합 그림자 관측 한도 초과".into());}
     let mut decisions=Vec::new();let mut seen=BTreeSet::new();
     for obs in observations{
@@ -1890,7 +1894,7 @@ pub(super) fn run_blend_shadow(payload:&Value)->Result<Value,String>{
         decisions.push(outcome.unwrap_or_else(||json!({"start":s.0,"end":s.1,
             "status":"unavailable_or_ineligible","decisionChanged":false,"eligibleForAutomaticDecision":false})));
     }
-    Ok(json!({"status":"runtime_shadow_only","schemaVersion":1,"predictionAt":payload["predictionAt"],
+    Ok(json!({"status":"runtime_shadow_only","schemaVersion":1,"predictionAt":prediction_at,
         "decisions":decisions,"modelIndependentlyApproved":false,"representativeLabelsVerified":false,
         "automaticChangeAuthorized":false,"decisionChanged":false,"eligibleForAutomaticDecision":false}))
 }
@@ -2159,9 +2163,10 @@ pub(super) fn compare_registered_models(payload:&Value)->Result<Value,String>{
         let raw=snap["raw"].as_str().ok_or("독립 평가 원문 누락")?;
         let units=raw.encode_utf16().collect::<Vec<_>>();
         // Inference receives no final recipient rows, corrections or labels.
-        let replay=|model:&Value|run_blend_shadow(&json!({"raw":raw,"initialAnalysis":first,
-            "learningShadow":shadow,"model":model,"predictionAt":shadow["capturedAt"],
-            "clientBuildVersion":cap["clientBuildVersion"]})).unwrap_or_else(|_|json!({"decisions":[]}));
+        let owner_index=OwnerIndex::new(&units,&first["recipients"]);
+        let initial=owner_observations_indexed(&units,first,&owner_index,&owner_index);
+        let replay=|model:&Value|run_blend_prepared(first,shadow,model,&shadow["capturedAt"],
+            &cap["clientBuildVersion"],&units,&owner_index,&initial).unwrap_or_else(|_|json!({"decisions":[]}));
         let ar=replay(am);let br=replay(bm);
         let mut local=BTreeMap::<(String,String,String,String),ModelPairCounts>::new();
         let mut used=BTreeSet::new();

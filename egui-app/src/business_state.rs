@@ -421,7 +421,35 @@ pub(crate) fn hash_learning_text(hash:&mut sha2::Sha256,value:rusqlite::types::V
     }
 }
 
+pub(crate) fn learning_lifecycle_index(conn:&Connection)->Result<std::collections::BTreeMap<String,bool>,String>{
+    let valid:i64=conn.query_row("SELECT count(*) FROM app_state WHERE id=1
+        AND json_type(payload,'$.workflow.groups')='array'
+        AND json_type(payload,'$.workflow.shipments')='array'",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+    if valid!=1{return Err("학습 주문 업무 단계 자료 누락".into());}
+    let mut stmt=conn.prepare("WITH groups AS (
+        SELECT json_extract(g.value,'$.id') AS id,coalesce(json_extract(g.value,'$.deletedAt'),'') AS deleted
+        FROM app_state a,json_each(a.payload,'$.workflow.groups') g WHERE a.id=1),
+        shipments AS (SELECT json_extract(s.value,'$.orderId') AS order_id,
+            json_extract(s.value,'$.groupId') AS group_id,json_extract(s.value,'$.step') AS step
+            FROM app_state a,json_each(a.payload,'$.workflow.shipments') s
+            WHERE a.id=1 AND coalesce(json_extract(s.value,'$.legacyArchived'),0)=0)
+        SELECT s.order_id,MIN(CASE WHEN g.id IS NOT NULL AND g.deleted=''
+            AND typeof(s.step)='integer' AND s.step BETWEEN 1 AND 4 THEN 1 ELSE 0 END)
+        FROM shipments s LEFT JOIN groups g ON g.id=s.group_id
+        WHERE typeof(s.order_id)='text' GROUP BY s.order_id LIMIT 100001").map_err(|e|e.to_string())?;
+    let mut rows=stmt.query([]).map_err(|e|e.to_string())?;
+    let mut out=std::collections::BTreeMap::new();
+    while let Some(r)=rows.next().map_err(|e|e.to_string())?{
+        if out.len()>=100000{return Err("학습 업무 단계 인덱스 한도 초과".into());}
+        out.insert(r.get::<_,String>(0).map_err(|e|e.to_string())?,r.get::<_,i64>(1).map_err(|e|e.to_string())?==1);
+    }
+    Ok(out)
+}
 pub(crate) fn learning_sources(conn:&Connection,ids:&[String])->Result<LearningSources,String>{
+    learning_sources_indexed(conn,ids,None)
+}
+pub(crate) fn learning_sources_indexed(conn:&Connection,ids:&[String],
+    lifecycle:Option<&std::collections::BTreeMap<String,bool>>)->Result<LearningSources,String>{
     use sha2::{Digest,Sha256};
     let unique=ids.iter().map(String::as_str).collect::<std::collections::BTreeSet<_>>();
     if unique.is_empty()||ids.len()>250||unique.iter().any(|id|id.trim().is_empty()){
@@ -451,7 +479,12 @@ pub(crate) fn learning_sources(conn:&Connection,ids:&[String])->Result<LearningS
             deleted.as_deref().is_none_or(str::is_empty),digest:format!("{:x}",hash.finalize())});
     }
     drop(rows);drop(stmt);
-    attach_learning_lifecycle(conn,&mut metadata)?;
+    if let Some(index)=lifecycle{
+        for row in &mut metadata{
+            let active=row["id"].as_str().and_then(|id|index.get(id)).copied().unwrap_or(false);
+            row["learningActive"]=Value::Bool(active);
+        }
+    }else{attach_learning_lifecycle(conn,&mut metadata)?;}
     for row in metadata{
         let id=row["id"].as_str().ok_or("학습 주문 ID 누락")?;
         let source=sources.get_mut(id).ok_or("학습 주문 연결 오류")?;
