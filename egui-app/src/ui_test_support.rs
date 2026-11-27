@@ -107,6 +107,53 @@ pub(crate) fn painted_text_rects(output:&egui::FullOutput,label:&str)->Vec<(Rect
     for shape in &output.shapes{visit(&shape.shape,shape.clip_rect,label,&mut out);}
     out
 }
+/// Inspect actual egui paint commands, including partially or fully clipped
+/// diagnostic text. The orange line can remain visible when its label is clipped.
+pub(crate) fn assert_no_unaligned(output:&egui::FullOutput,case:&str){
+    assert_unaligned_warnings_empty(&painted_text_rects(output,"Unaligned"),case);
+}
+fn assert_unaligned_warnings_empty(warnings:&[(Rect,Rect)],case:&str){
+    assert!(warnings.is_empty(),"{case}: egui Unaligned warning(s): {} (text rect, clip rect) {:?}",
+        warnings.len(),warnings);
+}
+pub(crate) fn enable_unaligned_diagnostics(ctx:&egui::Context){
+    assert!(cfg!(debug_assertions),"Unaligned audit requires a debug test build");
+    ctx.style_mut(|style|style.debug.show_unaligned=true);
+}
+
+#[cfg(test)]
+mod unaligned_detector_tests{
+    use super::*;
+    #[test]
+    fn native_egui_warning_is_detected_and_aligned_control_is_clean(){
+        for malformed in [false,true]{
+            let ctx=test_context();
+            enable_unaligned_diagnostics(&ctx);
+            let output=ctx.run(egui::RawInput{
+                screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(500.0,300.0))),
+                ..Default::default()
+            },|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    let bounds=Rect::from_min_max(egui::pos2(40.0,40.0),egui::pos2(180.0,100.0));
+                    let mut child=ui.new_child(egui::UiBuilder::new().id_salt("unaligned-control").max_rect(bounds));
+                    child.expand_to_include_rect(bounds);
+                    let bottom=if malformed{100.01}else{100.0};
+                    child.expand_to_include_y(bottom);
+                    assert_eq!(child.min_rect().bottom(),bottom);
+                });
+            });
+            let warnings=painted_text_rects(&output,"Unaligned");
+            if malformed{
+                assert!(!warnings.is_empty(),"positive control failed to emit native egui warning");
+                let result=std::panic::catch_unwind(||assert_no_unaligned(&output,"positive control"));
+                assert!(result.is_err(),"detector accepted native warning");
+            }else{
+                assert_no_unaligned(&output,"aligned control");
+            }
+        }
+    }
+}
+
 pub(crate) fn assert_rect_inside(role:&str,inner:Rect,outer:Rect,tolerance:f32){
     assert!(inner.is_positive()&&outer.is_positive(),"{role}: invalid rectangles");
     assert!(inner.left()>=outer.left()-tolerance&&inner.right()<=outer.right()+tolerance
@@ -198,16 +245,18 @@ pub(crate) fn assert_popup_transition_geometry(
     ctx:&egui::Context,screen:Rect,phases:usize,
     mut render:impl FnMut(&egui::Context,usize)
 ){
+    enable_unaligned_diagnostics(ctx);
     let mut baseline:Option<Vec<Sample>>=None;
     for phase in 0..phases{
         for frame in 0..6{
-            let _=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+            let output=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
                 begin_component_geometry();
                 crate::floating_notice::begin_page(ctx,"actual popup transition");
                 render(ctx,phase);
                 crate::floating_notice::show(ctx);
             });
             let samples=finish_component_geometry(screen);
+            assert_no_unaligned(&output,&format!("{} popup phase {phase} frame {frame}",std::thread::current().name().unwrap_or("popup")));
             let slots=samples.into_iter().filter(|s|matches!(s.role,
                 "popup"|"input"|"button"|"dropdown"|"checkbox"|"scrollbar"))
                 .map(|s|(s.role,s.rect)).collect::<Vec<_>>();
@@ -268,6 +317,7 @@ pub(crate) struct HighlightSnapshot{
     targets:Vec<(&'static str,Rect,Rect)>,
     labels:Vec<PaintedLabel>,
     icon_segments:Vec<([egui::Pos2;2],Rect)>,
+    unaligned:Vec<(Rect,Rect)>,
 }
 fn painted_labels(output:&egui::FullOutput,screen:Rect)->Vec<PaintedLabel>{
     fn visit(shape:&egui::Shape,clip:Rect,screen:Rect,out:&mut Vec<PaintedLabel>){
@@ -329,6 +379,7 @@ pub(crate) fn highlight_frame(ctx:&egui::Context,screen:Rect,pointer:Option<egui
         targets:HIGHLIGHT_TARGETS.with(|trace|trace.borrow_mut().take().unwrap()),
         labels:painted_labels(&output,screen),
         icon_segments:painted_icon_segments(&output,screen),
+        unaligned:painted_text_rects(&output,"Unaligned"),
     }
 }
 impl HighlightSnapshot{
@@ -395,14 +446,20 @@ impl HighlightSnapshot{
 /// initial settle permits the existing first-mount scrollbar animation only.
 pub(crate) fn sweep_highlight_geometry(ctx:&egui::Context,screen:Rect,case:&str,
     mut draw:impl FnMut(&egui::Context)){
+    enable_unaligned_diagnostics(ctx);
     let mut baseline=highlight_frame(ctx,screen,None,&mut draw);
-    for _ in 0..11{baseline=highlight_frame(ctx,screen,None,&mut draw);}
+    assert_unaligned_warnings_empty(&baseline.unaligned,&format!("{case} initial frame 0"));
+    for frame in 1..12{
+        baseline=highlight_frame(ctx,screen,None,&mut draw);
+        assert_unaligned_warnings_empty(&baseline.unaligned,&format!("{case} initial frame {frame}"));
+    }
     let targets=baseline.pointer_targets(screen);
     assert!(!targets.is_empty(),"{case}: no actual highlight hit targets discovered");
     for (index,point) in targets.iter().copied().enumerate(){
         for phase in 0..6{
             let current=highlight_frame(ctx,screen,(phase<3).then_some(point),&mut draw);
             let sample=format!("{case} target {index} {point:?} frame {phase}");
+            assert_unaligned_warnings_empty(&current.unaligned,&sample);
             baseline.assert_invariant(&current,&sample);
             baseline.assert_icon_invariant(&current,&sample);
         }
