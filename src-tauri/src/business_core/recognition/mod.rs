@@ -746,22 +746,54 @@ fn legacy_owner_gate(paragraph_blocked:bool,previous_has_delivery:bool,
 // changes until independent baseline/holdout validation of these weights.
 const OWNER_COMPARISON_POLICY:&str="owner-symmetric-candidate-v2";
 const OWNER_COMPARISON_MARGIN:i32=8;
+// Raw features are independent of a particular weight profile. The signed
+// blank contribution is separate from the paragraph indicator; order and
+// repetition remain a single evidence family.
+#[derive(Clone,Copy,Debug)]
+struct OwnerWeightFeatures{
+    same_paragraph:bool,distance:u64,blank_lines:usize,order_level:u8,
+}
+#[derive(Clone,Copy,Debug)]
+struct OwnerWeightProfile{
+    paragraph:i32,distance:i32,blank:i32,order:i32,margin:i32,
+}
+const OWNER_PROVISIONAL_WEIGHTS:OwnerWeightProfile=OwnerWeightProfile{
+    paragraph:24,distance:24,blank:24,order:16,margin:OWNER_COMPARISON_MARGIN,
+};
+impl OwnerWeightFeatures{
+    fn new(relation:&SourceRelation,gap:&InterveningLines,
+        directional_votes:usize,opposing_votes:usize,repeated_shapes:usize)->Self{
+        let order_level=if directional_votes>=2&&opposing_votes==0{
+            if repeated_shapes>=2{4}else{3}
+        }else{0};
+        Self{same_paragraph:relation.same_paragraph,distance:relation.distance(),
+            blank_lines:gap.blank_lines,order_level}
+    }
+    fn components(self,w:OwnerWeightProfile)->[i32;4]{
+        [if self.same_paragraph{w.paragraph}else{0},
+         w.distance/(1+self.distance.min(24) as i32),
+         -(w.blank*self.blank_lines.min(3) as i32/3),
+         w.order*i32::from(self.order_level)/4]
+    }
+    fn wire(self)->Value{
+        json!({"sameParagraph":self.same_paragraph,"lineDistance":self.distance,
+            "blankLines":self.blank_lines,"orderLevel":self.order_level})
+    }
+}
+#[cfg(test)]
 fn owner_candidate_components(relation:&SourceRelation,gap:&InterveningLines,
     directional_votes:usize,opposing_votes:usize,repeated_shapes:usize)->[i32;4]{
-    let paragraph=if relation.same_paragraph{24}else{0};
-    let distance=(24/(1+relation.distance().min(24))) as i32;
-    let boundary=-(gap.blank_lines.min(3) as i32)*8;
-    // Direction and repeated structure are derived from the same paragraphs:
-    // cap their combined contribution, do not count both independently.
-    let order=if directional_votes>=2&&opposing_votes==0{
-        if repeated_shapes>=2{16}else{12}
-    }else{0};
-    [paragraph,distance,boundary,order]
+    OwnerWeightFeatures::new(relation,gap,directional_votes,opposing_votes,repeated_shapes)
+        .components(OWNER_PROVISIONAL_WEIGHTS)
 }
-fn owner_comparison_choice(previous:i32,next:i32)->Option<&'static str>{
-    if next-previous>=OWNER_COMPARISON_MARGIN{Some("next")}
-    else if previous-next>=OWNER_COMPARISON_MARGIN{Some("previous")}
+fn owner_weight_choice(previous:i32,next:i32,margin:i32)->Option<&'static str>{
+    if next-previous>=margin{Some("next")}
+    else if previous-next>=margin{Some("previous")}
     else{None}
+}
+#[cfg(test)]
+fn owner_comparison_choice(previous:i32,next:i32)->Option<&'static str>{
+    owner_weight_choice(previous,next,OWNER_PROVISIONAL_WEIGHTS.margin)
 }
 fn compare_owner_candidates(candidate:&Evidence,preceding:&Evidence,following:&Evidence,
     previous_relation:&SourceRelation,following_relation:&SourceRelation,
@@ -778,17 +810,19 @@ fn compare_owner_candidates(candidate:&Evidence,preceding:&Evidence,following:&E
     let [before,after]=order.votes(candidate.kind,excluded);
     let previous_repeat=order.repeated_shape_count(preceding.paragraph as u64,excluded);
     let next_repeat=order.repeated_shape_count(following.paragraph as u64,excluded);
-    let prev=owner_candidate_components(previous_relation,previous_gap,after,before,previous_repeat);
-    let next=owner_candidate_components(following_relation,following_gap,before,after,next_repeat);
+    let previous_features=OwnerWeightFeatures::new(previous_relation,previous_gap,after,before,previous_repeat);
+    let next_features=OwnerWeightFeatures::new(following_relation,following_gap,before,after,next_repeat);
+    let prev=previous_features.components(OWNER_PROVISIONAL_WEIGHTS);
+    let next=next_features.components(OWNER_PROVISIONAL_WEIGHTS);
     let prev_score=prev.iter().sum::<i32>();let next_score=next.iter().sum::<i32>();
-    let choice=owner_comparison_choice(prev_score,next_score);
+    let choice=owner_weight_choice(prev_score,next_score,OWNER_PROVISIONAL_WEIGHTS.margin);
     let components=|v:[i32;4]|json!({"sameParagraph":v[0],"distance":v[1],"blankBoundary":v[2],"orderAndRepeat":v[3]});
     json!({"policyVersion":OWNER_COMPARISON_POLICY,"status":"provisional_comparison",
         "requiredMargin":OWNER_COMPARISON_MARGIN,"preferredRelation":choice,
         "beforeNameParagraphVotes":before,"afterNameParagraphVotes":after,
         "previousRepeatedShapes":previous_repeat,"nextRepeatedShapes":next_repeat,
-        "candidates":[{"relation":"previous","score":prev_score,"components":components(prev)},
-            {"relation":"next","score":next_score,"components":components(next)}],
+        "candidates":[{"relation":"previous","score":prev_score,"components":components(prev),"features":previous_features.wire()},
+            {"relation":"next","score":next_score,"components":components(next),"features":next_features.wire()}],
         "decisionChanged":false,"eligibleForAutomaticDecision":false})
 }
 
