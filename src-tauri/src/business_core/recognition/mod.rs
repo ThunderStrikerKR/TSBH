@@ -94,6 +94,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "extract_correction_candidates" => corrections::extract(&payload),
         "compare_confirmation_observations" => observations::compare(&payload),
         "evaluate_shadow_predictions" => observations::evaluate_shadow(&payload),
+        "calibrate_legacy_scores" => observations::calibrate_legacy_scores(&payload),
         "project_owner_contexts" => learning_context::lookup(&payload),
         "summarize_owner_statistics" => learning_context::statistics(&payload),
         _ => Err(format!("unknown recognition operation: {operation}")),
@@ -1575,7 +1576,7 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
     }).collect();
     let mut result=json!({"recipients":recipients,"candidates":candidates,"unassigned":unassigned});
     if let Some(trace)=owner_trace {
-        result["recipientOwnerTrace"]=json!({"schemaVersion":1,"decisions":trace});
+        result["recipientOwnerTrace"]=json!({"schemaVersion":1,"scorePolicyVersion":"owner-margin-30-v1","decisions":trace});
     }
     if collect_candidate_trace{
         result["classificationCandidateTrace"]=json!({"schemaVersion":1,

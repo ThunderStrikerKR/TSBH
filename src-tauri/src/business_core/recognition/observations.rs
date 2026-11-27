@@ -928,6 +928,185 @@ pub(super) fn evaluate_shadow(payload:&Value)->Result<Value,String>{
         "sourceProvenanceVerified":false,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
 }
 
+// P07-01: estimate next-anchor frequency conditional on a real score margin.
+// Explicit corrections and unchanged observations are not independent truth.
+const OWNER_SCORE_POLICY:&str="owner-margin-30-v1";
+const MIN_CALIBRATION_ORDERS:usize=5;
+fn owner_score_bin(delta:i64)->usize{
+    match delta {i64::MIN..=-61=>0,-60..=-31=>1,-30..=-11=>2,-10..=-1=>3,
+        0..=9=>4,10..=29=>5,30..=59=>6,_=>7}
+}
+fn owner_score_input(units:&[u16],trace:&Value,obs:&Value)->Option<(&'static str,usize)>{
+    if !trace["legacyFirstBlockingReason"].is_null()||trace["legacyRequiredMargin"]!=30{return None;}
+    let s=position(units,&obs["source"])?;
+    if position(units,&trace["source"])!=Some(s){return None;}
+    let kind=match trace["source"]["kind"].as_str()?{
+        "address"=>"address","phone"|"mobile"=>"contact",_=>return None};
+    let c=trace["candidates"].as_array().filter(|a|a.len()==2)?;
+    let mut scores=BTreeMap::new();
+    for row in c{
+        let relation=row["relation"].as_str()?;
+        if !matches!(relation,"previous"|"next")||row["anchor"]["kind"]!="name"{return None;}
+        let anchor=position(units,&row["anchor"])?;
+        let score=row["legacyScore"].as_i64().filter(|v|(0..=130).contains(v))?;
+        if scores.insert(relation,(anchor,score)).is_some(){return None;}
+    }
+    let (previous,p)=*scores.get("previous")?;
+    let (next,n)=*scores.get("next")?;
+    if !(previous.0<s.0&&s.0<next.0){return None;}
+    let delta=n-p-30;
+    let (choice,anchor)=if delta>=0{("next",next)}else{("previous",previous)};
+    if singleton(&obs["initialCandidates"])!=Some(choice)||
+        position(units,&trace["selectedAnchor"])!=Some(anchor)||
+        position(units,&obs["initialAnchor"])!=Some(anchor){return None;}
+    Some((kind,owner_score_bin(delta)))
+}
+#[derive(Default)]
+struct OwnerFitBin{orders:usize,next_sum:f64}
+impl OwnerFitBin{
+    fn add_order(&mut self,next:usize,total:usize){
+        if total>0{self.orders+=1;self.next_sum+=next as f64/total as f64;}
+    }
+    fn estimate(&self)->Option<f64>{
+        (self.orders>=MIN_CALIBRATION_ORDERS).then(||(self.next_sum+1.0)/(self.orders as f64+2.0))
+    }
+}
+#[derive(Default)]
+struct OwnerTest{eligible:usize,covered:usize,brier:f64,legacy_brier:f64,
+    orders:usize,covered_orders:usize,macro_brier:f64,macro_legacy_brier:f64}
+impl OwnerTest{
+    fn observe(&mut self,estimate:Option<f64>,old:bool,actual:bool){
+        self.eligible+=1;
+        if let Some(p)=estimate{
+            let y=if actual{1.0}else{0.0};let baseline=if old{1.0}else{0.0};
+            self.covered+=1;self.brier+=(p-y).powi(2);self.legacy_brier+=(baseline-y).powi(2);
+        }
+    }
+    fn merge_order(&mut self,o:Self){
+        if o.eligible==0{return;}
+        self.orders+=1;self.eligible+=o.eligible;self.covered+=o.covered;
+        self.brier+=o.brier;self.legacy_brier+=o.legacy_brier;
+        if o.covered>0{
+            self.covered_orders+=1;self.macro_brier+=o.brier/o.covered as f64;
+            self.macro_legacy_brier+=o.legacy_brier/o.covered as f64;
+        }
+    }
+    fn wire(&self)->Value{
+        let divide=|x:f64,n:usize|(n>0).then(||x/n as f64);
+        json!({"eligibleObservations":self.eligible,"coveredObservations":self.covered,
+            "eligibleOrders":self.orders,"coveredOrders":self.covered_orders,
+            "coverage":divide(self.covered as f64,self.eligible),
+            "brierOnCovered":divide(self.brier,self.covered),
+            "hardLegacyBrierOnCovered":divide(self.legacy_brier,self.covered),
+            "orderMacroBrier":divide(self.macro_brier,self.covered_orders),
+            "orderMacroHardLegacyBrier":divide(self.macro_legacy_brier,self.covered_orders)})
+    }
+}
+pub(super) fn calibrate_legacy_scores(payload:&Value)->Result<Value,String>{
+    let config=&payload["config"];
+    let date=|v:&Value|v.as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
+    let fit_start=date(&config["fitStart"]).ok_or("보정 시작 시각 오류")?;
+    let test_start=date(&config["testStart"]).ok_or("평가 시작 시각 오류")?;
+    let test_end=date(&config["testEnd"]).ok_or("평가 종료 시각 오류")?;
+    let as_of=date(&config["evaluationAsOf"]).ok_or("평가 기준 시각 오류")?;
+    if !(fit_start<test_start&&test_start<test_end&&test_end<=as_of){return Err("보정·평가 기간 순서 오류".into());}
+    let build=config["clientBuildVersion"].as_str().filter(|s|!s.is_empty()&&s.len()<=128)
+        .ok_or("보정 대상 빌드 버전 필요")?;
+    let orders=payload["orders"].as_array().filter(|v|!v.is_empty()&&v.len()<=250).ok_or("보정 주문 한도 오류")?;
+    let mut seen=BTreeSet::new();
+    let mut bins=BTreeMap::<(&str,usize),OwnerFitBin>::new();
+    let mut tests=Vec::new();
+    let (mut skipped,mut late,mut blocked,mut invalid,mut unverified)=(0usize,0usize,0usize,0usize,0usize);
+    let (mut fit_orders,mut test_orders)=(0usize,0usize);
+    for order in orders{
+        let id=order["id"].as_str().filter(|s|!s.is_empty()).ok_or("보정 주문 ID 오류")?;
+        if !seen.insert(id){return Err("보정 주문 ID 중복".into());}
+        let snap=&order["confirmationSnapshot"];
+        let first=&snap["recognitionBaseline"]["initialAnalysis"];
+        let capture=&first["initialPredictionCapture"];
+        let trace=&first["recipientOwnerTrace"];
+        let (Some(start),Some(end),Some(confirmed))=(date(&capture["analysisStartedAt"]),
+            date(&capture["analysisCompletedAt"]),date(&order["confirmedAt"]))else{skipped+=1;continue;};
+        if order["learningActive"]!=true||order["deletedAt"].as_str().is_some_and(|s|!s.is_empty())||
+            capture["origin"]!="native_reception_worker"||capture["schemaVersion"]!=1||
+            capture["orderId"].as_str()!=Some(id)||capture["clientBuildVersion"].as_str()!=Some(build)||
+            trace["schemaVersion"]!=1||trace["scorePolicyVersion"]!=OWNER_SCORE_POLICY||
+            snap["at"]!=order["confirmedAt"]||!(start<=end&&end<confirmed)||
+            start<fit_start||end>=test_end{skipped+=1;continue;}
+        // Keep entire orders on one side of the split; no late label fitting.
+        if start<test_start&&end>=test_start{skipped+=1;continue;}
+        let fit=end<test_start;
+        if (fit&&confirmed>=test_start)||(!fit&&confirmed>as_of){late+=1;continue;}
+        let Some(events)=order["recognitionAuditEvents"].as_array()else{skipped+=1;continue;};
+        if events.iter().any(|e|date(&e["at"]).is_none_or(|t|t<=end||t>confirmed)){skipped+=1;continue;}
+        let compared=compare(order)?;
+        if compared["auditCoverage"]!="verified_manifest"{skipped+=1;continue;}
+        let raw=snap["raw"].as_str().ok_or("보정 원문 누락")?;
+        let units=raw.encode_utf16().collect::<Vec<_>>();
+        let mut samples=Vec::new();let mut used=BTreeSet::new();
+        for obs in rows(&compared["observations"]).filter(|o|o["task"]=="recipient_ownership"){
+            let label=match obs["outcome"].as_str(){
+                Some("explicit_correction_observed") if obs["eligibleForCandidateLearning"]==true=>"explicit_correction",
+                Some("unchanged_observed") if obs["eligibleForCandidateLearning"]==true=>"unchanged_proxy",
+                _=>{unverified+=1;continue;}
+            };
+            let (Some(old),Some(actual),Some(s))=(singleton(&obs["initialCandidates"]),
+                singleton(&obs["finalCandidates"]),position(&units,&obs["source"]))else{invalid+=1;continue;};
+            if !matches!(old,"previous"|"next")||!matches!(actual,"previous"|"next")||
+                (label=="explicit_correction"&&(old==actual||singleton(&obs["positiveCandidates"])!=Some(actual)||
+                    singleton(&obs["negativeCandidates"])!=Some(old)))||
+                (label=="unchanged_proxy"&&old!=actual){invalid+=1;continue;}
+            if !used.insert(s){return Err("보정 관측 위치 중복".into());}
+            let mut traces=rows(&trace["decisions"]).filter(|d|position(&units,&d["source"])==Some(s));
+            let Some(d)=traces.next()else{invalid+=1;continue;};
+            if traces.next().is_some(){invalid+=1;continue;}
+            if !d["legacyFirstBlockingReason"].is_null(){blocked+=1;continue;}
+            let Some((kind,bin))=owner_score_input(&units,d,obs)else{invalid+=1;continue;};
+            samples.push((kind,bin,label,old=="next",actual=="next"));
+        }
+        if samples.is_empty(){continue;}
+        if fit{
+            fit_orders+=1;
+            let mut local=BTreeMap::<(&str,usize),(usize,usize)>::new();
+            for (kind,bin,_,_,actual) in samples{
+                let n=local.entry((kind,bin)).or_default();n.0+=usize::from(actual);n.1+=1;
+            }
+            for (key,(next,total)) in local{bins.entry(key).or_default().add_order(next,total);}
+        }else{test_orders+=1;tests.push(samples);}
+    }
+    let mut totals=BTreeMap::<(&str,&str),OwnerTest>::new();
+    for samples in tests{
+        let mut local=BTreeMap::<(&str,&str),OwnerTest>::new();
+        for (kind,bin,label,old,actual) in samples{
+            let p=bins.get(&(kind,bin)).and_then(OwnerFitBin::estimate);
+            for group in [label,"mixed_proxy"]{local.entry((kind,group)).or_default().observe(p,old,actual);}
+        }
+        for (key,value) in local{totals.entry(key).or_default().merge_order(value);}
+    }
+    let intervals=["<=-61","-60..-31","-30..-11","-10..-1","0..9","10..29","30..59",">=60"];
+    let mut table=Vec::new();
+    for kind in ["address","contact"]{
+        for (bin,interval) in intervals.iter().enumerate(){
+            let empty=OwnerFitBin::default();let f=bins.get(&(kind,bin)).unwrap_or(&empty);
+            table.push(json!({"sourceKind":kind,"bin":bin,"adjustedMargin":interval,
+                "fitOrders":f.orders,"orderWeightedNextMass":f.next_sum,
+                "estimatedNextProxyFrequency":f.estimate(),
+                "estimatedPreviousProxyFrequency":f.estimate().map(|p|1.0-p)}));
+        }
+    }
+    let groups=totals.into_iter().map(|((kind,label),v)|json!({"sourceKind":kind,"labelKind":label,
+        "metrics":v.wire()})).collect::<Vec<_>>();
+    Ok(json!({"status":"legacy_score_calibration_diagnostic_only","method":"fixed_bins_order_weighted_beta_1_1",
+        "scorePolicyVersion":OWNER_SCORE_POLICY,"clientBuildVersion":build,"minimumFitOrdersPerBin":MIN_CALIBRATION_ORDERS,
+        "fitStart":config["fitStart"],"testStart":config["testStart"],"testEnd":config["testEnd"],
+        "evaluationAsOf":config["evaluationAsOf"],"fitOrders":fit_orders,"testOrders":test_orders,
+        "excludedOrders":skipped,"lateLabelOrders":late,"blockedObservations":blocked,
+        "invalidObservations":invalid,"unverifiedObservations":unverified,"bins":table,"testGroups":groups,
+        "fitLabelKind":"mixed_operational_proxy","representativeLabelsVerified":false,
+        "historicalModelVerified":false,"sourceProvenanceVerified":false,
+        "calibratedProbability":null,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
@@ -960,6 +1139,20 @@ mod tests{
         assert_eq!(shadow_top(&r(2.0,1.0,3.0),&allowed),None);
         let mut bad=r(2.0,1.0,0.0);bad["totalSupportMass"]=json!(9.0);
         assert_eq!(shadow_top(&bad,&allowed),None);
+    }
+    #[test]
+    fn owner_calibration_bins_and_order_weighting_are_bounded(){
+        assert_eq!(owner_score_bin(-1),3);assert_eq!(owner_score_bin(0),4);
+        assert_eq!(owner_score_bin(-61),0);assert_eq!(owner_score_bin(60),7);
+        let mut f=OwnerFitBin::default();f.add_order(100,100);
+        assert!(f.estimate().is_none());
+        for _ in 0..4{f.add_order(0,1);}
+        assert!((f.estimate().unwrap()-2.0/7.0).abs()<1e-10);
+        let mut t=OwnerTest::default();t.observe(None,true,false);t.observe(Some(0.75),false,true);
+        let mut total=OwnerTest::default();total.merge_order(t);
+        assert_eq!(total.wire()["coverage"],0.5);
+        assert_eq!(total.wire()["brierOnCovered"],0.0625);
+        assert_eq!(total.wire()["hardLegacyBrierOnCovered"],1.0);
     }
     fn owner_fixture()->Value{
         // Emoji makes the UTF-16 positions differ from byte offsets.
