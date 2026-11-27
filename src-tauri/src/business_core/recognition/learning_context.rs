@@ -452,20 +452,13 @@ fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<(BTreeMap<S
         order["deletedAt"].as_str().is_some_and(|v|!v.trim().is_empty()){
         return Ok(None);
     }
-    let mut compared=super::observations::compare(order)?;
+    let compared=super::observations::compare(order)?;
     if compared["status"]!="compared"{return Ok(None);}
-    // Legacy comparisons remain accessible through compare(), but must
-    // never populate the same candidate counts as manifest-verified orders.
-    if compared["auditCoverage"]!="verified_manifest"{
-        if let Some(observations)=compared["observations"].as_array_mut(){
-            for o in observations{
-                if o["eligibleForCandidateLearning"]==true{
-                    o["outcome"]=json!("changed_requires_review");
-                    o["eligibleForCandidateLearning"]=json!(false);
-                    o["requiresReview"]=json!(true);
-                }
-            }
-        }
+    // Unverified orders remain visible through coverage counts and compare(),
+    // but cannot inflate candidate counts OR independent-order denominators.
+    let coverage=compared["auditCoverage"].as_str().unwrap_or("").to_owned();
+    if coverage!="verified_manifest"{
+        return Ok(Some((BTreeMap::new(),BTreeMap::new(),BTreeMap::new(),coverage)));
     }
     let first_client=compared["initialRecognition"]["clientId"].as_str();
     let final_client=snapshot["data"]["clientId"].as_str();
@@ -515,7 +508,7 @@ fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<(BTreeMap<S
             field_groups.entry(key.to_owned()).or_default().add_observation(o);
         }
     }
-    Ok(Some((groups,fields,field_groups,compared["auditCoverage"].as_str().unwrap_or("").to_owned())))
+    Ok(Some((groups,fields,field_groups,coverage)))
 }
 
 /// Explicit bounded batch, not an operational history scan. Caller supplies
@@ -557,7 +550,7 @@ pub(super) fn statistics(payload:&Value)->Result<Value,String>{
                     "legacy_unverified"=>legacy_orders+=1,
                     _=>incomplete_orders+=1,
                 }
-                if local.is_empty()&&local_fields.is_empty(){without_context+=1;}
+                if coverage=="verified_manifest"&&local.is_empty()&&local_fields.is_empty(){without_context+=1;}
                 for (key,counts) in local{groups.entry(key).or_default().add_order(counts);}
                 for (task,counts) in field_counts{fields.entry(task).or_default().add_order(counts);}
                 for (key,counts) in local_fields{field_groups.entry(key).or_default().add_order(counts);}
@@ -635,8 +628,8 @@ mod tests{
         legacy["confirmationSnapshot"]["recognitionBaseline"].as_object_mut().unwrap().remove("auditEventIds");
         let report=statistics(&json!({"orders":[legacy]})).unwrap();
         assert_eq!(report["auditCoverage"]["legacyUnverifiedOrders"],1);
-        assert!(rows(&report["fieldContextStatistics"]).all(|r|
-            r["counts"]["weakUnchangedCount"]==0&&r["counts"]["explicitCorrectionCount"]==0));
+        assert_eq!(report["fieldContextStatistics"],json!([]));
+        assert_eq!(report["fieldStatistics"],json!([]));
     }
     #[test]
     fn field_evidence_keeps_candidate_polarity_and_distinct_order_counts(){
