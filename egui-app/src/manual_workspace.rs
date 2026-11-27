@@ -225,23 +225,23 @@ fn manual_assignment_payload(
     if model["assignments"].get(id).is_some(){
         return Err("이미 배정된 원문입니다. 먼저 연결을 해제하세요.");
     }
-    let block=list(model,"blocks").iter().find(|b|text(b,"id")==id)
+    list(model,"blocks").iter().find(|b|text(b,"id")==id)
         .ok_or("원문 블록을 확인하세요.")?;
-    let field=text(block,"field");
+    if !manual_assignment_target_supported(target){
+        return Err("원문을 배정할 수 없는 입력 셀입니다.");
+    }
     // A new product destination is UI-only. The native reducer receives a real
     // item ID only after the temporary model has created the row.
     if target.item.is_none() && target.field=="newProduct"{
-        if field!="product"{return Err("상품 원문만 신규 품목에 배정할 수 있습니다.");}
         let row=list(model,"rows").get(target.row).ok_or("배송 건을 확인하세요.")?;
         let rid=text(row,"id");
         if rid.is_empty(){return Err("배송 건을 확인하세요.");}
         return Ok(json!({"id":id,"recipientId":rid}));
     }
-    if !manual_cell_matches_source(target.item.is_some(),&target.field,field){
-        return Err("원문 항목과 같은 종류의 입력 셀을 선택하세요.");
-    }
     let row=list(model,"rows").get(target.row).ok_or("배송 건을 확인하세요.")?;
-    let mut cell=json!({"recipientId":row.get("id"),"field":target.field});
+    let rid=text(row,"id");
+    if rid.is_empty(){return Err("배송 건을 확인하세요.");}
+    let mut cell=json!({"recipientId":rid,"field":target.field});
     if let Some(item)=target.item.as_ref(){
         if !list(row,"items").iter().any(|v|text(v,"id")==item){
             return Err("상품 셀을 확인하세요.");
@@ -257,14 +257,36 @@ fn manual_assignment_drop_hit(ui:&egui::Ui,rect:egui::Rect,pointer:Option<egui::
     ui.is_enabled() && pointer.is_some_and(|pos|rect.intersect(ui.clip_rect()).contains(pos))
 }
 
-/// Return every visible worksheet target that accepts this exact source block.
-/// The same payload validator is used again at drop time, so recommendations
-/// cannot drift from type or assignment business rules.
+fn manual_assignment_target_supported(target:&ManualCellTarget)->bool{
+    if target.item.is_some(){["product","quantity"].contains(&target.field.as_str())}
+    else{["name","address","mobile","phone","note","newProduct"].contains(&target.field.as_str())}
+}
+
+/// The original type is a recommendation, not an authorization rule.
+fn manual_assignment_type_recommended(target:&ManualCellTarget,field:&str)->bool{
+    if target.item.is_none() && target.field=="newProduct"{field=="product"}
+    else{manual_cell_matches_source(target.item.is_some(),&target.field,field)}
+}
+
+fn manual_recommended_sources(model:&Value,target:&ManualCellTarget)
+    ->std::collections::HashSet<String>{
+    list(model,"blocks").iter().filter_map(|block|{
+        let id=text(block,"id");
+        (!id.is_empty() && manual_assignment_type_recommended(target,text(block,"field"))
+            && manual_assignment_payload(model,id,target).is_ok()).then(||id.to_owned())
+    }).collect()
+}
+
+/// Recommend only matching types while retaining every valid assignment path.
 fn manual_assignment_recommendations(
     model:&Value,id:&str
 )->Vec<ManualCellTarget>{
+    let Some(block)=list(model,"blocks").iter().find(|block|text(block,"id")==id)
+        else{return Vec::new()};
+    let field=text(block,"field");
     manual_cell_targets(model).into_iter().filter(|target|
-        manual_assignment_payload(model,id,target).is_ok()
+        manual_assignment_type_recommended(target,field)
+            && manual_assignment_payload(model,id,target).is_ok()
     ).collect()
 }
 
@@ -2166,11 +2188,15 @@ impl ManualWorkspace {
                                             );
                                             let _=crate::card::reception_document_viewport(
                                                 body,rect,"manual-source-document","manual-source-blocks",|ui|{
+                                                let recommended_sources=if !busy && self.assignment_gesture.active_source().is_none(){
+                                                    self.assignment_gesture.cell.as_ref().map(|target|
+                                                        manual_recommended_sources(model,target)).unwrap_or_default()
+                                                }else{std::collections::HashSet::new()};
                                                 let interaction=crate::manual_source_view::source_document(
                                                     ui,&self.raw,&spans,&assigned_source_ids,
                                                     selected_recipient_id.as_deref(),active_link.as_ref(),
                                                     scroll_link.as_ref(),!busy,
-                                                    self.assignment_gesture.dragging.as_deref().or(self.assignment_gesture.source.as_deref())
+                                                    self.assignment_gesture.active_source(),&recommended_sources
                                                 );
                                                 hovered_source=interaction.hovered;
                                                 source_did_scroll=interaction.did_scroll;
@@ -2272,8 +2298,9 @@ impl ManualWorkspace {
                                                                 .into_iter().zip(responses.into_iter()){
                                                                 let target=ManualCellTarget{row:index,item:None,field:field.to_owned()};
                                                                 let recommended=drag_recommendations.contains(&target);
-                                                                let hovered=recommended &&
-                                                                    manual_assignment_drop_hit(fields,response.rect,drag_pointer);
+                                                                let hovered=self.assignment_gesture.dragging.is_some()
+                                                                    && manual_assignment_target_supported(&target)
+                                                                    && manual_assignment_drop_hit(fields,response.rect,drag_pointer);
                                                                 if hovered{
                                                                     drop_allowed=true;
                                                                     drop_target=Some(target.clone());
@@ -2380,8 +2407,9 @@ impl ManualWorkspace {
                                                                 ]{
                                                                     let target=ManualCellTarget{row:index,item:Some(item_id.to_owned()),field:field.to_owned()};
                                                                     let recommended=drag_recommendations.contains(&target);
-                                                                    let hovered=recommended &&
-                                                                        manual_assignment_drop_hit(items_ui,response.rect,drag_pointer);
+                                                                    let hovered=self.assignment_gesture.dragging.is_some()
+                                                                    && manual_assignment_target_supported(&target)
+                                                                    && manual_assignment_drop_hit(items_ui,response.rect,drag_pointer);
                                                                     if hovered{
                                                                         drop_allowed=true;
                                                                         drop_target=Some(target.clone());
@@ -2478,7 +2506,8 @@ impl ManualWorkspace {
                                                             }
                                                             // Click selection and dragging expose the same compatible destination.
                                                             let target=ManualCellTarget{row:index,item:None,field:"newProduct".into()};
-                                                            if can_mutate && drag_recommendations.contains(&target){
+                                                            if can_mutate && self.assignment_gesture.active_source().is_some(){
+                                                                let recommended=drag_recommendations.contains(&target);
                                                                 let response=items_ui.shared_add_sized(
                                                                     [items_ui.available_width(),theme::RECEPTION_ITEMS_ROW_HEIGHT],
                                                                     egui::Label::new(typography::body("신규 품목으로 분류"))
@@ -2495,7 +2524,9 @@ impl ManualWorkspace {
                                                                     self.assignment_gesture.source.is_some(){
                                                                     clicked_target=Some(target);
                                                                 }
-                                                                paint_manual_assignment_recommendation(items_ui,response.rect,hovered);
+                                                                if recommended{
+                                                                    paint_manual_assignment_recommendation(items_ui,response.rect,hovered);
+                                                                }
                                                             }
                                                             });
                                                             crate::ui_layout::reception_items_to_freight_gap(items_ui);
@@ -3187,13 +3218,16 @@ mod manual_assignment_gesture_tests{
     }
 
     #[test]
-    fn all_gestures_share_type_and_duplicate_assignment_guards(){
+    fn all_gestures_allow_type_correction_but_reject_duplicate_assignment(){
         let model=json!({"rows":[{"id":"r","items":[{"id":"i"}]}],
             "blocks":[{"id":"block","field":"name"}],"assignments":{}});
         assert_eq!(manual_assignment_payload(&model,"block",&target()).unwrap(),
             json!({"id":"block","cell":{"recipientId":"r","field":"name"}}));
         let wrong=ManualCellTarget{row:0,item:None,field:"address".into()};
-        assert!(manual_assignment_payload(&model,"block",&wrong).is_err());
+        assert!(manual_assignment_payload(&model,"block",&wrong).is_ok());
+        assert!(!manual_assignment_recommendations(&model,"block").contains(&wrong));
+        let unsupported=ManualCellTarget{row:0,item:Some("i".into()),field:"unitPrice".into()};
+        assert!(manual_assignment_payload(&model,"block",&unsupported).is_err());
         let mut assigned=model.clone();
         assigned["assignments"]["block"]=json!({"recipientId":"r","field":"name"});
         assert!(manual_assignment_payload(&assigned,"block",&target()).is_err());
@@ -3249,7 +3283,7 @@ mod manual_assignment_gesture_tests{
         assert_eq!(manual_assignment_payload(&model,"p",&target).unwrap(),
             json!({"id":"p","recipientId":"r1"}));
         assert!(!manual_assignment_recommendations(&model,"q").contains(&target));
-        assert!(manual_assignment_payload(&model,"q",&target).is_err());
+        assert!(manual_assignment_payload(&model,"q",&target).is_ok());
         assert!(manual_assignment_recommendations(&model,"p")
             .contains(&ManualCellTarget{row:1,item:None,field:"newProduct".into()}));
         model["assignments"]["p"]=json!({"recipientId":"r2","itemId":"i2","field":"product"});
@@ -3280,6 +3314,21 @@ mod manual_assignment_gesture_tests{
         assert!(gesture.source_click("q".into()).is_none());
         assert!(!manual_assignment_recommendations(&model,gesture.active_source().unwrap())
             .contains(&target));
+    }
+
+    #[test]
+    fn cell_first_recommends_only_unassigned_matching_sources(){
+        let model=json!({"rows":[{"id":"r","items":[{"id":"i"}]}],
+            "blocks":[{"id":"n1","field":"name"},{"id":"n2","field":"name"},
+                {"id":"p","field":"product"},{"id":"q","field":"quantity"}],
+            "assignments":{"n2":{"recipientId":"r","field":"name"}}});
+        assert_eq!(manual_recommended_sources(&model,&target()),
+            std::collections::HashSet::from(["n1".to_owned()]));
+        let product=ManualCellTarget{row:0,item:Some("i".into()),field:"product".into()};
+        assert_eq!(manual_recommended_sources(&model,&product),
+            std::collections::HashSet::from(["p".to_owned()]));
+        assert!(manual_assignment_payload(&model,"q",&product).is_ok());
+        assert!(manual_assignment_payload(&model,"p",&target()).is_ok());
     }
 
     #[test]
