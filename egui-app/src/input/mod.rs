@@ -756,10 +756,7 @@ fn reception_quantity_editor(
         }
     );
     if input.has_focus() || step_interaction{
-        placed.painter().rect_stroke(
-            rect,theme::CONTROL_RADIUS as f32,
-            Stroke::new(theme::INPUT_FOCUS_STROKE_WIDTH,theme::SELECTION),egui::StrokeKind::Inside
-        );
+        crate::highlight::paint_outline(placed.painter(),rect,theme::CONTROL_RADIUS,crate::highlight::Role::Focus);
     }
     ReceptionQuantityEditorResponse{input,step_interaction}
 }
@@ -818,10 +815,7 @@ pub(crate) fn reception_item_numeric_editor(
 /// Persistent required-input accent. Paint on the already allocated cell,
 /// after any inline editor and blue/orange hover decoration. No layout space.
 pub(crate) fn paint_required_input(ui:&Ui,rect:Rect){
-    let Some(painter)=crate::ui_primitives::highlight_painter(ui,rect)else{return;};
-    painter.rect_filled(rect,theme::CONTROL_RADIUS,theme::REQUIRED_INPUT_TINT);
-    painter.rect_stroke(rect,theme::CONTROL_RADIUS,
-        Stroke::new(theme::REQUIRED_INPUT_STROKE_WIDTH,theme::REQUIRED_INPUT_BORDER),egui::StrokeKind::Inside);
+    crate::highlight::paint(ui,rect,theme::CONTROL_RADIUS,crate::highlight::Role::RequiredInput);
 }
 
 // Shared controls and presentation profiles.
