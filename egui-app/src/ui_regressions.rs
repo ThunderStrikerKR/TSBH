@@ -997,6 +997,7 @@ mod shared_selection_interaction_tests {
         events:Vec<egui::Event>)->SelectFrame{
         let mut frame=None;
         let _=ctx.run(raw(ctx,events),|ctx|{
+            crate::ui_test_support::begin_component_geometry();
             crate::floating_notice::begin_page(ctx,"synthetic selectors");
             egui::CentralPanel::default().show(ctx,|ui|{
                 ui.set_width(480.0);
@@ -1035,6 +1036,9 @@ mod shared_selection_interaction_tests {
                     enabled:trigger.enabled()});
             });
         });
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,700.0));
+        let samples=crate::ui_test_support::finish_component_geometry(screen);
+        crate::ui_test_support::assert_independent_control_hits(&samples,screen,"dropdown pointer frame");
         frame.expect("shared dropdown rendered")
     }
     fn same_select_slots(base:&SelectFrame,frame:&SelectFrame){
@@ -1132,6 +1136,7 @@ mod shared_selection_interaction_tests {
         events:Vec<egui::Event>)->CheckFrame{
         let mut frame=None;
         let _=ctx.run(raw(ctx,events),|ctx|{
+            crate::ui_test_support::begin_component_geometry();
             egui::CentralPanel::default().show(ctx,|ui|{
                 ui.set_width(480.0);
                 let response=ui.add_enabled_ui(parent_enabled,|ui|match kind{
@@ -1154,6 +1159,9 @@ mod shared_selection_interaction_tests {
                 frame=Some(CheckFrame{hit:response.rect,next,id:response.id,enabled:response.enabled()});
             });
         });
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,700.0));
+        let samples=crate::ui_test_support::finish_component_geometry(screen);
+        crate::ui_test_support::assert_independent_control_hits(&samples,screen,"checkbox pointer frame");
         frame.expect("shared checkbox rendered")
     }
     #[test]
@@ -1685,7 +1693,10 @@ pub(crate) mod general_screen_geometry_tests {
                     let _=ctx.run(egui::RawInput{
                         screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,screen)),
                         ..Default::default()
-                    },|ctx|app.reception(ctx));
+                    },|ctx|{
+                        crate::ui_test_support::begin_component_geometry();
+                        app.reception(ctx);
+                    });
                     let components=crate::ui_test_support::finish_component_geometry(Rect::from_min_size(egui::Pos2::ZERO,screen));
                     crate::ui_test_support::assert_independent_control_hits(&components,
                         Rect::from_min_size(egui::Pos2::ZERO,screen),"actual reception");
@@ -2192,7 +2203,10 @@ pub(crate) mod general_screen_geometry_tests {
                     TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
                     crate::ui_test_support::begin_component_geometry();
                     let _=ctx.run(egui::RawInput{screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,screen)),
-                        ..Default::default()},|ctx|app.reception(ctx));
+                        ..Default::default()},|ctx|{
+                        crate::ui_test_support::begin_component_geometry();
+                        app.reception(ctx);
+                    });
                     let components=crate::ui_test_support::finish_component_geometry(Rect::from_min_size(egui::Pos2::ZERO,screen));
                     crate::ui_test_support::assert_independent_control_hits(&components,
                         Rect::from_min_size(egui::Pos2::ZERO,screen),"actual reception");
