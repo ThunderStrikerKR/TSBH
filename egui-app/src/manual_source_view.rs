@@ -149,7 +149,10 @@ mod tests {
         let _=ctx.run(raw_input,|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
                 ui.set_width(320.0);
-                *origin=ui.cursor().min;
+                // The test models the rendered document, whose glyph origin
+                // includes the shared document text inset on both axes.
+                let inset=f32::from(theme::SOURCE_DOCUMENT_TEXT_MARGIN);
+                *origin=ui.cursor().min+egui::vec2(inset,inset);
                 interaction=source_document(
                     ui,raw,spans,&HashSet::new(),None,None,None,enabled,None,&HashSet::new()
                 );
@@ -173,10 +176,10 @@ mod tests {
         let mut origin=egui::Pos2::ZERO;
         let mut initial=egui::RawInput::default();
         initial.screen_rect=Some(screen);
-        draw(&ctx,initial,raw,&spans,&mut origin,true);
+        let initial=draw(&ctx,initial,raw,&spans,&mut origin,true);
 
-        let job=source_highlight::layout(
-            raw,&spans,None,None,320.0,
+        let job=source_highlight::layout_manual(
+            raw,&spans,None,None,&HashSet::new(),initial.drag_layout_width,
             FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),
             theme::text_ink(theme::TextRole::Value,theme::TextState::Normal),
         );
@@ -228,11 +231,11 @@ mod tests {
         }];
         let ctx=egui::Context::default();
         let mut origin=egui::Pos2::ZERO;
-        draw(&ctx,egui::RawInput{
+        let initial=draw(&ctx,egui::RawInput{
             screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(600.0,400.0))),
             ..Default::default()
         },raw,&spans,&mut origin,true);
-        let job=source_highlight::layout(raw,&spans,None,None,320.0,
+        let job=source_highlight::layout_manual(raw,&spans,None,None,&HashSet::new(),initial.drag_layout_width,
             FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
         let galley=ctx.fonts_mut(|fonts|fonts.layout_job(job));
         let glyph=&galley.rows[0].row.glyphs[0];
@@ -257,8 +260,11 @@ mod tests {
         ).unwrap();
         let original_bounds=original_visual.rects.iter().copied()
             .reduce(|left,right|left.union(right)).unwrap();
+        assert!(original_bounds.contains(from),"fixture must grab inside the rendered block");
         assert_eq!(pressed.drag_anchor_offset,Some(from-original_bounds.min),
             "the drag anchor must preserve the exact point grabbed inside the source block");
+        assert_eq!(original_bounds.min+pressed.drag_anchor_offset.unwrap(),from,
+            "the preview anchor must reconstruct the pointer's screen position");
         assert!(pressed.drag_layout_width>0.0,
             "the drag preview must retain the source document's measured width");
         let to=from+egui::vec2(360.0,30.0);
@@ -292,9 +298,9 @@ mod tests {
         let mut origin=egui::Pos2::ZERO;
         let mut initial=egui::RawInput::default();
         initial.screen_rect=Some(screen);
-        draw(&ctx,initial,raw,&spans,&mut origin,false);
-        let job=source_highlight::layout(
-            raw,&spans,None,None,320.0,
+        let initial=draw(&ctx,initial,raw,&spans,&mut origin,false);
+        let job=source_highlight::layout_manual(
+            raw,&spans,None,None,&HashSet::new(),initial.drag_layout_width,
             FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),
             theme::text_ink(theme::TextRole::Value,theme::TextState::Normal),
         );
