@@ -70,7 +70,10 @@ jobs:
             'popup::regression_tests::modal_editor_workspace_geometry_tests::actual_flow_modal_keeps_chrome_and_action_rects_when_permission_changes',
             'popup::regression_tests::round87_modal_flow_contract_tests::flow_regions_measure_master_vertical_gaps_at_normal_and_compact_widths',
             'popup::regression_tests::round87_phase5_modal_contract_tests::production_screens_do_not_bypass_shared_modal_chrome_or_decision_entry',
-            'floating_notice::shared_floating_notice_rendered_geometry_tests::actual_notice_paint_stays_within_screen_without_moving_underlying_controls'
+            'floating_notice::shared_floating_notice_rendered_geometry_tests::actual_notice_paint_stays_within_screen_without_moving_underlying_controls',
+            'ui_regressions::shared_placeholder_color_contract_tests::actual_input_hints_keep_approved_ink_when_empty_hovered_and_focused',
+            'ui_regressions::shared_placeholder_color_contract_tests::actual_dropdown_caption_ink_distinguishes_selection_and_valid_empty_filters',
+            'ui_regressions::shared_placeholder_color_contract_tests::production_input_hints_must_use_shared_placeholder_builder'
           )
           foreach ($name in $names) {
             $listed = cargo test --manifest-path egui-app/Cargo.toml $name -- --exact --list

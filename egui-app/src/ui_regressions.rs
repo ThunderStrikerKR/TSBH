@@ -2368,3 +2368,166 @@ mod notice_no_reflow_contract_tests {
         assert!(hits.is_empty(),"UI notice reflow violations:\n{}",hits.join("\n"));
     }
 }
+
+
+// Validate rendered glyph colors, not merely the presence of a color token.
+// The literal approved value is deliberately independent of production code.
+#[cfg(test)]
+mod shared_placeholder_color_contract_tests{
+    use super::*;
+    use crate::dropdown::{DropdownCaption,ManagementSearchChoice};
+    use egui::Color32;
+    const APPROVED:Color32=Color32::from_rgb(96,96,96);
+    const HINT:&str="Select or enter";
+    const VALUE:&str="2026-11-27";
+
+    fn colors(output:&egui::FullOutput,label:&str)->Vec<Color32>{
+        fn visit(shape:&egui::Shape,label:&str,found:&mut Vec<Color32>){
+            match shape{
+                egui::Shape::Text(text) if text.galley.text()==label=>{
+                    for section in &text.galley.job.sections{
+                        let ink=section.format.color;
+                        found.push(text.override_text_color.unwrap_or(
+                            if ink==Color32::PLACEHOLDER{text.fallback_color}else{ink}
+                        ));
+                    }
+                }
+                egui::Shape::Vec(shapes)=>for shape in shapes{visit(shape,label,found);},
+                _=>{}
+            }
+        }
+        let mut found=Vec::new();
+        for shape in &output.shapes{visit(&shape.shape,label,&mut found);}
+        found
+    }
+
+    fn assert_color(output:&egui::FullOutput,label:&str,expected:Color32){
+        let actual=colors(output,label);
+        assert!(!actual.is_empty(),"caption not rendered: {label}");
+        assert!(actual.iter().all(|ink|*ink==expected),
+            "{label}: expected {expected:?}, got {actual:?}");
+    }
+
+    fn render(ctx:&egui::Context,pointer:Option<egui::Pos2>,
+        mut draw:impl FnMut(&mut Ui)->egui::Response
+    )->(egui::FullOutput,egui::Response){
+        let mut response=None;
+        let output=ctx.run(egui::RawInput{
+            screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(800.0,500.0))),
+            events:pointer.into_iter().map(egui::Event::PointerMoved).collect(),
+            ..Default::default()
+        },|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.set_width(440.0);
+                response=Some(draw(ui));
+            });
+        });
+        (output,response.expect("control rendered"))
+    }
+
+    #[test]
+    fn actual_input_hints_keep_approved_ink_when_empty_hovered_and_focused(){
+        assert_eq!(crate::input::INPUT_PLACEHOLDER_COLOR,APPROVED);
+        for kind in 0..4{
+            let ctx=test_context();
+            let mut value=String::new();
+            let draw=|ui:&mut Ui,value:&mut String|match kind{
+                0=>crate::input::flexible_text_field(ui,value,240.0,HINT),
+                1=>crate::input::management_search_field(ui,value,240.0,HINT),
+                2=>crate::input::management_date_text_field(ui,value,240.0,36.0,HINT),
+                _=>crate::input::multiline_text_field(ui,value,true,240.0,2,Some(HINT)),
+            };
+            let (output,field)=render(&ctx,None,|ui|draw(ui,&mut value));
+            assert_color(&output,HINT,APPROVED);
+            assert!(value.is_empty(),"placeholder became input data");
+            let (output,_)=render(&ctx,Some(field.rect.center()),|ui|draw(ui,&mut value));
+            assert_color(&output,HINT,APPROVED);
+            ctx.memory_mut(|memory|memory.request_focus(field.id));
+            let (output,focused)=render(&ctx,Some(field.rect.center()),|ui|draw(ui,&mut value));
+            assert!(focused.has_focus(),"input focus not exercised: {kind}");
+            assert_color(&output,HINT,APPROVED);
+            value=VALUE.to_owned();
+            let (output,_)=render(&ctx,None,|ui|draw(ui,&mut value));
+            assert_color(&output,VALUE,theme::TEXT);
+            assert!(colors(&output,HINT).is_empty(),"hint survives nonempty input");
+            value.clear();
+            let (output,_)=render(&ctx,None,|ui|draw(ui,&mut value));
+            assert_color(&output,HINT,APPROVED);
+            assert!(value.is_empty());
+        }
+    }
+
+    #[test]
+    fn actual_dropdown_caption_ink_distinguishes_selection_and_valid_empty_filters(){
+        for kind in 0..4{
+            let ctx=test_context();
+            let mut selected=String::new();
+            let choices=[ManagementSearchChoice::new("id".into(),VALUE.into(),VALUE.into())];
+            let draw=|ui:&mut Ui,selected:&mut String,placeholder:bool|{
+                let caption=if placeholder{HINT}else{VALUE};
+                match kind{
+                    0=>crate::dropdown::management_dropdown(ui,
+                        DropdownCaption::new(caption,placeholder),240.0,true,|_|{}),
+                    1=>crate::dropdown::management_searchable_dropdown(ui,
+                        DropdownCaption::new(caption,placeholder),240.0,true,
+                        selected,&choices,"Search"),
+                    2=>crate::dropdown::management_dropdown_values(ui,
+                        &typography::inline_body_values(&[(caption,None)]),
+                        240.0,true,placeholder,|_|{}),
+                    // The empty category value is deliberately retained. In
+                    // filter mode it is a valid "all categories" selection.
+                    _=>crate::category_dropdown::category_dropdown(ui,&[],selected,
+                        240.0,caption,true,true,placeholder),
+                }
+            };
+            let (output,trigger)=render(&ctx,None,|ui|draw(ui,&mut selected,true));
+            assert_color(&output,HINT,APPROVED);
+            let (output,_)=render(&ctx,Some(trigger.rect.center()),|ui|draw(ui,&mut selected,true));
+            assert_color(&output,HINT,APPROVED);
+            if kind!=3{selected="id".to_owned();}
+            let (output,_)=render(&ctx,None,|ui|draw(ui,&mut selected,false));
+            assert_color(&output,VALUE,theme::TEXT);
+            assert!(colors(&output,HINT).is_empty(),"hint survives selection");
+            selected.clear();
+            let (output,_)=render(&ctx,None,|ui|draw(ui,&mut selected,true));
+            assert_color(&output,HINT,APPROVED);
+        }
+    }
+
+    #[test]
+    fn production_input_hints_must_use_shared_placeholder_builder(){
+        fn check(name:&str,source:&str)->Vec<String>{
+            let hint=regex::Regex::new(r"\.\s*hint_text\s*\(").unwrap();
+            let shared=regex::Regex::new(r"^\s*input_placeholder\s*\(").unwrap();
+            let mut hits=Vec::new();
+            for m in hint.find_iter(source){
+                let start=source[..m.start()].rfind('\n').map_or(0,|i|i+1);
+                if source[start..m.start()].trim_start().starts_with("//"){continue;}
+                if name!="input/mod.rs"||!shared.is_match(&source[m.end()..]){
+                    let line=source[..m.start()].bytes().filter(|b|*b==b'\n').count()+1;
+                    hits.push(format!("{name}:{line}: use the shared input placeholder builder"));
+                }
+            }
+            hits
+        }
+        fn scan(root:&std::path::Path,path:&std::path::Path,hits:&mut Vec<String>){
+            for entry in std::fs::read_dir(path).expect("read Rust source directory"){
+                let p=entry.expect("source entry").path();
+                if p.is_dir(){scan(root,&p,hits);continue;}
+                if p.extension().and_then(|v|v.to_str())!=Some("rs"){continue;}
+                let name=p.strip_prefix(root).unwrap().to_string_lossy().replace('\\',"/");
+                if name.ends_with("regression_tests.rs")||name=="ui_regressions.rs"||name=="ui_test_support.rs"{continue;}
+                let source=std::fs::read_to_string(&p).expect("read source");
+                if source.starts_with("#![cfg(test)]"){continue;}
+                hits.extend(check(&name,&production_source_for_contract(&source)));
+            }
+        }
+        assert_eq!(check("product_manager.rs","editor.hint_text(\"hint\")").len(),1);
+        assert_eq!(check("input/mod.rs","editor.hint_text(hint)").len(),1);
+        assert!(check("input/mod.rs","editor.hint_text(input_placeholder(hint))").is_empty());
+        let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut hits=Vec::new();
+        scan(&root,&root,&mut hits);
+        assert!(hits.is_empty(),"placeholder ownership violations:\n{}",hits.join("\n"));
+    }
+}
