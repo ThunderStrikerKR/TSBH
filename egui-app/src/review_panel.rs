@@ -506,6 +506,45 @@ fn inherited_message_groups(issues:&[Value],indices:&[usize],recognition:&Value)
         (caption,members)
     }).collect()
 }
+// Display labels are independent of the native validation messages used for
+// failure matching, approval evidence and stage gates.
+fn review_caption<'a>(issue:&'a Value,recognition:&Value)->std::borrow::Cow<'a,str>{
+    let kind=text(issue,"kind");
+    let original=text(issue,"title");
+    let label=match kind{
+        "CLIENT"=>"거래처 선택 필요",
+        "CLIENT_MATCH_CONFLICT"=>"거래처 정보 불일치",
+        "CLIENT_MATCH_ERROR"=>"거래처 자동선택 실패",
+        "RECIPIENT"=>"수취인 정보 없음",
+        "NAME"=>"수취인명 누락",
+        "ADDRESS"=>{
+            let address=recognition.get("recipients").and_then(Value::as_array)
+                .and_then(|rows|rows.iter().find(|row|text(row,"id")==text(issue,"recipientId")))
+                .map(|row|text(row,"address").trim());
+            if address==Some(""){"배송주소 누락"}else{"상세주소 확인 필요"}
+        },
+        "CONTACT" if original=="연락처가 없습니다"=>"연락처 누락",
+        "QUANTITY_MISSING" if text(issue,"resolution")=="PROVISIONALLY_APPROVED"=>"수량 잠정 처리 완료",
+        "QUANTITY_MISSING"=>"수량 미기재",
+        "QUANTITY_INVALID"=>"수량 오류",
+        "PRICE"=>"판매가 미등록",
+        "FREIGHT"=>"운임 미확정",
+        _=>original,
+    };
+    std::borrow::Cow::Borrowed(label)
+}
+fn review_instruction(kind:&str)->Option<&'static str>{
+    match kind{
+        "CLIENT"|"CLIENT_MATCH_CONFLICT"|"CLIENT_MATCH_ERROR"=>Some("적용할 거래처를 선택하세요."),
+        "RECIPIENT"=>Some("수취인과 상품을 추가하세요."),
+        "NAME"=>Some("수취인명을 입력하세요."),
+        "ADDRESS"=>Some("주소를 확인하고 수정하세요. 현재 주소가 정확하면 승인할 수 있습니다."),
+        "CONTACT"=>Some("연락처를 확인하고 입력 또는 수정하세요."),
+        "QUANTITY_MISSING"=>Some("상품 수량을 확인하고 입력하세요."),
+        "QUANTITY_INVALID"=>Some("1개 이상의 올바른 수량을 입력하세요."),
+        _=>None
+    }
+}
 fn issue_card(
     ui:&mut Ui,issue:&Value,analysis:&ReceptionAnalysis,
     enabled:bool,selected:&mut Option<Action>,
@@ -519,6 +558,7 @@ fn issue_card(
     let link_key=issue.get("linkKey").and_then(Value::as_str);
     let tone=issue_tone(issue);
     let product_caption=unidentified_product_caption(issue,&analysis.recognition);
+    let caption=review_caption(issue,&analysis.recognition);
     crate::card::review_issue_card(ui,tone,|cell|{
             if text(issue,"resolution")=="USER_APPROVED"{
                 cell.add(egui::Label::new(typography::review_title(detail,tone)).wrap());
@@ -533,10 +573,7 @@ fn issue_card(
                 return;
             }
             cell.add(egui::Label::new(typography::review_title(
-                if kind=="QUANTITY_MISSING"
-                    &&text(issue,"resolution")=="PROVISIONALLY_APPROVED"{
-                    "수량 1개 잠정 처리됨"
-                }else{product_caption.as_deref().unwrap_or(title)},tone
+                product_caption.as_deref().unwrap_or(caption.as_ref()),tone
             )).wrap());
             let model_action=model_resolution_kind(kind)&&severity!="INFO"&&!rid.is_empty()&&iid.is_some_and(|id|!id.is_empty());
             if model_action{
@@ -545,7 +582,23 @@ fn issue_card(
                 }
             }
             if product_caption.is_none() && !detail.is_empty() && detail!=title {
-                cell.add(egui::Label::new(typography::review_detail(detail,tone)).wrap());
+                // Native recipient-only details repeat the old title; keep
+                // identity and actual matching evidence without repeating it.
+                let shown=if caption.as_ref()!=title {
+                    detail.strip_suffix(title).and_then(|prefix|prefix.strip_suffix(" / "))
+                        .unwrap_or(detail)
+                }else{detail};
+                if !shown.is_empty(){
+                    cell.add(egui::Label::new(typography::review_detail(shown,tone)).wrap());
+                }
+            }
+            if severity!="INFO"{
+                if let Some(instruction)=review_instruction(kind){
+                    let instruction=if kind=="ADDRESS"&&issue["canApproveCurrent"]!=true{
+                        "배송주소를 확인하고 입력 또는 수정하세요."
+                    }else{instruction};
+                    cell.add(egui::Label::new(typography::review_detail(instruction,tone)).wrap());
+                }
             }
             if kind=="UNASSIGNED_EVIDENCE" {
                 cell.add(egui::Label::new(typography::review_detail(
@@ -647,7 +700,7 @@ fn issue_card(
                     else if kind=="PRICE" {"단가 입력"}
                     else if kind=="FREIGHT" {"운임 입력"}
                     else if kind=="UNASSIGNED_EVIDENCE" {"수동 분류에서 확인"}
-                    else if is_client {"거래처 확인"}
+                    else if is_client {"거래처 선택"}
                     else if ["MODEL","MODEL_CHOICE","ALIAS_CONFLICT",
                         "CATEGORY_CONFLICT","QUANTITY_LINK","OPTION"].contains(&kind){
                         "해결 절차 보기"
@@ -683,6 +736,34 @@ fn issue_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recovered_review_labels_keep_native_issue_identity_and_approval(){
+        for (kind,old,expected) in [
+            ("CLIENT","거래처를 선택하면 단가가 적용됩니다","거래처 선택 필요"),
+            ("CLIENT_MATCH_CONFLICT","발주처 매칭 충돌","거래처 정보 불일치"),
+            ("CLIENT_MATCH_ERROR","거래처 자동 매칭 오류","거래처 자동선택 실패"),
+            ("RECIPIENT","수취인과 상품을 추가하세요","수취인 정보 없음"),
+            ("NAME","수취인 이름을 확인하세요","수취인명 누락"),
+            ("CONTACT","연락처가 없습니다","연락처 누락"),
+            ("QUANTITY_MISSING","상품에 귀속된 수량을 확정하세요.","수량 미기재"),
+            ("QUANTITY_INVALID","수량을 확인하세요","수량 오류"),
+            ("PRICE","판매가를 등록하세요","판매가 미등록"),
+            ("FREIGHT","배송 운임을 확인하세요","운임 미확정"),
+        ]{
+            let issue=json!({"kind":kind,"title":old,"canApproveCurrent":false});
+            assert_eq!(review_caption(&issue,&json!({})).as_ref(),expected);
+            assert_eq!(issue["title"],old);
+            assert_eq!(issue["canApproveCurrent"],false);
+        }
+        let address=json!({"kind":"ADDRESS","recipientId":"r","title":"상세 배송주소가 부족합니다"});
+        let recognition=json!({"recipients":[{"id":"r","address":""}]});
+        assert_eq!(review_caption(&address,&recognition).as_ref(),"배송주소 누락");
+        assert_eq!(review_caption(&address,&json!({})).as_ref(),"상세주소 확인 필요");
+        let quantity=json!({"kind":"QUANTITY_MISSING","resolution":"PROVISIONALLY_APPROVED"});
+        assert_eq!(review_caption(&quantity,&json!({})).as_ref(),"수량 잠정 처리 완료");
+        let phone=json!({"kind":"CONTACT","title":"휴대폰 번호가 6자리입니다."});
+        assert_eq!(review_caption(&phone,&json!({})).as_ref(),"휴대폰 번호가 6자리입니다.");
+    }
     #[test]
     fn unidentified_product_caption_names_recipient_and_product(){
         let recognition=json!({"recipients":[{"id":"r","name":"가상 수취인","items":[{"id":"i","name":"709"}]}]});
