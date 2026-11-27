@@ -1112,6 +1112,7 @@ pub(crate) mod general_screen_geometry_tests {
         for frame in 0..12{
             time+=0.05;
             TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
+            crate::ui_test_support::begin_component_geometry();
             let _=ctx.run(egui::RawInput{
                 screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,screen)),
                 time:Some(time),predicted_dt:0.05,
@@ -1128,6 +1129,13 @@ pub(crate) mod general_screen_geometry_tests {
                 });
             });
             let next=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
+            let components=crate::ui_test_support::finish_component_geometry(Rect::from_min_size(egui::Pos2::ZERO,screen));
+            if frame==11&&next.iter().any(|(role,_)|*role=="top content"){
+                assert!(!components.is_empty(),"actual management page did not reach a shared component renderer");
+                if next.iter().any(|(role,_)|*role=="table perimeter"){
+                    crate::ui_test_support::assert_component_roles(&components,&["table"]);
+                }
+            }
             observe(frame,&next);
             if frame==11{
                 let slots=|trace:&[Sample]|trace.iter().copied().filter(|(role,_)|
@@ -1233,10 +1241,13 @@ pub(crate) mod general_screen_geometry_tests {
                 let mut last=Vec::new();
                 for _ in 0..3{
                     TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
+                    crate::ui_test_support::begin_component_geometry();
                     let _=ctx.run(egui::RawInput{
                         screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,screen)),
                         ..Default::default()
                     },|ctx|app.reception(ctx));
+                    let components=crate::ui_test_support::finish_component_geometry(Rect::from_min_size(egui::Pos2::ZERO,screen));
+                    crate::ui_test_support::assert_component_roles(&components,&["card"]);
                     last=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
                 }
                 names.iter().map(|name|(*name,first(&last,name))).collect::<Vec<_>>()
@@ -1737,8 +1748,11 @@ pub(crate) mod general_screen_geometry_tests {
                 let mut measured=Vec::new();
                 for _ in 0..3{
                     TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
+                    crate::ui_test_support::begin_component_geometry();
                     let _=ctx.run(egui::RawInput{screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,screen)),
                         ..Default::default()},|ctx|app.reception(ctx));
+                    let components=crate::ui_test_support::finish_component_geometry(Rect::from_min_size(egui::Pos2::ZERO,screen));
+                    crate::ui_test_support::assert_component_roles(&components,&["card"]);
                     measured=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
                 }
                 measured
