@@ -421,7 +421,7 @@ fn evidence<'a>(text: &str, p: &'a Value, verified: &HashSet<String>,
     }
     None
 }
-fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
+fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>,source:&[SourceCandidate],truncated:bool) -> Vec<Entry<'a>> {
     if entries.is_empty() { return entries; }
     let priority = entries.iter().map(|e| e.priority).max().unwrap_or(0);
     let mut xs: Vec<_> = entries.into_iter().filter(|e| e.priority == priority).collect();
@@ -440,7 +440,7 @@ fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
         // Do not choose between separate occurrences (possibly two items),
         // equally specific descriptions, or incompatible explicit options.
         let proof=qualifiers(text);
-        if !proof.is_empty()||written_color(text).is_some(){return vec![];}
+        if truncated||!proof.is_empty()||written_color(text).is_some(){return vec![];}
         let size=|e:&Entry<'_>|text[e.span.0..e.span.1].chars()
             .filter(|c|!c.is_whitespace()).count();
         let Some(best)=xs.iter().max_by_key(|e|size(e))else{return vec![];};
@@ -450,13 +450,18 @@ fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
             .all(|e|best.span.0<=e.span.0&&e.span.1<=best.span.1
                 &&best_size.saturating_sub(size(e))>=3
                 &&super::exceeds_margin(score(best),score(e),20));
-        if wins{return vec![best.clone()];}
+        // Entry carries the first hit only. Check all previously retained
+        // occurrences of these competing identities for a separate item.
+        let separate=source.iter().any(|c|c.literal
+            &&xs.iter().any(|e|str_field(e.p,"id")==c.product_id)
+            &&(c.span.0<best.span.0||c.span.1>best.span.1));
+        if wins&&!separate{return vec![(*best).clone()];}
         return vec![];
     }
     xs
 }
 fn name_entries<'a>(text: &str, mut entries:Vec<Entry<'a>>,
-    verified: &HashSet<String>) -> Vec<Entry<'a>> {
+    verified: &HashSet<String>,source:&[SourceCandidate],truncated:bool) -> Vec<Entry<'a>> {
     if no_holes(text) {
         entries.retain(|e| top(e.p, verified) != Some("PERFORATED"));
     } else if with_holes(text) {
@@ -483,12 +488,12 @@ fn name_entries<'a>(text: &str, mut entries:Vec<Entry<'a>>,
                             .cloned().collect();
                         if defaults.is_empty() { family } else { defaults }
                     };
-                    return strongest(text, selected);
+                    return strongest(text, selected,source,truncated);
                 }
             }
         }
     }
-    strongest(text, entries)
+    strongest(text, entries,source,truncated)
 }
 fn alias_entries<'a>(text: &str, state: &'a Value, client_id: &str,
     ps: &[&'a Value],pool:&mut Vec<SourceCandidate>,truncated:&mut bool
@@ -542,7 +547,7 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
     let mut source_truncated=false;
     let raw_entries:Vec<_>=ps.iter().filter_map(|p|
         evidence(text,p,&verified,&mut source_candidates,&mut source_truncated)).collect();
-    let entries = name_entries(text, raw_entries, &verified);
+    let entries = name_entries(text, raw_entries, &verified,&source_candidates,source_truncated);
     // parser.ts:487-510 filters brand/catalog and DEMO before options.
     let (mut entries,known_brand) =
         filter_business_candidates(text,state,&ps,entries);
@@ -747,17 +752,22 @@ mod option_boundary_tests {
         let short=text.find("탁상용").unwrap();
         let entries=vec![Entry{p:&a,priority:1,span:(0,text.len())},
             Entry{p:&b,priority:1,span:(short,text.len())}];
-        let ranked=strongest(text,entries);
+        let ranked=strongest(text,entries,&[],false);
         assert_eq!(ranked.len(),1);
         assert_eq!(str_field(ranked[0].p,"id"),"a");
         let tied=vec![Entry{p:&a,priority:1,span:(0,text.len())},
             Entry{p:&b,priority:1,span:(0,text.len())}];
-        assert!(strongest(text,tied).is_empty());
+        assert!(strongest(text,tied,&[],false).is_empty());
         let disjoint="접이식 탁상용 기타 스탠드 / 탁상용 기타 스탠드";
         let other=disjoint.rfind("탁상용").unwrap();
         let separate=vec![Entry{p:&a,priority:1,span:(0,text.len())},
             Entry{p:&b,priority:1,span:(other,disjoint.len())}];
-        assert!(strongest(disjoint,separate).is_empty());
+        assert!(strongest(disjoint,separate,&[],false).is_empty());
+        let first_hits=vec![Entry{p:&a,priority:1,span:(0,text.len())},
+            Entry{p:&b,priority:1,span:(short,text.len())}];
+        let all_hits=vec![SourceCandidate{product_id:"b".into(),span:(other,disjoint.len()),literal:true}];
+        assert!(strongest(disjoint,first_hits.clone(),&all_hits,false).is_empty());
+        assert!(strongest(disjoint,first_hits,&[],true).is_empty());
     }
     #[test]
     fn retained_term_occurrences_share_first_match_boundary(){
