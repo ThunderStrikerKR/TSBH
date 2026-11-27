@@ -5,9 +5,9 @@
 //! quantity validation and applying an unconfirmed preview. The chooser never
 //! edits a confirmed order or directly writes the Tauri business database.
 
-use crate::ui_layout::SharedAllocationExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
 use std::{sync::{Arc,mpsc::{self,Receiver}},thread,time::{SystemTime,UNIX_EPOCH},sync::atomic::{AtomicU64,Ordering}};
-use crate::ui_primitives::UiWidthPolicyExt;
+use crate::ui_layout::geometry::UiWidthPolicyExt;
 use eframe::egui::{self,Context};
 use serde_json::{json,Value};
 use crate::{
@@ -2049,7 +2049,7 @@ impl ManualWorkspace {
                             &&!self.confirm_apply
                             &&!self.confirm_discard,
                         |status|{
-                            crate::ui_layout::reserve_min_height(status,theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT);
+                            crate::ui_layout::geometry::reserve_min_height(status,theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT);
                             crate::ui_layout::apply_spacing_role(status,crate::ui_layout::SpacingRole::Toolbar);
                             if self.direct_input{
                                 status.label(typography::caption("직접 입력 · 발주 원문 없음"))
@@ -2164,7 +2164,7 @@ impl ManualWorkspace {
                         let content_height=available_content_height
                             .min(manual_workspace_columns_height()).max(1.0);
                         let mut draw_columns=|outer:&mut egui::Ui|{
-                            outer.apply_shared_width(crate::ui_primitives::CardWidthPolicy::FillAvailable,content_width);
+                            outer.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,content_width);
                             outer.horizontal(|ui|{
                             crate::ui_layout::apply_manual_workspace_spacing(ui,self.direct_input);
                             let width=content_width;
@@ -2233,8 +2233,8 @@ impl ManualWorkspace {
                                         theme::MANUAL_SHEET_MIN_WIDTH
                                     );
                                     sheet_ui.vertical(|panel|{
-                                        panel.apply_shared_width(crate::ui_primitives::CardWidthPolicy::FillAvailable,panel_width);
-                                        crate::ui_layout::reserve_min_height(panel,height.max(0.0));
+                                        panel.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,panel_width);
+                                        crate::ui_layout::geometry::reserve_min_height(panel,height.max(0.0));
                                         crate::ui_layout::apply_spacing_role(panel,crate::ui_layout::SpacingRole::WorkflowDetail);
                                         if count_resize_requested {panel.disable();}
                                         let can_switch=!busy
@@ -4541,7 +4541,7 @@ mod manual_workspace_layout_tests{
         assert!(!render[body_start..columns_start]
             .contains("crate::ui_primitives::section_divider("));
         assert!(render[toolbar_start..body_start]
-            .contains("crate::ui_layout::reserve_min_height(status,theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT)"));
+            .contains("crate::ui_layout::geometry::reserve_min_height(status,theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT)"));
         assert!(render.contains("crate::card::reception_document_viewport("));
         assert!(render.contains("body,rect,\"manual-source-document\",\"manual-source-blocks\""));
         assert!(!render.contains("crate::card::source_document_frame()"));
