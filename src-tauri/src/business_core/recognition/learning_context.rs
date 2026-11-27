@@ -106,6 +106,90 @@ pub(super) fn contexts(units:&[u16],first:&Value)->BTreeMap<Span,Vec<Value>>{
     out
 }
 
+// Field contexts use the same versioned hierarchy as ownership, but have
+// distinct task keys. No final value or literal source text enters a key.
+// A shape is deliberately coarse and is not a token/alias match.
+fn source_shape(units:&[u16],s:Span)->Option<Value>{
+    let text=String::from_utf16(&units[s.0..s.1]).ok()?;
+    let mut digits=0u64;
+    let mut letters=0u64;
+    let mut hangul=0u64;
+    let mut separators=0u64;
+    let mut other=0u64;
+    for c in text.chars(){
+        if c.is_ascii_digit(){digits+=1;}
+        else if c.is_ascii_alphabetic(){letters+=1;}
+        else if ('가'..='힣').contains(&c)||('ㄱ'..='ㅎ').contains(&c)||('ㅏ'..='ㅣ').contains(&c){hangul+=1;}
+        else if c.is_whitespace()||matches!(c,'-'|'/'|'('|')'|'_'|'.'|','){separators+=1;}
+        else{other+=1;}
+    }
+    Some(json!([count_bucket(digits),count_bucket(letters),count_bucket(hangul),
+        count_bucket(separators),count_bucket(other)]))
+}
+fn field_key(task:&str,level:&str,features:&Value,client:Option<&str>)->Value{
+    let encoded=json!([FEATURE_VERSION,task,level,client,features]).to_string();
+    json!({"featureVersion":FEATURE_VERSION,"level":level,"key":encoded})
+}
+type FieldContexts=BTreeMap<(Span,&'static str),Vec<Value>>;
+fn field_contexts(units:&[u16],first:&Value)->FieldContexts{
+    let events=event_index(units,first);
+    let lead=document_lead(&events);
+    let client=first["recognitionContext"]["clientId"].as_str()
+        .filter(|id|!id.trim().is_empty()&&first["recognitionContext"]["clientBasis"]=="MANUAL");
+    let mut items=BTreeMap::<Span,Vec<(&Value,&str)>>::new();
+    for item in rows(&first["recipients"]).flat_map(|r|rows(&r["items"])){
+        for source in rows(&item["sources"]){
+            if let (Some(s),Some(field))=(span(units,source),source["field"].as_str()){
+                items.entry(s).or_default().push((item,field));
+            }
+        }
+    }
+    let mut result=FieldContexts::new();
+    for (i,e) in events.iter().enumerate(){
+        let s=e.position;
+        if i>0&&events[i-1].position==s || i+1<events.len()&&events[i+1].position==s{continue;}
+        let Some(shape)=source_shape(units,s)else{continue;};
+        let local=events[i.saturating_sub(2)..(i+3).min(events.len())].iter().map(|n|
+            json!([n.role,n.position==s,distance_bucket(n.line.abs_diff(e.line)),
+                n.paragraph==e.paragraph])).collect::<Vec<_>>();
+        let line_events=events.iter().filter(|n|n.line==e.line)
+            .map(|n|n.role).take(17).collect::<Vec<_>>();
+        let line_order=(line_events.len()<=16).then_some(line_events);
+        let mut tasks=vec![("type",json!([e.role,shape]))];
+        if let Some(links)=items.get(&s).filter(|v|v.len()==1){
+            let (item,field)=links[0];
+            let product=item["productId"].as_str().filter(|id|!id.trim().is_empty());
+            match field{
+                "product" if e.role=="product"=>{
+                    if let Some(product)=product{
+                        // Baseline product ID scopes similar wrong selections.
+                        // A variant is always scoped to its original product.
+                        tasks.push(("product",json!([shape,product])));
+                        if let Some(variant)=item["variantId"].as_str().filter(|id|!id.trim().is_empty()){
+                            tasks.push(("variant",json!([shape,product,variant])));
+                        }
+                    }
+                }
+                "quantity" if e.role=="quantity"=>{
+                    // Quantity observations are diagnostics, not a rule to
+                    // substitute a frequently ordered quantity for source text.
+                    if item["quantityConfirmed"]==true&&item["quantity"].as_i64().is_some_and(|q|q>0){
+                        tasks.push(("quantity",json!([shape,product])));
+                    }
+                }
+                _=>{}
+            }
+        }
+        for (task,base) in tasks{
+            let structure=json!([base,lead,local,line_order]);
+            let mut keys=vec![field_key(task,"base",&base,None),field_key(task,"structure",&structure,None)];
+            if let Some(client)=client{keys.push(field_key(task,"client_structure",&structure,Some(client)));}
+            result.insert((s,task),keys);
+        }
+    }
+    result
+}
+
 /// Explicit diagnostic/lookup projection, not a second parser. The same
 /// context key function is used for first/final observations and new traces.
 pub(super) fn lookup(payload:&Value)->Result<Value,String>{
@@ -115,7 +199,9 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
     let entries=contexts(&units,first).into_iter().map(|(s,keys)|
         json!({"source":{"start":s.0,"end":s.1},"contexts":keys})
     ).collect::<Vec<_>>();
-    let mut result=json!({"featureVersion":FEATURE_VERSION,"entries":entries});
+    let field_entries=field_contexts(&units,first).into_iter().map(|((s,task),keys)|
+        json!({"source":{"start":s.0,"end":s.1},"task":task,"contexts":keys})).collect::<Vec<_>>();
+    let mut result=json!({"featureVersion":FEATURE_VERSION,"entries":entries,"fieldEntries":field_entries});
     // Optional offline comparison. Ordinary context projection remains unchanged.
     if let Some(history)=payload.get("historicalOrders"){
         let orders=history.as_array().ok_or("비교 주문 목록 형식 오류")?;
@@ -128,6 +214,16 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
         let counts=rows(&summary["statistics"]).filter_map(|record|
             Some((record["key"].as_str()?, &record["counts"])))
             .collect::<BTreeMap<_,_>>();
+        let field_counts=rows(&summary["fieldContextStatistics"]).filter_map(|record|
+            Some((record["key"].as_str()?,&record["counts"]))).collect::<BTreeMap<_,_>>();
+        let field_assessments=rows(&result["fieldEntries"]).map(|entry|{
+            let levels=rows(&entry["contexts"]).map(|context|{
+                let counts=context["key"].as_str().and_then(|k|field_counts.get(k).copied());
+                json!({"level":context["level"],"counts":counts})
+            }).collect::<Vec<_>>();
+            json!({"source":entry["source"],"task":entry["task"],"levels":levels,
+                "eligibleForAutomaticDecision":false,"decisionChanged":false})
+        }).collect::<Vec<_>>();
         let selected=rows(&first["recipientOwnerTrace"]["decisions"]).filter_map(|d|{
             let s=position(&units,&d["source"])?;
             if d["selectedAnchor"]["kind"]!="name"{return None;}
@@ -150,7 +246,7 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
         result["comparison"]=json!({
             "status":"diagnostic_only","excludedTargetOrder":true,
             "historicalUniqueOrders":summary["uniqueOrders"],
-            "assessments":assessments
+            "assessments":assessments,"fieldAssessments":field_assessments
         });
     }
     Ok(result)
@@ -346,7 +442,7 @@ impl FieldCounts{
 /// Per-order contributions, also usable by the future durable delta writer.
 /// Group before counting independent orders; no sum of per-candidate order
 /// counts can substitute for the distinct context denominator.
-fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<(BTreeMap<String,Counts>,BTreeMap<String,FieldCounts>)>,String>{
+fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<(BTreeMap<String,Counts>,BTreeMap<String,FieldCounts>,BTreeMap<String,FieldCounts>)>,String>{
     let confirmed=order["confirmedAt"].as_str().filter(|v|!v.trim().is_empty());
     let snapshot=&order["confirmationSnapshot"];
     if confirmed.is_none() || snapshot["at"].as_str()!=confirmed ||
@@ -378,15 +474,27 @@ fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<(BTreeMap<S
         }
     }
     let mut fields=BTreeMap::<String,FieldCounts>::new();
-    // Context-key lookup is ownership-specific, not a global field scan.
-    if filter.is_empty(){
-        for o in rows(&compared["observations"]){
-            if let Some(task)=o["task"].as_str().filter(|t|matches!(*t,"type"|"product"|"variant"|"quantity")){
-                fields.entry(task.to_owned()).or_default().add_observation(o);
+    let mut field_groups=BTreeMap::<String,FieldCounts>::new();
+    let first=&snapshot["recognitionBaseline"]["initialAnalysis"];
+    let units=snapshot["raw"].as_str().unwrap_or("").encode_utf16().collect::<Vec<_>>();
+    let contexts=field_contexts(&units,first);
+    for o in rows(&compared["observations"]){
+        let Some(task)=o["task"].as_str().filter(|t|matches!(*t,"type"|"product"|"variant"|"quantity"))else{continue;};
+        if filter.is_empty(){fields.entry(task.to_owned()).or_default().add_observation(o);}
+        let Some(s)=position(&units,&o["source"])else{continue;};
+        let Some(keys)=contexts.get(&(s,task))else{continue;};
+        for context in keys{
+            if context["level"]=="client_structure"{
+                if !client_valid{continue;}
+                if o["outcome"]=="explicit_correction_observed" &&
+                    (o["auditClientId"].as_str()!=final_client||o["auditClientSelection"]!="MANUAL"){continue;}
             }
+            let Some(key)=context["key"].as_str()else{continue;};
+            if !filter.is_empty()&&!filter.contains(key){continue;}
+            field_groups.entry(key.to_owned()).or_default().add_observation(o);
         }
     }
-    Ok(Some((groups,fields)))
+    Ok(Some((groups,fields,field_groups)))
 }
 
 /// Explicit bounded batch, not an operational history scan. Caller supplies
@@ -408,6 +516,7 @@ pub(super) fn statistics(payload:&Value)->Result<Value,String>{
     let mut seen=BTreeMap::<&str,&Value>::new();
     let mut groups=BTreeMap::<String,Counts>::new();
     let mut fields=BTreeMap::<String,FieldCounts>::new();
+    let mut field_groups=BTreeMap::<String,FieldCounts>::new();
     let mut unavailable=0u64;
     let mut without_context=0u64;
     for order in orders{
@@ -418,10 +527,11 @@ pub(super) fn statistics(payload:&Value)->Result<Value,String>{
         }
         seen.insert(id,order);
         match contributions(order,&filter)?{
-            Some((local,field_counts))=>{
-                if local.is_empty(){without_context+=1;}
+            Some((local,field_counts,local_fields))=>{
+                if local.is_empty()&&local_fields.is_empty(){without_context+=1;}
                 for (key,counts) in local{groups.entry(key).or_default().add_order(counts);}
                 for (task,counts) in field_counts{fields.entry(task).or_default().add_order(counts);}
+                for (key,counts) in local_fields{field_groups.entry(key).or_default().add_order(counts);}
             }
             None=>unavailable+=1,
         }
@@ -434,7 +544,9 @@ pub(super) fn statistics(payload:&Value)->Result<Value,String>{
         "uniqueOrders":seen.len(),"unavailableOrders":unavailable,
         "ordersWithoutMatchingContext":without_context,"statistics":records,
         "fieldStatistics":fields.into_iter().map(|(task,counts)|
-            json!({"task":task,"counts":counts.wire()})).collect::<Vec<_>>()
+            json!({"task":task,"counts":counts.wire()})).collect::<Vec<_>>(),
+        "fieldContextStatistics":field_groups.into_iter().map(|(key,counts)|
+            json!({"key":key,"counts":counts.wire()})).collect::<Vec<_>>()
     }))
 }
 
