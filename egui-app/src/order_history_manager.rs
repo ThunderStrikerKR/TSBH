@@ -780,7 +780,7 @@ fn history_date_controls(
                 .with_main_align(Align::Max)),
             |line|{
                 line.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,first.width());
-                line.set_height(first.height());
+                crate::ui_layout::set_fixed_height(line,first.height());
                 crate::navigation::apply_management_date_control_spacing(line);
                 changed|=history_date_range_start(
                     line,basis,from,to,from_month
@@ -793,7 +793,7 @@ fn history_date_controls(
                 .with_main_align(Align::Max)),
             |line|{
                 line.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,second.width());
-                line.set_height(second.height());
+                crate::ui_layout::set_fixed_height(line,second.height());
                 crate::navigation::apply_management_date_control_spacing(line);
                 changed|=history_date_range_end(
                     line,from,to,to_month
