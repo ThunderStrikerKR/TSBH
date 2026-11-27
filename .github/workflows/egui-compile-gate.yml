@@ -175,6 +175,8 @@ jobs:
             'ui_regressions::result_viewport_invariance_tests::',
             'ui_test_support::highlight_invariance_detector_tests::',
             'ui_test_support::shared_component_screen_trace_tests::',
+            'popup::regression_tests::modal_input_routing_tests::',
+            'popup::regression_tests::shared_popup_rendered_geometry_tests::',
             'ui_regressions::management_async_layout_contract_tests::',
             'ui_regressions::management_async_behavior_regression_tests::',
             'ui_regressions::shared_screen_component_contract_tests::',
