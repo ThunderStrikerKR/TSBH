@@ -502,7 +502,6 @@ pub struct FreightManager {
     bulk_feedback: Option<String>,
     new_name: String,
     create_group_open: bool,
-    rename_target: Option<(String,String)>,
     delete_target: Option<String>,
     rate_editor: Option<RateEditor>,
     basis_target: Option<Option<String>>,
@@ -559,7 +558,6 @@ impl FreightManager {
             bulk_feedback: None,
             new_name: String::new(),
             create_group_open: false,
-            rename_target: None,
             delete_target: None,
             rate_editor: None,
             basis_target: None,
@@ -606,7 +604,7 @@ impl FreightManager {
                 !self.pending_changes().is_empty())
     }
     fn has_other_modal(&self)->bool{
-        self.create_group_open || self.rename_target.is_some() ||
+        self.create_group_open ||
             self.delete_target.is_some() || self.basis_target.is_some() ||
             self.exception_target.is_some() ||
             self.product_reset_target.is_some()
@@ -642,7 +640,6 @@ impl FreightManager {
         self.new_name.clear();
         self.create_group_open=false;
         self.rate_editor=None;
-        self.rename_target=None;
         self.delete_target=None;
         self.basis_target=None;
         self.exception_target=None;
@@ -720,7 +717,6 @@ impl FreightManager {
                                 self.new_name.clear();
                                 self.create_group_open=false;
                             },
-                            "rename_group"=>self.rename_target=None,
                             "delete_group"=>{self.delete_target=None;self.rate_editor=None;},
                             "assign_products"=>{
                                 self.pending.clear();
@@ -979,7 +975,6 @@ impl FreightManager {
             let area=ui.max_rect();
             let ctx=ui.ctx();
             let mut close_create=false;
-            let mut close_rename=false;
             let mut close_delete=false;
             let mut close_product_reset=false;
             if self.tab==FreightTab::Rates && self.create_group_open {
@@ -991,18 +986,6 @@ impl FreightManager {
                     crate::popup::ConfirmDecision::Cancel=>close_create=true,
                     crate::popup::ConfirmDecision::Confirm=>action=Some(("create_group".into(),json!({
                         "name":self.new_name.trim()
-                    }))),
-                    crate::popup::ConfirmDecision::Pending=>{}
-                }
-            }else if let Some((id,name))=self.rename_target.as_mut(){
-                crate::popup::modal_backdrop(ctx,"freight-rename-backdrop",false);
-                match crate::popup::show_name_confirmation(
-                    ctx,area,"freight-rename","배송 그룹명",
-                    "배송 그룹명",name,"그룹 이름 입력","이름 수정",enabled
-                ){
-                    crate::popup::ConfirmDecision::Cancel=>close_rename=true,
-                    crate::popup::ConfirmDecision::Confirm=>action=Some(("rename_group".into(),json!({
-                        "groupId":id,"name":name.trim()
                     }))),
                     crate::popup::ConfirmDecision::Pending=>{}
                 }
@@ -1087,7 +1070,6 @@ impl FreightManager {
                 self.create_group_open=false;
                 self.new_name.clear();
             }
-            if close_rename{self.rename_target=None;}
             if close_delete{self.delete_target=None;}
             if close_product_reset{self.product_reset_target=None;}
         }
@@ -1109,14 +1091,14 @@ impl FreightManager {
                             "기본 운임 설정"
                         }else{"배송 그룹 관리"};
                         crate::popup::modal_flow_workspace(modal,|workspace|{
-                            if workspace.header(title,"취소",enabled
+                            if workspace.header(title,"닫기",!self.write_receiver.is_some()&&!editor.ask_discard
                             ){
                                 if editor.dirty(){editor.ask_discard=true;}
                                 else{close_editor=true;}
                             }
                             workspace.scroll_region("freight-rate-editor-scroll",crate::popup::modal_editor_body_max_height(area.height()),|body|{
                                 if !editor.product{
-                                    crate::popup::modal_compact_text_field(body,"배송 그룹명",&mut editor.name,"그룹 이름 입력");
+                                    crate::popup::modal_named_text_field(body,"배송 그룹명",&mut editor.name,"그룹 이름 입력",enabled);
                                     let members=group_product_labels(&products);
                                     let names=members.get(&editor.id).map(Vec::as_slice).unwrap_or(&[]);
                                     crate::popup::modal_master_body_section(body,"소속 상품",|list|{
@@ -1147,7 +1129,7 @@ impl FreightManager {
                                         }
                                     }
                                     if !editor.product{
-                                        request_basis=crate::button::action(right,"기준 변경",theme::ButtonRole::Secondary,
+                                        request_basis=crate::button::action(right,"기준 변경",theme::ButtonRole::Standard,
                                             enabled&&!editor.dirty()).clicked();
                                     }
                                 }
@@ -1160,7 +1142,7 @@ impl FreightManager {
                     crate::popup::modal_backdrop(ctx,"freight-discard-backdrop",true);
                     match crate::popup::show_save_confirmation(
                         ctx,area,"freight-discard-confirm","저장하지 않은 운임",
-                        "운임 수정사항을 저장하지 않고 닫을까요?","저장하고 닫기",
+                        "변경사항을 저장할까요?","저장하고 닫기",
                         enabled,enabled&&editor.dirty()
                     ){
                         crate::popup::ChangeDecision::Cancel=>editor.ask_discard=false,
@@ -1208,28 +1190,50 @@ impl FreightManager {
             if let Some((id,amount))=self.exception_target.as_mut(){
                 let ctx=ui.ctx();
                 crate::popup::modal_backdrop(ctx,"freight-exception-backdrop",false);
-                crate::popup::show_decision_window(ctx,"새로 확인된 청구 운임 (원)","freight-exception",ui.max_rect(),|dialog|{
-                    crate::popup::decision_workspace(dialog,|decision|{
-                        if decision.header("새로 확인된 청구 운임 (원)","취소",enabled
-                        ){close=true;}
-                        decision.body(|dialog|{
-                            crate::input::money_field(dialog,amount,enabled);
-                        });
-                        decision.actions(|bar|{
-                            if crate::button::action(bar,"예외 운임 변경",
-                                theme::ButtonRole::Primary,enabled).clicked(){
-                                match crate::input::parse_money_input(amount){
-                                    Some(value)=>{
-                                        action=Some(("revise_combination".into(),json!({
-                                            "combinationId":id,"charge":value
-                                        })));
+                crate::popup::modal_window(ctx,"배송 조합 상세관리","freight-exception",ui.max_rect())
+                    .resizable(false).show(ctx,|dialog|{
+                        crate::popup::modal_flow_workspace(dialog,|workspace|{
+                            if workspace.header("배송 조합 상세관리","닫기",self.write_receiver.is_none()){close=true;}
+                            workspace.scroll_region("freight-combination-detail",crate::popup::modal_editor_body_max_height(ui.max_rect().height()),|body|{
+                                if let Some(record)=rows(&shipping["combinations"]).iter().find(|r|text(r,"id")==id.as_str()){
+                                    let status=match projection["currentCombinations"].get(id.as_str()).and_then(Value::as_bool){
+                                        Some(true)=>"현재 유효",Some(false)=>"과거 이력",None=>"운임 기준 조회 중"
+                                    };
+                                    let at=text(record,"at");
+                                    let verified_at=text(record,"verifiedAt");
+                                    let verified=if verified_at.is_empty(){"실배송 검증 기록 없음 (사용자 등록)".to_owned()}
+                                        else{format!("{verified_at} · 실배송 검증 {}회",record["sampleCount"].as_u64().unwrap_or(1))};
+                                    for (label,value) in [
+                                        ("조합",text(record,"description").to_owned()),
+                                        ("현재 청구 운임",as_fee(&record["charge"])),
+                                        ("실제 운임",as_fee(&record["actual"])),
+                                        ("기준",status.to_owned()),
+                                        ("등록일",if at.is_empty(){"등록일 미확인".into()}else{at.into()}),
+                                        ("검증 이력",verified),
+                                    ]{
+                                        crate::popup::modal_labeled_row_with_width(body,label,theme::MODAL_FORM_WIDE_LABEL_WIDTH,|line|{
+                                            line.add(egui::Label::new(typography::body(&value)).wrap());
+                                        });
                                     }
-                                    _=>self.error=Some("올바른 운임을 입력하세요.".into())
+                                    crate::popup::modal_master_body_section(body,"예외 운임",|body|{
+                                        crate::popup::modal_labeled_row_with_width(body,"새 청구 운임 (원)",theme::MODAL_FORM_WIDE_LABEL_WIDTH,|line|{
+                                            crate::input::money_field(line,amount,enabled);
+                                        });
+                                    });
                                 }
-                            }
+                            });
+                            workspace.footer_single(|bar|{
+                                let original=rows(&shipping["combinations"]).iter().find(|r|text(r,"id")==id.as_str()).and_then(|r|r["charge"].as_i64());
+                                let changed=crate::input::parse_money_input(amount)!=original;
+                                if crate::button::action(bar,"예외 운임 변경",theme::ButtonRole::Primary,enabled&&changed).clicked(){
+                                    match crate::input::parse_money_input(amount){
+                                        Some(value)=>action=Some(("revise_combination".into(),json!({"combinationId":id,"charge":value}))),
+                                        None=>self.error=Some("올바른 운임을 입력하세요.".into())
+                                    }
+                                }
+                            });
                         });
                     });
-                });
             }
             if close{self.exception_target=None;}
         }
@@ -2237,9 +2241,9 @@ impl FreightManager {
             }
             freight_history_table(
                 section,"freight-verified-combinations",
-                ["조합","청구 운임","실제 운임","기준","상세정보"],
+                ["조합","청구 운임","실제 운임","기준"],
                 theme::FREIGHT_COMBINATION_HISTORY_COL_WIDTHS,
-                [1.0,0.0,0.0,0.0,0.0],ordered.len(),Some(sort),
+                [1.0,0.0,0.0,0.0],ordered.len(),Some(sort),
                 if single_list{Some(card_min_height)}else{None},
                 true,
                 if combinations.is_empty(){
@@ -2248,6 +2252,11 @@ impl FreightManager {
                 |row,cells,index|{
                     let record=ordered[index];
                     let id=text(record,"id");
+                    if exception.is_none(){
+                        let rect=cells.iter().copied().reduce(|a,b|a.union(b)).unwrap_or(egui::Rect::NOTHING);
+                        crate::table::paint_management_interactive_row_background(
+                            row.painter(),rect,index,row.rect_contains_pointer(rect));
+                    }
                     history_cell(
                         row,cells[0],text(record,"description"),
                         text(record,"description"),egui::Align2::LEFT_CENTER,
@@ -2273,46 +2282,17 @@ impl FreightManager {
                         egui::Align2::CENTER_CENTER,
                         typography::ManagementTableCellRole::Status,(id,3)
                     );
-                    let action_rect=cells[4].shrink2(egui::vec2(theme::SPACE_8,0.0));
-                    let history_row_clip=row.clip_rect();
-                    crate::table::control_cell(row,("freight-history-details",id),action_rect,
-                        cells[4].intersect(history_row_clip),
-                        egui::Layout::left_to_right(egui::Align::Center).with_main_align(egui::Align::Center),
-                        true,true,|buttons|{
-                            let trigger=crate::button::action(
-                                buttons,"상세정보",
-                                theme::ButtonRole::TableSecondary,true
-                            );
-                            // Registration and verification are retained in
-                            // the record, but are no longer table columns.
-                            // Popup lives above the virtualized row layout.
-                            crate::popup::show_management_menu(
-                                &trigger,None,crate::popup::ManagementMenuRole::Details,|menu|{
-                                    let at=text(record,"at");
-                                    menu.detail("등록일",if at.is_empty(){"등록일 미확인"}else{at});
-                                    let verified_at=text(record,"verifiedAt");
-                                    if verified_at.is_empty(){
-                                        menu.detail("검증 이력","실배송 검증 기록 없음 (사용자 등록)");
-                                    }else{
-                                        let samples=record["sampleCount"].as_u64().unwrap_or(1);
-                                        menu.detail("검증 이력",&format!(
-                                            "{verified_at} · 실배송 검증 {samples}회"
-                                        ));
-                                    }
-                                    menu.detail_divider();
-                                    if menu.action("예외 운임 변경",enabled){
-                                        // Existing revise_combination modal
-                                        // and Rust mutation path are preserved.
-                                        *exception=Some((
-                                            id.to_owned(),
-                                            record["charge"].as_i64()
-                                                .map(|n|n.to_string())
-                                                .unwrap_or_default()
-                                        ));
-                                    }
-                                });
+                    if exception.is_none(){
+                        let rect=cells.iter().copied().reduce(|a,b|a.union(b)).unwrap_or(egui::Rect::NOTHING);
+                        let hit=row.interact(rect.intersect(row.clip_rect()),
+                            row.make_persistent_id(("freight-history-detail",id)),egui::Sense::click())
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if hit.clicked(){
+                            *exception=Some((id.to_owned(),record["charge"].as_i64()
+                                .map(|n|n.to_string()).unwrap_or_default()));
                         }
-                    );
+                    }
+
                 }
             );
             crate::table::restore_management_table_spacing(section,prior_gap);
