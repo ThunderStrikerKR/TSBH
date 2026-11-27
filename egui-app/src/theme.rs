@@ -723,23 +723,14 @@ pub const FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH: f32 =
     FREIGHT_ASSIGNMENT_MASTER_TABLE.min_width;
 pub const ORDER_HISTORY_TABLE_MIN_WIDTH: f32 =
     ORDER_HISTORY_MASTER_TABLE.min_width;
-// Shipping-group management: four-column grid. The group name gets twice
-// its previous width; bundle limit uses only enough space for a short label;
-// product membership replaces tariff amounts. The management popup retains
-// its compact button column. Keep the old 1265pt table minimum to avoid
-// moving scrollbars or the master header edges.
-pub const FREIGHT_RATE_COL_WIDTHS: [f32;4] =
-    [450.0,112.0,551.0,128.0];
+// Direct row-entry group management: redistribute the former action column
+// and its separator to member names, preserving the existing table minimum.
+pub const FREIGHT_RATE_COL_WIDTHS: [f32;3] = [450.0,112.0,687.0];
 pub const FREIGHT_RATE_TABLE_MIN_WIDTH:f32 =
     management_columns_min_width(FREIGHT_RATE_COL_WIDTHS,FREIGHT_ASSIGNMENT_COL_GAP);
-// Combination and archived group tables have independent information widths.
-// Neither inherits the product-assignment 942pt geometry or the rate-edit
-// action column; unused space goes first to long identifiers and fee strings.
-// Combination history keeps registration/verification metadata in a
-// row-anchored "상세정보" popup, not in its compact overview columns.
-// The total minimum remains 1229pt (1197pt + four 8pt separators).
-pub const FREIGHT_COMBINATION_HISTORY_COL_WIDTHS:[f32;5] =
-    [500.0,160.0,160.0,140.0,237.0];
+// Combination details are now opened directly from the row. Redistribute
+// the former action column and separator to the combination description.
+pub const FREIGHT_COMBINATION_HISTORY_COL_WIDTHS:[f32;4] = [745.0,160.0,160.0,140.0];
 pub const FREIGHT_GROUP_HISTORY_COL_WIDTHS:[f32;6] =
     [190.0,142.0,400.0,150.0,260.0,115.0];
 
