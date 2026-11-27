@@ -8,7 +8,6 @@ import subprocess
 import sys
 from pathlib import Path
 from urllib.parse import urlsplit
-from urllib.request import urlopen
 from zipfile import ZipFile
 from email.parser import BytesParser
 
@@ -19,6 +18,40 @@ def run(*args):
 
 def canonical(name):
     return re.sub(r"[-_.]+", "-", name).lower()
+
+MAX_METADATA_BYTES = 4 * 1024 * 1024
+
+def verify_wheel(wheel, selected):
+    # Verify bytes before opening the archive. The wheel filename identifies
+    # the distribution and version; nested vendored metadata is not identity.
+    with wheel.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    fields = wheel.name[:-4].split("-")
+    if len(fields) not in (5, 6):
+        raise ValueError(f"Invalid wheel filename: {wheel.name}")
+    name, version = canonical(fields[0]), fields[1]
+    if selected.get(name) != (version, digest):
+        raise ValueError(f"Wheel filename or hash differs from resolution: {wheel.name}")
+    with ZipFile(wheel) as archive:
+        matches = [entry for entry in archive.infolist()
+                   if re.fullmatch(r"[^/\\]+\.dist-info/METADATA", entry.filename)]
+        if len(matches) != 1:
+            raise ValueError(f"{wheel.name}: expected one top-level METADATA, found {len(matches)}")
+        entry = matches[0]
+        expected_dir = f"{fields[0]}-{fields[1]}.dist-info"
+        if entry.filename.split("/")[0].lower() != expected_dir.lower():
+            raise ValueError(f"{wheel.name}: METADATA directory differs from wheel filename")
+        if entry.file_size > MAX_METADATA_BYTES:
+            raise ValueError(f"{wheel.name}: METADATA size {entry.file_size} exceeds {MAX_METADATA_BYTES}")
+        with archive.open(entry) as stream:
+            raw = stream.read(MAX_METADATA_BYTES + 1)
+        if len(raw) > MAX_METADATA_BYTES or len(raw) != entry.file_size:
+            raise ValueError(f"{wheel.name}: invalid decompressed METADATA size")
+        msg = BytesParser().parsebytes(raw)
+    names, versions = msg.get_all("Name", []), msg.get_all("Version", [])
+    if len(names) != 1 or len(versions) != 1 or canonical(names[0]) != name or versions[0] != version:
+        raise ValueError(f"{wheel.name}: METADATA identity differs from resolution")
+    return name, version, digest
 
 def main():
     if sys.platform != "win32" or sys.version_info[:2] != (3, 11) or platform.machine().lower() not in {"amd64", "x86_64"}:
@@ -60,17 +93,9 @@ def main():
     for wheel in sorted(wheels.iterdir()):
         if wheel.suffix != ".whl" or not wheel.is_file():
             raise ValueError("Non-wheel download")
-        with ZipFile(wheel) as archive:
-            metadata = [x for x in archive.namelist() if x.endswith(".dist-info/METADATA")]
-            if len(metadata) != 1 or archive.getinfo(metadata[0]).file_size > 4 * 1024 * 1024:
-                raise ValueError("Invalid wheel metadata")
-            msg = BytesParser().parsebytes(archive.read(metadata[0]))
-        name = canonical(msg["Name"])
-        version = msg["Version"]
-        with wheel.open("rb") as stream:
-            digest = hashlib.file_digest(stream, "sha256").hexdigest()
-        if name in seen or selected.get(name) != (version, digest):
-            raise ValueError(f"Wheel does not match resolution: {name}")
+        name, version, digest = verify_wheel(wheel, selected)
+        if name in seen:
+            raise ValueError(f"Duplicate wheel: {wheel.name}")
         seen.add(name)
         inventory.append({"name": name, "version": version, "file": wheel.name, "sha256": digest})
     if seen != selected.keys():
