@@ -64,7 +64,7 @@ def call_count(source, name):
     source = re.sub(r"(?m)//[^\n]*", "", source)
     source = re.sub(r'"(?:\\.|[^"\\])*"', '""', source)
     source = re.sub(r"\bfn\s+" + re.escape(name) + r"\b", "", source)
-    return len(re.findall(r"(?<![\w:])" + re.escape(name) + r"\s*\(", source))
+    return len(re.findall(r"(?<![\w:.])" + re.escape(name) + r"\s*\(", source))
 
 
 def audit(sources, final=False):
