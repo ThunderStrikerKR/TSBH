@@ -1263,6 +1263,11 @@ pub(crate) fn recognition_learning_support(input:&Value)->Result<Value,String>{
         }
         return PreviewStore::auto_govern_blend(|payload|recognition::execute("compare_registered_models",payload.clone()));
     }
+    if let Some(config)=input.get("pairedFieldEvaluation"){
+        if input.as_object().is_none_or(|o|o.len()!=1){return Err("필드 독립 평가 요청을 분리하세요.".into());}
+        return PreviewStore::paired_field_evaluation(config,|payload|
+            recognition::execute("compare_field_models",payload.clone()));
+    }
     if let Some(config)=input.get("pairedBlendEvaluation"){
         if input.as_object().is_none_or(|o|o.len()!=1){return Err("독립 평가 요청을 분리하세요.".into());}
         return PreviewStore::paired_blend_evaluation(config,|payload|
