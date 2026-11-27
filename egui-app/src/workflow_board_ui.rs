@@ -1,10 +1,10 @@
 //! The right-hand workflow board. Layout/hover/selection only; no business rules.
 //! Native Rust provides groups, amounts, freight, stage and shipment identity.
-use crate::ui_layout::SharedUiClipExt as _;
-use crate::ui_layout::SharedPainterClipExt as _;
-use crate::ui_layout::SharedAllocationExt as _;
+use crate::ui_layout::geometry::SharedUiClipExt as _;
+use crate::ui_layout::geometry::SharedPainterClipExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
 use eframe::egui::{self, Id, Pos2, Rect, Ui, Vec2};
-use crate::ui_primitives::UiWidthPolicyExt;
+use crate::ui_layout::geometry::UiWidthPolicyExt;
 use std::time::{Duration, Instant};
 use crate::{preview_store::WorkingReception, source_highlight, theme, typography};
 use std::collections::{HashMap,HashSet};
@@ -631,7 +631,7 @@ fn workflow_details<R>(
         row.add_space(theme::WORKFLOW_CARD_PADDING_X);
         let width=(row.available_width()-theme::WORKFLOW_CARD_PADDING_X).max(0.0);
         row.vertical(|details|{
-            details.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,width);
+            details.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,width);
             crate::ui_layout::apply_spacing_role(details,crate::ui_layout::SpacingRole::WorkflowDetail);
             body(details)
         }).inner
@@ -1168,7 +1168,7 @@ pub fn show(
             .movable(false);
         let response=area.show(ui.ctx(),|overlay_ui|{
             overlay_ui.use_owner_pane_clip(pane_clip);
-            overlay_ui.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Bounded,width);
+            overlay_ui.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Bounded,width);
             overlay_event=pending_frame(
                 overlay_ui,draft,false,true,true,writable,name,None,
                 state.pending_visible.as_ref(),linked_selection,&mut overlay_hover,&mut trigger,previews_allowed
@@ -1210,7 +1210,7 @@ pub fn show(
             // The temporary card can grow downward, but must not bleed
             // over the source/details panes or the app header.
             ui.use_owner_pane_clip(pane_clip);
-            ui.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Bounded,width);
+            ui.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Bounded,width);
             overlay_event=group_frame(
                 ui,group,current,true,true,state.preview_shipment.as_deref(),
                 writable,freight_stage_group,linked_selection,&mut overlay_trigger,&mut hovered_row,
