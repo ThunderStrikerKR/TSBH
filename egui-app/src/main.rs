@@ -4800,6 +4800,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             match result {
                 Ok(mut analysis) => {
                     let original_evidence=analysis.recognition.clone();
+                    // Keep the trace only in immutable first-analysis evidence.
+                    // The display projection must not retain a second copy.
+                    if let Some(view)=analysis.recognition.as_object_mut(){
+                        view.remove("recipientOwnerTrace");
+                    }
                     if let Some(order_id)=self.active_id.as_deref(){
                         if let Err(error)=analysis.scope_display(order_id,&self.raw_source){
                             self.analysis=None;
