@@ -8,6 +8,38 @@ use crate::scrollbar::{scroll_area,ScrollAxes};
 use crate::card::docked_section_body_height;
 use crate::table::management_table_data_width;
 
+/// Align logical UI boundaries to egui's own layout lattice. Round the
+/// absolute edges, not individual sizes: neighboring rectangles retain a
+/// common edge and accumulated section widths/heights do not drift.
+/// Physical-pixel stroke snapping is a separate paint-only operation.
+pub(crate) fn aligned_rect(rect:Rect)->Rect{
+    use egui::emath::GuiRounding as _;
+    rect.round_ui()
+}
+
+#[cfg(test)]
+mod logical_alignment_tests{
+    use super::*;
+    use egui::emath::GuiRounding as _;
+
+    #[test]
+    fn adjacent_fractional_rects_share_rounded_edges_without_drift(){
+        for scale in [1.0_f32,1.25,1.5,1.75,2.0]{
+            let origin=egui::pos2(7.13/scale,11.17/scale);
+            let outer=Rect::from_min_size(origin,Vec2::new(615.23/scale,801.19/scale));
+            let edge=outer.top()+outer.height()*0.425;
+            let top=aligned_rect(Rect::from_min_max(outer.min,egui::pos2(outer.right(),edge)));
+            let bottom=aligned_rect(Rect::from_min_max(egui::pos2(outer.left(),edge),outer.max));
+            assert_eq!(top.bottom(),bottom.top());
+            assert_eq!(top.union(bottom),aligned_rect(outer));
+            for rect in [top,bottom]{
+                assert_eq!(rect,rect.round_ui());
+                assert_eq!(rect,aligned_rect(rect));
+            }
+        }
+    }
+}
+
 /// Semantic layout profiles. Screen modules choose a content role, never
 /// a numeric spacing override. Preserve the reviewed spacing for each role.
 #[derive(Clone,Copy)]
@@ -63,6 +95,7 @@ pub fn fixed_row<R>(
     let (rect,_response)=ui.allocate_exact_size(
         Vec2::new(width,height),Sense::hover()
     );
+    let rect=aligned_rect(rect);
     #[cfg(test)]
     crate::ui_test_support::record_component_geometry("fixed layout row",rect,ui.clip_rect(),None);
     // Render in a detached child Ui: its content can grow internally, but
@@ -132,6 +165,7 @@ pub fn reception_goods_viewport(
 ){
     let size=Vec2::new(ui.available_width().max(0.0),height.max(0.0));
     let (rect,_)=ui.allocate_exact_size(size,Sense::hover());
+    let rect=aligned_rect(rect);
     if !rect.is_positive(){return;}
     let mut child=ui.new_child(UiBuilder::new()
         .id_salt("reception-goods-viewport")
@@ -154,6 +188,7 @@ pub fn reception_section_scroll(
     let (rect,_)=ui.allocate_exact_size(
         Vec2::new(ui.available_width().max(0.0),height),Sense::hover()
     );
+    let rect=aligned_rect(rect);
     if !rect.is_positive(){return;}
     let mut child=ui.new_child(UiBuilder::new().id_salt("reception-section-viewport")
         .max_rect(rect).layout(Layout::top_down(Align::Min)));
@@ -371,6 +406,7 @@ pub(crate) fn management_toolbar_slot<R>(
     ui:&mut Ui,id:impl std::hash::Hash,rect:Rect,layout:Layout,
     clip:bool,fixed_height:bool,draw:impl FnOnce(&mut Ui)->R
 )->R{
+    let rect=aligned_rect(rect);
     ui.scope_builder(UiBuilder::new().id_salt(id).max_rect(rect).layout(layout),|slot|{
         if clip{slot.set_clip_rect(rect.intersect(slot.clip_rect()));}
         slot.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());
