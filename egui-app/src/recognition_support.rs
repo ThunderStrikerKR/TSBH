@@ -7,7 +7,7 @@ use std::collections::{BTreeMap,BTreeSet};
 
 const MAX_ORDERS:usize=50_000;
 const MAX_FACTS:usize=2_000_000;
-const SUPPORT_VERSION:i64=2;
+const SUPPORT_VERSION:i64=3;
 
 #[derive(Default)]
 struct Evidence{
@@ -277,6 +277,92 @@ fn request(input:&Value)->Result<(&str,&str,&str,BTreeSet<String>,f64),String>{
     Ok((if task=="recipient_ownership"{"statistics"}else{"fieldContextStatistics"},key,target,allowed,ratio))
 }
 
+// Offline calibration of externally supplied, timestamped prediction records.
+// Never claim that caller timestamps/labels are authenticated by the ledger.
+// Calibrate TOP candidate correctness, not the full multiclass distribution.
+const CALIBRATION_BINS:usize=10;
+fn chronological_calibration(input:&Value,allowed:&BTreeSet<String>,key:&str,target:&str,ratio:f64)->Result<Value,String>{
+    use chrono::DateTime;
+    let date=|v:&Value|v.as_str().and_then(|s|DateTime::parse_from_rfc3339(s).ok())
+        .ok_or("검증 시각은 RFC3339 형식이어야 합니다.".to_owned());
+    let calibration_start=date(&input["calibrationStart"])?;
+    let test_start=date(&input["testStart"])?;
+    let test_end=date(&input["testEnd"])?;
+    let evaluation_as_of=date(&input["evaluationAsOf"])?;
+    if !(calibration_start<test_start && test_start<test_end && test_end<=evaluation_as_of){
+        return Err("학습·보정·평가 시각 순서 오류".into());
+    }
+    let model=input["frozenModelId"].as_str().filter(|s|!s.trim().is_empty()&&s.len()<=256)
+        .ok_or("고정 학습 모델 ID 필요")?;
+    let training_through=date(&input["trainingDataThrough"])?;
+    if training_through>=calibration_start{return Err("학습 종료 시각은 보정 시작 이전이어야 합니다.".into());}
+    let samples=input["samples"].as_array().filter(|a|a.len()<=MAX_ORDERS).ok_or("시간순 검증 표본 한도 오류")?;
+    let mut seen=BTreeSet::new();
+    let mut fit=[(0u64,0u64);CALIBRATION_BINS];
+    let mut test=Vec::new();
+    let mut late_fit=0u64;let mut late_test=0u64;let mut excluded_target=0u64;
+    for row in samples{
+        let id=row["orderId"].as_str().filter(|s|!s.trim().is_empty()&&s.len()<=1024)
+            .ok_or("검증 주문 ID 오류")?;
+        if !seen.insert(id){return Err("검증 주문 중복".into());}
+        if id==target{excluded_target+=1;continue;}
+        if row["frozenModelId"].as_str()!=Some(model)||row["contextKey"].as_str()!=Some(key)
+            ||row["explicitToWeakRatio"].as_f64()!=Some(ratio){
+            return Err("검증 모델·문맥·가중치 규격 불일치".into());
+        }
+        if row["labelKind"]!="explicit_correction"{return Err("명시적 정정 검증 표본만 허용합니다.".into());}
+        let predicted=date(&row["predictedAt"])?;
+        let observed=date(&row["labelAvailableAt"])?;
+        if predicted<training_through || predicted<calibration_start || predicted>=test_end || observed<=predicted{
+            return Err("예측·정답 확정 시각 범위 오류".into());
+        }
+        let top=row["topCandidate"].as_str().filter(|s|allowed.contains(*s)).ok_or("현재 최상위 후보 오류")?;
+        let actual=row["actualCandidate"].as_str().filter(|s|!s.trim().is_empty()&&s.len()<=1024)
+            .ok_or("정정 정답 후보 오류")?;
+        let score=row["topSupportShare"].as_f64().filter(|p|p.is_finite()&&(0.0..=1.0).contains(p))
+            .ok_or("검증 지지도 범위 오류")?;
+        let bin=((score*CALIBRATION_BINS as f64).floor() as usize).min(CALIBRATION_BINS-1);
+        let correct=top==actual;
+        if predicted<test_start{
+            // Even a calibration-window prediction cannot fit the mapping
+            // if its label was only available once evaluation started.
+            if observed>=test_start{late_fit+=1;continue;}
+            fit[bin].0+=1;fit[bin].1+=u64::from(correct);
+        }else{
+            if observed>evaluation_as_of{late_test+=1;continue;}
+            test.push((bin,score,correct));
+        }
+    }
+    let fitted:u64=fit.iter().map(|(n,_)|*n).sum();
+    let test_count=test.len() as u64;
+    let mut evaluated=0u64;let mut uncovered=0u64;
+    let mut raw_brier=0.0;let mut calibrated_brier=0.0;
+    for (bin,score,correct) in test{
+        let (n,k)=fit[bin];
+        if n==0{uncovered+=1;continue;}
+        let p=k as f64/n as f64;let y=f64::from(u8::from(correct));
+        raw_brier+=(score-y).powi(2);calibrated_brier+=(p-y).powi(2);
+        evaluated+=1;
+    }
+    let mean=|v:f64|if evaluated==0{None}else{Some(v/evaluated as f64)};
+    let bins=fit.iter().enumerate().map(|(i,(n,k))|json!({
+        "lowerInclusive":i as f64/CALIBRATION_BINS as f64,
+        "upper":(i+1) as f64/CALIBRATION_BINS as f64,
+        "upperInclusive":i==CALIBRATION_BINS-1,
+        "estimate":correction_interval(*k,*n)
+    })).collect::<Vec<_>>();
+    Ok(json!({"method":"fixed_bin_top_candidate_calibration","status":"external_replay_diagnostic_only",
+        "frozenModelId":model,"fitOrders":fitted,"testOrders":test_count,
+        "excludedTargetOrders":excluded_target,"lateCalibrationLabelOrders":late_fit,
+        "lateEvaluationLabelOrders":late_test,"evaluatedOrders":evaluated,"uncoveredTestOrders":uncovered,
+        "testCoverage":if test_count>0{Some(evaluated as f64/test_count as f64)}else{None},
+        "rawBrierScoreOnCoveredTest":mean(raw_brier),"calibratedBrierScoreOnCoveredTest":mean(calibrated_brier),
+        "bins":bins,"chronologicalInputChecksPassed":true,
+        "sourceProvenanceVerified":false,"chronologicalHoldoutVerified":false,
+        "representativeLabelsVerified":false,"calibratedProbability":null,
+        "eligibleForAutomaticDecision":false,"decisionChanged":false}))
+}
+
 /// Read only one context from the verified per-order ledger. Do not use
 /// pre-summed candidate-order counts: candidates can overlap within orders.
 pub(super) fn assess(tx:&Transaction<'_>,scope:&str,input:&Value)->Result<Value,String>{
@@ -303,7 +389,11 @@ pub(super) fn assess(tx:&Transaction<'_>,scope:&str,input:&Value)->Result<Value,
         if checked_facts>MAX_FACTS{return Err("학습 지지도 조회 기여량 한도 초과".into());}
         result.add(Evidence::from_facts(&facts,family,key)?,&allowed,ratio)?;
     }
-    Ok(result.wire(&allowed,ratio))
+    let mut report=result.wire(&allowed,ratio);
+    if let Some(validation)=input.get("chronologicalValidation"){
+        report["chronologicalCalibration"]=chronological_calibration(validation,&allowed,key,target,ratio)?;
+    }
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -403,6 +493,55 @@ mod recognition_support_tests{
         near(estimate["frequency"].as_f64().unwrap(),1.0);
         assert!(estimate["wilson95Lower"].as_f64().unwrap()<0.25);
         assert_eq!(v["eligibleForAutomaticDecision"],false);
+    }
+    fn chronological_fixture()->Value{
+        let sample=|id:&str,predicted:&str,observed:&str,actual:&str,score:f64|json!({
+            "orderId":id,"frozenModelId":"m1","contextKey":"ctx","explicitToWeakRatio":3.0,
+            "labelKind":"explicit_correction","predictedAt":predicted,"labelAvailableAt":observed,
+            "topCandidate":"a","actualCandidate":actual,"topSupportShare":score});
+        json!({"frozenModelId":"m1","trainingDataThrough":"2026-01-01T00:00:00Z",
+            "calibrationStart":"2026-02-01T00:00:00Z","testStart":"2026-03-01T00:00:00Z",
+            "testEnd":"2026-04-01T00:00:00Z","evaluationAsOf":"2026-04-02T00:00:00Z",
+            "samples":[
+                sample("fit","2026-02-02T00:00:00Z","2026-02-03T00:00:00Z","a",0.85),
+                sample("late","2026-02-04T00:00:00Z","2026-03-01T00:00:00Z","b",0.85),
+                sample("test","2026-03-02T00:00:00Z","2026-03-03T00:00:00Z","b",0.85),
+                sample("uncovered","2026-03-03T00:00:00Z","2026-03-04T00:00:00Z","a",0.55),
+                sample("future","2026-03-03T00:00:00Z","2026-04-03T00:00:00Z","a",0.85),
+                sample("target","2026-02-02T00:00:00Z","2026-02-03T00:00:00Z","b",0.85)
+            ]})
+    }
+    #[test]
+    fn chronological_calibration_never_fits_test_late_or_target_labels(){
+        let v=chronological_calibration(&chronological_fixture(),&allowed(),"ctx","target",3.0).unwrap();
+        assert_eq!(v["fitOrders"],1);assert_eq!(v["testOrders"],2);
+        assert_eq!(v["lateCalibrationLabelOrders"],1);assert_eq!(v["lateEvaluationLabelOrders"],1);
+        assert_eq!(v["excludedTargetOrders"],1);assert_eq!(v["evaluatedOrders"],1);
+        assert_eq!(v["uncoveredTestOrders"],1);
+        near(v["testCoverage"].as_f64().unwrap(),0.5);
+        near(v["rawBrierScoreOnCoveredTest"].as_f64().unwrap(),0.85_f64.powi(2));
+        near(v["calibratedBrierScoreOnCoveredTest"].as_f64().unwrap(),1.0);
+        assert_eq!(v["sourceProvenanceVerified"],false);
+        assert_eq!(v["eligibleForAutomaticDecision"],false);
+    }
+    #[test]
+    fn chronological_calibration_rejects_duplicate_leaking_or_mismatched_samples(){
+        let base=chronological_fixture();let parse=|v:&Value|chronological_calibration(v,&allowed(),"ctx","target",3.0);
+        let mut duplicate=base.clone();duplicate["samples"][1]["orderId"]=json!("fit");
+        assert!(parse(&duplicate).is_err());
+        for (field,value) in [("labelAvailableAt",json!("2026-02-01T00:00:00Z")),
+            ("predictedAt",json!("2026-01-01T00:00:00Z")),("contextKey",json!("other")),
+            ("frozenModelId",json!("m2")),("explicitToWeakRatio",json!(2.0)),
+            ("labelKind",json!("weak_unchanged")),("topSupportShare",json!(1.1))]{
+            let mut bad=base.clone();bad["samples"][0][field]=value;
+            assert!(parse(&bad).is_err(),"{field}");
+        }
+        let mut leak=base.clone();leak["trainingDataThrough"]=leak["calibrationStart"].clone();
+        assert!(parse(&leak).is_err());
+        let mut empty=base.clone();empty["samples"]=json!([]);
+        let v=parse(&empty).unwrap();
+        assert!(v["rawBrierScoreOnCoveredTest"].is_null());
+        assert!(v["testCoverage"].is_null());
     }
     #[test]
     fn large_order_cannot_outvote_many_independent_orders(){
