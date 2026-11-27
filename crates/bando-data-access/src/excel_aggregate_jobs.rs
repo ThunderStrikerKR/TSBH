@@ -13,10 +13,14 @@ pub fn initialize(conn:&Connection)->Result<(),String>{
         target_path TEXT NOT NULL, desired_revision INTEGER NOT NULL CHECK(desired_revision>=0),
         saved_revision INTEGER NOT NULL DEFAULT 0 CHECK(saved_revision>=0),
         retry_count INTEGER NOT NULL DEFAULT 0 CHECK(retry_count>=0), next_retry_at INTEGER,
-        last_error TEXT, file_hash TEXT, CHECK(saved_revision<=desired_revision),
+        last_error TEXT, file_hash TEXT, legacy_reply_ids TEXT NOT NULL DEFAULT '[]', CHECK(saved_revision<=desired_revision),
         PRIMARY KEY(business_date,origin,target_path));
         CREATE INDEX IF NOT EXISTS idx_excel_aggregate_pending ON excel_aggregate_jobs(next_retry_at)
-        WHERE desired_revision>saved_revision;").map_err(err)
+        WHERE desired_revision>saved_revision;").map_err(err)?;
+    // Existing development databases may have the first version of this table.
+    let has:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('excel_aggregate_jobs') WHERE name='legacy_reply_ids')",[],|r|r.get(0)).map_err(err)?;
+    if !has{conn.execute_batch("ALTER TABLE excel_aggregate_jobs ADD COLUMN legacy_reply_ids TEXT NOT NULL DEFAULT '[]';").map_err(err)?;}
+    Ok(())
 }
 pub fn target(root:&Path,date:&str,origin:&str)->Result<PathBuf,String>{
     let day=NaiveDate::parse_from_str(date,"%Y-%m-%d").map_err(err)?;
@@ -83,18 +87,94 @@ pub fn invalidate(conn:&Connection,j:&Job)->Result<(),String>{
         params![j.date,j.origin,j.path,j.saved,j.desired]).map_err(err)?;
     Ok(())
 }
-/// Read only the physical metadata envelope, never hydrate order/catalog tables.
-pub fn daily_rows(conn:&Connection,j:&Job)->Result<Vec<Vec<String>>,String>{
+fn read_history(conn:&Connection)->Result<Value,String>{
     let raw:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0)).map_err(err)?;
-    let state=crate::decode_physical_envelope(conn,&raw)?;
-    project(&state,j)
+    crate::decode_physical_envelope(conn,&raw)
+}
+fn legacy_ids(conn:&Connection,j:&Job)->Result<Vec<String>,String>{
+    let raw:String=conn.query_row("SELECT legacy_reply_ids FROM excel_aggregate_jobs WHERE business_date=?1 AND origin=?2 AND target_path=?3",
+        params![j.date,j.origin,j.path],|r|r.get(0)).map_err(err)?;
+    serde_json::from_str(&raw).map_err(err)
+}
+fn reply_date(record:&Value)->Option<String>{
+    let date=s(record,"businessDate");
+    if let Ok(d)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){return Some(d.format("%Y-%m-%d").to_string())}
+    chrono::DateTime::parse_from_rfc3339(s(record,"at")).ok().map(|d|
+        d.with_timezone(&chrono::FixedOffset::east_opt(9*3600).expect("KST")).format("%Y-%m-%d").to_string())
+}
+/// Caller owns one immediate transaction. Backfill references only, never edit
+/// immutable business history. Once assigned, a legacy reply keeps its path.
+pub fn recover_history(conn:&Connection,configured_root:Option<&Path>)->Result<(),String>{
+    initialize(conn)?;
+    let state=read_history(conn)?;
+    let revision=state["revision"].as_u64().ok_or("취합 복구 revision 누락")?;
+    if revision==0{return Ok(())}
+    let existing=jobs(conn,0,true)?;
+    let mut keys:HashSet<(String,String,String)>=existing.iter().map(|j|(j.date.clone(),j.origin.clone(),j.path.clone())).collect();
+    for e in rows(&state,"exports"){
+        let path=Path::new(s(e,"savedPath"));
+        for origin in ["FACTORY","STORE"]{
+            let Ok((date,target))=export_target(path,origin)else{continue};
+            let path=target.to_str().ok_or("취합 경로 인코딩 오류")?;
+            if keys.insert((date.clone(),origin.into(),path.into())){enqueue(conn,&date,origin,path,revision)?;}
+        }
+    }
+    let mut assigned=HashSet::new();
+    for j in existing.iter().filter(|j|j.origin=="REPLY"){assigned.extend(legacy_ids(conn,j)?);}
+    let mut groups:HashMap<(String,String),Vec<String>>=HashMap::new();
+    for r in rows(&state,"factoryReplies"){
+        if !rows(r,"rows").iter().any(|row|row["applied"]==true){continue}
+        let Some(date)=reply_date(r)else{continue};
+        let explicit=s(r,"aggregateTargetPath");
+        if !explicit.is_empty(){
+            if keys.insert((date.clone(),"REPLY".into(),explicit.into())){enqueue(conn,&date,"REPLY",explicit,revision)?;}
+            continue
+        }
+        let id=s(r,"id");
+        if id.is_empty()||assigned.contains(id){continue}
+        let Some(root)=configured_root else{continue};
+        let path=target(root,&date,"REPLY")?.to_str().ok_or("취합 경로 인코딩 오류")?.to_owned();
+        groups.entry((date,path)).or_default().push(id.to_owned());
+        assigned.insert(id.to_owned());
+    }
+    for ((date,path),ids) in groups{
+        enqueue(conn,&date,"REPLY",&path,revision)?;
+        let j=Job{date,origin:"REPLY".into(),path,desired:0,saved:0,retries:0,hash:None};
+        let mut all=legacy_ids(conn,&j)?;all.extend(ids);
+        // Invalidate even if the legacy binding is discovered at the same
+        // business revision as an already published explicit reply.
+        conn.execute("UPDATE excel_aggregate_jobs SET legacy_reply_ids=?4,saved_revision=0,file_hash=NULL,next_retry_at=NULL
+            WHERE business_date=?1 AND origin=?2 AND target_path=?3",
+            params![j.date,j.origin,j.path,serde_json::to_string(&all).map_err(err)?]).map_err(err)?;
+    }
+    Ok(())
+}
+/// A restored snapshot is a new generation. Any pre-restore worker must
+/// fail its final generation check, including jobs copied from older backups.
+pub fn invalidate_after_restore(conn:&Connection,revision:u64)->Result<(),String>{
+    initialize(conn)?;
+    conn.execute("UPDATE excel_aggregate_jobs SET desired_revision=?1,saved_revision=0,file_hash=NULL,
+        next_retry_at=NULL,retry_count=0,last_error=NULL",[i64::try_from(revision).map_err(err)?]).map_err(err)?;
+    Ok(())
+}
+/// Read only the metadata envelope, not order/catalog tables.
+pub fn daily_rows<F>(conn:&Connection,j:&Job,legacy:F)->Result<Vec<Vec<String>>,String>
+where F:FnMut(&Value,&Value)->Result<Vec<String>,String>{
+    let state=read_history(conn)?;
+    let ids=legacy_ids(conn,j)?;
+    project_with(&state,j,&ids,legacy)
 }
 fn values(v:&Value,n:usize)->Result<Vec<String>,String>{
     let arr=v.as_array().ok_or("취합 출력값 누락")?;
     if arr.len()!=n{return Err("취합 출력 열 수 오류".into())}
     arr.iter().map(|v|v.as_str().map(str::to_owned).ok_or_else(||"취합 출력값 형식 오류".into())).collect()
 }
+#[cfg(test)]
 fn project(state:&Value,j:&Job)->Result<Vec<Vec<String>>,String>{
+    project_with(state,j,&[],|_,_|Err("기존 회신 원본 필요".into()))
+}
+fn project_with<F>(state:&Value,j:&Job,legacy_ids:&[String],mut legacy:F)->Result<Vec<Vec<String>>,String>
+where F:FnMut(&Value,&Value)->Result<Vec<String>,String>{
     let mut out=Vec::new();
     if j.origin!="REPLY"{
         let mut seen=HashSet::new();
@@ -103,34 +183,40 @@ fn project(state:&Value,j:&Job)->Result<Vec<Vec<String>>,String>{
             if p.parent()!=Path::new(&j.path).parent(){continue}
             let Ok((date,t))=export_target(p,&j.origin)else{continue};
             if date!=j.date||t!=Path::new(&j.path)||!seen.insert(s(e,"id")){continue}
-            for row in rows(e,"outputRows"){out.push(values(&row["values"],16)?);}
+            let records=e["outputRows"].as_array().filter(|r|!r.is_empty()).ok_or("기존 추출 이력의 원본 출력 행이 없습니다.")?;
+            for row in records{out.push(values(&row["values"],16)?);}
         }
     }else{
         let history=rows(state,"factoryReplies");
         let positions:HashMap<&str,usize>=history.iter().enumerate().map(|(i,r)|(s(r,"id"),i)).collect();
-        let mut selected:HashMap<&str,((usize,usize),usize,Vec<String>)>=HashMap::new();
+        let legacy_ids:HashSet<&str>=legacy_ids.iter().map(String::as_str).collect();
+        let mut selected:HashMap<&str,((usize,usize),usize,&Value,&Value)>=HashMap::new();
         for (i,r) in history.iter().enumerate(){
-            if s(r,"aggregateTargetPath")!=j.path||s(r,"businessDate")!=j.date{continue}
+            let bound=s(r,"aggregateTargetPath")==j.path || (s(r,"aggregateTargetPath").is_empty()&&legacy_ids.contains(s(r,"id")));
+            if !bound||reply_date(r).as_deref()!=Some(j.date.as_str()){continue}
             let sequence=positions.get(s(&r["resolves"],"id")).copied().unwrap_or(i);
             for (row_index,row) in rows(r,"rows").iter().enumerate(){
                 let shipment=s(row,"shipmentId");
                 if row["applied"]!=true||shipment.is_empty(){continue}
-                let mut v=if row.get("aggregateValues").is_some(){values(&row["aggregateValues"],17)?}else{
-                    let mut v=vec![String::new();17];v[0]=s(row,"name").into();v[2]=s(row,"address").into();v[8]=s(row,"goods").into();
-                    for (i,c) in rows(row,"contacts").iter().take(2).enumerate(){v[3+i]=c.as_str().unwrap_or("").to_owned();}v
-                };
-                v[6]=row["actual"].as_i64().ok_or("회신 운임 누락")?.to_string();
-                v[16]=s(row,"tracking").to_owned();
                 match selected.get_mut(shipment){
-                    Some((_,previous,old)) if sequence>=*previous=>{*previous=sequence;*old=v;}
+                    Some((_,previous,old_record,old_row)) if sequence>=*previous=>{*previous=sequence;*old_record=r;*old_row=row;}
                     Some(_)=>{},
-                    None=>{selected.insert(shipment,((i,row_index),sequence,v));}
+                    None=>{selected.insert(shipment,((i,row_index),sequence,r,row));}
                 }
             }
         }
         let mut ordered:Vec<_>=selected.into_iter().collect();
-        ordered.sort_by(|(a,(i,_,_)),(b,(k,_,_))|i.cmp(k).then_with(||a.cmp(b)));
-        out=ordered.into_iter().map(|(_,(_,_,v))|v).collect();
+        ordered.sort_by(|(a,(i,_,_,_)),(b,(k,_,_,_))|i.cmp(k).then_with(||a.cmp(b)));
+        for (_,(_,_,record,row)) in ordered{
+            let mut v=if row.get("aggregateValues").is_some(){values(&row["aggregateValues"],17)?}else{
+                let original=positions.get(s(&record["resolves"],"id")).map(|i|&history[*i]).unwrap_or(record);
+                legacy(original,row)?
+            };
+            if v.len()!=17{return Err("회신 원본 열 수 오류".into())}
+            v[6]=row["actual"].as_i64().ok_or("회신 운임 누락")?.to_string();
+            v[16]=s(row,"tracking").to_owned();
+            out.push(v);
+        }
     }
     Ok(out)
 }

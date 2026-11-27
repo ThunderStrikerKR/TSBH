@@ -5,7 +5,7 @@ use chrono::Utc;
 use rusqlite::{Connection,TransactionBehavior};
 use rust_xlsxwriter::{Format,Workbook};
 use sha2::{Digest,Sha256};
-use std::{fs,io::{Cursor,Read,Write},path::{Path,PathBuf},sync::{Mutex,atomic::{AtomicBool,Ordering}},time::{Duration,Instant}};
+use std::{collections::HashMap,fs,io::{Cursor,Read,Write},path::{Path,PathBuf},sync::{Mutex,atomic::{AtomicBool,Ordering}},time::{Duration,Instant}};
 use uuid::Uuid;
 
 fn err(e:impl std::fmt::Display)->String{e.to_string()}
@@ -85,12 +85,38 @@ fn checked_target(j:&jobs::Job)->Result<PathBuf,String>{
 }
 struct Temp(PathBuf);
 impl Drop for Temp{fn drop(&mut self){let _=fs::remove_file(&self.0);}}
-fn publish(conn:&mut Connection,requested:&jobs::Job)->Result<(),String>{
+fn read_legacy_reply(base:&Path,record:&serde_json::Value,row:&serde_json::Value,cache:&mut HashMap<String,serde_json::Value>)->Result<Vec<String>,String>{
+    let id=record["id"].as_str().ok_or("원본 회신 ID 누락")?;
+    let digest=id.strip_prefix("factory-reply-").filter(|s|s.len()==64&&s.bytes().all(|c|c.is_ascii_hexdigit()))
+        .ok_or("기존 회신 원본 ID를 검증할 수 없습니다.")?;
+    if !cache.contains_key(id){
+        let dir=base.canonicalize().map_err(err)?.join("factory-replies");
+        let path=dir.join(format!("{digest}.xlsx"));
+        if dir.canonicalize().map_err(err)?!=dir||path.canonicalize().map_err(err)?!=path{
+            return Err("회신 원본 보관 경로 오류".into())
+        }
+        let file=fs::File::open(&path).map_err(err)?;
+        let mut bytes=Vec::new();file.take(10*1024*1024+1).read_to_end(&mut bytes).map_err(err)?;
+        if bytes.len()>10*1024*1024||format!("{:x}",Sha256::digest(&bytes))!=digest{
+            return Err("회신 원본 파일 해시 불일치".into())
+        }
+        let source=crate::native_workbooks::read_factory_reply("original.xlsx",&bytes)?;
+        if source["id"].as_str()!=Some(id){return Err("회신 원본 식별자 불일치".into())}
+        cache.insert(id.to_owned(),source);
+    }
+    let source=cache.get(id).ok_or("회신 원본 캐시 누락")?;
+    let original=source["sourceRows"].as_array().and_then(|rows|rows.iter().find(|r|r["row"]==row["row"]))
+        .ok_or("회신 원본 행 누락")?;
+    let v=original["aggregateValues"].as_array().ok_or("회신 원본 열 누락")?;
+    v.iter().map(|x|x.as_str().map(str::to_owned).ok_or_else(||"회신 원본 값 오류".into())).collect()
+}
+fn publish(conn:&mut Connection,requested:&jobs::Job,base:&Path)->Result<(),String>{
     // Capture generation and projected rows from a consistent SQLite read.
     let tx=conn.transaction().map_err(err)?;
     let Some(j)=jobs::current(&tx,requested)? else{return Ok(())};
     if j.desired<=j.saved{return Ok(())}
-    let rows=jobs::daily_rows(&tx,&j)?;
+    let mut cache=HashMap::new();
+    let rows=jobs::daily_rows(&tx,&j,|record,row|read_legacy_reply(base,record,row,&mut cache))?;
     tx.commit().map_err(err)?;
     let bytes=encode(&rows,j.origin=="REPLY")?;
     let target=checked_target(&j)?;
@@ -124,12 +150,41 @@ fn verify_completed(conn:&Connection)->Result<(),String>{
     }
     Ok(())
 }
+fn clean_stale_temps(conn:&mut Connection,min_age:Duration)->Result<(),String>{
+    let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(err)?;
+    for j in jobs::jobs(&tx,0,true)?{
+        let Ok(target)=checked_target(&j)else{continue};
+        let Some(dir)=target.parent()else{continue};
+        let Ok(entries)=fs::read_dir(dir)else{continue};
+        for entry in entries.flatten(){
+            let name=entry.file_name();let Some(name)=name.to_str()else{continue};
+            let Some(token)=name.strip_prefix(".bando-aggregate-").and_then(|s|s.strip_suffix(".tmp"))else{continue};
+            if Uuid::parse_str(token).is_err(){continue}
+            let Ok(meta)=fs::symlink_metadata(entry.path())else{continue};
+            if meta.file_type().is_file()&&meta.modified().ok().and_then(|t|t.elapsed().ok()).is_some_and(|age|age>=min_age){
+                let _=fs::remove_file(entry.path());
+            }
+        }
+    }
+    tx.commit().map_err(err)
+}
 fn run(reconcile:bool)->Result<(),String>{
-    let (mut conn,_)=crate::factory_reply_inbox::open_db()?;
-    if reconcile{verify_completed(&conn)?;}
+    let (mut conn,base)=crate::factory_reply_inbox::open_db()?;
+    if reconcile{
+        let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(err)?;
+        let settings=bando_data_access::read_v2_settings_snapshot(&tx)?;
+        let configured=settings["settings"]["excelDirectory"].as_str().filter(|p|!p.trim().is_empty()).map(PathBuf::from);
+        let root=if crate::business_state::test_launch(){Some(crate::business_state::test_directory("Excel")?)}else{
+            configured.filter(|p|p.is_absolute()).map(|p|p.canonicalize().unwrap_or(p))
+        };
+        jobs::recover_history(&tx,root.as_deref())?;
+        tx.commit().map_err(err)?;
+        verify_completed(&conn)?;
+        clean_stale_temps(&mut conn,Duration::from_secs(24*3600))?;
+    }
     let now=Utc::now().timestamp();
     for job in jobs::jobs(&conn,now,false)?.into_iter().take(16){
-        if let Err(e)=publish(&mut conn,&job){
+        if let Err(e)=publish(&mut conn,&job,&base){
             jobs::mark_failed(&conn,&job,now,&e)?;
         }
     }
@@ -196,10 +251,10 @@ mod tests{
     #[test]
     fn actual_publish_rebuilds_from_db_after_damage_and_preserves_generation(){
         let mut f=Fixture::new();f.update(1);
-        publish(&mut f.conn,&f.job).unwrap();
+        publish(&mut f.conn,&f.job,&f.root).unwrap();
         let one=fs::read(&f.job.path).unwrap();
         assert_eq!(jobs::current(&f.conn,&f.job).unwrap().unwrap().saved,1);
-        f.update(2);publish(&mut f.conn,&f.job).unwrap();
+        f.update(2);publish(&mut f.conn,&f.job,&f.root).unwrap();
         let mut x=Xlsx::new(Cursor::new(fs::read(&f.job.path).unwrap())).unwrap();
         let r=x.worksheet_range("로젠택배").unwrap();
         assert_eq!(r.get_value((2,1)),Some(&Data::String("01234".into())));
@@ -207,25 +262,25 @@ mod tests{
         fs::write(&f.job.path,b"damaged").unwrap();
         verify_completed(&f.conn).unwrap();
         assert_eq!(jobs::current(&f.conn,&f.job).unwrap().unwrap().saved,0);
-        publish(&mut f.conn,&f.job).unwrap();
+        publish(&mut f.conn,&f.job,&f.root).unwrap();
         assert_eq!(jobs::current(&f.conn,&f.job).unwrap().unwrap().saved,2);
         fs::remove_file(&f.job.path).unwrap();verify_completed(&f.conn).unwrap();
-        publish(&mut f.conn,&f.job).unwrap();assert!(Path::new(&f.job.path).is_file());
+        publish(&mut f.conn,&f.job,&f.root).unwrap();assert!(Path::new(&f.job.path).is_file());
     }
     #[cfg(windows)]
     #[test]
     fn actual_publish_retries_locked_file_without_losing_generation(){
         use std::os::windows::fs::OpenOptionsExt;
-        let mut f=Fixture::new();f.update(1);publish(&mut f.conn,&f.job).unwrap();
+        let mut f=Fixture::new();f.update(1);publish(&mut f.conn,&f.job,&f.root).unwrap();
         let old=fs::read(&f.job.path).unwrap();
         let lock=fs::OpenOptions::new().read(true).share_mode(0).open(&f.job.path).unwrap();
-        f.update(2);let e=publish(&mut f.conn,&f.job).unwrap_err();
+        f.update(2);let e=publish(&mut f.conn,&f.job,&f.root).unwrap_err();
         jobs::mark_failed(&f.conn,&f.job,100,&e).unwrap();
         assert_eq!(jobs::current(&f.conn,&f.job).unwrap().unwrap().saved,1);
         drop(lock);assert_eq!(fs::read(&f.job.path).unwrap(),old);
         assert!(jobs::jobs(&f.conn,104,false).unwrap().is_empty());
         let pending=jobs::jobs(&f.conn,105,false).unwrap();assert_eq!(pending.len(),1);
-        publish(&mut f.conn,&pending[0]).unwrap();
+        publish(&mut f.conn,&pending[0],&f.root).unwrap();
         assert_eq!(jobs::current(&f.conn,&f.job).unwrap().unwrap().saved,2);
     }
     #[test]

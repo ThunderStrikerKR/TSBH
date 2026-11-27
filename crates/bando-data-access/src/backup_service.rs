@@ -201,6 +201,8 @@ fn restore_selected(conn: &mut Connection, base: &Path, filename: &str)
         // A restored older backup can contain the retired color placeholder.
         // Normalize it within this restore's verified rollback boundary.
         crate::product_colors::migrate_v2_with_verified_restore_backup(conn)?;
+        let restored_revision=get_snapshot(conn)?["revision"].as_u64().ok_or("복원 DB 리비전 오류")?;
+        crate::excel_aggregate_jobs::invalidate_after_restore(conn,restored_revision)?;
         validate_database(conn)
     })();
     if let Err(primary_error) = result {
