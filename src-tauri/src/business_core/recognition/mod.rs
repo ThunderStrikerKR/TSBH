@@ -858,6 +858,7 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
     let mut product_hits: Vec<ProductHit> = Vec::new();
     let mut candidate_trace=Vec::new();
     let mut candidate_trace_truncated=false;
+    let mut item_candidate_trace=Vec::new();
     let phone = phone_regex();
     let person_label = recipient_label();
     // Direct translation of order-evidence.ts:140-170: parenthesized
@@ -1088,8 +1089,8 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
         let offset = line.text.find(trimmed).unwrap_or(0);
         if capture{
             let encode=|qs:&[quantity::Quantity]|qs.iter().take(128).map(|q|json!({
-                "value":q.value,"start":utf16(raw,line.start+offset+q.start),
-                "end":utf16(raw,line.start+offset+q.end)})).collect::<Vec<_>>();
+                "value":q.value,"start":raw.get(..line.start+offset+q.start).map(|s|s.encode_utf16().count()),
+                "end":raw.get(..line.start+offset+q.end).map(|s|s.encode_utf16().count())})).collect::<Vec<_>>();
             let before=quantity_before.as_deref().unwrap_or(&[]);
             candidate_trace.push(json!({"line":line.number,
                 "source":{"start":utf16(raw,line.start+offset),
@@ -1386,6 +1387,38 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
             if !reason.is_null() {item["recognitionReason"]=reason;}
             apply_registered_item(&mut item,state,client,
                 hit.decision.get("color").and_then(Value::as_str).unwrap_or(""));
+            if collect_candidate_trace{
+                if item_candidate_trace.len()<64{
+                    let product=chosen.and_then(|pid|model::products(state).into_iter()
+                        .find(|p|p["id"].as_str()==Some(pid)));
+                    let variants=product.and_then(|p|p["variants"].as_array());
+                    let variant_count=variants.map_or(0,Vec::len);
+                    let selectable=variant_count==1&&product.is_some_and(|p|p["requiresOption"]!=true);
+                    let color=item["color"].as_str().unwrap_or("");
+                    let options=variants.into_iter().flatten().take(128).map(|v|{
+                        let matches_color=model::norm_color(v["color"].as_str().unwrap_or(""))==color;
+                        let selected=v["id"].is_string()&&v["id"]==item["variantId"];
+                        json!({"variantId":v["id"],"selected":selected,
+                            "reasonCode":if selected{"selected"}else if !selectable{"requires_option_or_multiple_variants"}
+                                else if !matches_color{"color_mismatch"}else{"not_selected"}})
+                    }).collect::<Vec<_>>();
+                    let quantity_candidates=hit.quantities.iter().take(128).map(|qi|{
+                        let q=&events[*qi];
+                        json!({"start":utf16(raw,q.start),"end":utf16(raw,q.end),
+                            "value":q.value,"selected":selected_qty==Some(*qi),
+                            "reasonCode":if selected_qty==Some(*qi){"selected"}
+                                else if hit.common&&!hit.each{"common_total_not_per_recipient"}
+                                else if hit.quantities.len()>1{"multiple_quantities"}
+                                else{"not_selected"}})
+                    }).collect::<Vec<_>>();
+                    item_candidate_trace.push(json!({"itemId":id,"recipientId":rid,
+                        "productId":item["productId"],"selectedVariantId":item["variantId"],
+                        "variantCount":variant_count,"variantTruncated":variant_count>128,
+                        "variants":options,"quantityCandidates":quantity_candidates,
+                        "quantityTruncated":hit.quantities.len()>128,
+                        "selectedQuantity":item["quantity"],"quantityConfirmed":item["quantityConfirmed"]}));
+                }else{candidate_trace_truncated=true;}
+            }
             let mut product_source=source_json(raw,&events[hit.evidence],&rid,&id);
             // parser.ts::productNameEvidence returns the registered model
             // token rather than the surrounding "(블랙)" color hint. Keep
@@ -1500,8 +1533,9 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
     }
     if collect_candidate_trace{
         result["classificationCandidateTrace"]=json!({"schemaVersion":1,
-            "coverage":"product_stages_and_quantity_post_extraction",
+            "coverage":"product_stages_variant_selection_and_quantity_post_extraction",
             "truncated":candidate_trace_truncated,"decisions":candidate_trace,
+            "itemDecisions":item_candidate_trace,
             "fullCandidateCoverage":false});
     }
     Ok(result)
@@ -1823,6 +1857,25 @@ mod tests {
         assert!(recipients[0]["address"].as_str().unwrap().contains("월드컵로 20"));
         assert!(recipients[1]["address"].as_str().unwrap().contains("불정로 6"));
     }
+    #[test]
+    fn candidate_trace_does_not_change_recognition_and_records_real_stage_survivors(){
+        let raw="709 민판 2개";
+        let mut catalog=state();
+        catalog["products"][1]["defaultColor"]=json!("Black");
+        let baseline=execute("analyze_order",json!({"raw":raw,"state":catalog})).unwrap();
+        let mut traced=execute("analyze_order",json!({"raw":raw,"state":catalog,
+            "collectCandidateTrace":true})).unwrap();
+        let trace=traced.as_object_mut().unwrap().remove("classificationCandidateTrace").unwrap();
+        assert_eq!(traced,baseline);
+        let stages=trace["decisions"][0]["productStages"].as_array().unwrap();
+        assert!(stages.iter().any(|s|s["stage"]=="literal_evidence"));
+        assert!(stages.iter().any(|s|s["stage"]=="perforation_filter"));
+        assert!(stages.iter().any(|s|s["stage"]=="final_decision"));
+        assert_eq!(trace["decisions"][0]["quantityAfterSaleUnitFilter"][0]["value"],2);
+        assert_eq!(trace["itemDecisions"][0]["selectedQuantity"],2);
+        assert_eq!(trace["fullCandidateCoverage"],false);
+    }
+
     #[test]
     fn owner_trace_preserves_legacy_attribution_and_records_rejected_candidates(){
         let raw="김가상\n서울특별시 마포구 월드컵로 20\n010-1234-5678\n\n경기도 성남시 분당구 불정로 6\n010-2345-6789\n박가상";
