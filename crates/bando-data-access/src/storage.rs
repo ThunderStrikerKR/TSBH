@@ -87,6 +87,13 @@ pub(crate) fn update_v2_reviewed_workbook<F>(conn:&mut Connection,mutate:F)
 where F:FnOnce(&Value)->Result<Option<Value>,String>{
     update_v2_entity_with_color_policy(conn,true,false,mutate)
 }
+// Brand deletion does not edit products. Avoid unrelated color migrations
+// during this narrow catalog mutation.
+pub(crate) fn update_v2_brand_delete<F>(conn:&mut Connection,mutate:F)
+    ->Result<Value,String>
+where F:FnOnce(&Value)->Result<Option<Value>,String>{
+    update_v2_entity_with_color_policy(conn,true,false,mutate)
+}
 fn update_v2_entity_with_color_policy<F>(
     conn:&mut Connection,validate_orders:bool,normalize_colors:bool,mutate:F
 )->Result<Value,String>
