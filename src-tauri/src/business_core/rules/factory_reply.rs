@@ -21,6 +21,23 @@ fn rows<'a>(v:&'a Value,k:&str)->&'a [Value] {
 fn is_duplicate(state:&Value,id:&str)->bool {
     rows(state,"factoryReplies").iter().any(|record|s(record,"id")==id)
 }
+// Five business hold categories. The issue text is presentation and legacy
+// review compatibility; storage and diagnostics have separate error paths.
+#[derive(Clone,Copy)]
+enum ReplyHold{NoMatch,AmbiguousTarget,InvalidTracking,InvalidFreight,DuplicateTracking}
+impl ReplyHold{
+    fn code(self)->&'static str{match self{
+        Self::NoMatch=>"NO_MATCH",
+        Self::AmbiguousTarget=>"AMBIGUOUS_TARGET",
+        Self::InvalidTracking=>"INVALID_TRACKING",
+        Self::InvalidFreight=>"INVALID_FREIGHT",
+        Self::DuplicateTracking=>"DUPLICATE_TRACKING",
+    }}
+    fn set(self,row:&mut Value,detail:&str){
+        row["issueCode"]=json!(self.code());
+        row["issue"]=json!(detail);
+    }
+}
 fn valid_tracking(text:&str)->bool {
     (8..=30).contains(&text.len()) && text.bytes().all(|b|b.is_ascii_digit())
 }
@@ -196,12 +213,16 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
     for index in 0..count {
         let current=reply["rows"][index].clone();
         if !s(&current,"issue").is_empty(){continue}
-        let valid=!match_key(&current).is_empty()
-            && valid_tracking(s(&current,"tracking"))
-            && field(&current,"actual").as_i64().is_some_and(|n|
-                (0..=9_007_199_254_740_991).contains(&n));
-        if !valid{
-            reply["rows"][index]["issue"]=json!("필수 배송정보 / Q열 운송장 / 출고 운임 확인 필요");
+        let invalid=if match_key(&current).is_empty(){
+            Some((ReplyHold::NoMatch,"수하인 이름 누락"))
+        }else if !valid_tracking(s(&current,"tracking")){
+            Some((ReplyHold::InvalidTracking,"Q열 운송장번호가 없거나 올바르지 않습니다."))
+        }else if !field(&current,"actual").as_i64().is_some_and(|n|
+                (0..=9_007_199_254_740_991).contains(&n)){
+            Some((ReplyHold::InvalidFreight,"G열 출고 운임은 0 이상의 정수로 입력하세요."))
+        }else{None};
+        if let Some((kind,detail))=invalid{
+            kind.set(&mut reply["rows"][index],detail);
             continue
         }
         let explicit=if source.get("resolves").is_some()&&count==1 {
@@ -224,27 +245,27 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
             if !chosen.is_empty(){ids.retain(|id|id==chosen);}
         }
         if ids.len()!=1{
-            reply["rows"][index]["issue"]=json!(if ids.is_empty(){
-                "일치하는 공장 발송 배송 건이 없습니다."
+            if ids.is_empty(){
+                ReplyHold::NoMatch.set(&mut reply["rows"][index],"일치하는 공장 발송 배송 건이 없습니다.");
             }else{
-                "배송 건이 여러 개입니다. 연결 대상 확인 필요"
-            });
+                ReplyHold::AmbiguousTarget.set(&mut reply["rows"][index],"배송 건이 여러 개입니다. 연결 대상 확인 필요");
+            }
             continue
         }
         let shipment_id=ids[0].clone();
         let Some(shipment_pos)=shipment_index.position(&shipment_id) else{
-            reply["rows"][index]["issue"]=json!("연결된 배송 건을 찾지 못했습니다.");
+            ReplyHold::NoMatch.set(&mut reply["rows"][index],"연결된 배송 건을 찾지 못했습니다.");
             continue;
         };
         let ship=rows(field(&next,"workflow"),"shipments")[shipment_pos].clone();
         reply["rows"][index]["shipmentId"]=json!(shipment_id);
         reply["rows"][index]["orderId"]=field(&ship,"orderId").clone();
         if !claimed.insert(shipment_id.clone()){
-            reply["rows"][index]["issue"]=json!("한 파일에 동일 배송 건 중복 행");
+            ReplyHold::AmbiguousTarget.set(&mut reply["rows"][index],"한 파일에 동일 배송 건 중복 행");
             continue
         }
         if shipment_index.conflicts(&shipment_id,s(&current,"tracking")){
-            reply["rows"][index]["issue"]=json!("운송장번호가 다른 배송 건에 이미 연결되어 있습니다.");
+            ReplyHold::DuplicateTracking.set(&mut reply["rows"][index],"운송장번호가 다른 배송 건에 이미 연결되어 있습니다.");
             if let Some(owner)=shipment_index.shipments.iter().find(|ship|
                 s(ship,"id")!=shipment_id&&s(field(ship,"tracking"),"FACTORY")==s(&current,"tracking")){
                 reply["rows"][index]["existingShipmentId"]=field(owner,"id").clone();
@@ -257,15 +278,14 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
         // A differing prior value is audit evidence, not an approval gate.
         // recordActualFreight() only accepts an existing origin of the original
         // order. Keep its independent audit event before the reply event.
-        let order=rows(&next,"orders").iter()
+        let recipient=rows(&next,"orders").iter()
             .find(|o|s(o,"id")==s(&ship,"orderId"))
-            .ok_or("출고지와 배송 건을 확인하세요.")?;
-        let original_recipient=rows(order,"recipients").iter()
-            .find(|r|s(r,"id")==s(&ship,"recipientId"))
-            .ok_or("출고지와 배송 건을 확인하세요.")?;
-        if !rows(original_recipient,"items").iter().any(|i|s(i,"origin")=="FACTORY"){
-            return Err("출고지와 배송 건을 확인하세요.".into())
-        }
+            .and_then(|order|rows(order,"recipients").iter().find(|r|s(r,"id")==s(&ship,"recipientId")))
+            .filter(|r|rows(r,"items").iter().any(|i|s(i,"origin")=="FACTORY"));
+        let Some(original_recipient)=recipient else{
+            ReplyHold::NoMatch.set(&mut reply["rows"][index],"연결된 공장 발송 배송 건을 찾지 못했습니다.");
+            continue;
+        };
         // Read the current effective cost, never the frozen export note.
         let order_actual=actual(&ship,original_recipient);
         let prev_actual=order_actual.clone();
@@ -414,31 +434,29 @@ fn parse_reply(payload:&Value)->Result<Value,String>{
             number_format.len()>raw_tracking.len();
         let numeric_risk=field(source,"trackingNumeric")==true &&
             (raw_tracking.len()>15 || !raw_tracking.bytes().all(|b|b.is_ascii_digit()) || zero_padded);
-        let source_issue=s(source,"sourceIssue");
+        let unreadable_tracking_format=field(source,"trackingFormatUnreadable")==true
+            || s(source,"sourceIssue")=="Q열 운송장번호의 앞자리 0 보존 여부를 확인하세요.";
         let freight=parse_freight(raw_freight);
         let contacts=[phone,mobile].into_iter().filter(|v|!v.is_empty())
             .collect::<Vec<_>>();
-        let issue=if !source_issue.is_empty(){
-            Some(source_issue)
+        let issue=if normalized(name).is_empty(){
+            Some((ReplyHold::NoMatch,"수하인 이름 누락"))
         }else if numeric_risk{
-            Some("Q열 숫자형 운송장번호의 정확성을 보장할 수 없습니다. 15자리 초과·정밀도 또는 앞자리 0 손실 가능성이 있으므로 원본을 확인하세요.")
-        }else if normalized(name).is_empty(){
-            Some("수하인 이름 누락")
+            Some((ReplyHold::InvalidTracking,"Q열 숫자형 운송장번호의 정확성을 보장할 수 없습니다. 15자리 초과·정밀도 또는 앞자리 0 손실 가능성이 있으므로 원본을 확인하세요."))
+        }else if unreadable_tracking_format{
+            Some((ReplyHold::InvalidTracking,"Q열 운송장번호의 앞자리 0 보존 여부를 확인하세요."))
         }else if !valid_tracking(&tracking){
-            Some("Q열 운송장번호가 없거나 올바르지 않습니다.")
+            Some((ReplyHold::InvalidTracking,"Q열 운송장번호가 없거나 올바르지 않습니다."))
         }else if freight.is_none(){
-            Some("G열 출고 운임은 0 이상의 정수로 입력하세요.")
+            Some((ReplyHold::InvalidFreight,"G열 출고 운임은 0 이상의 정수로 입력하세요."))
         }else{None};
         let mut row=json!({"row":n,"name":name,"address":address,
             "contacts":contacts,"goods":goods,"matchDate":field(payload,"businessDate"),
             "tracking":tracking,"actual":freight});
-        if let Some(issue)=issue{row["issue"]=json!(issue)}
+        if let Some((kind,detail))=issue{kind.set(&mut row,detail)}
         parsed.push(row);
     }
     if parsed.is_empty(){return Err("회신 파일에 처리할 배송 행이 없습니다.".into())}
-    if parsed.iter().all(|r|s(r,"tracking").is_empty()){
-        return Err("로젠 회신 양식 불일치: Q열 운송장번호 데이터가 없습니다.".into())
-    }
     let mut counts=HashMap::new();
     for row in &parsed {
         let tracking=s(row,"tracking");
@@ -450,7 +468,7 @@ fn parse_reply(payload:&Value)->Result<Value,String>{
         let tracking=s(row,"tracking");
         if s(row,"issue").is_empty() && !tracking.is_empty()
             && counts.get(tracking).copied().unwrap_or(0)>1{
-            row["issue"]=json!("같은 회신 파일에 운송장번호가 중복됩니다.");
+            ReplyHold::AmbiguousTarget.set(row,"같은 회신 파일에 운송장번호가 중복됩니다.");
         }
     }
     let reply=json!({
@@ -707,7 +725,7 @@ pub(crate) fn approve_factory_conflict_for_state(state:&Value,payload:&Value)->R
         s(&selected_ambiguity(state,payload,&reply_row_with_date(original,source))?,"shipmentId").to_owned()
     }else{s(source,"shipmentId").to_owned()};
     let mut clean=reply_row_with_date(original,source);
-    for k in ["issue","applied","shipmentId","orderId"]{
+    for k in ["issue","issueCode","applied","shipmentId","orderId"]{
         clean.as_object_mut().ok_or("회신 행 형식 오류")?.remove(k);
     }
     let reply=json!({"id":correction,"filename":original["filename"],
@@ -1039,6 +1057,29 @@ mod tests {
         let accepted=analyze(&req).unwrap();
         assert_eq!(accepted["applied"],1);
     }
+
+    #[test]
+fn factory_business_hold_categories_and_missing_tracking_are_row_local(){
+    for (name,tracking,freight,expected) in [
+        ("","001234567890","4000","NO_MATCH"),
+        ("없는 수하인","001234567890","4000","NO_MATCH"),
+        ("","", "4000","NO_MATCH"),
+    ]{
+        let mut req=input(fixture(),tracking,freight);
+        req["sourceRows"][0]["name"]=json!(name);
+        let result=analyze(&req).unwrap();
+        assert_eq!(result["rows"][0]["issueCode"],expected);
+    }
+    let missing=analyze(&input(fixture(),"","4000")).unwrap();
+    assert_eq!(missing["rows"][0]["issueCode"],"INVALID_TRACKING");
+    let bad_fee=analyze(&input(fixture(),"001234567890","-1")).unwrap();
+    assert_eq!(bad_fee["rows"][0]["issueCode"],"INVALID_FREIGHT");
+    let mut absent=fixture();
+    absent["orders"]=json!([]);
+    let missing_target=analyze(&input(absent,"001234567890","4000")).unwrap();
+    assert_eq!(missing_target["rows"][0]["issueCode"],"NO_MATCH");
+}
+
     #[test] fn corrected_waybill_and_safe_numeric_waybills_are_accepted(){
         let mut s=fixture();
         s["workflow"]["shipments"][0]["tracking"]["FACTORY"]=json!("009988776655");
@@ -1061,13 +1102,13 @@ mod tests {
         assert_eq!(analyze(&input).unwrap()["applied"],1);
         let mut second=input["sourceRows"][0].clone();
         second["row"]=json!(3);
-        second["sourceIssue"]=json!("3행 Q열 수식 사용: 송장번호 확인 필요");
+        second["tracking"]=json!("");
         input["sourceRows"].as_array_mut().unwrap().push(second);
         input["sourceRowCount"]=json!(2);
         let preview=analyze(&input).unwrap();
         assert_eq!(preview["applied"],1);
         assert_eq!(preview["held"],1);
-        assert!(preview["rows"][1]["issue"].as_str().unwrap().contains("수식"));
+        assert_eq!(preview["rows"][1]["issueCode"],"INVALID_TRACKING");
     }
     #[test] fn stale_or_tampered_preview_cannot_commit(){
         let s=fixture();

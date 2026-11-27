@@ -232,7 +232,7 @@ pub fn read_factory_reply(filename:&str,bytes:&[u8])->Result<Value,String>{
         // An unreadable format cannot prove a numeric identifier is exact.
         // Hold that row only; text waybills do not depend on numeric styles.
         if tracking_numeric&&styles.is_none(){
-            row["sourceIssue"]=json!("Q열 운송장번호의 앞자리 0 보존 여부를 확인하세요.");
+            row["trackingFormatUnreadable"]=json!(true);
         }
         rows.push(row);
     }
