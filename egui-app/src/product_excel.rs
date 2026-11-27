@@ -2,7 +2,7 @@
 //! The file format (not the mutation rules) lives here. Preview and commit
 //! always pass through the existing Rust catalog_clients business engine.
 #[cfg(any(windows,test))]
-use calamine::{open_workbook,Data,Reader,Xlsx};
+use calamine::{Data,Reader};
 use rust_xlsxwriter::{Color,Format,Workbook};
 use serde_json::Value;
 #[cfg(any(windows,test))]
@@ -187,8 +187,12 @@ pub fn read(path:&Path)->Result<Value,String>{
     if size==0||size>MAX_BYTES{
         return Err("20MB 이하의 .xlsx 상품 전체 목록을 선택하세요.".into());
     }
-    let mut book:Xlsx<_>=open_workbook(path)
-        .map_err(|_|"상품 Excel 파일을 읽을 수 없습니다.".to_owned())?;
+    use std::io::Read;
+    let mut bytes=Vec::new();
+    std::fs::File::open(path).map_err(|e|e.to_string())?
+        .take(MAX_BYTES+1).read_to_end(&mut bytes).map_err(|e|e.to_string())?;
+    // Validate and parse exactly the same bounded byte snapshot.
+    let mut book=crate::native_workbooks::open_book(&bytes,MAX_BYTES as usize)?;
     if !book.sheet_names().iter().any(|n|n=="상품 목록") ||
        !book.sheet_names().iter().any(|n|n=="__반도허브_관리정보"){
         return Err("상품 Excel 형식이 다릅니다. 통합 상품 목록을 새로 다운로드하여 사용하세요.".into());

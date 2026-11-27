@@ -28,12 +28,111 @@ fn text(v:&Data)->Result<String,String>{
     }
 }
 fn numeric(v:&Data)->bool{matches!(v,Data::Int(_)|Data::Float(_))}
-fn open_book(bytes:&[u8],limit:usize)->Result<Xlsx<Cursor<&[u8]>>,String>{
+// Resource ceilings apply to untrusted input only; internal export self-checks
+// retain their existing path. No extraction to disk, no formula execution.
+const MAX_XLSX_ENTRIES:usize=4096;
+const MAX_XLSX_PART_BYTES:u64=64*1024*1024;
+const MAX_XLSX_EXPANDED_BYTES:u64=128*1024*1024;
+
+fn validate_archive(bytes:&[u8],entry_limit:usize,part_limit:u64,total_limit:u64)->Result<(),String>{
+    let invalid=||"XLSX 압축 구조가 손상되었거나 읽을 수 없습니다.".to_owned();
+    let mut zip=zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_|invalid())?;
+    if zip.is_empty()||zip.len()>entry_limit{
+        return Err("XLSX 내부 파일 수가 허용 범위를 초과했습니다.".into());
+    }
+    if zip.has_duplicate_names(){
+        return Err("XLSX 내부 파일 이름이 중복되었습니다.".into());
+    }
+    // First pass: check declared sizes before decompressing any part.
+    let mut declared=0u64;
+    for i in 0..zip.len(){
+        let entry=zip.by_index_data(i).map_err(|_|invalid())?;
+        if entry.size()>part_limit{
+            return Err("XLSX 내부 파일의 압축 해제 크기가 허용 한도를 초과했습니다.".into());
+        }
+        declared=declared.checked_add(entry.size()).filter(|n|*n<=total_limit)
+            .ok_or("XLSX 전체 압축 해제 크기가 허용 한도를 초과했습니다.")?;
+    }
+    // Second pass: count real decompressed bytes with constant-memory sink.
+    // Do not trust the central directory's size; read up to declared + 1.
+    let mut actual=0u64;
+    for i in 0..zip.len(){
+        let mut entry=zip.by_index(i).map_err(|_|invalid())?;
+        if entry.encrypted()||entry.is_symlink(){
+            return Err("암호화되거나 링크가 포함된 XLSX 파일은 읽을 수 없습니다.".into());
+        }
+        let expected=entry.size();
+        let remaining=total_limit.checked_sub(actual).ok_or("XLSX 전체 압축 해제 한도 초과")?;
+        let bound=expected.min(part_limit).min(remaining);
+        let count=std::io::copy(&mut std::io::Read::take(&mut entry,bound+1),&mut std::io::sink())
+            .map_err(|_|invalid())?;
+        if count!=expected||count>bound{
+            return Err("XLSX 압축 해제 크기가 선언된 정보와 일치하지 않습니다.".into());
+        }
+        actual=actual.checked_add(count).ok_or("XLSX 전체 압축 해제 한도 초과")?;
+    }
+    Ok(())
+}
+
+pub(crate) fn open_book(bytes:&[u8],limit:usize)->Result<Xlsx<Cursor<&[u8]>>,String>{
     if bytes.is_empty()||bytes.len()>limit||!bytes.starts_with(b"PK"){
         return Err("허용된 크기의 XLSX 파일을 선택하세요.".into());
     }
+    validate_archive(bytes,MAX_XLSX_ENTRIES,MAX_XLSX_PART_BYTES,MAX_XLSX_EXPANDED_BYTES)?;
     Xlsx::new(Cursor::new(bytes)).map_err(|e|format!("XLSX 파일을 읽지 못했습니다: {e}"))
 }
+
+#[cfg(test)]
+mod xlsx_resource_tests{
+    use super::*;
+    use std::io::Write;
+    fn archive(parts:&[(&str,usize)])->Vec<u8>{
+        let mut writer=zip::ZipWriter::new(Cursor::new(Vec::new()));
+        for (name,size) in parts{
+            let options=zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+            writer.start_file(*name,options).unwrap();
+            writer.write_all(&vec![b'x';*size]).unwrap();
+        }
+        writer.finish().unwrap().into_inner()
+    }
+    #[test]
+    fn rejects_single_expanded_part_before_workbook_parse(){
+        let bytes=archive(&[("xl/worksheets/sheet1.xml",4096)]);
+        assert!(validate_archive(&bytes,10,2048,8192).unwrap_err().contains("내부 파일의 압축 해제"));
+    }
+    #[test]
+    fn rejects_total_expanded_size_even_when_parts_fit(){
+        let bytes=archive(&[("a.xml",1024),("b.xml",1024)]);
+        assert!(validate_archive(&bytes,10,2048,1500).unwrap_err().contains("전체 압축 해제"));
+    }
+    #[test]
+    fn rejects_excess_entries(){
+        let bytes=archive(&[("a.xml",1),("b.xml",1)]);
+        assert!(validate_archive(&bytes,1,2048,4096).unwrap_err().contains("파일 수"));
+    }
+    #[test]
+    fn accepts_high_compression_when_absolute_sizes_are_safe(){
+        let bytes=archive(&[("a.xml",4096),("b.xml",4096)]);
+        assert!(validate_archive(&bytes,2,4096,8192).is_ok());
+    }
+    #[test]
+    fn malformed_zip_fails_before_workbook_parse(){
+        assert!(open_book(b"PK invalid",1024).is_err());
+    }
+    #[test]
+    fn ordinary_reply_with_formula_and_merge_remains_readable(){
+        let mut workbook=Workbook::new();
+        let sheet=workbook.add_worksheet();
+        sheet.write_string(0,0,"수하인").unwrap();
+        sheet.write_string(1,0,"합성 수하인").unwrap();
+        sheet.write_formula(1,6,"=3000").unwrap();
+        sheet.write_string(1,16,"0000123456").unwrap();
+        sheet.merge_range(0,8,0,9,"품목",&Format::new()).unwrap();
+        let bytes=workbook.save_to_buffer().unwrap();
+        assert!(read_factory_reply("synthetic.xlsx",&bytes).is_ok());
+    }
+}
+
 #[cfg(any(windows,test))]
 fn safe_sheet(book:&mut Xlsx<Cursor<&[u8]>>,name:&str)->Result<(),String>{
     if !book.merge_cells_by_sheet_name(name).map_err(|e|e.to_string())?.is_empty(){

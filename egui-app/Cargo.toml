@@ -20,6 +20,7 @@ url = "2"
 rusqlite = { version = "=0.41.1", features = ["bundled", "fallible_uint"] }
 bando-data-access = { path = "../crates/bando-data-access" }
 calamine = "0.38"
+zip = { version = "=9.8.2", default-features = false }
 sha2 = "0.10"
 open = "5"
 rust_xlsxwriter = "=0.104.0"

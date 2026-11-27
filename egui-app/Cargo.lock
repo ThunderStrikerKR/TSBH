@@ -347,6 +347,7 @@ dependencies = [
  "url",
  "uuid",
  "winres",
+ "zip",
 ]
 
 [[package]]
