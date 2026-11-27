@@ -525,18 +525,12 @@
       "note": "General shared composition / role token; not component-exclusive"
     },
     "RECEPTION_CLIENT_SUMMARY_BG": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "card/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "RECEPTION_CLIENT_SUMMARY_BORDER": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "card/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "RECEPTION_ITEMS_AMOUNT_MAX_WIDTH": {
       "decision": "restricted",
@@ -580,11 +574,8 @@
       ]
     },
     "RECEPTION_RECIPIENT_NAV_DISABLED_BG": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "button/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "RECEPTION_RECIPIENT_NAV_WIDTH": {
       "decision": "restricted",
@@ -659,11 +650,8 @@
       ]
     },
     "WORKFLOW_CARD_BORDER": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "card/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "WORKFLOW_CARD_RADIUS": {
       "decision": "restricted",
@@ -674,11 +662,8 @@
       ]
     },
     "WORKFLOW_DETAIL_ROW_BORDER": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "card/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "WORKFLOW_DETAIL_ROW_PADDING_X": {
       "decision": "restricted",
@@ -688,11 +673,8 @@
       ]
     },
     "WORKFLOW_SELECTED_ROW_BORDER": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "card/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "FONT_BODY": {
       "decision": "foundation",

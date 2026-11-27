@@ -84,7 +84,7 @@ pub(crate) fn calendar_widget(ui:&mut Ui,selected:bool,today:bool){
         (&mut widgets.active,false,true),
         (&mut widgets.open,false,true),
     ]{
-        let fill=if selected{theme::WORKFLOW_SELECTED_BG}else{visual.weak_bg_fill};
+        let fill=if selected{theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Selected).fill}else{visual.weak_bg_fill};
         let stroke=if selected{chosen_stroke}
             else if today{today_stroke}else{visual.bg_stroke};
         let (fill,stroke)=if selected{(fill,stroke)}

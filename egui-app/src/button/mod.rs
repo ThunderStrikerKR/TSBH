@@ -508,7 +508,7 @@ pub(crate) fn date_navigation_segment_button(
     let (fill,ink)=match glyph{
         DateNavigationSegmentGlyph::CompactVerticalChevron{..}=>{
             let ink=theme::icon_ink(theme::IconRole::Navigation,theme::VisualState::pointer(enabled,response.hovered()));
-            (if enabled{None}else{Some(theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG)},ink)
+            (if enabled{None}else{Some(theme::surface_palette(theme::SurfaceRole::NavigationSegment,theme::VisualState::Disabled).fill)},ink)
         }
         DateNavigationSegmentGlyph::CountStep{..}=>{
             let (_,fill,ink,_)=crate::button::action_style(theme::ButtonRole::Standard,enabled,false);

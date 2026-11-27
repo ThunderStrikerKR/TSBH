@@ -443,7 +443,7 @@ fn workflow_header(
 
     let block=workflow_control_rect(signal);
     theme::paint_bordered_surface(ui.painter(),block,theme::WORKFLOW_SIGNAL_BLOCK_RADIUS,
-        theme::WORKFLOW_SIGNAL_BLOCK_BG,theme::WORKFLOW_SIGNAL_BLOCK_BORDER);
+        theme::surface_palette(theme::SurfaceRole::WorkflowSignalBlock,theme::VisualState::Normal).fill,theme::surface_palette(theme::SurfaceRole::WorkflowSignalBlock,theme::VisualState::Normal).border);
     let lamp_width=theme::WORKFLOW_SIGNAL_SIZE;
     let lamp_height=theme::WORKFLOW_SIGNAL_HEIGHT;
     let lamp_span=lamp_width*STEP_NAMES.len() as f32
@@ -586,11 +586,11 @@ fn workflow_action_line(
             else{format!("({vat})")};
         let vat_galley=ui.painter().layout_no_wrap(
             visible,egui::FontId::proportional(typography::WORKFLOW_VAT_FONT_SIZE),
-            theme::WORKFLOW_VAT_TEXT
+            theme::workflow_text_ink(theme::WorkflowTextRole::Vat)
         );
         ui.painter().with_shared_clip(price_ink).galley(
             Pos2::new(price_ink.right()-vat_galley.size().x,price.top()+theme::WORKFLOW_VAT_TOP_INSET),
-            vat_galley,theme::WORKFLOW_VAT_TEXT
+            vat_galley,theme::workflow_text_ink(theme::WorkflowTextRole::Vat)
         );
     }
     crate::ui_primitives::overflow_region_tooltip(ui,price,
@@ -655,7 +655,7 @@ fn shipment_row_fill(chosen:bool,previewed:bool)->egui::Color32{
     }else if previewed {
         source_highlight::ACTIVE_FILL
     }else {
-        theme::WORKFLOW_DETAIL_ROW_BG
+        theme::surface_palette(theme::SurfaceRole::WorkflowDetailRow,theme::VisualState::Normal).fill
     }
 }
 #[cfg(test)]
@@ -1349,7 +1349,7 @@ mod shipment_list_tests {
             assert_eq!(rect.height(),measured[0].height());
             assert!(rect.height()>=theme::ACTION_STANDARD_HEIGHT);
         }
-        assert_eq!(theme::WORKFLOW_DETAIL_ROW_BG,theme::PANEL);
+        assert_eq!(theme::surface_palette(theme::SurfaceRole::WorkflowDetailRow,theme::VisualState::Normal).fill,theme::PANEL);
     }
 }
 
@@ -1381,7 +1381,7 @@ mod pending_matching_tests {
         let current=(egui::Color32::from_rgb(233,154,53),egui::Color32::from_rgb(245,183,96));
         let done=(egui::Color32::from_rgb(73,166,106),egui::Color32::from_rgb(105,198,136));
         assert_eq!(empty.0,egui::Color32::TRANSPARENT);
-        assert!(empty.1.r().saturating_sub(theme::WORKFLOW_SIGNAL_BLOCK_BG.r())>=80);
+        assert!(empty.1.r().saturating_sub(theme::surface_palette(theme::SurfaceRole::WorkflowSignalBlock,theme::VisualState::Normal).fill.r())>=80);
         for index in 0..STEP_NAMES.len(){
             assert_eq!(workflow_signal_palette(None,index),empty);
             assert_eq!(workflow_signal_palette(Some([false;4]),index),
@@ -1881,7 +1881,7 @@ mod linked_highlight_palette_tests {
     fn preview_row_matches_linked_source_recipient_and_item_palette() {
         assert_eq!(shipment_row_fill(false,true),source_highlight::ACTIVE_FILL);
         assert_ne!(shipment_row_fill(true,true),source_highlight::ACTIVE_FILL);
-        assert_eq!(shipment_row_fill(false,false),theme::WORKFLOW_DETAIL_ROW_BG);
+        assert_eq!(shipment_row_fill(false,false),theme::surface_palette(theme::SurfaceRole::WorkflowDetailRow,theme::VisualState::Normal).fill);
         assert_eq!(source_highlight::ACTIVE_BORDER_WIDTH,2.0);
     }
 
@@ -1891,9 +1891,9 @@ mod linked_highlight_palette_tests {
         assert_eq!(theme::SELECTED_ORDER,Color32::from_rgb(245,158,11));
         assert_eq!(crate::highlight::palette(crate::highlight::Role::Selected).stroke.unwrap().color,theme::SELECTED_ORDER);
         assert_eq!(theme::WORKFLOW_SELECTED_STRIPE,2.0);
-        assert_eq!(theme::WORKFLOW_SELECTED_BG,theme::WORKFLOW_CARD_BG);
-        assert_eq!(theme::WORKFLOW_CARD_BG,theme::INPUT);
-        assert_ne!(theme::WORKFLOW_CARD_BG,theme::PANEL);
+        assert_eq!(theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Selected).fill,theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Normal).fill);
+        assert_eq!(theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Normal).fill,theme::INPUT);
+        assert_ne!(theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Normal).fill,theme::PANEL);
         assert_eq!(theme::CANVAS,Color32::from_rgb(16,16,16));
         assert_eq!(theme::PANEL,Color32::from_rgb(24,24,24));
         assert_eq!(theme::INPUT,Color32::from_rgb(34,34,34));
@@ -1907,7 +1907,7 @@ mod linked_highlight_palette_tests {
         assert_eq!(selected.stroke.width,normal.stroke.width);
         assert_eq!(selected.inner_margin,normal.inner_margin);
         assert_eq!(selected.corner_radius,normal.corner_radius);
-        assert_eq!(theme::WORKFLOW_SELECTED_ROW_TEXT,Color32::from_rgb(244,214,162));
+        assert_eq!(theme::workflow_text_ink(theme::WorkflowTextRole::SelectedRow),Color32::from_rgb(244,214,162));
         assert_eq!(shipment_row_fill(true,true),shipment_row_fill(true,false));
         assert_eq!(theme::ReviewTone::Action.palette(),(
             theme::ORANGE_EMPHASIS_BG,Color32::from_rgb(245,158,11),

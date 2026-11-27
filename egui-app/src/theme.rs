@@ -162,9 +162,9 @@ pub const ONE_TOUCH_BORDER_WIDTH:f32=2.0;
 pub const ONE_TOUCH_TINT:Color32=Color32::from_rgba_unmultiplied_const(245,158,11,18);
 // Approved selected shipment row: a single rounded surface, not an
 // added left stripe. The enclosing order card retains its own accent.
-pub const WORKFLOW_SELECTED_ROW_TEXT:Color32=Color32::from_rgb(244,214,162);
+const WORKFLOW_SELECTED_ROW_TEXT:Color32=Color32::from_rgb(244,214,162);
 const WORKFLOW_SELECTED_ROW_BG:Color32=Color32::from_rgb(48,42,34); // #302A22
-pub const WORKFLOW_SELECTED_ROW_BORDER:Color32=Color32::TRANSPARENT;
+const WORKFLOW_SELECTED_ROW_BORDER:Color32=Color32::TRANSPARENT;
 pub fn workflow_selected_row_fill() -> Color32 {
     WORKFLOW_SELECTED_ROW_BG
 }
@@ -172,9 +172,9 @@ pub fn workflow_selected_row_fill() -> Color32 {
 // The horizontal outer inset, inter-control gaps and vertical insets use
 // the same 6pt rhythm. Long dealer text cannot move any control.
 // Nested order cards use the internal-content tier; no second lower surface.
-pub const WORKFLOW_CARD_BG: Color32 = INPUT;
-pub const WORKFLOW_SELECTED_BG: Color32 = WORKFLOW_CARD_BG;
-pub const WORKFLOW_CARD_BORDER: Color32 = DIVIDER;
+const WORKFLOW_CARD_BG: Color32 = INPUT;
+const WORKFLOW_SELECTED_BG: Color32 = WORKFLOW_CARD_BG;
+const WORKFLOW_CARD_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_CARD_PADDING_X: f32 = SPACE_6;
 pub const WORKFLOW_CARD_PADDING_Y: f32 = SPACE_8;
 pub const WORKFLOW_CARD_RADIUS: u8 = 7;
@@ -190,8 +190,8 @@ pub const WORKFLOW_BAND_DIVIDER_HEIGHT: f32 = SOFT_DIVIDER_WIDTH;
 pub const WORKFLOW_CARD_SLOT_GAP: f32 = SPACE_6;
 pub const WORKFLOW_SIGNAL_WIDTH: f32 = 104.0;
 pub const WORKFLOW_SIGNAL_BLOCK_HEIGHT: f32 = 30.0;
-pub const WORKFLOW_SIGNAL_BLOCK_BG: Color32 = INPUT;
-pub const WORKFLOW_SIGNAL_BLOCK_BORDER: Color32 = DIVIDER;
+const WORKFLOW_SIGNAL_BLOCK_BG: Color32 = INPUT;
+const WORKFLOW_SIGNAL_BLOCK_BORDER: Color32 = DIVIDER;
 // Square-ish four-stage indicators; group container remains 104×30pt.
 pub const WORKFLOW_SIGNAL_SIZE: f32 = 21.0;
 pub const WORKFLOW_SIGNAL_HEIGHT: f32 = 20.0;
@@ -211,7 +211,7 @@ const WORKFLOW_SIGNAL_EMPTY: Color32 = Color32::TRANSPARENT;
 const WORKFLOW_SIGNAL_EMPTY_BORDER: Color32 = DISABLED_ACTION_TEXT;
 const WORKFLOW_SIGNAL_PENDING: Color32 = Color32::from_rgb(51, 51, 51);
 const WORKFLOW_SIGNAL_PENDING_BORDER: Color32 = Color32::from_rgb(85, 85, 85);
-pub const WORKFLOW_VAT_TEXT: Color32 = Color32::from_rgb(185, 215, 246);
+const WORKFLOW_VAT_TEXT: Color32 = Color32::from_rgb(185, 215, 246);
 // At the 1920×1080 reference, the right-pane card is ~394pt wide.
 // Usable width = 394 - 2 border - (6 left + 6 right) = 380pt.
 // Upper: 12 toggle + 164 title + 104 status + 44 manage + 32 delete
@@ -234,8 +234,8 @@ pub const WORKFLOW_TOGGLE_ICON_WIDTH: f32 = 12.0;
 // Expanded working-order shipments are a plain list, not a table.
 // All rows use one bottom-tier surface; only real hover/selection tint it.
 // The header, alternating row fills and product-chip surfaces were removed.
-pub const WORKFLOW_DETAIL_ROW_BG: Color32 = PANEL;
-pub const WORKFLOW_DETAIL_ROW_BORDER: Color32 = DIVIDER;
+const WORKFLOW_DETAIL_ROW_BG: Color32 = PANEL;
+const WORKFLOW_DETAIL_ROW_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_DETAIL_ROW_PADDING_X: f32 = SPACE_12;
 // History recipient-detail blocks are independent of workflow product chips.
 // Keep their existing 4pt corner radius even when workflow chips are removed.
@@ -300,8 +300,8 @@ pub const RECEPTION_PANE_PADDING_Y: f32 = SPACE_8;
 pub const SOURCE_DOCUMENT_TEXT_MARGIN: i8 = 4;
 // Source's current-client summary is supporting information beside a
 // primary INPUT editor. Use master row/subsection roles, not a second editor.
-pub const RECEPTION_CLIENT_SUMMARY_BG: Color32 = TABLE_ROW_ALT_BG;
-pub const RECEPTION_CLIENT_SUMMARY_BORDER: Color32 = DIVIDER;
+const RECEPTION_CLIENT_SUMMARY_BG: Color32 = TABLE_ROW_ALT_BG;
+const RECEPTION_CLIENT_SUMMARY_BORDER: Color32 = DIVIDER;
 // The 34pt title row still fully accommodates the standard "+ 새 주문"
 // button and other header controls without shortening their labels.
 pub const SECTION_HEADER_HEIGHT: f32 = 34.0;
@@ -313,7 +313,7 @@ const RECEPTION_RECIPIENT_NAV_NAME_WIDTH:f32 = 116.0;
 pub const RECEPTION_RECIPIENT_NAV_COUNT_WIDTH:f32 = 38.0;
 // Clear non-interactive end stops. Their darker face and near-background
 // vector chevrons are deliberately lower contrast than active arrows.
-pub const RECEPTION_RECIPIENT_NAV_DISABLED_BG:Color32 =
+const RECEPTION_RECIPIENT_NAV_DISABLED_BG:Color32 =
     Color32::from_rgb(27,27,27);
 const RECEPTION_RECIPIENT_NAV_DISABLED_ICON:Color32 =
     Color32::from_rgb(72,72,72);
@@ -850,6 +850,7 @@ pub(crate) const fn scroll_rail_geometry(role:ScrollRailRole)->ScrollRailGeometr
 pub(crate) enum SurfaceRole{
     Workspace,Header,Panel,Section,Summary,Input,Inset,Modal,ModalSection,
     AlternateRow,Button,WorkflowCard,FieldAction,NavigationSegment,TableHeader,RaisedInset,Notice,
+    WorkflowSignalBlock,WorkflowDetailRow,ReceptionClientSummary,
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -859,7 +860,7 @@ pub(crate) const fn surface_palette(role:SurfaceRole,state:VisualState)->Surface
     use SurfaceRole::{
         Workspace, Header, Panel, Section, Summary, Modal, Input, FieldAction, Inset,
         ModalSection, AlternateRow, Button, TableHeader, RaisedInset, Notice, WorkflowCard,
-        NavigationSegment,
+        NavigationSegment, WorkflowSignalBlock, WorkflowDetailRow, ReceptionClientSummary,
     };
     let (fill,border)=match role{
         Workspace=>(CANVAS,Color32::TRANSPARENT),
@@ -875,12 +876,16 @@ pub(crate) const fn surface_palette(role:SurfaceRole,state:VisualState)->Surface
         RaisedInset=>(RAISED,DIVIDER),
         Notice=>(FLOATING_NOTICE_BG,BORDER),
         WorkflowCard=>(WORKFLOW_CARD_BG,WORKFLOW_CARD_BORDER),
+        WorkflowSignalBlock=>(WORKFLOW_SIGNAL_BLOCK_BG,WORKFLOW_SIGNAL_BLOCK_BORDER),
+        WorkflowDetailRow=>(WORKFLOW_DETAIL_ROW_BG,WORKFLOW_DETAIL_ROW_BORDER),
+        ReceptionClientSummary=>(RECEPTION_CLIENT_SUMMARY_BG,RECEPTION_CLIENT_SUMMARY_BORDER),
         NavigationSegment=>(INPUT,Color32::TRANSPARENT),
     };
     let (fill,border)=match (role,state){
         (FieldAction|Button,VisualState::Disabled)=>(DISABLED_ACTION_BG,DISABLED_ACTION_BORDER),
         (NavigationSegment,VisualState::Disabled)=>(RECEPTION_RECIPIENT_NAV_DISABLED_BG,Color32::TRANSPARENT),
         (WorkflowCard,VisualState::Selected)=>(WORKFLOW_SELECTED_BG,WORKFLOW_CARD_BORDER),
+        (WorkflowDetailRow,VisualState::Selected)=>(WORKFLOW_SELECTED_ROW_BG,WORKFLOW_SELECTED_ROW_BORDER),
         _=>(fill,border),
     };
     SurfacePalette{fill,border}
@@ -1430,5 +1435,39 @@ mod icon_role_color_tests {
         }
         assert_eq!(kakao_icon_ink(KakaoIconPart::Background),Color32::from_rgb(254,229,0));
         assert_eq!(kakao_icon_ink(KakaoIconPart::Bubble),Color32::from_rgb(40,35,36));
+    }
+}
+
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum WorkflowTextRole { SelectedRow, Vat }
+
+pub(crate) const fn workflow_text_ink(role:WorkflowTextRole)->Color32 {
+    match role {
+        WorkflowTextRole::SelectedRow=>WORKFLOW_SELECTED_ROW_TEXT,
+        WorkflowTextRole::Vat=>WORKFLOW_VAT_TEXT,
+    }
+}
+
+#[cfg(test)]
+mod workflow_role_color_tests {
+    use super::*;
+    #[test]
+    fn workflow_and_reception_surface_roles_preserve_existing_colors() {
+        let normal=VisualState::Normal;
+        let selected=VisualState::Selected;
+        let card=surface_palette(SurfaceRole::WorkflowCard,normal);
+        assert_eq!((card.fill,card.border),(Color32::from_gray(34),Color32::from_gray(63)));
+        assert_eq!(surface_palette(SurfaceRole::WorkflowCard,selected),card);
+        assert_eq!(surface_palette(SurfaceRole::WorkflowSignalBlock,normal),card);
+        let detail=surface_palette(SurfaceRole::WorkflowDetailRow,normal);
+        assert_eq!((detail.fill,detail.border),(Color32::from_gray(24),Color32::from_gray(63)));
+        assert_eq!(surface_palette(SurfaceRole::WorkflowDetailRow,selected).border,Color32::TRANSPARENT);
+        let summary=surface_palette(SurfaceRole::ReceptionClientSummary,normal);
+        assert_eq!((summary.fill,summary.border),(TABLE_ROW_ALT_BG,Color32::from_gray(63)));
+        assert_eq!(surface_palette(SurfaceRole::NavigationSegment,VisualState::Disabled).fill,
+            Color32::from_gray(27));
+        assert_eq!(workflow_text_ink(WorkflowTextRole::SelectedRow),Color32::from_rgb(244,214,162));
+        assert_eq!(workflow_text_ink(WorkflowTextRole::Vat),Color32::from_rgb(185,215,246));
     }
 }

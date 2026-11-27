@@ -65,7 +65,7 @@ pub fn workflow_shipment_row(
 )->egui::Response{
     let outer=ui.available_width();
     let (widths,gap)=workflow_shipment_columns(outer);
-    let preview_ink=if chosen{theme::WORKFLOW_SELECTED_ROW_TEXT}
+    let preview_ink=if chosen{theme::workflow_text_ink(theme::WorkflowTextRole::SelectedRow)}
         else if previewed{source_highlight::ACTIVE_TEXT}else{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)};
     let summary_ink=if chosen{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)}else{preview_ink};
     let freight_ink=if freight_emphasis{crate::one_touch::INK}else{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)};
