@@ -32,7 +32,7 @@ pub struct ModelGroupManager {
     editor_open:bool,
     new_name:String,
     query:String,
-    search:String,
+    product_picker:Option<Box<crate::product_manager::ProductManager>>,
     status:String,
     write:Option<Receiver<Result<Value,String>>>,
     confirm:Option<Exit>,
@@ -48,7 +48,7 @@ impl Default for ModelGroupManager{
     fn default()->Self{
         Self{initialized:false,baseline:Value::Null,draft:json!({}),groups_cache:Default::default(),
             selected:String::new(),editor_open:false,new_name:String::new(),
-            query:String::new(),search:String::new(),status:String::new(),
+            query:String::new(),product_picker:None,status:String::new(),
             write:None,confirm:None,after_save:None,confirm_delete:false,
             leave_tab:None,global_approved:false,
             eligibility_snapshot:None,eligibility:ReadRefresh::default(),eligible:Arc::default()}
@@ -85,12 +85,12 @@ impl ModelGroupManager {
     pub fn busy(&self)->bool{self.write.is_some()}
     pub fn has_overlay(&self)->bool{self.editor_open||self.confirm_delete||self.confirm.is_some()}
     pub fn request_tab_leave(&mut self,index:usize)->bool{
-        if self.busy(){return false;}
+        if self.busy()||self.product_picker.is_some(){return false;}
         if self.unsaved(){self.confirm=Some(Exit::Tab(index));false}
         else{true}
     }
     pub fn request_global_leave(&mut self)->bool{
-        if self.busy(){return false;}
+        if self.busy()||self.product_picker.is_some(){return false;}
         if self.unsaved(){self.confirm=Some(Exit::Global);false}
         else{true}
     }
@@ -102,19 +102,19 @@ impl ModelGroupManager {
     }
     pub fn take_tab_change(&mut self)->Option<usize>{self.leave_tab.take()}
     pub fn reset_navigation(&mut self){
-        self.editor_open=false;self.selected.clear();self.search.clear();self.query.clear();
+        self.editor_open=false;self.selected.clear();self.product_picker=None;self.query.clear();
         self.new_name.clear();self.status.clear();
         self.confirm=None;self.after_save=None;self.confirm_delete=false;
     }
     fn discard(&mut self){
         self.draft=if self.baseline.is_object(){self.baseline.clone()}else{json!({})};self.groups_cache.invalidate();
         self.new_name.clear();self.status.clear();self.selected.clear();
-        self.search.clear();
+        self.product_picker=None;
     }
     fn finish_exit(&mut self,next:Exit){
         match next{
-            Exit::Select(id)=>{self.editor_open=true;self.selected=id;self.search.clear();self.status.clear();}
-            Exit::Close=>{self.editor_open=false;self.selected.clear();self.search.clear();self.status.clear();}
+            Exit::Select(id)=>{self.editor_open=true;self.selected=id;self.product_picker=None;self.status.clear();}
+            Exit::Close=>{self.editor_open=false;self.selected.clear();self.product_picker=None;self.status.clear();}
             Exit::Tab(index)=>{self.editor_open=false;self.selected.clear();self.leave_tab=Some(index);}
             Exit::Global=>{self.editor_open=false;self.selected.clear();self.global_approved=true;}
         }
@@ -218,7 +218,7 @@ impl ModelGroupManager {
                     if crate::button::action(actions,"+ 모델군 추가",theme::ButtonRole::Primary,
                         writable&&!busy&&!self.editor_open).clicked(){
                         self.editor_open=true;self.selected.clear();self.new_name.clear();
-                        self.search.clear();self.status.clear();
+                        self.product_picker=None;self.status.clear();
                     }
                 });
             });
@@ -280,8 +280,7 @@ impl ModelGroupManager {
         if !self.editor_open{return;}
         let writable=gateway.model_group_write_enabled();
         let busy=self.busy();
-        let nested=self.confirm_delete||self.confirm.is_some();
-        let eligible=Arc::clone(&self.eligible);
+        let nested=self.confirm_delete||self.confirm.is_some()||self.product_picker.is_some();
         let eligibility_pending=self.eligibility.pending();
         let products:HashMap<&str,&Value>=items(&catalog["products"]).iter().rev().map(|p|(text(p,"id"),p)).collect();
         use typography::ManagementTableCellRole as Role;
@@ -316,41 +315,16 @@ impl ModelGroupManager {
                             self.draft[&self.selected]["name"]=json!(name);
                             self.groups_cache.invalidate();self.status.clear();
                         }
-                        let width=body.available_width();
-                        body.add_enabled_ui(writable&&!busy,|search|{
-                            crate::input::management_search_field(search,&mut self.search,width,"추가할 상품 검색");
-                        });
-                        let assigned=self.membership();
-                        let searching=!self.search.trim().is_empty();
-                        if searching{
-                            let query=self.search.trim().to_lowercase();
-                            let choices=items(&catalog["products"]).iter()
-                                .filter(|p|eligible.contains(text(p,"id")))
-                                .filter(|p|!items(&g["productIds"]).iter().any(|id|id.as_str()==Some(text(p,"id"))))
-                                .filter(|p|format!("{} {}",text(p,"name"),text(p,"subtitle")).to_lowercase().contains(&query))
-                                .take(30).collect::<Vec<_>>();
-                            body.label(typography::subsection_heading("상품 검색 결과"));
-                            let result_height=(body_height*0.25).min(theme::MANAGEMENT_COMPACT_ROW_HEIGHT*3.0).max(theme::MANAGEMENT_COMPACT_ROW_HEIGHT);
-                            let rect=crate::table::registry_table(body,"model-group-search-results",
-                                ["상품명","상세 정보","소속 모델군","추가"],[140.0,100.0,110.0,80.0],
-                                result_height,choices.len(),|_|false,|row,cells,i,_|{
-                                    let p=choices[i];let id=text(p,"id");
-                                    crate::table::registry_cell(row,cells[0],text(p,"name"),Role::ProductName,false,(id,0));
-                                    crate::table::registry_cell(row,cells[1],text(p,"subtitle"),Role::Description,false,(id,1));
-                                    crate::table::registry_cell(row,cells[2],assigned.get(id).map(String::as_str).unwrap_or("—"),Role::Text,false,(id,2));
-                                    crate::table::registry_actions(row,cells[3],|actions|{
-                                        if crate::button::action(actions,"추가",theme::ButtonRole::Standard,
-                                            writable&&!busy&&!assigned.contains_key(id)).clicked(){
-                                            if let Some(ids)=self.draft[&self.selected]["productIds"].as_array_mut(){
-                                                ids.push(json!(id));self.groups_cache.invalidate();self.status.clear();
-                                            }
-                                        }
-                                    });
-                                });
-                            if choices.is_empty(){
-                                crate::status_notice::management_body_state_overlay(body,rect,Some(
-                                    if eligibility_pending{"상품을 확인하는 중입니다."}else{"일치하는 상품이 없습니다."}));
-                            }
+                        if crate::button::action(body,"상품 추가",theme::ButtonRole::Standard,
+                            writable&&!busy&&!eligibility_pending).clicked(){
+                            let excluded=items(&g["productIds"]).iter().filter_map(Value::as_str)
+                                .map(str::to_owned).collect();
+                            self.product_picker=Some(Box::new(
+                                crate::product_manager::ProductManager::new_reference_selection(
+                                    Arc::clone(&gateway),ctx.clone(),catalog.clone(),
+                                    Some((*self.eligible).clone()),self.membership(),excluded
+                                )
+                            ));
                         }
                         crate::ui_primitives::section_divider(body);
                         let ids=items(&g["productIds"]).iter().filter_map(Value::as_str).collect::<Vec<_>>();
@@ -428,6 +402,19 @@ impl ModelGroupManager {
     pub fn show_dialogs(&mut self,ctx:&Context,rect:Rect,
         catalog:&Value,gateway:Arc<dyn BandoGateway>){
         self.show_editor(ctx,rect,catalog,Arc::clone(&gateway));
+        if let Some(picker)=self.product_picker.as_mut(){
+            crate::popup::modal_backdrop(ctx,"model-group-product-picker-dim",true);
+            let (cancelled,chosen)=picker.show_selection_modal(ctx,rect,"model-group-product-picker");
+            if let Some(id)=chosen.as_ref().and_then(|value|value["productId"].as_str()){
+                if gateway.model_group_write_enabled()&&!self.busy()
+                    && self.eligible.contains(id)&&!self.membership().contains_key(id){
+                    if let Some(ids)=self.draft[&self.selected]["productIds"].as_array_mut(){
+                        ids.push(json!(id));self.groups_cache.invalidate();self.status.clear();
+                    }
+                }
+            }
+            if cancelled||chosen.is_some(){self.product_picker=None;}
+        }
         if self.confirm_delete{
             let mut delete=false;let mut cancel=false;
             crate::popup::modal_backdrop(ctx,"family-delete-dim",false);
@@ -508,7 +495,8 @@ mod responsiveness_tests{
         assert!(body.contains("crate::table::registry_actions("));
         assert!(body.contains("[\"모델군\",\"대표모델\",\"상품 수\",\"관리\"]"));
         assert!(body.contains("[\"상품명\",\"상세 정보\",\"대표모델\",\"관리\"]"));
-        assert!(body.contains("[\"상품명\",\"상세 정보\",\"소속 모델군\",\"추가\"]"));
+        assert!(body.contains("ProductManager::new_reference_selection("));
+        assert!(!body.contains("model-group-search-results"));
         assert!(!body.contains("직원"));
         let list=body.split("    fn show_editor(").next().unwrap();
         assert!(!list.contains("allocate_ui_with_layout("));
