@@ -1153,7 +1153,12 @@ impl PreviewStore {
     /// remain unchanged. The worker calls this after a full ledger pass.
     pub(crate) fn auto_retrain_blend(evaluate:impl Fn(&Value)->Result<Value,String>)->Result<Value,String>{
         let (mut conn,business,scope)=Self::learning_connection()?;
-        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        // Prepare the metadata schema separately, then acquire a read snapshot.
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS recognition_blend_retrain_state(
+            scope TEXT NOT NULL,build TEXT NOT NULL,policy_version INTEGER NOT NULL,
+            cohort TEXT NOT NULL,attempted_at TEXT NOT NULL,status TEXT NOT NULL,model_id TEXT,
+            PRIMARY KEY(scope,build,policy_version));").map_err(|e|e.to_string())?;
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
         let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending WHERE scope=?1 AND feature_version=1",
             [&scope],|r|r.get(0)).map_err(|e|e.to_string())?;
         if pending!=0{return Ok(auto_retrain_status("pending_reconciliation",0));}
@@ -1177,13 +1182,19 @@ impl PreviewStore {
             rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?
         };
         if ids.len()<AUTO_RETRAIN_MIN_ORDERS{return Ok(auto_retrain_status("insufficient_orders",ids.len()));}
-        let (frozen,mut orders,digests)=crate::business_state::learning_inputs_from_snapshot(&source,&ids,|sources|{
+        let prior:Option<String>=tx.query_row("SELECT cohort FROM recognition_blend_retrain_state
+            WHERE scope=?1 AND build=?2 AND policy_version=1",params![scope,build],|r|r.get(0))
+            .optional().map_err(|e|e.to_string())?;
+        let previous=prior.as_deref().map(serde_json::from_str::<LearningDigests>).transpose().map_err(|_|"자동 재학습 상태 손상")?;
+        let (frozen,mut orders,(digests,due))=crate::business_state::learning_inputs_from_snapshot(&source,&ids,|sources|{
             let (misses,digests)=select_learning_changes(&tx,&scope,sources)?;
             if !misses.is_empty(){return Err("자동 재학습 원본 동기화 필요".into());}
-            let active=sources.iter().filter(|(_,s)|s.active).map(|(id,_)|id.clone()).collect();
-            Ok((active,digests))
+            let due=previous.as_ref().is_none_or(|prior|auto_retrain_due(prior,&digests));
+            let active=if due{sources.iter().filter(|(_,s)|s.active).map(|(id,_)|id.clone()).collect()}else{Vec::new()};
+            Ok((active,(digests,due)))
         })?;
         source.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+        if !due{return Ok(auto_retrain_status("unchanged_or_insufficient_new_orders",digests.len()));}
         if orders.len()<AUTO_RETRAIN_MIN_ORDERS{return Ok(auto_retrain_status("insufficient_active_orders",orders.len()));}
         let now=chrono::Utc::now().fixed_offset();
         let Some(config)=auto_retrain_config(&orders,now,build)else{
@@ -1191,17 +1202,6 @@ impl PreviewStore {
         };
         // Persistent attempt state prevents retraining identical cohorts on
         // every scan or after restarting the application.
-        tx.execute_batch("CREATE TABLE IF NOT EXISTS recognition_blend_retrain_state(
-            scope TEXT NOT NULL,build TEXT NOT NULL,policy_version INTEGER NOT NULL,
-            cohort TEXT NOT NULL,attempted_at TEXT NOT NULL,status TEXT NOT NULL,model_id TEXT,
-            PRIMARY KEY(scope,build,policy_version));").map_err(|e|e.to_string())?;
-        let prior:Option<String>=tx.query_row("SELECT cohort FROM recognition_blend_retrain_state
-            WHERE scope=?1 AND build=?2 AND policy_version=1",params![scope,build],|r|r.get(0))
-            .optional().map_err(|e|e.to_string())?;
-        if let Some(prior)=prior{
-            let prior:LearningDigests=serde_json::from_str(&prior).map_err(|_|"자동 재학습 상태 손상")?;
-            if !auto_retrain_due(&prior,&digests){return Ok(auto_retrain_status("unchanged_or_insufficient_new_orders",orders.len()));}
-        }
         let audit_ids=orders.iter().filter_map(|o|o["id"].as_str()).filter(|id|
             frozen.get(*id).is_some_and(|s|s.audit_needed)).map(str::to_owned).collect::<Vec<_>>();
         let mut audit=if audit_ids.is_empty(){std::collections::BTreeMap::new()}
@@ -1210,8 +1210,21 @@ impl PreviewStore {
             let id=order["id"].as_str().ok_or("자동 재학습 주문 ID 누락")?;
             if let Some(events)=audit.remove(id){order["recognitionAuditEvents"]=json!(events);}
         }
+        tx.commit().map_err(|e|e.to_string())?;
+        let started=std::time::Instant::now();
+        // No audit read or write transaction is held during CPU-heavy fitting.
         let report=evaluate(&json!({"orders":orders,"config":config}))?;
-        if crate::business_state::read_learning_sources(&ids)?!=frozen||
+        let fit_ms=started.elapsed().as_millis() as u64;
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        let latest:Option<String>=tx.query_row("SELECT cohort FROM recognition_blend_retrain_state
+            WHERE scope=?1 AND build=?2 AND policy_version=1",params![scope,build],|r|r.get(0))
+            .optional().map_err(|e|e.to_string())?;
+        let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending WHERE scope=?1 AND feature_version=1",
+            [&scope],|r|r.get(0)).map_err(|e|e.to_string())?;
+        let current=crate::business_state::read_learning_sources(&ids)?;
+        let (misses,current_digests)=select_learning_changes(&tx,&scope,&current)?;
+        if latest!=prior||pending!=0||!misses.is_empty()||current_digests!=digests||
+            current!=frozen||
             crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
             return Err("자동 재학습 중 원본 변경".into());
         }
@@ -1244,6 +1257,7 @@ impl PreviewStore {
             attempted_at=excluded.attempted_at,status=excluded.status,model_id=excluded.model_id",
             params![scope,build,cohort,now.to_rfc3339(),result["status"].as_str(),model_id]).map_err(|e|e.to_string())?;
         result["trainingWindows"]=config;
+        result["fitElapsedMs"]=json!(fit_ms);
         result["weightOrdersWithBothModels"]=report["weightOrdersWithBothModels"].clone();
         result["testOrdersWithBothModels"]=report["testOrdersWithBothModels"].clone();
         result["overallTestCoverage"]=report["overallTestCoverage"].clone();
@@ -1866,36 +1880,41 @@ fn query_reception_audit_batch(conn:&Connection,ids:&[String])->Result<std::coll
         return Err("감사 조회 주문 범위 오류".into());
     }
     let mut out=std::collections::BTreeMap::new();
-    let mut total_rows=0i64;
-    let mut total_bytes=0i64;
+    let mut total_rows=0usize;let mut total_bytes=0usize;
     let has_context:i64=conn.query_row(
         "SELECT count(*) FROM pragma_table_info('reception_edit_audit') WHERE name='context_json'",
         [],|r|r.get(0)).map_err(|e|e.to_string())?;
-    let context=if has_context==1{"coalesce(length(CAST(context_json AS BLOB)),0)"}else{"0"};
-    let sql=format!("SELECT count(*),coalesce(sum(length(CAST(source_raw AS BLOB))+
-        length(CAST(initial_analysis_json AS BLOB))+length(CAST(before_rows_json AS BLOB))+
-        length(CAST(after_rows_json AS BLOB))+{context}),0)
-        FROM reception_edit_audit WHERE order_id=?1");
+    let context=if has_context==1{"context_json"}else{"NULL"};
+    let sql=format!("SELECT id,order_id,source_raw,initial_analysis_json,before_rows_json,after_rows_json,recorded_at,{context}
+        FROM reception_edit_audit WHERE order_id=?1 ORDER BY recorded_at,id LIMIT 1001");
+    let mut stmt=conn.prepare(&sql).map_err(|e|e.to_string())?;
     for id in unique{
-        let (count,bytes):(i64,i64)=conn.query_row(&sql,params![id],|r|Ok((r.get(0)?,r.get(1)?)))
-            .map_err(|e|e.to_string())?;
-        total_rows=total_rows.saturating_add(count);
-        total_bytes=total_bytes.saturating_add(bytes);
-        if count>1000||total_rows>4000||total_bytes>32*1024*1024{
-            return Err("정정 감사 조회 한도 초과: 주문 범위를 줄여 다시 조회하세요.".into());
-        }
+        let mut rows=stmt.query(params![id]).map_err(|e|e.to_string())?;
         let mut events=Vec::new();
-        let mut cursor=Value::Null;
-        loop{
-            let page=query_reception_audit_page(conn,&json!({"orderId":id,"limit":250,"cursor":cursor}))?;
-            let batch=page["events"].as_array().ok_or("정정 감사 조회 결과 오류")?;
-            events.extend(batch.iter().cloned());
-            let next=page["nextCursor"].clone();
-            if next.is_null(){break;}
-            if batch.is_empty()||next==cursor{return Err("정정 감사 조회 커서가 진행되지 않습니다.".into());}
-            cursor=next;
+        while let Some(row)=rows.next().map_err(|e|e.to_string())?{
+            total_rows+=1;
+            for col in [2,3,4,5,7]{
+                match row.get_ref(col).map_err(|e|e.to_string())?{
+                    rusqlite::types::ValueRef::Text(bytes)=>total_bytes=total_bytes.saturating_add(bytes.len()),
+                    rusqlite::types::ValueRef::Null if col==7=>{},
+                    _=>return Err("정정 감사 자료 유형 오류".into()),
+                }
+            }
+            if events.len()>=1000||total_rows>4000||total_bytes>32*1024*1024{
+                return Err("정정 감사 조회 한도 초과: 주문 범위를 줄여 다시 조회하세요.".into());
+            }
+            let parse=|col:usize|->Result<Value,String>{
+                let s=row.get::<_,String>(col).map_err(|e|e.to_string())?;
+                serde_json::from_str(&s).map_err(|e|format!("저장된 정정 이력 JSON 오류: {e}"))
+            };
+            let context:Option<String>=row.get(7).map_err(|e|e.to_string())?;
+            let context=context.as_deref().map(serde_json::from_str::<Value>).transpose().map_err(|e|e.to_string())?;
+            events.push(json!({"id":row.get::<_,String>(0).map_err(|e|e.to_string())?,
+                "orderId":row.get::<_,String>(1).map_err(|e|e.to_string())?,
+                "sourceRaw":row.get::<_,String>(2).map_err(|e|e.to_string())?,
+                "initialAnalysis":parse(3)?,"beforeRows":parse(4)?,"afterRows":parse(5)?,
+                "at":row.get::<_,String>(6).map_err(|e|e.to_string())?,"context":context}));
         }
-        if events.len() as i64!=count{return Err("정정 감사 조회 건수 불일치".into());}
         out.insert(id.clone(),events);
     }
     Ok(out)
