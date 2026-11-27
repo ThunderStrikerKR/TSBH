@@ -212,10 +212,11 @@ impl ManualAssignmentGesture{
     }
     fn finish_drag(&mut self,target:Option<ManualCellTarget>)->Option<(String,ManualCellTarget)>{
         let id=self.dragging.take()?;
+        let moved=self.drag_moved;
         self.drag_moved=false;
         self.drag_anchor_offset=None;
         self.drag_layout_width=0.0;
-        target.map(|cell|(id,cell))
+        if moved{target.map(|cell|(id,cell))}else{None}
     }
 }
 
@@ -2013,8 +2014,7 @@ impl ManualWorkspace {
         let mut chosen:Option<(String,Value)>=None;
         let mut source_clicked=None;
         let mut clicked_target:Option<ManualCellTarget>=None;
-        let mut drop_target:Option<ManualCellTarget>=None;
-        let mut drop_allowed=false;
+        let mut drop_targets=crate::drag_drop::UniqueDropTarget::<ManualCellTarget>::new();
         let drag_pointer=ctx.input(|i|i.pointer.interact_pos());
         let drag_released=ctx.input(|i|i.pointer.button_released(egui::PointerButton::Primary));
         let mut apply=false;
@@ -2305,8 +2305,7 @@ impl ManualWorkspace {
                                                                     && manual_assignment_target_supported(&target)
                                                                     && manual_assignment_drop_hit(fields,response.rect,drag_pointer);
                                                                 if hovered{
-                                                                    drop_allowed=true;
-                                                                    drop_target=Some(target.clone());
+                                                                    drop_targets.observe(target.clone());
                                                                 }
                                                                 let key=source_highlight::key(rid,rid,field);
                                                                 let selected=index==self.selected_recipient &&
@@ -2414,8 +2413,7 @@ impl ManualWorkspace {
                                                                     && manual_assignment_target_supported(&target)
                                                                     && manual_assignment_drop_hit(items_ui,response.rect,drag_pointer);
                                                                     if hovered{
-                                                                        drop_allowed=true;
-                                                                        drop_target=Some(target.clone());
+                                                                        drop_targets.observe(target.clone());
                                                                     }
                                                                     let selected=index==self.selected_recipient &&
                                                                         self.selected_item.as_deref()==Some(item_id) &&
@@ -2523,8 +2521,7 @@ impl ManualWorkspace {
                                                                     manual_assignment_drop_hit(items_ui,response.rect,drag_pointer)
                                                                 }else{response.hovered()};
                                                                 if dragging && hovered{
-                                                                    drop_allowed=true;
-                                                                    drop_target=Some(target.clone());
+                                                                    drop_targets.observe(target.clone());
                                                                 }else if !dragging && response.clicked() &&
                                                                     self.assignment_gesture.source.is_some(){
                                                                     clicked_target=Some(target);
@@ -2672,6 +2669,8 @@ impl ManualWorkspace {
             && !submit_direct && self.edit_text==self.current_value()
             && chosen.is_none() && lookup.is_none() && add_product.is_none() && remove_item.is_none()
             && open && !apply;
+        let drop_allowed=drop_targets.is_unique();
+        let drop_target=drop_targets.finish();
         if gesture_allowed{
             let mut assignment=None;
             // A press without crossing egui's drag threshold is a click.
@@ -3129,6 +3128,23 @@ fn manual_hover_target(
 mod manual_assignment_gesture_tests{
     use super::*;
     fn target()->ManualCellTarget{ManualCellTarget{row:0,item:None,field:"name".into()}}
+    #[test]
+    fn ambiguous_manual_drop_and_repeated_release_never_assign(){
+        let mut gesture=ManualAssignmentGesture::default();
+        let mut candidates=crate::drag_drop::UniqueDropTarget::new();
+        candidates.observe(target());
+        candidates.observe(ManualCellTarget{row:1,..target()});
+        gesture.start_drag("block".into(),None,0.0);
+        gesture.mark_drag_moved();
+        assert!(gesture.finish_drag(candidates.finish()).is_none());
+        assert!(gesture.finish_drag(Some(target())).is_none());
+        gesture.start_drag("block".into(),None,0.0);
+        assert!(gesture.finish_drag(Some(target())).is_none());
+        gesture.start_drag("block".into(),None,0.0);
+        gesture.mark_drag_moved();
+        assert_eq!(gesture.finish_drag(Some(target())),Some(("block".into(),target())));
+        assert!(gesture.finish_drag(Some(target())).is_none());
+    }
     #[test]
     fn both_click_orders_and_drag_resolve_same_native_target(){
         let mut gesture=ManualAssignmentGesture::default();

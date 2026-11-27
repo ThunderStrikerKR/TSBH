@@ -59,6 +59,8 @@ pub fn source_document(
     );
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("manual source viewport",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("manual source drag",&response,ui.clip_rect(),None);
     let galley_pos=rect.min+egui::vec2(text_inset,text_inset);
     let (fills,outlines)=source_highlight::block_shapes_manual_recommended(
         raw,&galley,galley_pos,spans,selected_recipient,active,assigned_ids,&highlighted,

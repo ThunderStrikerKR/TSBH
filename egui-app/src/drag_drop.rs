@@ -15,6 +15,26 @@ pub(crate) fn cursor(ctx:&Context,allowed:bool){
 pub(crate) fn pointer_hits(ui:&Ui,rect:Rect,pointer:Option<Pos2>)->bool{
     ui.is_enabled()&&pointer.is_some_and(|pos|rect.intersect(ui.clip_rect()).contains(pos))
 }
+/// Per-frame collector for custom drag targets. Repeated observations of
+/// the same logical target are harmless; different compatible targets at
+/// one pointer position are ambiguous and must not choose by draw order.
+pub(crate) struct UniqueDropTarget<T>{
+    target:Option<T>,
+    ambiguous:bool,
+}
+impl<T:Eq> UniqueDropTarget<T>{
+    pub(crate) fn new()->Self{Self{target:None,ambiguous:false}}
+    pub(crate) fn observe(&mut self,target:T){
+        if self.ambiguous{return;}
+        match self.target.as_ref(){
+            None=>self.target=Some(target),
+            Some(old) if old==&target=>{},
+            Some(_)=>{self.target=None;self.ambiguous=true;}
+        }
+    }
+    pub(crate) fn is_unique(&self)->bool{!self.ambiguous&&self.target.is_some()}
+    pub(crate) fn finish(self)->Option<T>{if self.ambiguous{None}else{self.target}}
+}
 pub(crate) fn paint_target(ui:&Ui,rect:Rect,hovered:bool){
     let rect=rect.intersect(ui.clip_rect());
     if !rect.is_positive(){return;}
@@ -22,7 +42,8 @@ pub(crate) fn paint_target(ui:&Ui,rect:Rect,hovered:bool){
     crate::highlight::paint(ui,rect,crate::highlight::Geometry::Control,role);
 }
 pub(crate) fn start_native<T:Any+Send+Sync>(ui:&Ui,response:&Response,enabled:bool,payload:impl FnOnce()->T){
-    if enabled&&ui.is_enabled()&&response.enabled()&&response.drag_started(){
+    if enabled&&ui.is_enabled()&&response.enabled()&&response.drag_started()
+        &&ui.input(|input|input.pointer.primary_down()){
         response.dnd_set_drag_payload(payload());
     }
     if enabled&&response.dragged(){cursor(ui.ctx(),true);}
@@ -42,6 +63,9 @@ pub(crate) fn drop_native<T:Any+Send+Sync>(ui:&Ui,response:&Response,enabled:boo
     let drag=hover_payload::<T>(response)?;
     if !valid(&drag){return None;}
     paint_target(ui,response.rect,true);
+    // Only the initiating primary-button gesture may commit. The native
+    // payload is consumed on release; subsequent targets cannot reuse it.
+    if !ui.input(|input|input.pointer.button_released(egui::PointerButton::Primary)){return None;}
     response.dnd_release_payload::<T>().filter(|drag|valid(drag))
 }
 pub(crate) fn preview_painter(ctx:&Context,owner:LayerId,modal:bool,id:Id)->Option<egui::Painter>{
@@ -98,6 +122,67 @@ pub(crate) fn paint_pointer_label(ui:&Ui,name:&str,count:&str){
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn unique_drop_target_rejects_ambiguous_hits_independently_of_draw_order(){
+        for candidates in [[1,2,1],[2,1,2]]{
+            let mut targets=UniqueDropTarget::new();
+            for candidate in candidates{targets.observe(candidate);}
+            assert!(!targets.is_unique());
+            assert_eq!(targets.finish(),None);
+        }
+        let mut targets=UniqueDropTarget::new();
+        targets.observe(1);targets.observe(1);
+        assert!(targets.is_unique());
+        assert_eq!(targets.finish(),Some(1));
+        assert_eq!(UniqueDropTarget::<u8>::new().finish(),None);
+    }
+    #[test]
+    fn native_drag_commits_only_once_to_enabled_valid_primary_target(){
+        use egui::{Event,Modifiers,PointerButton};
+        for (enabled,valid,button,expected) in [
+            (true,true,PointerButton::Primary,1),
+            (false,true,PointerButton::Primary,0),
+            (true,false,PointerButton::Primary,0),
+            (true,true,PointerButton::Secondary,0),
+        ]{
+            let ctx=crate::ui_test_support::test_context();
+            let screen=Rect::from_min_size(Pos2::ZERO,Vec2::new(600.0,400.0));
+            let mut starts=0;
+            let mut drops=0;
+            let mut draw=|events:Vec<Event>|{
+                let mut rects=None;
+                let time=ctx.input(|input|input.time)+0.1;
+                let _=ctx.run(egui::RawInput{screen_rect:Some(screen),time:Some(time),events,..Default::default()},|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        let (_,source)=ui.allocate_exact_size(Vec2::new(150.0,40.0),sense(true,true));
+                        start_native(ui,&source,true,||{starts+=1;17_u32});
+                        ui.add_space(60.0);
+                        let (_,target)=ui.allocate_exact_size(Vec2::new(150.0,40.0),Sense::click());
+                        for _ in 0..2{
+                            if let Some(value)=drop_native::<u32>(ui,&target,enabled,|v|valid&&*v==17){
+                                assert_eq!(*value,17);
+                                drops+=1;
+                            }
+                        }
+                        rects=Some((source.rect,target.rect));
+                    });
+                });
+                rects.unwrap()
+            };
+            let (source,target)=draw(vec![]);
+            draw(vec![Event::PointerMoved(source.center())]);
+            draw(vec![Event::PointerButton{pos:source.center(),button,pressed:true,modifiers:Modifiers::NONE}]);
+            draw(vec![Event::PointerMoved(source.center()+egui::vec2(12.0,0.0))]);
+            draw(vec![Event::PointerMoved(target.center())]);
+            draw(vec![Event::PointerMoved(target.center())]);
+            draw(vec![Event::PointerButton{pos:target.center(),button,pressed:false,modifiers:Modifiers::NONE}]);
+            draw(vec![]);
+            draw(vec![]);
+            drop(draw);
+            assert_eq!(starts,if button==PointerButton::Primary{1}else{0});
+            assert_eq!(drops,expected,"enabled={enabled} valid={valid} button={button:?}");
+        }
+    }
     #[test]
     fn pointer_label_flips_and_stays_inside_work_area(){
         let bounds=Rect::from_min_max(egui::pos2(10.0,20.0),egui::pos2(500.0,300.0));
