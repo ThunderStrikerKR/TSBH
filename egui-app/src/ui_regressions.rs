@@ -1186,6 +1186,40 @@ pub(crate) mod general_screen_geometry_tests {
         }
     }
     #[test]
+    fn actual_product_chooser_uses_modal_body_not_management_page_anchor(){
+        for (width,height) in [(1120.0,760.0),(840.0,500.0)]{
+            let ctx=test_context();
+            let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+            let mut picker=crate::product_manager::ProductManager::geometry_fixture(
+                gateway,ctx.clone(),0,true);
+            let work=Rect::from_min_size(egui::pos2(120.0,60.0),Vec2::new(width,height));
+            let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(width+160.0,height+100.0));
+            let mut measured=Vec::new();
+            for frame in 0..12{
+                TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
+                let _=ctx.run(egui::RawInput{
+                    screen_rect:Some(screen),time:Some(frame as f64*0.05),
+                    predicted_dt:0.05,..Default::default()
+                },|ctx|{
+                    let _=picker.show_selection_modal(ctx,work,"geometry-product-chooser");
+                });
+                measured=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
+            }
+            assert!(!measured.iter().any(|(kind,_)|*kind=="top content"),
+                "modal must not render the management title or KPI strip");
+            let body=first(&measured,"product picker body");
+            let card=first(&measured,"master card");
+            let rows=first(&measured,"row viewport");
+            assert!((body.top()-card.top()).abs()<=1.0,
+                "management page anchor leaked into popup: {body:?} {card:?}");
+            assert!(card.bottom()<=body.bottom()+2.0,
+                "popup list card exceeded its body budget: {card:?} {body:?}");
+            assert!(rows.is_positive() && rows.bottom()<=card.bottom()+1.0,
+                "popup rows exceeded the card: {rows:?} {card:?}");
+        }
+    }
+
+    #[test]
     fn actual_management_pages_allocate_valid_geometry_at_three_work_area_sizes(){
         let cases=[("freight",4),("history",1),("products",5),("clients",3),
             ("excel",3),("settings",4),("settlement",1)];
