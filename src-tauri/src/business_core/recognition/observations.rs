@@ -1963,6 +1963,57 @@ struct ModelPairCounts{
     both_agree:u64,baseline_only:u64,candidate_only:u64,both_disagree:u64,
     fallback_baseline_agrees:u64,fallback_candidate_agrees:u64,
     orders:u64,paired_orders:u64,macro_baseline:f64,macro_candidate:f64,
+    order_deltas:Vec<f64>,paired_order_deltas:Vec<f64>,
+}
+// Each observation is a whole-order mean in [-1,1]. Hoeffding does
+// not assume normally distributed errors or independent lines in an order.
+fn order_delta_interval(values:&[f64],alpha:f64)->Value{
+    if values.is_empty()||!(0.0..1.0).contains(&alpha){
+        return json!({"orders":values.len(),"mean":null,"lower":null,"upper":null});
+    }
+    let n=values.len() as f64;
+    let mean=values.iter().sum::<f64>()/n;
+    let radius=(2.0*(2.0/alpha).ln()/n).sqrt();
+    json!({"orders":values.len(),"mean":mean,"lower":(mean-radius).max(-1.0),
+        "upper":(mean+radius).min(1.0),"confidenceLevel":1.0-alpha,
+        "method":"bounded_order_mean_hoeffding_two_sided",
+        "assumes_independent_orders":true})
+}
+// Exact binomial tail evaluated in log space, including n=250.
+fn binomial_tail(n:usize,k:usize,p:f64,upper:bool)->f64{
+    if p<=0.0{return if if upper{0>=k}else{0<=k}{1.0}else{0.0};}
+    if p>=1.0{return if if upper{n>=k}else{n<=k}{1.0}else{0.0};}
+    let mut log_choose=0.0;let mut sum=0.0;
+    for i in 0..=n{
+        if (upper&&i>=k)||(!upper&&i<=k){
+            sum+=(log_choose+i as f64*p.ln()+(n-i) as f64*(-p).ln_1p()).exp();
+        }
+        if i<n{log_choose+=((n-i) as f64).ln()-((i+1) as f64).ln();}
+    }
+    sum.clamp(0.0,1.0)
+}
+// One-sided exact upper confidence bound for the probability that an
+// entire order's mean agreement deteriorates, not a field-level error rate.
+fn order_harm_upper(n:usize,harm:usize,alpha:f64)->Option<f64>{
+    if n==0||harm>n||!(0.0..1.0).contains(&alpha){return None;}
+    if harm==n{return Some(1.0);}
+    let (mut lo,mut hi)=(0.0,1.0);
+    for _ in 0..60{
+        let mid=(lo+hi)/2.0;
+        if binomial_tail(n,harm,mid,false)>alpha{lo=mid;}else{hi=mid;}
+    }
+    Some(hi)
+}
+fn order_inference(values:&[f64],alpha:f64)->Value{
+    let wins=values.iter().filter(|v|**v>1e-10).count();
+    let losses=values.iter().filter(|v|**v< -1e-10).count();
+    let discordant=wins+losses;
+    json!({"orderMeanInterval":order_delta_interval(values,alpha),
+        "improvedOrders":wins,"worsenedOrders":losses,"tiedOrders":values.len()-discordant,
+        "oneSidedImprovementSignP":(discordant>0).then(||binomial_tail(discordant,wins,0.5,true)),
+        "oneSidedDeteriorationSignP":(discordant>0).then(||binomial_tail(discordant,losses,0.5,true)),
+        "orderHarmUpper":order_harm_upper(values.len(),losses,alpha),
+        "alpha":alpha,"representativeLabelsVerified":false})
 }
 impl ModelPairCounts{
     fn observe(&mut self,old:&str,actual:&str,a:Option<&str>,b:Option<&str>){
@@ -1986,7 +2037,10 @@ impl ModelPairCounts{
         self.candidate_only+=o.candidate_only;self.both_disagree+=o.both_disagree;
         self.fallback_baseline_agrees+=o.fallback_baseline_agrees;
         self.fallback_candidate_agrees+=o.fallback_candidate_agrees;
-        if o.paired>0{self.paired_orders+=1;
+        self.order_deltas.push((o.fallback_candidate_agrees as f64-o.fallback_baseline_agrees as f64)/o.eligible as f64);
+        if o.paired>0{
+            self.paired_order_deltas.push((o.candidate_only as f64-o.baseline_only as f64)/o.paired as f64);
+            self.paired_orders+=1;
             self.macro_baseline+=(o.both_agree+o.baseline_only) as f64/o.paired as f64;
             self.macro_candidate+=(o.both_agree+o.candidate_only) as f64/o.paired as f64;}
     }
@@ -2005,6 +2059,12 @@ impl ModelPairCounts{
             "independentOrders":self.orders,"pairedOrders":self.paired_orders,
             "orderMacroBaselineAgreement":div(self.macro_baseline,self.paired_orders),
             "orderMacroCandidateAgreement":div(self.macro_candidate,self.paired_orders)})
+    }
+    fn wire_with_inference(&self,alpha:f64)->Value{
+        let mut v=self.wire();
+        v["fallbackOrderInference"]=order_inference(&self.order_deltas,alpha);
+        v["pairedOrderInference"]=order_inference(&self.paired_order_deltas,alpha);
+        v
     }
 }
 fn paired_decision<'a>(result:&'a Value,units:&[u16],s:Span,old:&'a str)->Option<&'a str>{
@@ -2034,6 +2094,10 @@ pub(super) fn compare_registered_models(payload:&Value)->Result<Value,String>{
     if cutoff>=as_of||a["modelId"]==b["modelId"]||am["clientBuildVersion"]!=bm["clientBuildVersion"]{
         return Err("독립 평가 모델 또는 시각 불일치".into());
     }
+    let alpha=match payload.get("inferenceAlpha"){
+        None=>0.05,
+        Some(v)=>v.as_f64().filter(|a|a.is_finite()&&*a>0.0&&*a<=0.05).ok_or("독립 평가 유의수준 오류")?,
+    };
     let orders=payload["orders"].as_array().filter(|v|!v.is_empty()&&v.len()<=250).ok_or("독립 평가 주문 한도 오류")?;
     let mut seen=BTreeSet::new();
     let mut totals=BTreeMap::<(String,String,String,String),ModelPairCounts>::new();
@@ -2101,8 +2165,9 @@ pub(super) fn compare_registered_models(payload:&Value)->Result<Value,String>{
         for (key,value) in local{totals.entry(key).or_default().merge_order(value);}
     }
     let groups=totals.into_iter().map(|((kind,route,level,label),v)|json!({
-        "sourceKind":kind,"legacyRoute":route,"contextLevel":level,"labelKind":label,"metrics":v.wire()})).collect::<Vec<_>>();
-    Ok(json!({"status":"paired_model_replay_diagnostic_only","baselineModelId":a["modelId"],"candidateModelId":b["modelId"],
+        "sourceKind":kind,"legacyRoute":route,"contextLevel":level,"labelKind":label,"metrics":v.wire_with_inference(alpha)})).collect::<Vec<_>>();
+    Ok(json!({"status":"paired_model_replay_diagnostic_only","inferencePolicyVersion":1,"inferenceAlpha":alpha,
+        "inferenceAssumesIndependentOrders":true,"globalMultiplicityControlled":false,"baselineModelId":a["modelId"],"candidateModelId":b["modelId"],
         "cutoff":cutoff.to_rfc3339(),"evaluationAsOf":payload["evaluationAsOf"],"requestedOrders":orders.len(),
         "orderStatuses":statuses,"groups":groups,"sameFrozenInputs":true,"prospectiveTrialVerified":false,
         "representativeLabelsVerified":false,"winner":null,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
@@ -2357,6 +2422,19 @@ mod tests{
         assert_eq!(v["pairedOrders"],1);assert_eq!(v["independentOrders"],2);
         assert!((v["fallbackBaselineAgreement"].as_f64().unwrap()-2.0/3.0).abs()<1e-10);
         assert!((v["fallbackCandidateAgreement"].as_f64().unwrap()-2.0/3.0).abs()<1e-10);
+    }
+    #[test]
+    fn order_inference_exact_harm_and_sign_bounds(){
+        let v=order_inference(&vec![1.0;20],0.05);
+        assert!((v["oneSidedImprovementSignP"].as_f64().unwrap()-0.5_f64.powi(20)).abs()<1e-12);
+        assert!(v["orderMeanInterval"]["lower"].as_f64().unwrap()>0.0);
+        let z=order_harm_upper(100,0,0.0125).unwrap();
+        assert!((z-(1.0-0.0125_f64.powf(0.01))).abs()<1e-10);
+        assert_eq!(order_harm_upper(0,0,0.05),None);
+        assert_eq!(order_harm_upper(10,10,0.05),Some(1.0));
+        let tied=order_inference(&[0.0;10],0.05);
+        assert!(tied["oneSidedImprovementSignP"].is_null());
+        assert!(tied["orderMeanInterval"]["lower"].as_f64().unwrap()<0.0);
     }
     fn owner_fixture()->Value{
         // Emoji makes the UTF-16 positions differ from byte offsets.

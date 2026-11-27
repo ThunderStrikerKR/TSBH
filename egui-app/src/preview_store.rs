@@ -1237,13 +1237,13 @@ impl PreviewStore {
         if ids.iter().collect::<std::collections::BTreeSet<_>>().len()!=ids.len(){return Err("독립 평가 주문 중복".into());}
         let (mut conn,business,scope)=Self::learning_connection()?;
         let tx=conn.transaction().map_err(|e|e.to_string())?;
-        let report=Self::paired_blend_in_transaction(&tx,&scope,&business,a,b,&ids,None,evaluate)?;
+        let report=Self::paired_blend_in_transaction(&tx,&scope,&business,a,b,&ids,None,None,evaluate)?;
         tx.commit().map_err(|e|e.to_string())?;
         Ok(report)
     }
 
     fn paired_blend_in_transaction(tx:&rusqlite::Transaction<'_>,scope:&str,business:&std::path::Path,
-        a:&str,b:&str,ids:&[String],minimum_after:Option<&str>,
+        a:&str,b:&str,ids:&[String],minimum_after:Option<&str>,alpha:Option<f64>,
         evaluate:impl Fn(&Value)->Result<Value,String>)->Result<Value,String>{
         let load=|id:&str|->Result<Value,String>{
             let model=read_registered_blend_model(tx,scope,id)?;
@@ -1270,6 +1270,7 @@ impl PreviewStore {
         let mut payload=json!({"orders":orders,"baseline":baseline,"candidate":candidate,
             "evaluationAsOf":chrono::Utc::now().to_rfc3339()});
         if let Some(cutoff)=minimum_after{payload["minimumPredictionAfter"]=json!(cutoff);}
+        if let Some(alpha)=alpha{payload["inferenceAlpha"]=json!(alpha);}
         let mut report=evaluate(&payload)?;
         if crate::business_state::read_learning_sources(ids)?!=frozen||
             crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?.as_path()!=business{
@@ -1301,10 +1302,16 @@ impl PreviewStore {
             FROM recognition_blend_monitor WHERE scope=?1",[&scope],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))
             .optional().map_err(|e|e.to_string())?;
         if let Some((previous,selected,since))=monitor.filter(|(_,selected,_)|selected==&current){
-            let ids=governance_orders(&since,true)?;
-            if ids.len()<40{return Ok(status("waiting_for_post_selection_orders"));}
-            let report=Self::paired_blend_in_transaction(&tx,&scope,&business,&previous,&selected,&ids,Some(&since),evaluate)?;
-            let verdict=governance_verdict(&report);
+            let checkpoint:Option<(String,i64)>=tx.query_row("SELECT after_at,look_no FROM recognition_blend_monitor_checkpoint
+                WHERE scope=?1 AND selected_model=?2 AND selected_at=?3",params![scope,selected,since],|r|Ok((r.get(0)?,r.get(1)?)))
+                .optional().map_err(|e|e.to_string())?;
+            let (after,look)=checkpoint.unwrap_or((since.clone(),0));
+            if !(0..10000).contains(&look){return Ok(status("monitoring_look_limit"));}
+            let ids=governance_orders(&after,false)?;
+            if ids.len()<250{return Ok(status("waiting_for_fixed_post_selection_cohort"));}
+            let alpha=governance_alpha(look as u64+1);
+            let report=Self::paired_blend_in_transaction(&tx,&scope,&business,&previous,&selected,&ids,Some(&after),Some(alpha),evaluate)?;
+            let verdict=governance_verdict(&report,alpha);
             if verdict=="rollback"{
                 // Both revisions and current evaluation inputs were verified
                 // within this transaction by the replay path.
@@ -1313,12 +1320,21 @@ impl PreviewStore {
                 tx.execute("INSERT OR IGNORE INTO recognition_blend_blocked VALUES(?1,?2)",params![scope,selected])
                     .map_err(|e|e.to_string())?;
                 tx.execute("DELETE FROM recognition_blend_monitor WHERE scope=?1",[&scope]).map_err(|e|e.to_string())?;
+                tx.execute("DELETE FROM recognition_blend_monitor_checkpoint WHERE scope=?1",[&scope]).map_err(|e|e.to_string())?;
                 tx.commit().map_err(|e|e.to_string())?;
                 let mut v=status("shadow_model_rolled_back");v["selectedModelId"]=json!(previous);return Ok(v);
             }
-            // Do not advance another model until current monitoring has
-            // enough covered evidence and is not deteriorating.
-            if !matches!(verdict,"promote"|"stable"){return Ok(status("monitoring_insufficient"));}
+            // Consume the fixed cohort once even when inconclusive. The
+            // next look uses only orders whose analysis starts after this look.
+            record_blend_transition(&tx,&scope,&previous,&selected,"monitor",&report)?;
+            tx.execute("INSERT INTO recognition_blend_monitor_checkpoint VALUES(?1,?2,?3,?4,?5)
+                ON CONFLICT(scope) DO UPDATE SET selected_model=excluded.selected_model,selected_at=excluded.selected_at,
+                after_at=excluded.after_at,look_no=excluded.look_no",
+                params![scope,selected,since,report["evaluationAsOf"].as_str().ok_or("감시 평가 시각 누락")?,look+1])
+                .map_err(|e|e.to_string())?;
+            if !matches!(verdict,"promote"|"stable"){
+                tx.commit().map_err(|e|e.to_string())?;return Ok(status("monitoring_inconclusive"));
+            }
         }
         let current_created:String=tx.query_row("SELECT created_at FROM recognition_blend_models WHERE scope=?1 AND model_id=?2",
             params![scope,current],|r|r.get(0)).map_err(|e|e.to_string())?;
@@ -1330,11 +1346,16 @@ impl PreviewStore {
             ORDER BY julianday(m.created_at) ASC,m.model_id LIMIT 1",
             params![scope,current_created,env!("CARGO_PKG_VERSION")],|r|Ok((r.get(0)?,r.get(1)?)))
             .optional().map_err(|e|e.to_string())?;
-        let Some((candidate,created))=candidate else{return Ok(status("no_new_candidate"));};
+        let Some((candidate,created))=candidate else{
+            tx.commit().map_err(|e|e.to_string())?;return Ok(status("no_new_candidate"));
+        };
         let ids=governance_orders(&created,false)?;
-        if ids.len()<40{return Ok(status("waiting_for_independent_orders"));}
-        let report=Self::paired_blend_in_transaction(&tx,&scope,&business,&current,&candidate,&ids,Some(&created),evaluate)?;
-        if governance_verdict(&report)!="promote"{
+        if ids.len()<250{
+            tx.commit().map_err(|e|e.to_string())?;return Ok(status("waiting_for_fixed_independent_cohort"));
+        }
+        let alpha=0.0125;
+        let report=Self::paired_blend_in_transaction(&tx,&scope,&business,&current,&candidate,&ids,Some(&created),Some(alpha),evaluate)?;
+        if governance_verdict(&report,alpha)!="promote"{
             // The first 250 post-creation orders form the capped evaluation
             // cohort. Do not let a rejected mature candidate starve later ones.
             if ids.len()==250{
@@ -1536,6 +1557,8 @@ fn auto_retrain_config(orders:&[Value],now:chrono::DateTime<chrono::FixedOffset>
 fn prepare_blend_governance(conn:&Connection)->Result<(),String>{
     conn.execute_batch("CREATE TABLE IF NOT EXISTS recognition_blend_monitor(
         scope TEXT PRIMARY KEY,previous_model TEXT NOT NULL,selected_model TEXT NOT NULL,selected_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS recognition_blend_monitor_checkpoint(
+        scope TEXT PRIMARY KEY,selected_model TEXT NOT NULL,selected_at TEXT NOT NULL,after_at TEXT NOT NULL,look_no INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS recognition_blend_blocked(scope TEXT NOT NULL,model_id TEXT NOT NULL,
         PRIMARY KEY(scope,model_id));
         CREATE TABLE IF NOT EXISTS recognition_blend_transitions(
@@ -1569,9 +1592,15 @@ fn governance_orders(after:&str,recent:bool)->Result<Vec<String>,String>{
     Ok(ids)
 }
 // Provisional engineering thresholds, not statistical certification.
-fn governance_verdict(report:&Value)->&'static str{
+fn governance_alpha(look:u64)->f64{
+    // Per-monitoring-episode alpha budget: sum 1/(k(k+1)) = 1.
+    // Four simultaneous one-sided/two-sided summaries per look.
+    0.05/(4.0*look.max(1) as f64*(look.max(1) as f64+1.0))
+}
+fn governance_verdict(report:&Value,alpha:f64)->&'static str{
     if report["status"]!="paired_model_replay_diagnostic_only"||report["currentSourceDigestsVerified"]!=true||
-        report["sameFrozenInputs"]!=true||report["missingOrInactiveOrders"]!=0{return "insufficient";}
+        report["sameFrozenInputs"]!=true||report["missingOrInactiveOrders"]!=0||
+        report["inferencePolicyVersion"]!=1||report["inferenceAlpha"].as_f64()!=Some(alpha){return "insufficient";}
     let get=|label:&str,min:u64|->Option<(f64,f64,u64,u64)>{
         let mut rows=report["groups"].as_array()?.iter().filter(|r|r["sourceKind"]=="all"&&r["legacyRoute"]=="all"&&
             r["contextLevel"]=="all"&&r["labelKind"]==label);
@@ -1584,9 +1613,32 @@ fn governance_verdict(report:&Value)->&'static str{
     };
     let Some((u,up,ul,uw))=get("unchanged_proxy",30)else{return "insufficient";};
     let Some((c,cp,cl,cw))=get("explicit_correction",10)else{return "insufficient";};
-    if (u<=-0.02&&ul>=uw.saturating_add(3))||(c<=-0.10&&cl>=cw.saturating_add(3)){return "rollback";}
-    if u>=-1e-10&&up>=-1e-10&&c>=0.05-1e-10&&cp>=0.05-1e-10&&cw>=cl.saturating_add(3){return "promote";}
-    if u>=-1e-10&&up>=-1e-10&&c>=-1e-10&&cp>=-1e-10{return "stable";}
+    let inf=|label:&str,key:&str,field:&str|->Option<f64>{
+        let m=report["groups"].as_array()?.iter().find(|r|r["sourceKind"]=="all"&&r["legacyRoute"]=="all"&&
+            r["contextLevel"]=="all"&&r["labelKind"]==label)?;
+        let v=&m["metrics"][key];
+        if v["alpha"].as_f64()!=Some(alpha){return None;}
+        v[field].as_f64().filter(|x|x.is_finite()&&(0.0..=1.0).contains(x))
+    };
+    let bound=|label:&str,key:&str,side:&str|->Option<f64>{
+        let m=report["groups"].as_array()?.iter().find(|r|r["sourceKind"]=="all"&&r["legacyRoute"]=="all"&&
+            r["contextLevel"]=="all"&&r["labelKind"]==label)?;
+        let v=&m["metrics"][key];
+        if v["alpha"].as_f64()!=Some(alpha){return None;}
+        v["orderMeanInterval"][side].as_f64().filter(|x|x.is_finite()&&(-1.0..=1.0).contains(x))
+    };
+    let harmed=|label:&str|["fallbackOrderInference","pairedOrderInference"].iter().all(|key|
+        bound(label,key,"upper").is_some_and(|x|x<0.0)&&
+        inf(label,key,"oneSidedDeteriorationSignP").is_some_and(|p|p<=alpha));
+    if (u<=-0.02&&ul>=uw.saturating_add(3)&&harmed("unchanged_proxy"))||
+        (c<=-0.10&&cl>=cw.saturating_add(3)&&harmed("explicit_correction")){return "rollback";}
+    let safe= ["fallbackOrderInference","pairedOrderInference"].iter().all(|key|
+        inf("unchanged_proxy",key,"orderHarmUpper").is_some_and(|x|x<=0.05));
+    let superior=["fallbackOrderInference","pairedOrderInference"].iter().all(|key|
+        bound("explicit_correction",key,"lower").is_some_and(|x|x>0.0)&&
+        inf("explicit_correction",key,"oneSidedImprovementSignP").is_some_and(|p|p<=alpha));
+    if safe&&superior&&u>=-1e-10&&up>=-1e-10&&c>=0.05-1e-10&&cp>=0.05-1e-10&&cw>=cl.saturating_add(3){return "promote";}
+    if safe&&u>=-1e-10&&up>=-1e-10&&c>=-1e-10&&cp>=-1e-10{return "stable";}
     "insufficient"
 }
 fn blend_registry_exists(conn:&Connection)->Result<bool,String>{
@@ -2153,21 +2205,30 @@ mod reception_edit_audit_tests {
     use super::*;
     #[test]
     fn governance_never_promotes_on_missing_coverage_or_normal_case_regression(){
-        let group=|label:&str,n:u64,old:f64,new:f64,delta:f64,l:u64,w:u64|json!({
-            "sourceKind":"all","legacyRoute":"all","contextLevel":"all","labelKind":label,
-            "metrics":{"pairedOrders":n,"pairedCoverage":1.0,"fallbackBaselineAgreement":old,
-                "fallbackCandidateAgreement":new,"pairedDelta":delta,"baselineOnlyAgrees":l,"candidateOnlyAgrees":w}});
+        let alpha=0.0125;
+        let group=|label:&str,n:u64,old:f64,new:f64,delta:f64,l:u64,w:u64,lower:f64,upper:f64,harm:f64|{
+            let inf=json!({"alpha":alpha,"orderMeanInterval":{"lower":lower,"upper":upper},
+                "orderHarmUpper":harm,"oneSidedImprovementSignP":0.001,"oneSidedDeteriorationSignP":0.001});
+            json!({"sourceKind":"all","legacyRoute":"all","contextLevel":"all","labelKind":label,
+                "metrics":{"pairedOrders":n,"pairedCoverage":1.0,"fallbackBaselineAgreement":old,
+                    "fallbackCandidateAgreement":new,"pairedDelta":delta,"baselineOnlyAgrees":l,"candidateOnlyAgrees":w,
+                    "fallbackOrderInference":inf,"pairedOrderInference":inf}})
+        };
         let mut r=json!({"status":"paired_model_replay_diagnostic_only","sameFrozenInputs":true,
             "currentSourceDigestsVerified":true,"missingOrInactiveOrders":0,
-            "groups":[group("unchanged_proxy",30,1.0,1.0,0.0,0,0),group("explicit_correction",10,0.2,0.5,0.3,0,3)]});
-        assert_eq!(governance_verdict(&r),"promote");
+            "inferencePolicyVersion":1,"inferenceAlpha":alpha,
+            "groups":[group("unchanged_proxy",100,1.0,1.0,0.0,0,0,-0.2,0.2,0.043),
+                group("explicit_correction",50,0.2,0.8,0.6,0,30,0.1,0.9,0.04)]});
+        assert_eq!(governance_verdict(&r,alpha),"promote");
         r["groups"][0]["metrics"]["pairedCoverage"]=json!(0.5);
-        assert_eq!(governance_verdict(&r),"insufficient");
-        r["groups"][0]=group("unchanged_proxy",30,1.0,0.9,-0.1,3,0);
-        assert_eq!(governance_verdict(&r),"rollback");
-        r["groups"][0]=group("unchanged_proxy",30,1.0,0.99,-0.01,1,0);
-        assert_eq!(governance_verdict(&r),"insufficient");
+        assert_eq!(governance_verdict(&r,alpha),"insufficient");
+        r["groups"][0]=group("unchanged_proxy",100,1.0,0.5,-0.5,50,0,-0.8,-0.1,0.6);
+        assert_eq!(governance_verdict(&r,alpha),"rollback");
+        r["groups"][0]=group("unchanged_proxy",100,1.0,0.99,-0.01,1,0,-0.2,0.2,0.1);
+        assert_eq!(governance_verdict(&r,alpha),"insufficient");
+        assert!(governance_alpha(2)<governance_alpha(1));
     }
+
     #[test]
     fn automatic_retrain_uses_distinct_time_windows_and_new_order_threshold(){
         let old=(0..60).map(|i|(format!("id-{i}"),"a".repeat(64))).collect::<LearningDigests>();
