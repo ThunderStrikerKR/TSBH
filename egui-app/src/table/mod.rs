@@ -156,7 +156,7 @@ pub(crate) fn paint_management_table_row_background(painter:&egui::Painter,rect:
 /// Interactive table rows retain the standard alternating background when idle.
 /// The hover surface is owned by the table, not by an individual screen.
 pub(crate) fn paint_management_interactive_row_background(painter:&egui::Painter,rect:Rect,index:usize,hovered:bool){
-    if hovered{painter.rect_filled(rect,0.0,theme::INPUT);}
+    if hovered{painter.rect_filled(rect,0.0,theme::BUTTON_HOVER_BG);}
     else{paint_management_table_row_background(painter,rect,index);}
 }
 
