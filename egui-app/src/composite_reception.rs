@@ -1,4 +1,5 @@
 //! Shared reception forms, item and freight rows, actions and totals.
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use eframe::egui::{self,Align,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::ui_primitives::UiWidthPolicyExt;
@@ -166,7 +167,7 @@ pub fn reception_recipient_fields(
             Vec2::new(width, theme::INPUT_HEIGHT), Sense::hover(),
         );
         let galley = typography::field_label_galley(ui, text);
-        ui.painter().with_clip_rect(rect).galley(
+        ui.painter().with_shared_clip(rect).galley(
             egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.0),
             galley, theme::text_ink(theme::TextRole::Label,theme::TextState::Normal),
         );
@@ -619,7 +620,7 @@ pub fn reception_total_footer(
         typography::DataValueKind::Money,
         typography::DataValueContext::ReceptionTotal
     );
-    let painter=ui.painter().with_clip_rect(first_amount.intersect(ui.clip_rect()));
+    let painter=ui.painter().with_shared_clip(first_amount.intersect(ui.clip_rect()));
     let unit=painter.layout_no_wrap("원".to_owned(),font.clone(),value_color);
     let number=painter.layout_no_wrap(amount,font,value_color);
     // Preserve the fixed currency anchor and the shared number/unit gap.
@@ -644,7 +645,7 @@ pub fn reception_total_footer(
         egui::pos2(right_start, rect.bottom()),
     );
     let metadata_font=egui::FontId::proportional(typography::FONT_METADATA);
-    let count_painter=ui.painter().with_clip_rect(second_left.intersect(ui.clip_rect()));
+    let count_painter=ui.painter().with_shared_clip(second_left.intersect(ui.clip_rect()));
     let center_y=second_left.center().y;
     if let Some(n)=count{
         let prefix=count_painter.layout_no_wrap("배송".to_owned(),metadata_font.clone(),theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
@@ -666,7 +667,7 @@ pub fn reception_total_footer(
         egui::pos2(right_start, rect.top() + 30.0),
         egui::pos2(right, rect.bottom()),
     );
-    ui.painter().with_clip_rect(second_right.intersect(ui.clip_rect())).text(
+    ui.painter().with_shared_clip(second_right.intersect(ui.clip_rect())).text(
         egui::pos2(right, second_right.center().y), egui::Align2::RIGHT_CENTER,
         vat, metadata_font, theme::text_ink(theme::TextRole::Label,theme::TextState::Normal),
     );
