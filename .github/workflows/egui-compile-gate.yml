@@ -123,6 +123,8 @@ jobs:
             'highlight::rendered_geometry_tests::',
             'ui_test_support::unaligned_detector_tests::',
             'ui_layout::logical_alignment_tests::',
+            'ui_layout::pixel_paint::tests::',
+            'popup::regression_tests::modal_editor_workspace_geometry_tests::fractional_modal_geometry_uses_logical_anchors_not_device_pixels',
             'ui_regressions::general_screen_geometry_tests::unaligned_',
             'ui_test_support::highlight_invariance_detector_tests::',
             'ui_regressions::general_screen_geometry_tests::highlight_invariance_'

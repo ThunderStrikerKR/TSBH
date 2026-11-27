@@ -1,8 +1,9 @@
 //! Modal presentation and geometry. Overlay owns window layers, input priority and lifetime.
 use crate::ui_layout::geometry::SharedUiClipExt as _;
+use crate::ui_layout::pixel_paint::PaintRect;
 use crate::ui_layout::geometry::SharedAllocationExt as _;
 use crate::ui_layout::geometry::AlignedUiBuilderExt as _;
-use eframe::egui::{self,Align,Frame,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
+use eframe::egui::{self,Align,Frame,Layout,Rect,Response,Sense,Ui,Vec2};
 use crate::ui_layout::geometry::UiWidthPolicyExt;
 use crate::{theme,typography};
 use crate::theme::{
@@ -447,7 +448,7 @@ pub(crate) struct ModalMasterWorkspace {
 /// rounded workspace, or footer. Layout still owns the original dimensions;
 /// every edge moves by at most half a device pixel. All strokes and pane fills
 /// must use the SAME aligned rect so anti-aliasing cannot expose a seam.
-fn modal_master_pixel_aligned_rect(rect:Rect,pixels_per_point:f32)->Rect {
+fn modal_master_pixel_aligned_rect(rect:Rect,pixels_per_point:f32)->PaintRect {
     crate::ui_layout::pixel_paint::snap_paint_rect(rect,pixels_per_point)
 }
 
@@ -463,14 +464,8 @@ fn modal_master_content_rect(rect:Rect)->Rect {
 }
 
 /// Pixel-aligned rule using the same left/right edges as modal content.
-fn modal_master_rule_rect(rect:Rect,ppp:f32,at_bottom:bool)->Rect {
-    let height=crate::ui_layout::pixel_paint::paint_stroke_width(theme::SOFT_DIVIDER_WIDTH,ppp);
-    let content=modal_master_content_rect(rect);
-    let top=if at_bottom {rect.bottom()-height}else{rect.top()};
-    Rect::from_min_max(
-        egui::pos2(content.left(),top),
-        egui::pos2(content.right(),(top+height).min(rect.bottom()))
-    )
+fn modal_master_rule_rect(rect:PaintRect,ppp:f32,at_bottom:bool)->PaintRect {
+    rect.edge_rule(theme::SOFT_DIVIDER_WIDTH,theme::MODAL_MASTER_CONTENT_INSET,ppp,at_bottom)
 }
 
 /// Balance footer actions against the outer frame padding and top rule
@@ -495,7 +490,7 @@ pub(crate) fn modal_master_workspace_background(
 )->ModalMasterWorkspace {
     let ppp=ui.ctx().pixels_per_point();
     let paint_rect=modal_master_pixel_aligned_rect(rect,ppp);
-    ui.painter().rect_filled(paint_rect,theme::CONTROL_RADIUS,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
+    paint_rect.fill(ui.painter(),theme::CONTROL_RADIUS,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
     modal_master_workspace_geometry(rect,toolbar_height,split_ratio)
 }
 
@@ -517,43 +512,11 @@ fn modal_master_workspace_geometry(rect:Rect,toolbar_height:f32,split_ratio:Opti
 pub(crate) fn modal_master_workspace_finish(
     ui:&Ui,rect:Rect,geometry:ModalMasterWorkspace
 ) {
-    let painter=ui.painter();
     let ppp=ui.ctx().pixels_per_point().max(1.0);
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
-    let snap=|v:f32|crate::ui_layout::pixel_paint::snap_paint_coordinate(v,ppp);
-    let line_width=crate::ui_layout::pixel_paint::paint_stroke_width(theme::SOFT_DIVIDER_WIDTH,ppp);
-    let outer_width=crate::ui_layout::pixel_paint::paint_stroke_width(theme::FRAME_STROKE_WIDTH,ppp);
-    let inset=outer_width.max(line_width);
-    let left=snap(rect.left()+inset);
-    let right=snap(rect.right()-inset);
-    let top=snap(rect.top()+inset);
-    let bottom=snap(rect.bottom()-inset);
-    if right>left && bottom>top {
-        if geometry.toolbar_bottom>rect.top() &&
-            geometry.toolbar_bottom<rect.bottom() {
-            let y=snap(geometry.toolbar_bottom-line_width/2.0)
-                .clamp(top,(bottom-line_width).max(top));
-            painter.rect_filled(
-                Rect::from_min_max(
-                    egui::pos2(left,y),egui::pos2(right,y+line_width)
-                ),0.0,theme::border_ink(theme::BorderRole::Divider)
-            );
-        }
-        if let Some(divider_x)=geometry.divider_x {
-            let x=snap(divider_x-line_width/2.0)
-                .clamp(left,(right-line_width).max(left));
-            painter.rect_filled(
-                Rect::from_min_max(
-                    egui::pos2(x,top),egui::pos2(x+line_width,bottom)
-                ),0.0,theme::border_ink(theme::BorderRole::Divider)
-            );
-        }
-    }
-    painter.rect_stroke(
-        rect,theme::CONTROL_RADIUS,
-        Stroke::new(outer_width,theme::border_ink(theme::BorderRole::Divider)),
-        egui::StrokeKind::Inside
-    );
+    rect.finish_frame(ui.painter(),ppp,geometry.toolbar_bottom,geometry.divider_x,
+        theme::SOFT_DIVIDER_WIDTH,theme::FRAME_STROKE_WIDTH,theme::CONTROL_RADIUS,
+        theme::border_ink(theme::BorderRole::Divider));
 }
 
 /// Draw the shared title/close controls inside an already allocated title row.
@@ -630,11 +593,11 @@ pub(crate) fn modal_master_header_in_rect(
     let ppp=ui.ctx().pixels_per_point().max(1.0);
     let rect=crate::ui_layout::geometry::aligned_rect(rect);
     let paint_rect=modal_master_pixel_aligned_rect(rect,ppp);
-    ui.painter().rect_filled(paint_rect,0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
+    paint_rect.fill(ui.painter(),0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
     // A centered line at rect.bottom() is half clipped and can appear
     // darker at one end. Fill exactly one pixel-aligned INNER rule instead.
-    ui.painter().rect_filled(
-        modal_master_rule_rect(paint_rect,ppp,true),0.0,theme::border_ink(theme::BorderRole::Divider)
+     modal_master_rule_rect(paint_rect,ppp,true).fill(
+        ui.painter(),0.0,theme::border_ink(theme::BorderRole::Divider)
     );
     modal_master_header_content_in_rect(
         ui,rect,title,description,close_label,enabled
@@ -650,14 +613,9 @@ pub(crate) fn modal_master_header_with_toolbar_height()->f32{
 }
 
 /// The single divider occupies the slot directly after the title row.
-fn modal_master_toolbar_rule_rect(rect:Rect,ppp:f32)->Rect{
+fn modal_master_toolbar_rule_rect(rect:Rect,ppp:f32)->PaintRect{
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
-    let top=(rect.top()+theme::MODAL_HEADER_HEIGHT).min(rect.bottom());
-    let slot=Rect::from_min_max(
-        egui::pos2(rect.left(),top),
-        egui::pos2(rect.right(),(top+theme::SOFT_DIVIDER_WIDTH).min(rect.bottom()))
-    );
-    modal_master_rule_rect(slot,ppp,false)
+    rect.toolbar_rule(theme::MODAL_HEADER_HEIGHT,theme::SOFT_DIVIDER_WIDTH,theme::MODAL_MASTER_CONTENT_INSET,ppp)
 }
 
 /// Toolbar uses the same horizontal inset as the body, below the rule.
@@ -681,9 +639,9 @@ pub(crate) fn modal_master_header_with_toolbar_in_rect<R>(
     let ppp=ui.ctx().pixels_per_point().max(1.0);
     let rect=crate::ui_layout::geometry::aligned_rect(rect);
     let paint_rect=modal_master_pixel_aligned_rect(rect,ppp);
-    ui.painter().rect_filled(paint_rect,0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
-    ui.painter().rect_filled(
-        modal_master_toolbar_rule_rect(rect,ppp),0.0,theme::border_ink(theme::BorderRole::Divider)
+    paint_rect.fill(ui.painter(),0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
+     modal_master_toolbar_rule_rect(rect,ppp).fill(
+        ui.painter(),0.0,theme::border_ink(theme::BorderRole::Divider)
     );
     let title_rect=Rect::from_min_size(
         rect.min,Vec2::new(rect.width(),theme::MODAL_HEADER_HEIGHT)
@@ -709,9 +667,9 @@ pub(crate) fn modal_master_header_with_toolbar_in_rect<R>(
 fn paint_modal_master_footer_surface(ui:&Ui,rect:Rect) {
     let ppp=ui.ctx().pixels_per_point().max(1.0);
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
-    ui.painter().rect_filled(rect,0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
-    ui.painter().rect_filled(
-        modal_master_rule_rect(rect,ppp,false),0.0,theme::border_ink(theme::BorderRole::Divider)
+    rect.fill(ui.painter(),0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
+     modal_master_rule_rect(rect,ppp,false).fill(
+        ui.painter(),0.0,theme::border_ink(theme::BorderRole::Divider)
     );
 }
 

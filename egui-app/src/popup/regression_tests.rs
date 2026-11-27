@@ -521,7 +521,7 @@ mod modal_editor_workspace_geometry_tests {
         )).abs()<=0.5,"unexpected two-row header height: {header:?}");
         assert!((toolbar.height()-theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT)
             .abs()<=0.5,"toolbar does not fill its reserved header row: {toolbar:?}");
-        let rule=modal_master_toolbar_rule_rect(header,ctx.pixels_per_point());
+        let rule=modal_master_toolbar_rule_rect(header,ctx.pixels_per_point()).test_rect();
         assert!((rule.top()-header.top()-theme::MODAL_HEADER_HEIGHT).abs()<=0.5,
             "rule must immediately follow title row: {rule:?}");
         assert!((toolbar.top()-rule.bottom()-theme::MODAL_MASTER_TOOLBAR_RULE_GAP)
@@ -543,10 +543,10 @@ mod modal_editor_workspace_geometry_tests {
         );
         let content=modal_master_content_rect(bounds);
         let toolbar=modal_master_header_toolbar_rect(bounds);
-        let top_rule=modal_master_rule_rect(bounds,1.0,false);
-        let bottom_rule=modal_master_rule_rect(bounds,1.0,true);
+        let top_rule=modal_master_rule_rect(modal_master_pixel_aligned_rect(bounds,1.0),1.0,false).test_rect();
+        let bottom_rule=modal_master_rule_rect(modal_master_pixel_aligned_rect(bounds,1.0),1.0,true).test_rect();
         let actions=modal_master_action_area(bounds,theme::ACTION_PRIMARY_HEIGHT);
-        let toolbar_rule=modal_master_toolbar_rule_rect(bounds,1.0);
+        let toolbar_rule=modal_master_toolbar_rule_rect(bounds,1.0).test_rect();
         for rect in [toolbar,top_rule,bottom_rule,toolbar_rule,actions] {
             assert_eq!(rect.left(),content.left());
             assert_eq!(rect.right(),content.right());
@@ -566,7 +566,7 @@ mod modal_editor_workspace_geometry_tests {
         assert_eq!(geometry.divider_x,Some((logical.left()+logical.width()*2.0/3.0).round_ui()));
         assert_eq!(toolbar.bottom(),logical.bottom());
         for scale in [1.0,1.25,1.5,1.75,2.0] {
-            let paint=modal_master_pixel_aligned_rect(logical,scale);
+            let paint=modal_master_pixel_aligned_rect(logical,scale).test_rect();
             assert!((paint.left()-logical.left()).abs()<=0.5/scale+0.0001);
             assert!((paint.top()-logical.top()).abs()<=0.5/scale+0.0001);
             let next=modal_master_workspace_geometry(bounds,32.0,Some(2.0/3.0));

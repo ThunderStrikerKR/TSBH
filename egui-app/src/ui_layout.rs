@@ -396,8 +396,8 @@ fn paint_dock_axis_line(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
         theme::DOCK_SPLITTER_LINE
     };
     let line=pixel_paint::centered_paint_axis_rect(rect,vertical,logical_width,scale);
-    ui.painter().rect_filled(
-        line, 0.0,
+    line.fill(
+        ui.painter(), 0.0,
         if active { theme::border_ink(theme::BorderRole::Standard) } else { theme::border_ink(theme::BorderRole::Divider) },
     );
 }

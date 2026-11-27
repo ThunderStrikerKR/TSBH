@@ -142,11 +142,11 @@ def pixel_paint_violations(name, code):
             checked = mask_matches(body,
                 r"\blet\s+paint_rect\s*=\s*modal_master_pixel_aligned_rect\s*\(\s*rect\s*,\s*ppp\s*\)\s*;")
             checked = mask_matches(checked,
-                r"\bui\s*\.\s*painter\s*\(\s*\)\s*\.\s*rect_filled\s*\(\s*paint_rect\s*,")
+                r"\bpaint_rect\s*\.\s*fill\s*\(\s*ui\s*\.\s*painter\s*\(\s*\)\s*,")
             checked = mask_matches(checked,
-                r"\bui\s*\.\s*painter\s*\(\s*\)\s*\.\s*rect_filled\s*\(\s*modal_master_rule_rect\s*\(\s*paint_rect\s*,\s*ppp\s*,\s*true\s*\)\s*,")
+                r"\bmodal_master_rule_rect\s*\(\s*paint_rect\s*,\s*ppp\s*,\s*true\s*\)\s*\.\s*fill\s*\(\s*ui\s*\.\s*painter\s*\(\s*\)\s*,")
             checked = mask_matches(checked,
-                r"\bui\s*\.\s*painter\s*\(\s*\)\s*\.\s*rect_filled\s*\(\s*modal_master_toolbar_rule_rect\s*\(\s*rect\s*,\s*ppp\s*\)\s*,")
+                r"\bmodal_master_toolbar_rule_rect\s*\(\s*rect\s*,\s*ppp\s*\)\s*\.\s*fill\s*\(\s*ui\s*\.\s*painter\s*\(\s*\)\s*,")
             for match in re.finditer(r"\bpaint_rect\b", checked):
                 report(body_start + match.start(), "physical paint rect escaped into non-paint expression")
         elif fn in PIXEL_PAINT_ONLY:
@@ -191,8 +191,6 @@ PIXEL_MATH_REF = re.compile(r"\b(?:pixel_paint|" + PIXEL_MATH_NAMES + r")\b")
 PIXEL_MATH_CALLS = {
     "popup/mod.rs": {
         PIXEL_RECT_HELPER: {"snap_paint_rect"},
-        PIXEL_RULE_HELPER: {"paint_stroke_width"},
-        "modal_master_workspace_finish": {"snap_paint_coordinate", "paint_stroke_width"},
     },
     "ui_layout.rs": {"paint_dock_axis_line": {"centered_paint_axis_rect"}},
 }
@@ -212,7 +210,17 @@ RAW_PIXEL_ROUND = re.compile(
 )
 def pixel_math_violations(name, code):
     if name == PIXEL_MATH_OWNER:
-        return []
+        findings = []
+        for match in re.finditer(r"\bpub(?:\s*\([^)]*\))?\s+fn\s+\w+\s*\([^{};]*?\)\s*->\s*(?:Rect|f32|&\s*Rect)\b", code):
+            prefix = code[max(0,match.start()-100):match.start()]
+            if re.search(r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]\s*$",prefix):
+                continue
+            findings.append((code.count("\n",0,match.start())+1,"paint type exposes raw layout geometry"))
+        for match in re.finditer(r"\bimpl\b[^{};]*(?:Deref|AsRef\s*<\s*Rect|From\s*<\s*PaintRect|Into\s*<\s*Rect)[^{};]*\{",code):
+            findings.append((code.count("\n",0,match.start())+1,"paint type must not implement a layout conversion"))
+        for match in re.finditer(r"\bstruct\s+PaintRect\s*\(\s*pub\b",code):
+            findings.append((code.count("\n",0,match.start())+1,"paint rectangle field must remain private"))
+        return findings
     findings = []
     def report(offset, rule):
         findings.append((code.count("\n", 0, offset) + 1, rule))
@@ -232,6 +240,8 @@ def pixel_math_violations(name, code):
             dpi_remaining = dpi_remaining[:body_start] + mask(dpi_remaining[body_start:end]) + dpi_remaining[end:]
     if name == "ui_layout.rs":
         remaining = mask_matches(remaining, r"\bpub\s*\(\s*crate\s*\)\s+mod\s+pixel_paint\s*;")
+    if name == PIXEL_OWNER:
+        remaining = mask_matches(remaining, r"\buse\s+crate\s*::\s*ui_layout\s*::\s*pixel_paint\s*::\s*PaintRect\s*;")
     for match in PIXEL_MATH_REF.finditer(remaining):
         report(match.start(), "shared physical pixel math used outside approved paint path")
     for match in DPI_READ.finditer(dpi_remaining):
@@ -338,9 +348,9 @@ def self_test():
     # Physical rectangles may be painted, but not fed into logical layout.
     def mixed(body):
         return "fn modal_master_header_in_rect() {" + body + "}"
-    good = "let paint_rect=modal_master_pixel_aligned_rect(rect,ppp); ui.painter().rect_filled(paint_rect,0.0,color);"
+    good = "let paint_rect=modal_master_pixel_aligned_rect(rect,ppp); paint_rect.fill(ui.painter(),0.0,color);"
     assert not violations(PIXEL_OWNER, mixed(good))
-    assert not violations(PIXEL_OWNER, mixed(good + "ui.painter().rect_filled(modal_master_rule_rect(paint_rect,ppp,true),0.0,color);"))
+    assert not violations(PIXEL_OWNER, mixed(good + "modal_master_rule_rect(paint_rect,ppp,true).fill(ui.painter(),0.0,color);"))
     for bad in (
         "builder.aligned_max_rect(paint_rect);",
         "ui.restrict_shared_clip(paint_rect);",
@@ -358,7 +368,7 @@ def self_test():
     assert violations(PIXEL_OWNER, "fn layout() { modal_master_pixel_aligned_rect(rect,ppp); }")
     assert violations(PIXEL_OWNER, "pub(crate) fn modal_master_pixel_aligned_rect(rect:Rect,ppp:f32)->Rect { rect }")
     assert not violations(PIXEL_OWNER, "fn modal_master_pixel_aligned_rect(rect:Rect,ppp:f32)->Rect { rect }")
-    paint = "fn paint_modal_master_footer_surface(ui:&Ui,rect:Rect) { let ppp=ui.ctx().pixels_per_point(); let rect=modal_master_pixel_aligned_rect(rect,ppp); ui.painter().rect_filled(rect,0.0,color);"
+    paint = "fn paint_modal_master_footer_surface(ui:&Ui,rect:Rect) { let ppp=ui.ctx().pixels_per_point(); let rect=modal_master_pixel_aligned_rect(rect,ppp); rect.fill(ui.painter(),0.0,color);"
     assert not violations(PIXEL_OWNER, paint + "}")
     assert violations(PIXEL_OWNER, paint + "ui.interact(rect,id,sense);}")
     assert violations(PIXEL_OWNER, paint + "other(ui,rect);}")
@@ -376,6 +386,11 @@ def self_test():
     assert not violations("ui_layout.rs", "fn paint_dock_axis_line() { let scale=ui.ctx().pixels_per_point(); let line=pixel_paint::centered_paint_axis_rect(rect,true,width,scale); }")
     assert not violations("ui_layout.rs", "pub(crate) mod pixel_paint;")
     assert not violations(PIXEL_MATH_OWNER, "let x=(value*scale).round()/scale;")
+    assert violations(PIXEL_MATH_OWNER, "pub(crate) struct PaintRect(pub Rect);")
+    assert violations(PIXEL_MATH_OWNER, "impl From<PaintRect> for Rect { }")
+    assert violations(PIXEL_MATH_OWNER, "impl std::ops::Deref for PaintRect { }")
+    assert violations(PIXEL_MATH_OWNER, "pub(crate) fn raw(self)->Rect { self.0 }")
+    assert not violations(PIXEL_MATH_OWNER, "#[cfg(test)] pub(crate) fn test_rect(self)->Rect { self.0 }")
     assert not violations("kakao_dock.rs", "let to_px=|v:f32|->i32{(v*scale).round() as i32};")
 
 def main():
