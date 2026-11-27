@@ -1150,6 +1150,71 @@ pub(crate) fn show_decision_window<R>(
     }
 }
 
+/// A simple confirmation is a UI event, never an authorization or write.
+#[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
+pub(crate) enum ConfirmDecision{
+    #[default]
+    Pending,
+    Cancel,
+    Confirm,
+}
+
+fn confirmation_result(cancelled:bool,confirmed:bool)->ConfirmDecision{
+    if cancelled{ConfirmDecision::Cancel}
+    else if confirmed{ConfirmDecision::Confirm}
+    else{ConfirmDecision::Pending}
+}
+
+/// Shared registration/rename form; the owner retains the draft and command.
+/// Validate the edited value in the same frame, without changing its content.
+pub(crate) fn show_name_confirmation(
+    ctx:&egui::Context,area:Rect,id:&'static str,title:&str,
+    label:&str,value:&mut String,hint:&str,action_label:&str,enabled:bool
+)->ConfirmDecision{
+    let mut result=ConfirmDecision::Pending;
+    show_decision_window(ctx,title,id,area,|ui|{
+        decision_workspace(ui,|decision|{
+            let cancelled=decision.header(title,"취소",enabled);
+            decision.body(|body|{
+                modal_named_text_field(body,label,value,hint,enabled);
+            });
+            let confirmed=decision.actions(|actions|
+                crate::button::action(actions,action_label,theme::ButtonRole::Primary,
+                    enabled&&!value.trim().is_empty()).clicked()
+            ).inner;
+            result=confirmation_result(cancelled,confirmed);
+        });
+    });
+    result
+}
+
+/// Deletion details may be ordinary text or one framed affected-record list.
+/// The caller supplies only the content and its existing permission checks.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum DeleteBody{Plain,Framed}
+
+pub(crate) fn show_delete_confirmation(
+    ctx:&egui::Context,area:Rect,id:&'static str,title:&str,action_label:&str,
+    can_cancel:bool,can_delete:bool,body_style:DeleteBody,body:impl FnOnce(&mut Ui)
+)->ConfirmDecision{
+    let mut result=ConfirmDecision::Pending;
+    show_decision_window(ctx,title,id,area,|ui|{
+        decision_workspace(ui,|decision|{
+            let cancelled=decision.header(title,"취소",can_cancel);
+            match body_style{
+                DeleteBody::Plain=>decision.body(body),
+                DeleteBody::Framed=>decision.framed_body(body),
+            }
+            let confirmed=decision.actions(|actions|
+                crate::button::action(actions,action_label,theme::ButtonRole::Danger,
+                    can_delete).clicked()
+            ).inner;
+            result=confirmation_result(cancelled,confirmed);
+        });
+    });
+    result
+}
+
 /// UI-only result: callers own the actual save, discard and navigation.
 #[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
 pub(crate) enum ChangeDecision{
