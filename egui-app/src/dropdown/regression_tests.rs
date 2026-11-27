@@ -322,6 +322,7 @@ mod management_dropdown_unification_tests {
 
     #[test]
     fn selected_and_hovered_options_have_distinct_scoped_colors(){
+        assert_eq!(theme::MANAGEMENT_DROPDOWN_SELECTED_BG,theme::ORANGE_EMPHASIS_BG);
         assert_ne!(
             theme::MANAGEMENT_DROPDOWN_SELECTED_BG,
             theme::MANAGEMENT_DROPDOWN_HOVER_BG
@@ -335,7 +336,7 @@ mod management_dropdown_unification_tests {
                     management_dropdown_option_palette(popup);
                     assert_eq!(popup.visuals().selection.bg_fill,
                         theme::MANAGEMENT_DROPDOWN_SELECTED_BG);
-                    assert_eq!(popup.visuals().selection.stroke.color,theme::TEXT);
+                    assert_eq!(popup.visuals().selection.stroke.color,theme::ORANGE_EMPHASIS_TEXT);
                     assert_eq!(popup.visuals().widgets.hovered.weak_bg_fill,
                         theme::MANAGEMENT_DROPDOWN_HOVER_BG);
                     assert_eq!(popup.visuals().widgets.hovered.bg_fill,
@@ -357,6 +358,38 @@ mod shared_dropdown_rendered_geometry_tests{
     use eframe::egui::{self,Rect};
     use crate::ui_test_support::{test_context,assert_geometry_value,assert_rect_geometry,
         assert_painted_caption,painted_text_rects,assert_rect_inside};
+    #[test]
+    fn selected_option_paints_shared_orange_and_hover_remains_blue(){
+        fn has_fill(shape:&egui::Shape,rect:Rect,fill:egui::Color32)->bool{
+            match shape{
+                egui::Shape::Rect(s)=>s.fill==fill&&s.rect.contains(rect.center()),
+                egui::Shape::Vec(shapes)=>shapes.iter().any(|s|has_fill(s,rect,fill)),
+                _=>false,
+            }
+        }
+        let ctx=test_context();
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(800.0,500.0));
+        let mut current="a";
+        let mut selected=Rect::NOTHING;
+        let mut other=Rect::NOTHING;
+        for phase in 0..4{
+            let events=if phase==0{vec![]}else{vec![egui::Event::PointerMoved(other.center())]};
+            let output=ctx.run(egui::RawInput{screen_rect:Some(screen),events,..Default::default()},|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    crate::dropdown::management_dropdown_option_palette(ui);
+                    selected=crate::dropdown::management_dropdown_option(ui,&mut current,"a","선택 브랜드").rect;
+                    other=crate::dropdown::management_dropdown_option(ui,&mut current,"b","다른 브랜드").rect;
+                });
+            });
+            if phase==3{
+                assert!(output.shapes.iter().any(|s|has_fill(&s.shape,selected,theme::ORANGE_EMPHASIS_BG)),
+                    "selected option must actually paint orange");
+                assert!(output.shapes.iter().any(|s|has_fill(&s.shape,other,theme::MANAGEMENT_DROPDOWN_HOVER_BG)),
+                    "unselected hovered option must actually paint blue");
+                assert_eq!(current,"a");
+            }
+        }
+    }
     #[test]
     fn dropdown_caption_clip_excludes_arrow_and_state_does_not_resize_trigger(){
         let ctx=test_context();
