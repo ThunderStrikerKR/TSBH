@@ -367,7 +367,7 @@ impl BandoGateway for LocalGateway {
                     .filter(|d|d["status"]=="diagnostic_proposal_only").collect::<Vec<_>>();
                 let replay_status=match proposals.as_slice(){
                     []=>"no_proposal",
-                    [decision]=>{
+                    _=>{
                         let replay=(||->Result<Value,String>{
                             let state=self.load_reception_catalog()?;
                             if first["recognitionContext"]["catalogRevision"].is_null()||
@@ -377,12 +377,11 @@ impl BandoGateway for LocalGateway {
                             let client=first["recognitionContext"]["clientId"].as_str()
                                 .map(|id|serde_json::json!({"id":id}));
                             recognition::execute("replay_owner_recommendation",serde_json::json!({
-                                "raw":raw,"state":state,"client":client,"initialAnalysis":first,"decision":decision}))
+                                "raw":raw,"state":state,"client":client,"initialAnalysis":first,"decisions":proposals}))
                         })();
                         if replay.is_ok_and(|v|v["status"]=="validated_counterfactual"){"validated_counterfactual"}
                         else{"unverified_replay"}
-                    },
-                    _=>"joint_replay_not_verified"
+                    }
                 };
                 result["parserReplayValidation"]=serde_json::json!(replay_status);
                 Ok(result)
