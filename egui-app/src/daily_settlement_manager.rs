@@ -615,6 +615,40 @@ impl DailySettlementManager{
 mod tests{
     use super::*;
     #[test]
+    fn rendered_report_viewport_shrinks_to_actual_record_count(){
+        fn measure(count:usize)->f32{
+            let ctx=crate::ui_test_support::test_context();
+            let indices=(0..count).collect::<Vec<_>>();
+            let mut sort=None;
+            for _ in 0..3{
+                crate::ui_test_support::TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
+                let _=ctx.run(egui::RawInput{
+                    screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(1400.0,1000.0))),
+                    ..Default::default()
+                },|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        crate::scrollbar::apply_management_scroll_role(ui,crate::scrollbar::ManagementScrollRole::Standard);
+                        report_table(ui,"settlement-orders",["거래처","금액"],[160.0,130.0],
+                            [Align2::LEFT_CENTER,Align2::RIGHT_CENTER],
+                            [typography::ManagementTableCellRole::ClientName,typography::ManagementTableCellRole::Money],
+                            0,&indices,true,&|_|None,&mut sort,None,
+                            |_|["검증 거래처".into(),"1,000원".into()],
+                            |_|[theme::TextState::Normal;2]);
+                    });
+                });
+            }
+            let trace=crate::ui_test_support::TRACE.with(|trace|trace.borrow_mut().take().unwrap());
+            let viewport=trace.iter().find(|(role,_)|*role=="row viewport").expect("report viewport").1;
+            assert!(viewport.is_positive());
+            assert_eq!(trace.iter().filter(|(role,_)|*role=="settlement order row").count(),count);
+            viewport.height()
+        }
+        let one=measure(1);
+        let three=measure(3);
+        assert!((three-one-2.0*ROW_HEIGHT).abs()<=1.0,
+            "table body must grow by two rows: {one} -> {three}");
+    }
+    #[test]
     fn settlement_rows_fit_small_reports_and_cap_large_reports(){
         assert_eq!(report_body_height(0,1080.0,0.0),ROW_HEIGHT);
         assert_eq!(report_body_height(1,1080.0,0.0),ROW_HEIGHT);
