@@ -74,6 +74,7 @@ jobs:
             'field_dependency_contract_blocks_joint_edits_and_preserves_owner_selection',
             'field_blend_registry_keeps_tasks_and_revisions_separate',
             'model_registry_rejects_manual_selection_and_clear',
+            'owner_bootstrap_compares_legacy_without_requiring_manual_model',
             'field_runtime_shadow_uses_frozen_model_and_preserves_initial_product',
             'field_paired_replay_excludes_training_orders_and_duplicate_ids'
           )
