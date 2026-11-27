@@ -1,18 +1,14 @@
 //! React AliasManager.tsx and ProductSearchDialog.tsx replacement.
 //! Alias collision, product matching and persistence decisions remain in
 //! original catalog_clients Rust. This UI owns only explicit operator edits.
-use crate::{catalog_query_bridge,category_manager::ROOTS,theme,typography};
+use crate::{catalog_query_bridge,product_manager::ProductManager,gateway::BandoGateway,theme,typography};
 use eframe::egui::{self,Align,Context,Layout,Rect,Ui};
 use serde_json::{json,Value};
-use std::collections::{HashMap,HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use crate::screen_refresh::ReadRefresh;
 
 type Warnings=HashMap<String,Vec<String>>;
-#[derive(Clone,PartialEq,Eq)]
-struct PickerKey{query:String,category:String,brand:String}
-struct PickerResult{brands:HashSet<String>,data:Value}
-
 fn field<'a>(v:&'a Value,k:&str)->&'a str{
     v.get(k).and_then(Value::as_str).unwrap_or("")
 }
@@ -42,41 +38,6 @@ fn alias_diagnostic(item:&Value,warnings:&Warnings)->String{
         .unwrap_or_default()
 }
 fn is_client_active(v:&Value)->bool{v.get("deletedAt").is_none_or(Value::is_null)}
-fn category_levels(catalog:&Value,selected:&str)
-    ->Vec<(Option<String>,String,Vec<(String,String)>)>{
-    // React categoryFilterLevels: all selected ancestors each reveal one
-    // more dropdown, with no depth cap. Only filter widget construction is
-    // local; eligible product IDs come from native Rust catalog queries.
-    let mut all=rows(&catalog["categories"]).to_vec();
-    for (id,name) in ROOTS {
-        if !all.iter().any(|v|field(v,"id")==id){
-            all.push(json!({"id":id,"name":name,"parentId":null,"active":true}));
-        }
-    }
-    let mut selected_path=Vec::new();
-    let mut seen=HashSet::new();
-    let mut current=selected;
-    while !current.is_empty()&&seen.insert(current.to_owned()){
-        let Some(node)=all.iter().find(|v|field(v,"id")==current)else{
-            selected_path.clear();break;
-        };
-        selected_path.insert(0,current.to_owned());
-        current=field(node,"parentId");
-    }
-    let mut levels=Vec::new();
-    for depth in 0..=selected_path.len(){
-        let parent=if depth==0{None}else{Some(selected_path[depth-1].clone())};
-        let choices=all.iter().filter(|v|{
-            v["active"]!=false &&
-            v.get("parentId").and_then(Value::as_str)==parent.as_deref()
-        }).map(|v|(field(v,"id").to_owned(),field(v,"name").to_owned()))
-          .collect::<Vec<_>>();
-        if depth>0 && choices.is_empty(){break;}
-        let value=selected_path.get(depth).cloned().unwrap_or_default();
-        levels.push((parent,value,choices));
-    }
-    levels
-}
 #[derive(Clone,PartialEq,Eq)]
 struct Form {
     text:String,
@@ -100,9 +61,7 @@ pub struct AliasManager{
     editor_open:bool,
     list_query:String,
     product_search:bool,
-    query:String,
-    category:String,
-    brand:String,
+    product_picker:Option<Box<ProductManager>>,
     pending:Option<Exit>,
     after_save:Option<Exit>,
     next_tab:Option<usize>,
@@ -111,20 +70,11 @@ pub struct AliasManager{
     catalog_snapshot:Option<Arc<Value>>,
     diagnostics:ReadRefresh<Warnings>,
     warnings:Arc<Warnings>,
-    picker_catalog:Option<Arc<Value>>,
-    picker_key:Option<PickerKey>,
-    picker:ReadRefresh<PickerResult>,
-    picker_result:Option<Arc<PickerResult>>,
+
 }
 impl AliasManager {
     /// Called only when ProductManager accepts a catalog snapshot, never on paint.
     pub fn set_catalog(&mut self,catalog:&Value,ctx:&Context){
-        if self.picker_catalog.as_deref()!=Some(catalog){
-            self.picker_catalog=Some(Arc::new(catalog.clone()));
-            self.picker_key=None;
-            self.picker_result=None;
-            self.picker.reset();
-        }
         let snapshot=json!({"products":catalog["products"],"aliases":catalog["aliases"]});
         if self.catalog_snapshot.as_deref()==Some(&snapshot){return;}
         let snapshot=Arc::new(snapshot);
@@ -146,34 +96,6 @@ impl AliasManager {
             }
         }
     }
-    fn request_picker(&mut self,ctx:&Context){
-        let key=PickerKey{query:self.query.clone(),category:self.category.clone(),
-            brand:self.brand.clone()};
-        if self.picker_key.as_ref()==Some(&key){return;}
-        let Some(catalog)=self.picker_catalog.clone()else{return};
-        self.picker_key=Some(key.clone());
-        self.picker_result=None;
-        self.picker.submit(ctx.clone(),move||{
-            let classified=catalog_query_bridge::classified_products(
-                &json!({"state":&*catalog,"category":key.category}))?;
-            let brands=rows(&classified).iter().filter_map(Value::as_str)
-                .filter_map(|id|product(&catalog,id))
-                .map(|p|field(p,"brandId").to_owned()).collect();
-            let data=catalog_query_bridge::search_products(&json!({
-                "state":&*catalog,"query":key.query,"major":key.category,
-                "brand":key.brand,"excludeDemo":true
-            }))?;
-            Ok(PickerResult{brands,data})
-        });
-    }
-    fn poll_picker(&mut self){
-        if let Some(result)=self.picker.poll(){
-            match result{
-                Ok(result)=>self.picker_result=Some(Arc::new(result)),
-                Err(error)=>self.error=Some(error),
-            }
-        }
-    }
     fn dirty(&self)->bool{self.form!=self.original}
     pub fn has_overlay(&self)->bool{self.editor_open||self.product_search||self.pending.is_some()}
     pub fn global_leave_in_progress(&self)->bool{
@@ -185,13 +107,10 @@ impl AliasManager {
     pub fn take_tab(&mut self)->Option<usize>{self.next_tab.take()}
     pub fn reset_navigation(&mut self){
         self.editor_open=false;self.list_query.clear();
-        self.picker.reset();
-        self.picker_key=None;
-        self.picker_result=None;
+        self.product_picker=None;
         self.product_search=false;
         self.pending=None;
         self.after_save=None;
-        self.query.clear();self.category.clear();self.brand.clear();
         self.form=Form::default();
         self.original=self.form.clone();
         self.error=None;
@@ -235,7 +154,7 @@ impl AliasManager {
         else{self.apply_exit(Exit::Select(id),catalog);}
     }
     fn close_editor(&mut self){
-        self.editor_open=false;self.product_search=false;
+        self.editor_open=false;self.product_search=false;self.product_picker=None;
         let scope=self.original.scope.clone();
         self.form=Form{scope,..Form::default()};self.original=self.form.clone();self.error=None;
     }
@@ -250,7 +169,7 @@ impl AliasManager {
         }})
     }
     pub fn on_saved(&mut self,catalog:&Value){
-        self.editor_open=false;self.product_search=false;
+        self.editor_open=false;self.product_search=false;self.product_picker=None;
         // Preserve the last saved scope for the next registration.
         let scope=self.form.scope.clone();
         self.form=Form{scope,..Form::default()};
@@ -358,7 +277,7 @@ impl AliasManager {
                             let label=product(catalog,&self.form.target).map(|p|display_model(field(p,"name")))
                                 .unwrap_or_else(||"등록 상품 선택".into());
                             if crate::button::action(body,&label,theme::ButtonRole::Standard,true).clicked(){
-                                self.product_search=true;self.query.clear();self.category.clear();self.brand.clear();
+                                self.product_search=true;
                             }
                         });
                         if let Some(error)=self.error.as_deref(){body.label(typography::caption(error));}
@@ -373,143 +292,24 @@ impl AliasManager {
         save.then(||self.save_request())
     }
     pub fn show_dialogs(&mut self,ctx:&Context,work_area:Rect,catalog:&Value,
-        editable:bool,busy:bool)->Option<Value>{
-        self.poll_picker();
+        editable:bool,busy:bool,gateway:Arc<dyn BandoGateway>)->Option<Value>{
         let mut save=self.show_editor(ctx,work_area,catalog,editable,busy);
         if self.product_search{
-            let mut close=false;
-            let mut chosen=None;
-            crate::popup::modal_backdrop(ctx,"alias-product-search-dim",false);
-            crate::popup::modal_window(ctx,"상품 검색","alias-product-search",work_area)
-                .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
-                .show(ctx,|modal|{
-
-                    crate::popup::modal_flow_workspace(modal,|workspace|{
-                        if workspace.header("상품 검색","닫기",!busy){
-                            close=true;
-                        }
-                        workspace.body_region(|modal|{
-                            let width=modal.available_width();
-                            crate::input::management_search_field(modal,&mut self.query,
-                                width,"브랜드 / 상품명 / 모델 / 별칭 검색");
-                            modal.horizontal_wrapped(|filters|{
-                                for (depth,(parent,selected,children)) in
-                                    category_levels(catalog,&self.category).into_iter().enumerate(){
-                                    let mut value=selected.clone();
-                                    let label=children.iter()
-                                        .find(|(id,_)|*id==value)
-                                        .map(|(_,name)|name.as_str())
-                                        .unwrap_or(if depth==0{
-                                            "전체 카테고리"
-                                        }else{"현재 분류 전체"});
-                                    let picker_width=theme::CATEGORY_PATH_PICKER_WIDTH;
-                                    let text_width=picker_width-
-                                        theme::CATEGORY_PATH_PICKER_TEXT_PADDING;
-                                    let visible=typography::fit_category_path(
-                                        filters,label,text_width,
-                                        typography::CategoryPathFont::Body
-                                    );
-                                    crate::dropdown::management_dropdown_full_label(
-                                        filters,&visible,label,picker_width,true,|choice|{
-                                            crate::dropdown::management_dropdown_option(
-                                                choice,&mut value,String::new(),
-                                                if depth==0{"전체 카테고리"}else{"현재 분류 전체"});
-                                            for (id,name) in &children{
-                                                let visible=typography::fit_category_path(
-                                                    choice,name,text_width,
-                                                    typography::CategoryPathFont::Body
-                                                );
-                                                let response=crate::dropdown::management_dropdown_option(
-                                                    choice,&mut value,id.clone(),&visible
-                                                );
-                                                crate::ui_primitives::shortened_text_tooltip(response,&visible,name.as_str());
-                                            }
-                                        });
-                                    if value!=selected{
-                                        self.category=if value.is_empty(){
-                                            parent.unwrap_or_default()
-                                        }else{value};
-                                    }
-                                }
-                                let available=self.picker_result.as_ref()
-                                    .filter(|_|self.picker_key.as_ref()
-                                        .is_some_and(|key|key.category==self.category))
-                                    .map(|result|result.brands.clone()).unwrap_or_default();
-                                let selected_brand=self.brand.clone();
-                                let brand=rows(&catalog["brands"]).iter()
-                                    .find(|b|field(b,"id")==selected_brand)
-                                    .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
-                                crate::dropdown::management_dropdown(
-                                    filters,brand,theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,
-                                    true,|choice|{
-                                        crate::dropdown::management_dropdown_option(
-                                            choice,&mut self.brand,String::new(),"전체 브랜드");
-                                        for b in rows(&catalog["brands"])
-                                            .iter().filter(|b|{
-                                                available.contains(field(b,"id")) ||
-                                                    field(b,"id")==selected_brand
-                                            }){
-                                            crate::dropdown::management_dropdown_option(
-                                                choice,&mut self.brand,field(b,"id").to_owned(),
-                                                field(b,"name"));
-                                        }
-                                    });
-                                if !self.category.is_empty() &&
-                                    crate::button::action(filters,"카테고리 초기화",
-                                        theme::ButtonRole::Standard,true).clicked(){
-                                    self.category.clear();
-                                }
-                            });
-                            self.request_picker(ctx);
-                            let found=self.picker_result.clone();
-                            crate::ui_primitives::section_divider(modal);
-                            let results_height=crate::popup::modal_list_max_height(
-                                modal,work_area.height(),theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT,false
-                            );
-                            use typography::ManagementTableCellRole as Role;
-                            let detail=found.as_ref().map(|result|rows(&result.data["detailLinkIds"])
-                                .iter().filter_map(Value::as_str).collect::<HashSet<_>>()).unwrap_or_default();
-                            let choices=found.as_ref().map(|result|rows(&result.data["ids"]).iter()
-                                .filter_map(Value::as_str).take(100)
-                                .filter_map(|id|product(catalog,id).map(|p|(id,p)))
-                                .collect::<Vec<_>>()).unwrap_or_default();
-                            let rect=crate::table::registry_table(modal,"alias-product-results",
-                                ["상품명","상세 정보","상세보기","선택"],
-                                [140.0,200.0,132.0,96.0],
-                                (results_height-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0),
-                                choices.len(),|_|false,|row,cells,i,_|{
-                                    let (id,p)=choices[i];
-                                    let description=if field(p,"subtitle").is_empty(){field(p,"specification")}
-                                        else{field(p,"subtitle")};
-                                    crate::table::registry_cell(row,cells[0],&display_model(field(p,"name")),Role::ProductName,false,(id,0));
-                                    crate::table::registry_cell(row,cells[1],description,Role::Description,false,(id,1));
-                                    if detail.contains(id){
-                                        if let Some(url)=rows(&p["variants"]).first().and_then(|v|v["url"].as_str()){
-                                            crate::table::registry_actions(row,cells[2],|actions|{
-                                                if crate::button::action(actions,"상세보기 ↗",theme::ButtonRole::Quiet,true).clicked(){
-                                                    ctx.open_url(egui::OpenUrl::new_tab(url));
-                                                }
-                                            });
-                                        }
-                                    }
-                                    crate::table::registry_actions(row,cells[3],|actions|{
-                                        if crate::button::action(actions,"선택",theme::ButtonRole::Standard,editable&&!busy).clicked(){
-                                            chosen=Some(id.to_owned());
-                                        }
-                                    });
-                                });
-                            if choices.is_empty(){
-                                crate::status_notice::management_body_state_overlay(modal,rect,Some(
-                                    if found.is_some(){"검색 결과가 없습니다."}else{"상품을 확인하는 중입니다."}));
-                            }
-
-                        });
-                    });
-                });
-            if close{self.product_search=false;}
-            if let Some(id)=chosen{
-                self.form.target=id;
+            if !editable||busy{
                 self.product_search=false;
+                self.product_picker=None;
+            }else{
+                let picker=self.product_picker.get_or_insert_with(||Box::new(
+                    ProductManager::new_reference_selection(
+                        Arc::clone(&gateway),ctx.clone(),catalog.clone(),None,Default::default(),Default::default()
+                    )
+                ));
+                crate::popup::modal_backdrop(ctx,"alias-product-search-dim",false);
+                let (cancelled,chosen)=picker.show_selection_modal(ctx,work_area,"alias-product-search");
+                if let Some(id)=chosen.as_ref().and_then(|value|value["productId"].as_str()){
+                    if product(catalog,id).is_some(){self.form.target=id.to_owned();}
+                }
+                if cancelled||chosen.is_some(){self.product_search=false;self.product_picker=None;}
             }
         }
         if let Some(exit)=self.pending.clone(){
@@ -559,33 +359,6 @@ mod tests {
             assert!(std::time::Instant::now()<deadline,"alias diagnostics did not finish");
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
-    }
-    #[test]
-    fn product_picker_uses_latest_filter_and_reuses_completed_results(){
-        let ctx=Context::default();
-        let mut manager=AliasManager::default();
-        let catalog=json!({"products":[
-            {"id":"p1","name":"BD 709","catalog":"BANDOSTAND","active":true,
-             "variants":[{"id":"v1","source":"OFFICIAL"}]},
-            {"id":"p2","name":"BD 708","catalog":"BANDOSTAND","active":true,
-             "variants":[{"id":"v2","source":"OFFICIAL"}]}],
-             "aliases":[],"categories":[],"brands":[]});
-        manager.set_catalog(&catalog,&ctx);
-        manager.query="709".into();manager.request_picker(&ctx);
-        manager.query="708".into();manager.request_picker(&ctx);
-        let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);
-        while manager.picker.pending(){
-            manager.poll_picker();
-            assert!(std::time::Instant::now()<deadline);
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
-        let result=manager.picker_result.as_ref().unwrap().clone();
-        assert_eq!(result.data["ids"],json!(["p2"]));
-        for _ in 0..100{manager.request_picker(&ctx);}
-        assert!(!manager.picker.pending());
-        assert!(Arc::ptr_eq(&result,manager.picker_result.as_ref().unwrap()));
-        manager.reset_navigation();
-        assert!(manager.picker_result.is_none());
     }
     #[test]
     fn diagnostic_cache_reuses_unchanged_data_and_invalidates_without_revision(){
@@ -641,17 +414,7 @@ mod tests {
         assert_eq!(plain,diagnosed,"diagnostic text must not change row geometry");
     }
 
-    #[test]
-    fn category_filter_virtual_roots_are_shared_and_read_only() {
-        let original=json!({"categories":[]});
-        let levels=category_levels(&original,"");
-        let roots=&levels[0].2;
-        for (id,name) in ROOTS {
-            assert!(roots.iter().any(|(key,title)|key==id && title==name));
-        }
-        assert_eq!(original["categories"],json!([]),
-            "UI catalog roots must never mutate stored categories");
-    }
+
 }
 
 #[cfg(test)]
