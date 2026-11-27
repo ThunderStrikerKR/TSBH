@@ -481,6 +481,31 @@ pub(super) fn rebuild_totals(tx:&Transaction<'_>,scope:&str)->Result<Value,Strin
 #[cfg(test)]
 mod recognition_learning_store_tests{
     use super::*;
+    #[test]
+    fn combined_evaluation_is_replaced_verified_and_revoked_with_fingerprint(){
+        let mut c=conn();
+        c.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+        let tx=c.transaction().unwrap();
+        let id="combined-test";let digest="a".repeat(64);
+        save_fingerprint(&tx,"scope",id,&digest,&[]).unwrap();
+        assert!(!combined_evaluation_cached(&tx,"scope",id,&digest).unwrap());
+        let mut report=json!({"combinedEvaluation":{"schemaVersion":1,"status":"compared_diagnostic_only",
+            "groups":[],"eligibleForAutomaticDecision":false,"decisionChanged":false,"eligibleObservations":1}});
+        save_combined_evaluation(&tx,"scope",id,&digest,&report).unwrap();
+        assert!(combined_evaluation_cached(&tx,"scope",id,&digest).unwrap());
+        let digests=BTreeMap::from([(id.to_owned(),digest.clone())]);
+        assert_eq!(combined_evaluation_report(&tx,"scope",&digests).unwrap()["orders"][0]["eligibleObservations"],1);
+        report["combinedEvaluation"]["eligibleObservations"]=json!(2);
+        save_combined_evaluation(&tx,"scope",id,&digest,&report).unwrap();
+        let r=combined_evaluation_report(&tx,"scope",&digests).unwrap();
+        assert_eq!(r["orders"].as_array().unwrap().len(),1);
+        assert_eq!(r["orders"][0]["eligibleObservations"],2);
+        assert!(!combined_evaluation_cached(&tx,"scope",id,&"b".repeat(64)).unwrap());
+        tx.execute("UPDATE recognition_combined_evaluation SET payload='{}' WHERE scope='scope'",[]).unwrap();
+        assert!(combined_evaluation_cached(&tx,"scope",id,&digest).is_err());
+        revoke_pending(&tx,"scope",id).unwrap();
+        assert!(!combined_evaluation_cached(&tx,"scope",id,&digest).unwrap());
+    }
     fn conn()->Connection{
         let c=Connection::open_in_memory().unwrap();
         c.execute_batch("PRAGMA foreign_keys=ON").unwrap();prepare(&c).unwrap();c
