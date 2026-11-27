@@ -1351,18 +1351,55 @@ impl PreviewStore {
     }
 
     /// Automatic selection is limited to diagnostic shadow models.
-    /// A manual selection is required to bootstrap the comparison baseline.
+    /// The first candidate is compared to the unchanged original classifier.
     pub(crate) fn auto_govern_blend(evaluate:impl Fn(&Value)->Result<Value,String>+Copy)->Result<Value,String>{
         let (mut conn,business,scope)=Self::learning_connection()?;
         prepare_blend_governance(&conn)?;
         let mut tx=conn.transaction().map_err(|e|e.to_string())?;
         let status=|s:&str|json!({"status":s,"policyVersion":1,"automaticChangeAuthorized":false,"decisionChanged":false});
         if !blend_registry_exists(&tx)?{return Ok(status("no_registry"));}
-        let Some(current)=selected_blend_model(&tx,&scope)?else{return Ok(status("no_manual_baseline"));};
+        let selected=selected_blend_model(&tx,&scope)?;
         let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending WHERE scope=?1 AND feature_version=1",
             [&scope],|r|r.get(0)).map_err(|e|e.to_string())?;
         if pending!=0{return Ok(status("pending_reconciliation"));}
         let expected_state=blend_governance_state(&tx,&scope)?;
+        let Some(current)=selected else{
+            let candidate:Option<(String,String)>=tx.query_row("SELECT m.model_id,m.created_at FROM recognition_blend_models m
+                WHERE m.scope=?1 AND json_extract(m.payload,'$.generationKind')='automatic_candidate_v1'
+                AND json_extract(m.payload,'$.clientBuildVersion')=?2
+                AND NOT EXISTS(SELECT 1 FROM recognition_blend_blocked b WHERE b.scope=m.scope AND b.model_id=m.model_id)
+                ORDER BY julianday(m.created_at) ASC,m.model_id LIMIT 1",
+                params![scope,env!("CARGO_PKG_VERSION")],|r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(|e|e.to_string())?;
+            let Some((candidate,created))=candidate else{return Ok(status("no_automatic_candidate"));};
+            let ids=governance_orders(&created,false)?;
+            if ids.len()<250{return Ok(status("waiting_for_initial_independent_cohort"));}
+            let alpha=0.0125;
+            let mut prepared=Self::prepare_paired_blend(&tx,&scope,&business,&candidate,&candidate,&ids,Some(&created),Some(alpha))?;
+            prepared.payload["compareAgainstLegacy"]=json!(true);
+            tx.commit().map_err(|e|e.to_string())?;
+            let report=Self::evaluate_paired_blend(&prepared,evaluate)?;
+            let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+            revalidate_governance_state(&tx,&scope,&expected_state)?;
+            let report=Self::finalize_paired_blend(&tx,&scope,&business,&ids,&prepared,report)?;
+            let blocked:i64=tx.query_row("SELECT count(*) FROM recognition_blend_blocked WHERE scope=?1 AND model_id=?2",
+                params![scope,candidate],|r|r.get(0)).map_err(|e|e.to_string())?;
+            if blocked!=0{return Err("최초 후보 모델 상태 변경".into());}
+            if governance_verdict(&report,alpha)!="promote"{
+                record_blend_transition(&tx,&scope,"legacy",&candidate,"reject",&report)?;
+                tx.execute("INSERT OR IGNORE INTO recognition_blend_blocked VALUES(?1,?2)",params![scope,candidate]).map_err(|e|e.to_string())?;
+                tx.commit().map_err(|e|e.to_string())?;
+                return Ok(status("initial_candidate_rejected_at_cohort_limit"));
+            }
+            record_blend_transition(&tx,&scope,"legacy",&candidate,"promote",&report)?;
+            set_selected_blend_model(&tx,&scope,Some(&candidate))?;
+            tx.execute("INSERT INTO recognition_blend_monitor VALUES(?1,?2,?3,?4)
+                ON CONFLICT(scope) DO UPDATE SET previous_model=excluded.previous_model,
+                selected_model=excluded.selected_model,selected_at=excluded.selected_at",
+                params![scope,"legacy",candidate,chrono::Utc::now().to_rfc3339()]).map_err(|e|e.to_string())?;
+            tx.commit().map_err(|e|e.to_string())?;
+            let mut v=status("initial_shadow_model_promoted");v["selectedModelId"]=json!(candidate);
+            return Ok(v);
+        };
         let monitor:Option<(String,String,String)>=tx.query_row("SELECT previous_model,selected_model,selected_at
             FROM recognition_blend_monitor WHERE scope=?1",[&scope],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))
             .optional().map_err(|e|e.to_string())?;
@@ -1375,7 +1412,9 @@ impl PreviewStore {
             let ids=governance_orders(&after,false)?;
             if ids.len()<250{return Ok(status("waiting_for_fixed_post_selection_cohort"));}
             let alpha=governance_alpha(look as u64+1);
-            let prepared=Self::prepare_paired_blend(&tx,&scope,&business,&previous,&selected,&ids,Some(&after),Some(alpha))?;
+            let legacy=previous=="legacy";
+            let mut prepared=Self::prepare_paired_blend(&tx,&scope,&business,if legacy{&selected}else{&previous},&selected,&ids,Some(&after),Some(alpha))?;
+            if legacy{prepared.payload["compareAgainstLegacy"]=json!(true);}
             tx.commit().map_err(|e|e.to_string())?;
             let report=Self::evaluate_paired_blend(&prepared,evaluate)?;
             tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
@@ -1386,13 +1425,14 @@ impl PreviewStore {
                 // Both revisions and current evaluation inputs were verified
                 // within this transaction by the replay path.
                 record_blend_transition(&tx,&scope,&selected,&previous,"rollback",&report)?;
-                set_selected_blend_model(&tx,&scope,Some(&previous))?;
+                set_selected_blend_model(&tx,&scope,if legacy{None}else{Some(&previous)})?;
                 tx.execute("INSERT OR IGNORE INTO recognition_blend_blocked VALUES(?1,?2)",params![scope,selected])
                     .map_err(|e|e.to_string())?;
                 tx.execute("DELETE FROM recognition_blend_monitor WHERE scope=?1",[&scope]).map_err(|e|e.to_string())?;
                 tx.execute("DELETE FROM recognition_blend_monitor_checkpoint WHERE scope=?1",[&scope]).map_err(|e|e.to_string())?;
                 tx.commit().map_err(|e|e.to_string())?;
-                let mut v=status("shadow_model_rolled_back");v["selectedModelId"]=json!(previous);return Ok(v);
+                let mut v=status("shadow_model_rolled_back");
+                v["selectedModelId"]=if legacy{Value::Null}else{json!(previous)};return Ok(v);
             }
             // Consume the fixed cohort once even when inconclusive. The
             // next look uses only orders whose analysis starts after this look.
