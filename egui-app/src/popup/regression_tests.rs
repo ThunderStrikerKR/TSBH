@@ -1268,3 +1268,54 @@ fn shared_change_prompts_are_pending_without_user_action(){
         assert_eq!(result,ChangeDecision::Pending);
     }
 }
+
+
+#[cfg(test)]
+mod shared_popup_rendered_geometry_tests{
+    use super::*;
+    use crate::ui_test_support::{assert_geometry_value,assert_rect_geometry,assert_rect_inside,assert_painted_caption};
+
+    #[test]
+    fn flow_popup_body_shrinks_after_content_removal_and_footer_keeps_master_gap(){
+        let ctx=test_context();
+        for width in [440.0,720.0]{
+            let mut initial:Option<(Rect,Rect,Rect)>=None;
+            for height in [140.0,56.0,140.0]{
+                let mut measured=None;
+                let output=ctx.run(egui::RawInput{
+                    screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(1000.0,800.0))),
+                    ..Default::default()
+                },|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        ui.set_width(width);
+                        let (field,g)=modal_flow_workspace_measured(ui,|owner|{
+                            owner.header("검증 팝업","취소",true);
+                            let content=owner.body_region(|body|
+                                body.allocate_exact_size(Vec2::new(100.0,height),Sense::hover()).0);
+                            owner.footer_single(|footer|
+                                crate::button::action(footer,"저장",theme::ButtonRole::Primary,true));
+                            content
+                        });
+                        measured=Some((field,g));
+                    });
+                });
+                let (field,g)=measured.expect("popup measured");
+                let header=g.header.expect("header");
+                let body=g.body.expect("body");
+                let footer=g.footer.expect("footer");
+                assert_rect_inside("popup body content",field,body,1.0);
+                assert_geometry_value("popup","natural body height",body.height(),height,1.0);
+                assert_geometry_value("popup","header-body gap",body.top()-header.bottom(),theme::MODAL_MASTER_WORKSPACE_GAP,1.0);
+                assert_geometry_value("popup","body-footer gap",footer.top()-body.bottom(),theme::MODAL_MASTER_WORKSPACE_GAP,1.0);
+                assert_painted_caption(&output,"저장",footer);
+                if let Some((old_header,old_body,old_footer))=initial{
+                    assert_rect_geometry("popup header",header,old_header,0.5);
+                    let delta=height-140.0;
+                    assert_geometry_value("popup","body resize",body.bottom()-old_body.bottom(),delta,1.0);
+                    assert_geometry_value("popup","footer translation",footer.top()-old_footer.top(),delta,1.0);
+                    assert_geometry_value("popup","footer height",footer.height(),old_footer.height(),0.5);
+                }else{initial=Some((header,body,footer));}
+            }
+        }
+    }
+}
