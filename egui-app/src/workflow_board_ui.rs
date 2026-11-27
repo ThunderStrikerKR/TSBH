@@ -561,7 +561,7 @@ fn workflow_action_line(
     let ship_galley=ui.painter().layout_no_wrap(
         shipping_text.clone(),
         egui::FontId::proportional(typography::WORKFLOW_VAT_FONT_SIZE),
-        theme::SECONDARY
+        theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)
     );
     let shipping_clipped=crate::ui_primitives::text_exceeds_rect(ship_galley.size(),shipping.intersect(ui.clip_rect()));
     ui.painter().with_clip_rect(shipping).galley(

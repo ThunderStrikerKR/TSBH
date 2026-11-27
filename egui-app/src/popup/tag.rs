@@ -14,7 +14,7 @@ impl TagChip{
         let frame=super::modal_nested_role_frame(super::ModalNestedRole::CompactTag);
         let inset=Vec2::new(frame.inner_margin.left as f32+frame.stroke.width,
             frame.inner_margin.top as f32+frame.stroke.width);
-        Self{frame,galley:typography::management_control_text_galley(ui,text,theme::TEXT),
+        Self{frame,galley:typography::management_control_text_galley(ui,text,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)),
             inset,action_width:if removable{theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH+theme::SPACE_4}else{0.0}}
     }
     pub(crate) fn size(&self)->Vec2{
@@ -28,7 +28,7 @@ impl TagChip{
         let inner=rect.shrink2(self.inset);
         let label=Rect::from_min_max(inner.min,egui::pos2(inner.right()-self.action_width,inner.bottom()));
         let pos=egui::pos2(label.left(),label.center().y-self.galley.size().y*0.5);
-        painter.with_clip_rect(label.intersect(clip)).galley(pos,self.galley.clone(),theme::TEXT);
+        painter.with_clip_rect(label.intersect(clip)).galley(pos,self.galley.clone(),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
         label
     }
 }

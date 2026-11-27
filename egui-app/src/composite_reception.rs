@@ -161,7 +161,7 @@ pub fn reception_recipient_fields(
         let galley = typography::field_label_galley(ui, text);
         ui.painter().with_clip_rect(rect).galley(
             egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.0),
-            galley, theme::SECONDARY,
+            galley, theme::text_ink(theme::TextRole::Label,theme::TextState::Normal),
         );
         response
     }
@@ -493,13 +493,13 @@ pub fn reception_freight_row_controls(
                 let galley=price.painter().layout_no_wrap(
                     label.to_owned(),
                     egui::FontId::proportional(typography::FONT_RECEPTION_ITEM_TEXT),
-                    theme::TEXT,
+                    theme::text_ink(theme::TextRole::Value,theme::TextState::Normal),
                 );
                 price.painter().galley(
                     egui::pos2(
                         label_rect.left(),
                         label_rect.center().y-galley.size().y/2.0
-                    ),galley,theme::TEXT
+                    ),galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
                 );
                 // Prevent editing without greying out an already entered
                 // amount. The disabled parent Ui was dimming valid freight.

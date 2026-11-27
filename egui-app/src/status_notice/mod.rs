@@ -20,7 +20,7 @@ pub(crate) fn management_body_state_overlay(
     ui.painter().with_clip_rect(visible).text(
         visible.center(),egui::Align2::CENTER_CENTER,caption,
         egui::FontId::proportional(typography::FONT_METADATA),
-        theme::MUTED
+        theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)
     );
 }
 

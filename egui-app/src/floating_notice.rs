@@ -297,7 +297,7 @@ fn measured_notice(
     let galley = ctx.fonts_mut(|fonts| fonts.layout(
         message.to_owned(),
         typography::floating_notice_font(),
-        theme::TEXT,
+        theme::text_ink(theme::TextRole::Value,theme::TextState::Normal),
         wrap_width,
     ));
     let width = (galley.size().x + chrome).min(max_width);
@@ -341,7 +341,7 @@ fn placement_element(anchor:Pos2,below:Pos2,size:Vec2,screen:Rect,_kind:AnchorKi
 fn paint_status_icon(painter: &egui::Painter, center: Pos2, tone: Tone) {
     let ink = match tone {
         Tone::Success => theme::SUCCESS,
-        Tone::Info => theme::SECONDARY,
+        Tone::Info => theme::icon_ink(theme::IconRole::Secondary,theme::VisualState::Normal),
         Tone::Validation | Tone::Error => theme::DANGER,
     };
     let stroke = Stroke::new(1.5_f32, ink);
@@ -399,19 +399,20 @@ fn paint_tail(
     let left = Pos2::new(tail_x-half,base_y);
     let right = Pos2::new(tail_x+half,base_y);
     let tip = Pos2::new(tail_x,tip_y);
+    let palette=theme::surface_palette(theme::SurfaceRole::Notice,theme::VisualState::Normal);
     painter.add(egui::Shape::convex_polygon(
-        vec![left,right,tip], theme::FLOATING_NOTICE_BG, Stroke::NONE,
+        vec![left,right,tip], palette.fill, Stroke::NONE,
     ));
     painter.line_segment([left,right],Stroke::new(
-        theme::FRAME_STROKE_WIDTH + 1.5,theme::FLOATING_NOTICE_BG,
+        theme::FRAME_STROKE_WIDTH + 1.5,palette.fill,
     ));
-    let stroke = Stroke::new(theme::FRAME_STROKE_WIDTH, theme::BORDER);
+    let stroke = Stroke::new(theme::FRAME_STROKE_WIDTH, palette.border);
     painter.line_segment([left,tip],stroke);
     painter.line_segment([tip,right],stroke);
 }
 
 fn paint_close(painter: &egui::Painter, center: Pos2) {
-    let ink = Stroke::new(1.4_f32,theme::SECONDARY);
+    let ink = Stroke::new(1.4_f32,theme::icon_ink(theme::IconRole::Secondary,theme::VisualState::Normal));
     painter.line_segment([
         center + Vec2::new(-3.2,-3.2),
         center + Vec2::new(3.2,3.2),

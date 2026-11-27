@@ -573,7 +573,7 @@ pub(crate) fn heading(
     };
     let label_width=label.size().x;
     let painter=ui.painter().with_clip_rect(clip);
-    painter.galley(egui::pos2(x,area.center().y-label.size().y/2.0),label,theme::SECONDARY);
+    painter.galley(egui::pos2(x,area.center().y-label.size().y/2.0),label,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
     if let Some((glyph,color))=arrow{
         painter.galley(egui::pos2(x+label_width+gap,area.center().y-glyph.size().y/2.0),glyph,color);
     }
@@ -1060,7 +1060,7 @@ pub(crate) fn workflow_shipment_header(ui:&mut Ui)->Rect{
         let galley=typography::management_table_header_galley(ui,label);
         let x=if index==2{cell.right()-theme::SPACE_8-galley.size().x}
             else{cell.left()+theme::SPACE_12/2.0};
-        paint_table_galley(ui,cell,x,galley,theme::SECONDARY);
+        paint_table_galley(ui,cell,x,galley,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
     }
     management_table_column_rules(ui,area,&cells,gap);
     header_finish(ui,layout.header_rect);
@@ -1200,7 +1200,7 @@ pub(crate) fn reception_items_header(ui:&mut Ui,remove_slot:bool)->Rect{
         let text_center_y = text_rect.center().y;
         ui.painter().with_clip_rect(cell).galley(
             egui::pos2(x, text_center_y - galley.size().y / 2.0),
-            galley, theme::SECONDARY,
+            galley, theme::text_ink(theme::TextRole::Label,theme::TextState::Normal),
         );
     }
     header_finish(ui,rect);

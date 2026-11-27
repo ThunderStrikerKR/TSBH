@@ -264,7 +264,7 @@ fn money_unit_margin(
     ui:&Ui,unit:&str,font:egui::FontId,right_inset:f32,unit_gap:f32,
     mut margin:egui::Margin
 )->(egui::Margin,std::sync::Arc<egui::Galley>){
-    let galley=ui.painter().layout_no_wrap(unit.to_owned(),font,theme::TEXT);
+    let galley=ui.painter().layout_no_wrap(unit.to_owned(),font,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
     margin.right=(galley.size().x+right_inset+unit_gap).ceil().clamp(0.0,127.0) as i8;
     margin.top=2;
     margin.bottom=2;
@@ -275,7 +275,7 @@ fn paint_money_unit(ui:&Ui,rect:Rect,galley:std::sync::Arc<egui::Galley>,right_i
     let pos=egui::pos2(money_unit_left(rect.right(),right_inset,galley.size().x),
         rect.center().y-galley.size().y/2.0);
     ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()))
-        .galley(pos,galley,theme::TEXT);
+        .galley(pos,galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
 }
 
 /// Shared money widget construction. Both allocated form fields and
@@ -685,7 +685,7 @@ fn reception_quantity_editor(
             // Left arrow pair; right-aligned value and permanent unit.
             let arrow_width=16.0;
             let unit_width=segments.painter().layout_no_wrap(
-                "개".to_owned(),font.clone(),theme::TEXT
+                "개".to_owned(),font.clone(),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
             ).size().x;
             // Leave clearance for the rounded outer focus stroke.
             let arrow_rect=Rect::from_min_max(
@@ -709,7 +709,7 @@ fn reception_quantity_editor(
                 request_focus,click_at
             );
             segments.painter().with_clip_rect(unit_rect).text(
-                unit_rect.center(),egui::Align2::CENTER_CENTER,"개",font.clone(),theme::TEXT
+                unit_rect.center(),egui::Align2::CENTER_CENTER,"개",font.clone(),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
             );
             let mut clicked=false;
             let half=arrow_rect.height()/2.0;

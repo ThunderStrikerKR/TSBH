@@ -5432,14 +5432,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         egui::CornerRadius{
                             nw:0,ne:0,sw:inner_radius,se:0
                         },
-                        theme::CANVAS
+                        theme::surface_palette(theme::SurfaceRole::Workspace,theme::VisualState::Normal).fill
                     );
                     master_ui.painter().rect_filled(
                         text_view_rect,
                         egui::CornerRadius{
                             nw:0,ne:0,sw:0,se:inner_radius
                         },
-                        theme::INPUT
+                        theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill
                     );
 
                     // Inset the entire scroll viewport by 12pt. Keeping
@@ -5802,7 +5802,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     + typography::BRAND_OPTICAL_CENTER_Y,
                             ),
                             wordmark,
-                            theme::TEXT,
+                            theme::text_ink(theme::TextRole::Heading,theme::TextState::Normal),
                         );
                         bar.add_space(theme::SPACE_12);
                         for page in Page::ALL {
@@ -6436,7 +6436,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             buffer.as_str(),&spans,
                             selected_id.as_deref(),active.as_ref(),width,
                             typography::reception_source_font(),
-                            theme::TEXT
+                            theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
                         );
                         layout_ui.fonts_mut(|fonts|fonts.layout_job(job))
                     };
@@ -6552,7 +6552,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             buffer.as_str(),&spans,
                             selected_id,active.as_ref(),width,
                             typography::reception_source_font(),
-                            theme::TEXT
+                            theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
                         );
                         layout_ui.fonts_mut(|fonts|fonts.layout_job(job))
                     };

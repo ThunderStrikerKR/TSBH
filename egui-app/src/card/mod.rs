@@ -354,11 +354,11 @@ pub(crate) fn management_summary_card_with_role_and_state(
                     let overflow=crate::ui_primitives::text_exceeds_rect(
                         number.size(),number_row.intersect(cell.clip_rect()));
                     cell.painter().with_clip_rect(number_row).galley(number_pos,number,ink);
-                    cell.painter().with_clip_rect(label_row).galley(label_pos,caption,theme::SECONDARY);
+                    cell.painter().with_clip_rect(label_row).galley(label_pos,caption,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
                     crate::ui_primitives::overflow_tooltip(number_response,overflow,value);
                 }else{
                     cell.painter().galley(number_pos,number,ink);
-                    cell.painter().galley(label_pos,caption,theme::SECONDARY);
+                    cell.painter().galley(label_pos,caption,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
                 }
             });
         }
@@ -521,7 +521,8 @@ fn reception_geometry_role(title:&str,header:bool)->&'static str{
 /// tokens. Painting a reserved rect avoids Frame::show shrinking an empty
 /// message body and moving the fixed copy-action row.
 fn paint_source_document_surface(ui: &Ui, rect: Rect) {
-    theme::paint_bordered_surface(ui.painter(),rect,theme::CONTROL_RADIUS,theme::INPUT,theme::BORDER);
+    let palette=theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal);
+    theme::paint_bordered_surface(ui.painter(),rect,theme::CONTROL_RADIUS,palette.fill,palette.border);
 }
 
 /// One reserved document surface for draft, confirmed, hover, manual classification and message content.
