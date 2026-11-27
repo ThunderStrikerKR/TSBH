@@ -593,7 +593,7 @@ impl ProductManager {
         &mut self,ctx:&Context,work_area:Rect,window_id:&'static str
     )->(bool,Option<Value>){
         let mut cancelled=false;
-        let width=(work_area.width()-theme::SPACE_12*2.0).clamp(1.0,1120.0);
+        let width=(work_area.width()-2.0*(theme::MODAL_PANEL_PADDING_X+theme::FRAME_STROKE_WIDTH)).clamp(1.0,1120.0);
         let height=crate::popup::modal_body_height_budget(work_area.height(),false).min(650.0);
         crate::popup::modal_window(ctx,"상품 선택",window_id,work_area)
             .default_width(width).show(ctx,|ui|{
@@ -604,7 +604,12 @@ impl ProductManager {
                     workspace.body_region(|ui|{
                         ui.allocate_ui_with_layout(
                             egui::vec2(ui.available_width(),height),Layout::top_down(Align::Min),
-                            |body|self.show_catalog_surface(body,Some(height))
+                            |body|{
+                                #[cfg(test)]
+                                crate::ui_test_support::record("product picker body",
+                                    Rect::from_min_size(body.cursor().left_top(),Vec2::new(body.available_width(),height)));
+                                self.show_catalog_surface(body,Some(height))
+                            }
                         );
                     });
                 });
