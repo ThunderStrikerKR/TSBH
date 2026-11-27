@@ -1,6 +1,7 @@
 //! Mouse-only contextual help for the native Settings screen.
 //! Matches React HelpTooltip: 500ms hover, 180ms leave, mouse click pin,
 //! outside pointer/keyboard/wheel dismissal. It is NOT an alert or modal.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::{theme,typography};
 use crate::ui_primitives::UiWidthPolicyExt;
 use eframe::egui::{self,Align2,Pos2,Rect,Sense,Stroke,Ui,Vec2};
@@ -311,7 +312,7 @@ pub fn icon(heading:&mut Ui,title:&str){
     // residual whitespace beside headings while help is suspended.
     if !HELP_ICONS_ENABLED{return;}
     let Some(help)=info(title) else{return;};
-        let (rect,response)=heading.allocate_exact_size(
+        let (rect,response)=heading.shared_allocate_exact_size(
             Vec2::splat(theme::SETTINGS_HELP_ICON_SIZE),Sense::click()
         );
         let ink=theme::icon_ink(theme::IconRole::Interactive,theme::VisualState::pointer(true,response.hovered()));
