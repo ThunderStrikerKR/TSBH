@@ -10938,6 +10938,28 @@ fn main() -> eframe::Result<()> {
                     }
                 }
             }
+            // Field context keys include initial catalog/client IDs. Keep
+            // the keys and candidate-level IDs internal to the diagnostic.
+            if let Some(records)=report["fieldContextStatistics"].as_array_mut(){
+                for record in records{
+                    let parts=record["key"].as_str().and_then(|key|
+                        serde_json::from_str::<serde_json::Value>(key).ok());
+                    if let Some(object)=record.as_object_mut(){
+                        object.remove("key");
+                        object.insert("task".into(),parts.as_ref().map(|p|p[1].clone()).unwrap_or_default());
+                        object.insert("contextLevel".into(),parts.as_ref().map(|p|p[2].clone()).unwrap_or_default());
+                    }
+                    if matches!(record["task"].as_str(),Some("product"|"variant")){
+                        if let Some(counts)=record["counts"].as_object_mut(){
+                            for key in ["weakCandidates","explicitPositiveCandidates",
+                                "explicitNegativeCandidates","weakCandidateOrders",
+                                "explicitPositiveCandidateOrders","explicitNegativeCandidateOrders"]{
+                                counts.remove(key);
+                            }
+                        }
+                    }
+                }
+            }
             // Keep candidate-level catalog IDs internal to the diagnostic
             // result. The CLI's existing no-ID output contract is unchanged.
             if let Some(records)=report["fieldStatistics"].as_array_mut(){
