@@ -308,12 +308,20 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
         let detail=str_field(match_info,"detail");
         if !detail.trim().is_empty() && detail.chars().count()<=500 {
             let has_error=source=="ERROR";
+            // An unapplied but valid proposal is not contradictory evidence.
+            // Keep the ordinary missing-dealer gate until the actual ID is set.
             let collision=source=="CONFLICT" ||
-                (!matched_id.is_empty() && actual_id!=matched_id);
+                (!matched_id.is_empty() && !actual_id.is_empty() && actual_id!=matched_id);
+            let applied=!matched_id.is_empty() && actual_id==matched_id
+                && ["KAKAO_TITLE","KAKAO_REMEMBERED","RAW_EXPLICIT"].contains(&source);
             let needs_action=collision || has_error;
-            let title=if collision{"발주처 매칭 충돌 — 거래처를 확인하세요"}
-                else if has_error{"거래처 자동 매칭 오류 — 직접 확인하세요"}
-                else{"거래처 연결 근거"};
+            if needs_action || applied {
+            let name=str_field(field(o,"clientSnapshot"),"name");
+            let name=if name.is_empty(){str_field(match_info,"clientName")}else{name};
+            let title=if collision{"발주처 매칭 충돌 — 거래처를 확인하세요".to_owned()}
+                else if has_error{"거래처 자동 매칭 오류 — 직접 확인하세요".to_owned()}
+                else if name.is_empty(){"거래처 자동선택".to_owned()}
+                else{format!("거래처 자동선택 ({name})")};
             let kind=if has_error{"CLIENT_MATCH_ERROR"}
                 else if collision{"CLIENT_MATCH_CONFLICT"}else{"CLIENT_MATCH_EVIDENCE"};
             issues.push(json!({
@@ -323,7 +331,7 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
                 "recipientId":"",
                 "kind":kind,
                 "title":title,
-                "detail":detail,
+                "detail":if needs_action{detail}else{""},
                 "blockingStage":1,
                 "severity":if needs_action{"ACTION"}else{"INFO"},
                 "resolution":if needs_action{"UNRESOLVED"}else{"AUTO_APPLIED"},
@@ -331,6 +339,7 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
                 "updatedAt":field(o,"updatedAt"),
                 "linkKey":"client"
             }));
+            }
         }
     }
     // One user action should be represented by one actionable card. When a
@@ -638,12 +647,23 @@ mod manual_dealer_selection_review_tests {
         let auto=json!({
             "id":"order-1","clientId":"dealer-1","recipients":[],
             "clientMatch":{"source":"RAW_EXPLICIT","clientId":"dealer-1",
-                "detail":"발주서에 거래처명이 명시되었습니다."}
+                "clientName":"테스트 상사","detail":"발주서에 거래처명이 명시되었습니다."}
         });
         let evidence=order_issues(&auto);
         assert!(evidence.iter().any(|issue|
             str_field(issue,"kind")=="CLIENT_MATCH_EVIDENCE" &&
-            str_field(issue,"severity")=="INFO"));
+            str_field(issue,"severity")=="INFO" &&
+            str_field(issue,"title")=="거래처 자동선택 (테스트 상사)" &&
+            str_field(issue,"detail").is_empty()));
+
+        let mut pending=auto.clone();
+        pending["clientId"]=json!("");
+        let pending_issues=order_issues(&pending);
+        assert!(!pending_issues.iter().any(|issue|
+            str_field(issue,"kind")=="CLIENT_MATCH_CONFLICT" ||
+            str_field(issue,"kind")=="CLIENT_MATCH_EVIDENCE"));
+        assert!(pending_issues.iter().any(|issue|str_field(issue,"kind")=="CLIENT" &&
+            str_field(issue,"severity")=="ACTION"));
 
         let conflict=json!({
             "id":"order-1","clientId":"dealer-1","recipients":[],

@@ -86,6 +86,10 @@ fn confirmed_title_count(state:&Value,title:&str,client_id:&str)->usize{
         key(s(order.get("clientMatch").unwrap_or(&Value::Null),"chatTitle"))==key(title)
     }).count()
 }
+fn client_name<'a>(state:&'a Value,id:&str)->&'a str{
+    list(state,"clients").iter().find(|client|eligible_client(client,id,false))
+        .map(|client|s(client,"name")).unwrap_or("")
+}
 fn reception_client(payload:&Value)->Result<Value,String>{
     let state=payload.get("state").ok_or("현재 거래처 데이터가 없습니다.")?;
     let windows=payload.get("windows").unwrap_or(&Value::Null);
@@ -157,13 +161,14 @@ fn reception_client(payload:&Value)->Result<Value,String>{
         let count=confirmed_title_count(state,&title,&id);
         return Ok(json!({"clientId":id,"source":source,
             "chatTitle":title,"confirmedMatchCount":count,
+            "clientName":client_name(state,&id),
             "detail":format!("카카오톡 창 제목 '{}'를 거래처로 인식했습니다.",title)}));
     }
     // The clipboard may contain only message 3/3: shipment details.
     // Without a verified Kakao conversation, match only an explicitly
     // labeled ORDERING business, never a consignee's "상호"/"업체명".
     if let Some((id,label,value,_))=raw_hits.iter().find(|hit|hit.3){
-        return Ok(json!({"clientId":id,"source":"RAW_EXPLICIT",
+        return Ok(json!({"clientId":id,"source":"RAW_EXPLICIT","clientName":client_name(state,id),
             "detail":format!("발주서 '{}: {}'를 거래처로 인식했습니다.",label,value)}));
     }
     Ok(json!({"clientId":null,"source":"NONE",
@@ -402,6 +407,7 @@ mod tests {
         let same=reception_client(&context("발주처: 홍천악기\n팔렬고등학교 708 2개")).unwrap();
         assert_eq!(same["clientId"],"a");
         assert_eq!(same["source"],"KAKAO_TITLE");
+        assert_eq!(same["clientName"],"홍천악기");
         assert_eq!(same["confirmedMatchCount"],1);
         assert_eq!(same["detail"],"카카오톡 창 제목 '홍천악기'를 거래처로 인식했습니다.");
         let conflicting=reception_client(&context("발주처: 서울악기\n708 2개")).unwrap();

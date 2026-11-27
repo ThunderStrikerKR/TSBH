@@ -196,6 +196,7 @@ fn change_client(payload:&Value)->Result<Value,String>{
             return Err("거래처 자동 연결 근거가 현재 선택한 거래처와 일치하지 않습니다.".into());
         }
         json!({"source":source,"clientId":dealer_id,"detail":detail,
+            "clientName":str_field(&selected,"name"),
             "chatTitle":match_info.get("chatTitle").cloned().unwrap_or(Value::Null),
             "confirmedMatchCount":match_info.get("confirmedMatchCount").cloned().unwrap_or(Value::Null)})
     }else{

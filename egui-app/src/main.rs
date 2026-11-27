@@ -4597,6 +4597,40 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         });
     }
 
+    // A valid unique match can be temporarily blocked by another reception
+    // job or restored from a source-bound cache before it was applied.
+    // Retry the same native application, not the advisory matcher.
+    fn unapplied_auto_client_target(&self)->Option<String>{
+        if self.analysis_pending || self.analysis_due_at.is_some() || self.analysis.is_none(){
+            return None;
+        }
+        let row=self.active_id.as_deref()
+            .and_then(|id|self.drafts.iter().find(|row|row.id==id))?;
+        if row.raw!=self.raw_source || row.order_type!=self.order_type.as_str()
+            || row.raw.trim().is_empty() || row.client_id.is_some()
+            || row.client_selection.as_deref()==Some("MANUAL") || row.manual_model.is_some()
+            || row.analysis_raw.as_deref()!=Some(row.raw.as_str()) || row.analysis_evidence.is_none(){
+            return None;
+        }
+        let matched=row.client_match.as_ref()?;
+        if !matches!(matched.get("source").and_then(serde_json::Value::as_str),
+            Some("KAKAO_TITLE"|"KAKAO_REMEMBERED"|"RAW_EXPLICIT")){
+            return None;
+        }
+        matched.get("clientId").and_then(serde_json::Value::as_str)
+            .filter(|id|!id.trim().is_empty()).map(str::to_owned)
+    }
+
+    fn retry_auto_client_change(&mut self,ctx:&egui::Context){
+        if self.auto_client_change.is_some(){return;}
+        if let Some(target)=self.unapplied_auto_client_target(){
+            self.start_auto_client_change(&target,ctx);
+            if self.auto_client_change.is_none(){
+                ctx.request_repaint_after(Duration::from_millis(250));
+            }
+        }
+    }
+
     /// Async results are accepted only for the exact recognition request,
     /// working receipt, source, Kakao chat, proposed client and owner state.
     /// A manual selection in progress cancels any outstanding automatic edit.
@@ -10184,6 +10218,7 @@ impl eframe::App for BandoEgui {
         }
         self.poll_source_analysis(ctx);
         self.poll_auto_client_change();
+        self.retry_auto_client_change(ctx);
         self.poll_pricing_basis_check(ctx);
         if self.settings_view.as_mut().is_some_and(|view|view.take_restored()){
             // A restored operational DB invalidates every prior projected
@@ -10295,9 +10330,15 @@ impl eframe::App for BandoEgui {
         if self.page==Page::Reception {
             let active=self.active_id.as_deref()
                 .and_then(|id|self.drafts.iter().find(|row|row.id==id));
-            self.review_panel.refresh(
-                ctx,Arc::clone(&self.gateway),active,self.analysis.as_ref()
-            );
+            if self.unapplied_auto_client_target().is_some(){
+                // A confirmed identity proposal is being applied. Do not
+                // publish a stale missing-dealer card or authorize progression.
+                self.review_panel.clear();
+            }else{
+                self.review_panel.refresh(
+                    ctx,Arc::clone(&self.gateway),active,self.analysis.as_ref()
+                );
+            }
             self.poll_input_guidance(ctx);
         }else{
             self.pending_input_guidance=None;
@@ -10942,6 +10983,44 @@ mod client_chooser_async_handoff_tests {
         release(&gate);
         poll_until_done(&mut app,&ctx);
         assert_eq!(app.drafts[0].client_id.as_deref(),Some("new"));
+    }
+
+    #[test]
+    fn unapplied_unique_auto_match_retries_without_overriding_manual_choice(){
+        let ctx=egui::Context::default();
+        let gate=Arc::new((Mutex::new(false),Condvar::new()));
+        let adapter:Arc<dyn gateway::BandoGateway>=Arc::new(GatedGateway{
+            gate:Arc::clone(&gate),fail:false
+        });
+        let mut app=create_app(adapter,&ctx);
+        let row=&mut app.drafts[0];
+        row.client_id=None;
+        row.client_selection=None;
+        row.client_match=Some(json!({"source":"KAKAO_TITLE","clientId":"new",
+            "clientName":"새 거래처","detail":"검증된 대화 제목"}));
+        app.analysis=Some(reception_service::ReceptionAnalysis{
+            recognition:json!({"recipients":[]}),reference:vec![],
+            client_match:app.drafts[0].client_match.clone().unwrap(),
+            client_candidates:vec![],matched_client_name:Some("새 거래처".into()),
+            chosen_client_name:Some("새 거래처".into()),directory_count:1,linked_spans:vec![],
+        });
+        // Chooser blocks the first attempt; the exact match is retained.
+        app.retry_auto_client_change(&ctx);
+        assert!(app.auto_client_change.is_none());
+        app.client_chooser=None;
+        app.retry_auto_client_change(&ctx);
+        assert!(app.auto_client_change.is_some());
+        release(&gate);
+        for _ in 0..200{
+            app.poll_auto_client_change();
+            if app.auto_client_change.is_none(){break;}
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(app.drafts[0].client_id.as_deref(),Some("new"));
+        assert_eq!(app.drafts[0].client_selection.as_deref(),Some("AUTO"));
+        app.drafts[0].client_id=None;
+        app.drafts[0].client_selection=Some("MANUAL".into());
+        assert!(app.unapplied_auto_client_target().is_none());
     }
 
     #[test]

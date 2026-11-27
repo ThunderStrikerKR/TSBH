@@ -105,6 +105,7 @@ impl ReviewPanel {
             self.ready=false;
             self.key=Some(key.clone());
             let saved=source.clone();
+            let matched_name=analysis.matched_client_name.clone();
             self.pending.submit_required(ctx.clone(),move||->Result<Vec<Value>,String>{
                     let mut order=if direct{
                         manual_workspace::native_direct_order(gateway.as_ref(),&saved)?
@@ -115,6 +116,15 @@ impl ReviewPanel {
                     };
                     order["recipients"]=key.recipients;
                     order["clientMatch"]=key.client_match;
+                    // The actual employee choice supersedes advisory evidence.
+                    if saved.client_selection.as_deref()==Some("MANUAL"){
+                        order["clientMatch"]=json!({"source":"MANUAL","clientId":saved.client_id});
+                    }else if let Some(name)=matched_name.filter(|name|!name.trim().is_empty()){
+                        if order["clientMatch"].is_object() &&
+                            text(&order["clientMatch"],"clientId")==saved.client_id.as_deref().unwrap_or(""){
+                            order["clientMatch"]["clientName"]=json!(name);
+                        }
+                    }
                     // Prices were already calculated by Rust for this exact
                     // draft/source/client. Reuse only exact item IDs and never
                     // overwrite an employee-entered manual unit price.
@@ -410,6 +420,10 @@ fn issue_card(
     let link_key=issue.get("linkKey").and_then(Value::as_str);
     let tone=issue_tone(issue);
     crate::card::review_issue_card(ui,tone,|cell|{
+            if kind=="CLIENT_MATCH_EVIDENCE" && severity=="INFO"{
+                cell.add(egui::Label::new(typography::review_title(title,tone)).wrap());
+                return;
+            }
             cell.add(egui::Label::new(typography::review_title(
                 if kind=="QUANTITY_MISSING"
                     &&text(issue,"resolution")=="PROVISIONALLY_APPROVED"{
