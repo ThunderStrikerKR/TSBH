@@ -1,8 +1,8 @@
 //! Shared card surfaces, measured layout and reusable card content profiles.
-use crate::ui_layout::SharedUiClipExt as _;
-use crate::ui_layout::SharedPainterClipExt as _;
-use crate::ui_layout::SharedAllocationExt as _;
-use crate::ui_layout::AlignedUiBuilderExt as _;
+use crate::ui_layout::geometry::SharedUiClipExt as _;
+use crate::ui_layout::geometry::SharedPainterClipExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
+use crate::ui_layout::geometry::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Color32,Frame,Layout,Rect,Stroke,Ui,UiBuilder,Vec2};
 use crate::{theme,typography};
 use crate::theme::{
@@ -49,12 +49,12 @@ pub(crate) fn apply_height_policy(ui:&mut Ui,policy:CardHeightPolicy,target:f32)
         // passing a total height there adds another full-height tail.
         // Expand to the absolute bottom instead; this never moves or
         // reruns the controls, and repeated applications are idempotent.
-        let target=crate::ui_layout::aligned_rect(Rect::from_min_max(used.min,egui::pos2(used.right(),used.top()+height)));
+        let target=crate::ui_layout::geometry::aligned_rect(Rect::from_min_max(used.min,egui::pos2(used.right(),used.top()+height)));
         ui.expand_to_include_y(target.bottom());
     }
 }
 
-use crate::ui_primitives::{CardWidthPolicy,UiWidthPolicyExt,apply_width_policy};
+use crate::ui_layout::geometry::{CardWidthPolicy,UiWidthPolicyExt,apply_width_policy};
 
 /// Width arithmetic for the outer card, its horizontal frame insets and
 /// optional scrollbar reservation. Preserve caller-approved minimum widths.
@@ -90,7 +90,7 @@ pub(crate) fn parallel_frames(
     let mut prepared=Vec::with_capacity(widths.len());
     for (index,&width) in widths.iter().enumerate(){
         let width=width.max(1.0);
-        let rect=crate::ui_layout::aligned_rect(Rect::from_min_size(egui::pos2(x,origin.y),Vec2::new(width,0.0)));
+        let rect=crate::ui_layout::geometry::aligned_rect(Rect::from_min_size(egui::pos2(x,origin.y),Vec2::new(width,0.0)));
         let mut column=ui.new_child(UiBuilder::new()
             .id_salt(("parallel-card",index))
             .aligned_max_rect(rect)
@@ -210,7 +210,7 @@ pub(crate) fn fixed_scroll_panel(
     title_to_body_gap:f32,
     body:impl FnOnce(&mut Ui),
 ){
-    let rect=crate::ui_layout::aligned_rect(rect);
+    let rect=crate::ui_layout::geometry::aligned_rect(rect);
     if rect.width()<2.0||rect.height()<2.0{return;}
     ui.painter().rect(
         rect,theme::CONTROL_RADIUS as f32,theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill,
@@ -227,8 +227,8 @@ pub(crate) fn fixed_scroll_panel(
     let scroll_rect=Rect::from_min_max(
         egui::pos2(inner.left(),inner.top()+title_height),inner.max
     );
-    let title_rect=crate::ui_layout::aligned_rect(title_rect);
-    let scroll_rect=crate::ui_layout::aligned_rect(scroll_rect);
+    let title_rect=crate::ui_layout::geometry::aligned_rect(title_rect);
+    let scroll_rect=crate::ui_layout::geometry::aligned_rect(scroll_rect);
     ui.scope_builder(UiBuilder::new()
         .id_salt(heading_id)
         .aligned_max_rect(title_rect)
@@ -454,7 +454,7 @@ pub(crate) fn reception_section_with_header(
         let _header=ui.shared_allocate_ui_with_layout(
             Vec2::new(ui.available_width(),theme::SECTION_HEADER_HEIGHT),
             Layout::left_to_right(Align::Center),|header|{
-                crate::ui_layout::reserve_min_height(header,theme::SECTION_HEADER_HEIGHT);
+                crate::ui_layout::geometry::reserve_min_height(header,theme::SECTION_HEADER_HEIGHT);
                 header.label(typography::section_heading(title));
                 header.with_layout(Layout::right_to_left(Align::Center),header_right);
             }
@@ -511,10 +511,10 @@ pub(crate) fn reception_document_viewport<R>(
     ui:&mut Ui,rect:Rect,canvas_id:impl std::hash::Hash,
     scroll_id:impl std::hash::Hash,content:impl FnOnce(&mut Ui)->R
 )->Option<R>{
-    let rect=crate::ui_layout::aligned_rect(rect);
+    let rect=crate::ui_layout::geometry::aligned_rect(rect);
     if rect.width()<=0.0 || rect.height()<=0.0{return None;}
     paint_source_document_surface(ui,rect);
-    let inner=crate::ui_layout::aligned_rect(reception_document_inner_rect(rect)?);
+    let inner=crate::ui_layout::geometry::aligned_rect(reception_document_inner_rect(rect)?);
     let clip=ui.clip_rect().intersect(inner);
     // All callers already reserve the document rectangle. A scope_builder
     // would report the inset child back to the parent and can change the
@@ -525,7 +525,7 @@ pub(crate) fn reception_document_viewport<R>(
     );
     canvas.restrict_shared_clip(clip);
     canvas.apply_shared_width(CardWidthPolicy::Fixed,inner.width());
-    crate::ui_layout::set_fixed_height(&mut canvas,inner.height());
+    crate::ui_layout::geometry::set_fixed_height(&mut canvas,inner.height());
     Some(scroll_area(ScrollAxes::Vertical).id_salt(scroll_id)
         .max_height(inner.height()).auto_shrink([false,false])
         .show(&mut canvas,content).inner)
@@ -552,7 +552,7 @@ pub(crate) fn workflow_group_card<R>(
         // spacing. No additional automatic gap between the compact rows.
         crate::ui_primitives::apply_explicit_vertical_spacing(card);
         let width=crate::card::inner_width_for_insets(outer,0.0,0.0,theme::SOFT_DIVIDER_WIDTH,0.0,0.0);
-        crate::ui_primitives::apply_width_policy(card,crate::ui_primitives::CardWidthPolicy::FillAvailable,width);
+        crate::ui_layout::geometry::apply_width_policy(card,crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,width);
         body(card)
     });
     #[cfg(test)]
