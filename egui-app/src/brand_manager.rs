@@ -131,11 +131,22 @@ impl BrandManager {
             "evidence":self.form.evidence
         })
     }
-    fn delete_request(&self)->Option<BrandWrite>{
+    fn linked_product_ids(&self,catalog:&Value)->Option<Vec<String>>{
+        let id=self.form.editing.as_deref()?;
+        let mut ids=catalog["products"].as_array()?.iter()
+            .filter(|product|field(product,"brandId")==id)
+            .map(|product|product["id"].as_str().filter(|id|!id.trim().is_empty()).map(str::to_owned))
+            .collect::<Option<Vec<_>>>()?;
+        ids.sort_unstable();
+        if ids.windows(2).any(|pair|pair[0]==pair[1]){return None;}
+        Some(ids)
+    }
+    fn delete_request(&self,catalog:&Value)->Option<BrandWrite>{
         let id=self.form.editing.as_ref()?;
         if !self.expected_entity.is_object()||field(&self.expected_entity,"id")!=id{return None;}
         Some(BrandWrite{action:"delete_brand",data:json!({
-            "brandId":id,"expectedEntity":self.expected_entity
+            "brandId":id,"expectedEntity":self.expected_entity,
+            "expectedProductIds":self.linked_product_ids(catalog)?
         })})
     }
     pub fn on_deleted(&mut self){
@@ -276,20 +287,19 @@ impl BrandManager {
         editable:bool,busy:bool)->Option<BrandWrite>{
         let editor_save=self.show_editor(ctx,work_area,editable,busy);
         if self.confirm_delete{
-            let id=self.form.editing.as_deref().unwrap_or("");
-            let linked=catalog["products"].as_array().map(|products|
-                products.iter().filter(|product|field(product,"brandId")==id).count());
-            let available=linked==Some(0);
+            let request=self.delete_request(catalog);
+            let linked=request.as_ref().and_then(|request|
+                request.data["expectedProductIds"].as_array().map(Vec::len));
             crate::popup::modal_backdrop(ctx,"brand-delete-dim",true);
             let decision=crate::popup::show_delete_confirmation(
                 ctx,work_area,"brand-delete-confirm","브랜드 삭제","삭제",
-                !busy,editable&&!busy&&available&&self.delete_request().is_some(),
+                !busy,editable&&!busy&&request.is_some(),
                 crate::popup::DeleteBody::Plain,|body|{
                     body.label(typography::body(&format!("'{}' 브랜드를 삭제할까요?",self.original.name)));
                     match linked{
                         Some(0)=>{body.label(typography::body("상품과 기존 주문 기록은 유지됩니다."));}
                         Some(count)=>{body.label(typography::body(&format!(
-                            "연결된 상품 {count}개가 있습니다. 브랜드 연결을 변경한 후 삭제하세요.")));}
+                            "연결된 상품 {count}개의 브랜드가 미지정으로 변경됩니다. 상품과 기존 주문 기록은 유지됩니다.")));}
                         None=>{body.label(typography::body("상품 연결 정보를 확인할 수 없습니다. 다시 조회하세요."));}
                     }
                     if self.dirty(){body.label(typography::caption("저장하지 않은 브랜드 변경사항도 사라집니다."));}
@@ -300,7 +310,7 @@ impl BrandManager {
                 crate::popup::ConfirmDecision::Confirm=>{
                     self.confirm_delete=false;
                     crate::floating_notice::dispatch_pointer(ctx,"brands.save");
-                    return self.delete_request();
+                    return request;
                 }
                 _=>{}
             }
@@ -338,13 +348,20 @@ mod modal_lifecycle_tests{
     fn brand_delete_request_requires_original_entity_and_preserves_draft_on_failure(){
         let catalog=json!({"brands":[{"id":"b","name":"BANDO","aliases":[]}],"products":[]});
         let mut manager=BrandManager::default();
-        assert!(manager.delete_request().is_none());
+        assert!(manager.delete_request(&catalog).is_none());
         manager.choose("b".into(),&catalog);
         manager.form.name="unsaved".into();
-        let request=manager.delete_request().unwrap();
+        let request=manager.delete_request(&catalog).unwrap();
         assert_eq!(request.action,"delete_brand");
         assert_eq!(request.data["brandId"],"b");
         assert_eq!(request.data["expectedEntity"],catalog["brands"][0]);
+        assert_eq!(request.data["expectedProductIds"],json!([]));
+        let mut linked=catalog.clone();
+        linked["products"]=json!([{"id":"p2","brandId":"b"},{"id":"p1","brandId":"b"},
+            {"id":"unrelated","brandId":"other"}]);
+        assert_eq!(manager.delete_request(&linked).unwrap().data["expectedProductIds"],json!(["p1","p2"]));
+        linked["products"]=Value::Null;
+        assert!(manager.delete_request(&linked).is_none());
         manager.on_failed("test rejection".into());
         assert!(manager.has_overlay());
         assert_eq!(manager.form.name,"unsaved");
