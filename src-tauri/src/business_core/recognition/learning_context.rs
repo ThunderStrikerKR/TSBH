@@ -445,15 +445,26 @@ impl FieldCounts{
 /// Per-order contributions, also usable by the future durable delta writer.
 /// Group before counting independent orders; no sum of per-candidate order
 /// counts can substitute for the distinct context denominator.
-fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<(BTreeMap<String,Counts>,BTreeMap<String,FieldCounts>,BTreeMap<String,FieldCounts>)>,String>{
+fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<(BTreeMap<String,Counts>,BTreeMap<String,FieldCounts>,BTreeMap<String,FieldCounts>,String)>,String>{
     let confirmed=order["confirmedAt"].as_str().filter(|v|!v.trim().is_empty());
     let snapshot=&order["confirmationSnapshot"];
     if confirmed.is_none() || snapshot["at"].as_str()!=confirmed ||
         order["deletedAt"].as_str().is_some_and(|v|!v.trim().is_empty()){
         return Ok(None);
     }
-    let compared=super::observations::compare(order)?;
+    let mut compared=super::observations::compare(order)?;
     if compared["status"]!="compared"{return Ok(None);}
+    if compared["auditCoverage"]=="missing_history"{
+        if let Some(observations)=compared["observations"].as_array_mut(){
+            for o in observations{
+                if o["eligibleForCandidateLearning"]==true{
+                    o["outcome"]=json!("changed_requires_review");
+                    o["eligibleForCandidateLearning"]=json!(false);
+                    o["requiresReview"]=json!(true);
+                }
+            }
+        }
+    }
     let first_client=compared["initialRecognition"]["clientId"].as_str();
     let final_client=snapshot["data"]["clientId"].as_str();
     // A confirmed client context is available only if the exact manually
@@ -462,7 +473,12 @@ fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<(BTreeMap<S
     let client_valid=first_client.is_some() && first_client==final_client
         && compared["finalClientId"].as_str()==final_client
         && compared["finalClientSelection"]=="MANUAL"
-        && compared["initialRecognition"]["clientBasis"]=="MANUAL";
+        && compared["initialRecognition"]["clientBasis"]=="MANUAL"
+        && order["recognitionAuditEvents"].as_array().is_some_and(|events|
+            events.iter().filter(|e|e["sourceRaw"]==snapshot["raw"]&&
+                e["initialAnalysis"]==snapshot["recognitionBaseline"]["initialAnalysis"])
+                .all(|e|e["context"]["clientId"].as_str()==final_client&&
+                    e["context"]["clientSelection"]=="MANUAL"));
     let mut groups=BTreeMap::<String,Counts>::new();
     for o in rows(&compared["observations"]).filter(|o|o["task"]=="recipient_ownership"){
         for context in rows(&o["contexts"]){
@@ -497,7 +513,7 @@ fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<(BTreeMap<S
             field_groups.entry(key.to_owned()).or_default().add_observation(o);
         }
     }
-    Ok(Some((groups,fields,field_groups)))
+    Ok(Some((groups,fields,field_groups,compared["auditCoverage"].as_str().unwrap_or("").to_owned())))
 }
 
 /// Explicit bounded batch, not an operational history scan. Caller supplies
@@ -522,6 +538,9 @@ pub(super) fn statistics(payload:&Value)->Result<Value,String>{
     let mut field_groups=BTreeMap::<String,FieldCounts>::new();
     let mut unavailable=0u64;
     let mut without_context=0u64;
+    let mut manifest_orders=0u64;
+    let mut legacy_orders=0u64;
+    let mut incomplete_orders=0u64;
     for order in orders{
         let id=order["id"].as_str().filter(|s|!s.trim().is_empty()).ok_or("확정 주문 ID 누락")?;
         if let Some(old)=seen.get(id){
@@ -530,7 +549,12 @@ pub(super) fn statistics(payload:&Value)->Result<Value,String>{
         }
         seen.insert(id,order);
         match contributions(order,&filter)?{
-            Some((local,field_counts,local_fields))=>{
+            Some((local,field_counts,local_fields,coverage))=>{
+                match coverage.as_str(){
+                    "verified_manifest"=>manifest_orders+=1,
+                    "legacy_unverified"=>legacy_orders+=1,
+                    _=>incomplete_orders+=1,
+                }
                 if local.is_empty()&&local_fields.is_empty(){without_context+=1;}
                 for (key,counts) in local{groups.entry(key).or_default().add_order(counts);}
                 for (task,counts) in field_counts{fields.entry(task).or_default().add_order(counts);}
@@ -545,6 +569,9 @@ pub(super) fn statistics(payload:&Value)->Result<Value,String>{
     Ok(json!({
         "featureVersion":FEATURE_VERSION,"status":"diagnostic_only",
         "uniqueOrders":seen.len(),"unavailableOrders":unavailable,
+        "auditCoverage":{"verifiedManifestOrders":manifest_orders,"legacyUnverifiedOrders":legacy_orders,
+            "incompleteHistoryOrders":incomplete_orders},
+        "eligibleForDurableLearning":false,
         "ordersWithoutMatchingContext":without_context,"statistics":records,
         "fieldStatistics":fields.into_iter().map(|(task,counts)|
             json!({"task":task,"counts":counts.wire()})).collect::<Vec<_>>(),
@@ -583,7 +610,7 @@ mod tests{
         let auto=super::lookup(&json!({"raw":raw,"initialAnalysis":automatic})).unwrap();
         assert!(rows(&auto["fieldEntries"]).all(|e|e["contexts"].as_array().unwrap().len()==2));
 
-        let order=json!({"id":"order","confirmedAt":"2026-11-27T00:00:00Z",
+        let order=json!({"id":"order","confirmedAt":"2026-11-27T00:00:00Z","recognitionAuditEvents":[],
             "confirmationSnapshot":{"at":"2026-11-27T00:00:00Z","raw":raw,
                 "data":{"clientId":"client-a"},"recipients":first["recipients"],
                 "recognitionBaseline":{"schemaVersion":1,"initialAnalysis":first,
