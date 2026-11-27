@@ -1824,6 +1824,7 @@ type FieldGroup=(String,String,String);
 struct FieldBlendRecord{
     shadow:ShadowCalibrationSample,
     old:usize,
+    candidate_ids:Vec<String>,
 }
 #[derive(Default)]
 struct FieldCalibration{
@@ -1882,6 +1883,18 @@ fn field_blend_top(sample:&BlendSample,w:f64)->Option<usize>{
     }
     Some(i)
 }
+// Use the exact same recommendation/fallback decision in holdout
+// evaluation and live inference. Never score an unsafe change as a win.
+fn field_blend_recommendation(task:&str,record:&FieldBlendRecord,sample:&BlendSample,w:f64)->(usize,&'static str){
+    let old=record.old;
+    let Some(top)=field_blend_top(sample,w)else{return (old,"insufficient_or_conflicting_support");};
+    if top==old{return (old,"legacy_agreement");}
+    let Some(before)=record.candidate_ids.get(old)else{return (old,"invalid_candidate");};
+    let Some(after)=record.candidate_ids.get(top)else{return (old,"invalid_candidate");};
+    if task=="quantity"{return (old,"literal_quantity_protected");}
+    if task=="type"&&contact(before)&&contact(after){return (old,"contact_slot_not_type_change");}
+    (top,"diagnostic_proposal_only")
+}
 fn field_blend_record(units:&[u16],first:&Value,projection:&Value,shadow:&Value,
     obs:&Value,label:&'static str)->Option<(FieldGroup,FieldBlendRecord)>{
     let task=obs["task"].as_str().filter(|s|matches!(*s,"type"|"product"|"variant"|"quantity"))?;
@@ -1917,7 +1930,7 @@ fn field_blend_record(units:&[u16],first:&Value,projection:&Value,shadow:&Value,
     let mut sample=shadow_distribution(report,&allowed,actual)?;
     sample.label=label;
     let old=allowed.iter().position(|id|*id==old)?;
-    Some(((task.to_owned(),level.to_owned(),"traced_partial".into()),FieldBlendRecord{shadow:sample,old}))
+    Some(((task.to_owned(),level.to_owned(),"traced_partial".into()),FieldBlendRecord{shadow:sample,old,candidate_ids:allowed.into_iter().map(str::to_owned).collect()}))
 }
 pub(super) fn learn_field_blend_weights(payload:&Value)->Result<Value,String>{
     let config=&payload["config"];
@@ -1998,7 +2011,7 @@ pub(super) fn learn_field_blend_weights(payload:&Value)->Result<Value,String>{
                     let (loss,agreement)=local.entry(label).or_default();
                     loss.observe(sample.as_ref(),w);
                     let old=record.old.to_string();let actual=record.shadow.actual.to_string();
-                    let predicted=sample.as_ref().zip(w).and_then(|(s,w)|field_blend_top(s,w)).map(|i|i.to_string());
+                    let predicted=sample.as_ref().zip(w).map(|(s,w)|field_blend_recommendation(&key.0,&record,s,w).0.to_string());
                     agreement.observe(&old,&actual,predicted.as_deref(),record.shadow.actual+1==record.shadow.distribution.len());
                 }
             }
@@ -2077,18 +2090,14 @@ pub(super) fn run_field_blend_shadow(payload:&Value)->Result<Value,String>{
                 params["shadowTemperature"].as_f64()?,params["shadowUniformSmoothing"].as_f64()?)?;
             let w=params["learningWeight"].as_f64().filter(|w|(0.0..=1.0).contains(w)&&(w*10.0-(w*10.0).round()).abs()<1e-8)?;
             let ids=rows_ids(entry)?;
-            let top=field_blend_top(&sample,w).and_then(|i|ids.get(i).copied());
-            let proposed=top.filter(|id|*id!=old).filter(|id|match task{
-                "type"=>!(contact(old)&&contact(id)),
-                // A source quantity is authoritative; statistics cannot
-                // substitute a different number. Keep diagnostic scores.
-                "quantity"=>false,_=>true
-            });
+            let (chosen,reason)=field_blend_recommendation(task,&record,&sample,w);
+            let proposed=ids.get(chosen).copied().filter(|id|*id!=old);
             Some(json!({"task":task,"source":entry["source"],"modelId":m["modelId"],"contextLevel":group.1,
                 "legacyCandidate":old,"candidateIds":ids,"learningWeight":w,
                 "legacyProxy":sample.legacy,"learningProxy":sample.shadow,
                 "combinedProxy":blend_distribution(&sample.legacy,&sample.shadow,w),
                 "diagnosticCandidate":proposed,"status":if proposed.is_some(){"diagnostic_proposal_only"}else{"retain_legacy"},
+                "decisionReason":reason,
                 "jointValidationRequired":true,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
         })();
         decisions.push(result.unwrap_or_else(||json!({"task":task,"source":entry["source"],"modelId":m["modelId"],
@@ -2947,7 +2956,7 @@ mod tests{
     fn field_blend_calibration_weights_and_outside_are_independent(){
         for task in ["type","product","variant","quantity"]{
             let group=(task.to_owned(),"base".to_owned(),"traced_partial".to_owned());
-            let make=|actual|FieldBlendRecord{old:0,shadow:ShadowCalibrationSample{
+            let make=|actual|FieldBlendRecord{old:0,candidate_ids:vec!["a".into(),"b".into()],shadow:ShadowCalibrationSample{
                 distribution:vec![0.05,0.94,0.01],actual,label:"explicit_correction"}};
             let mut cal=FieldCalibration::default();
             assert!(cal.blend_sample(&make(1)).is_none());
@@ -2965,6 +2974,20 @@ mod tests{
                 actual:2,label:"explicit_correction",legacy_choice:0,transfer_block:None};
             assert_eq!(field_blend_top(&outside,1.0),None);
         }
+    }
+    #[test]
+    fn field_blend_evaluation_and_inference_share_protected_fallback(){
+        let sample=BlendSample{legacy:vec![0.9,0.1,0.0],shadow:vec![0.01,0.98,0.01],
+            actual:1,label:"explicit_correction",legacy_choice:0,transfer_block:None};
+        let mut record=FieldBlendRecord{old:0,candidate_ids:vec!["old".into(),"new".into()],
+            shadow:ShadowCalibrationSample{distribution:sample.shadow.clone(),actual:1,label:"explicit_correction"}};
+        assert_eq!(field_blend_recommendation("product",&record,&sample,1.0),(1,"diagnostic_proposal_only"));
+        assert_eq!(field_blend_recommendation("quantity",&record,&sample,1.0),(0,"literal_quantity_protected"));
+        record.candidate_ids=vec!["mobile".into(),"phone".into()];
+        assert_eq!(field_blend_recommendation("type",&record,&sample,1.0),(0,"contact_slot_not_type_change"));
+        assert_eq!(field_blend_recommendation("type",&record,&sample,0.0),(0,"legacy_agreement"));
+        let mut outside=sample;outside.shadow=vec![0.0,0.0,1.0];
+        assert_eq!(field_blend_recommendation("product",&record,&outside,1.0),(0,"insufficient_or_conflicting_support"));
     }
     #[test]
     fn field_blend_rejects_overlapping_time_windows_and_duplicate_orders(){
