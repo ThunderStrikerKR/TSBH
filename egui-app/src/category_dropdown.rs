@@ -1,6 +1,8 @@
 //! One reusable drill-down category selector for egui management screens.
 //! Presentation-only: selection writes an existing category ID, never a new
 //! category, product edit, or implicit business transaction.
+use crate::ui_layout::SharedUiClipExt as _;
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use std::collections::{HashMap,HashSet};
@@ -225,7 +227,7 @@ fn crumb_text(ui:&mut Ui,name:&str,width:f32,current:bool,enabled:bool)->Respons
     let visible=typography::fit_category_path(ui,name,(width-12.0).max(0.0),typography::CategoryPathFont::Body);
     let galley=typography::category_tree_name_galley(ui,&visible,false);
     let pos=egui::pos2(rect.left()+theme::CATEGORY_EXPLORER_CRUMB_TEXT_INSET,rect.center().y-galley.size().y/2.0);
-    ui.painter().with_clip_rect(rect).galley_with_override_text_color(pos,galley,
+    ui.painter().with_shared_clip(rect).galley_with_override_text_color(pos,galley,
         if current{theme::CATALOG_TREE_SELECTED_INK}else{theme::CATEGORY_EXPLORER_ANCESTOR_INK});
     crate::ui_primitives::overflow_tooltip(response,visible!=name,name)
 }
@@ -240,7 +242,7 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
     let back_rect=egui::Rect::from_min_size(nav_rect.min,Vec2::new(back_width,height));
     let mut back=ui.new_child(egui::UiBuilder::new().id_salt("category-back")
         .aligned_max_rect(back_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
-    back.set_clip_rect(back_rect.intersect(ui.clip_rect()));
+    back.restrict_shared_clip(back_rect.intersect(ui.clip_rect()));
     if category_back_button(&mut back,enabled&&!path.is_empty()).clicked(){
         next=Some(path[..path.len().saturating_sub(1)].to_vec());
     }
@@ -249,7 +251,7 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
     let width=rect.width().max(1.0);
     let mut bar=ui.new_child(egui::UiBuilder::new().aligned_max_rect(rect.translate(egui::vec2(slide,0.0)))
         .layout(egui::Layout::left_to_right(egui::Align::Center)));
-    bar.set_clip_rect(rect.intersect(ui.clip_rect()));
+    bar.restrict_shared_clip(rect.intersect(ui.clip_rect()));
     // Preserve an enclosing manager-mode fade when no path motion is active.
     if alpha<1.0{bar.set_opacity(alpha);}
     crate::category_tree::configure_breadcrumb_row(&mut bar);
@@ -445,7 +447,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                     Vec2::new((clip.width()-x).max(1.0),row_h));
                 let mut ghost=tree_ui.new_child(egui::UiBuilder::new().id_salt("moving-category")
                     .aligned_max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
-                ghost.set_clip_rect(clip);
+                ghost.restrict_shared_clip(clip);
                 ghost.set_opacity(if m.reverse&&final_phase{1.0-alpha}else{1.0});
                 category_option_row(&mut ghost,&m.ghost_name,0,true,true,!m.reverse&&final_phase,true);
             }
