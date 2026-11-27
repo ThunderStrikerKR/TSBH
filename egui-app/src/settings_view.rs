@@ -604,7 +604,8 @@ impl SettingsView{
     }
     fn show_basic_body(&mut self,ui:&mut Ui,editable:bool,gateway:Arc<dyn BandoGateway>,body_height:f32){
         let available_width=ui.available_width();
-        if let Some((left_width,right_width))=crate::card::fixed_and_remaining_columns(
+        // Keep the existing compact settings pane width; it now sits on the right.
+        if let Some((right_width,left_width))=crate::card::fixed_and_remaining_columns(
             available_width,theme::SETTINGS_BASIC_LEFT_PANE_WIDTH,theme::SPACE_12,
             account_table_min_width()
         ){
@@ -612,30 +613,29 @@ impl SettingsView{
                 crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
                 row.vertical(|left|{
                     left.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,left_width);
-                    self.show_work_settings(left,editable,Arc::clone(&gateway));
-                    left.add_space(theme::SPACE_12);
-                    self.show_sender_settings(left,editable);
+                    self.show_accounts(left,editable,body_height);
                 });
                 row.vertical(|right|{
                     right.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,right_width);
-                    self.show_accounts(
-                        right,editable,
-                        body_height
-                    );
+                    self.show_work_settings(right,editable,Arc::clone(&gateway));
+                    right.add_space(theme::SPACE_12);
+                    self.show_sender_settings(right,editable);
                 });
             });
         }else{
+            self.show_accounts(ui,editable,body_height);
+            ui.add_space(theme::SPACE_12);
             self.show_work_settings(ui,editable,Arc::clone(&gateway));
             ui.add_space(theme::SPACE_12);
             self.show_sender_settings(ui,editable);
-            ui.add_space(theme::SPACE_12);
-            self.show_accounts(ui,editable,body_height);
         }
     }
     fn show_work_settings(
         &mut self,ui:&mut Ui,editable:bool,gateway:Arc<dyn BandoGateway>
     ){
         crate::card::measured_management_section_card(ui,|card|{
+            let width=card.available_width();
+            card.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,width);
             card.add_enabled_ui(editable,|form|{
                 section(form,"작업 환경",|content|{
                     crate::popup::modal_form_row_spacing(content);
@@ -647,6 +647,8 @@ impl SettingsView{
     }
     fn show_sender_settings(&mut self,ui:&mut Ui,editable:bool){
         crate::card::measured_management_section_card(ui,|card|{
+            let width=card.available_width();
+            card.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,width);
             card.add_enabled_ui(editable,|form|{
                 section(form,"반도스탠드 정보",|content|{
                     crate::popup::modal_form_row_spacing(content);
