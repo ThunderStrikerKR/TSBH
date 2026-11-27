@@ -304,12 +304,14 @@ impl AliasManager {
                                 }
                             });
                         });
-                        if let Some(error)=self.error.as_deref(){body.label(typography::caption(error));}
                     });
                     workspace.footer_single(|actions|{
                         save=crate::button::action(actions,"별칭 저장",theme::ButtonRole::Primary,
                             editable&&!busy&&!nested&&!self.confirm_delete&&self.dirty()).clicked();
+                        if save{crate::floating_notice::dispatch_pointer(ctx,"aliases.save");}
                     });
+                    crate::floating_notice::sync(ctx,"aliases.save.error","aliases.save",
+                        crate::floating_notice::Tone::Error,self.error.as_deref());
                 });
             });
         if close{if self.dirty(){self.pending=Some(Exit::Close);}else{self.close_editor();}}
