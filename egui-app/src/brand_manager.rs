@@ -300,7 +300,7 @@ mod modal_lifecycle_tests{
         let mut manager=BrandManager::default();
         manager.choose("b".into(),&catalog);
         let work=Rect::from_min_size(eframe::egui::Pos2::ZERO,eframe::egui::vec2(1400.0,900.0));
-        let mut baseline=None;
+        let mut baseline:Option<Vec<(&'static str,Rect)>>=None;
         for phase in 0..5{
             match phase{
                 1=>manager.alias_input="pending alias".into(),
