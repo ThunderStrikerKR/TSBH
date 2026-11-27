@@ -403,6 +403,7 @@ pub fn date_calendar(
 #[cfg(test)]
 mod date_navigation_segmented_control_tests{
     use super::*;
+    use crate::ui_layout::geometry::SharedUiClipExt as _;
 
     #[test]
     fn shared_navigation_child_retains_id_rect_clip_and_parent_cursor(){
