@@ -192,6 +192,9 @@ impl ManualAssignmentGesture{
         self.drag_anchor_offset=anchor_offset;
         self.drag_layout_width=layout_width;
     }
+    fn active_source(&self)->Option<&str>{
+        self.dragging.as_deref().or(self.source.as_deref())
+    }
     fn mark_drag_moved(&mut self){
         if self.dragging.is_some() && !self.drag_moved{
             // Only a confirmed drag supersedes the previous click selection.
@@ -2191,7 +2194,7 @@ impl ManualWorkspace {
                         let assigned_source_ids=&data.assigned_ids;
                         let busy=self.busy();
                         let pending_quantity_cell=self.pending_quantity_cell();
-                        let mut drag_recommendations=self.assignment_gesture.dragging.as_deref()
+                        let mut drag_recommendations=self.assignment_gesture.active_source()
                             .map(|source|data.recommendations(source,pending_quantity_cell.as_ref()))
                             .unwrap_or_default();
                         let pending_quantity_active=pending_quantity_cell.is_some();
@@ -2576,17 +2579,24 @@ impl ManualWorkspace {
                                                                     }
                                                                 }
                                                             }
-                                                            // Only a compatible source drag exposes the new-row destination.
+                                                            // Click selection and dragging expose the same compatible destination.
                                                             let target=ManualCellTarget{row:index,item:None,field:"newProduct".into()};
                                                             if can_mutate && drag_recommendations.contains(&target){
                                                                 let response=items_ui.add_sized(
                                                                     [items_ui.available_width(),theme::RECEPTION_ITEMS_ROW_HEIGHT],
                                                                     egui::Label::new(typography::body("신규 품목으로 분류"))
-                                                                );
-                                                                let hovered=manual_assignment_drop_hit(items_ui,response.rect,drag_pointer);
-                                                                if hovered{
+                                                                        .sense(egui::Sense::click())
+                                                                ).on_hover_cursor(egui::CursorIcon::PointingHand);
+                                                                let dragging=self.assignment_gesture.dragging.is_some();
+                                                                let hovered=if dragging{
+                                                                    manual_assignment_drop_hit(items_ui,response.rect,drag_pointer)
+                                                                }else{response.hovered()};
+                                                                if dragging && hovered{
                                                                     drop_allowed=true;
-                                                                    drop_target=Some(target);
+                                                                    drop_target=Some(target.clone());
+                                                                }else if !dragging && response.clicked() &&
+                                                                    self.assignment_gesture.source.is_some(){
+                                                                    clicked_target=Some(target);
                                                                 }
                                                                 paint_manual_assignment_recommendation(items_ui,response.rect,hovered);
                                                             }
@@ -3359,6 +3369,32 @@ mod manual_assignment_gesture_tests{
             .contains(&ManualCellTarget{row:1,item:None,field:"newProduct".into()}));
         model["assignments"]["p"]=json!({"recipientId":"r2","itemId":"i2","field":"product"});
         assert!(manual_assignment_payload(&model,"p",&target,None).is_err());
+    }
+
+    #[test]
+    fn source_click_and_drag_offer_the_same_new_product_destination(){
+        let model=json!({"rows":[{"id":"r","items":[]}],
+            "blocks":[{"id":"p","field":"product","text":"270"},
+                      {"id":"q","field":"quantity","text":"2개"}],"assignments":{}});
+        let target=ManualCellTarget{row:0,item:None,field:"newProduct".into()};
+        let mut gesture=ManualAssignmentGesture::default();
+        assert!(gesture.source_click("p".into()).is_none());
+        assert_eq!(gesture.active_source(),Some("p"));
+        let clicked=manual_assignment_recommendations(&model,gesture.active_source().unwrap(),None);
+        assert!(clicked.contains(&target));
+        let (id,cell)=gesture.cell_click(target.clone()).expect("new product click assignment");
+        let click_payload=manual_assignment_payload(&model,&id,&cell,None).unwrap();
+        gesture.start_drag("p".into(),None,320.0);
+        gesture.mark_drag_moved();
+        assert_eq!(gesture.active_source(),Some("p"));
+        let dragged=manual_assignment_recommendations(&model,gesture.active_source().unwrap(),None);
+        assert_eq!(clicked,dragged);
+        let (id,cell)=gesture.finish_drag(Some(target.clone())).unwrap();
+        assert_eq!(manual_assignment_payload(&model,&id,&cell,None).unwrap(),click_payload);
+        assert!(gesture.active_source().is_none());
+        assert!(gesture.source_click("q".into()).is_none());
+        assert!(!manual_assignment_recommendations(&model,gesture.active_source().unwrap(),None)
+            .contains(&target));
     }
 
     #[test]
