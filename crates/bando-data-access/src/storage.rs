@@ -189,7 +189,7 @@ fn hydrate_factory_scope(tx:&Transaction<'_>,before:&mut Value,ids:&[String])->R
     Ok(())
 }
 
-fn validate_factory_scope(before:&Value,next:&Value)->Result<(),String>{
+pub(super) fn validate_factory_scope(before:&Value,next:&Value)->Result<(),String>{
     // This reducer may mutate workflow and append reply records, but it
     // must never alter the candidate order trees or other envelope fields.
     let old=before.as_object().ok_or("기존 회신 상태 오류")?;

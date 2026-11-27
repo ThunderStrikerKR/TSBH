@@ -20,6 +20,14 @@ fn topology(_: &Value,next:&Value)->Result<(),String>{crate::product_commands::v
 fn model_group(_: &Value,next:&Value)->Result<(),String>{crate::validate_native_model_groups(next)}
 fn account(_: &Value,next:&Value)->Result<(),String>{validation::validate_accounts(next)}
 fn workflow(before:&Value,next:&Value)->Result<(),String>{crate::rules::validate_workflow_transition(next,before)}
+fn reception(before:&Value,next:&Value)->Result<(),String>{
+    crate::storage::reception::validate_reception(before,next)?;
+    crate::relational_write::validate_order_tree_ids(next)?;
+    // Build/validate proposed archive entries without persisting anything.
+    // Includes global uniqueness of newly appended correction IDs.
+    crate::storage::reception::new_archive_entries(before,next)?;
+    Ok(())
+}
 fn message(_: &Value,next:&Value)->Result<(),String>{crate::validate_message_templates(next)}
 fn provisional(_: &Value,next:&Value)->Result<(),String>{crate::validate_provisional_product_notices(next)}
 
@@ -35,7 +43,7 @@ fn binding(rule:Validator)->Option<Check>{
         ModelGroup=>model_group,
         Client=>crate::validate_clients,
         Account=>account,
-        Reception=>crate::storage::reception::validate_reception,
+        Reception=>reception,
         Workflow=>workflow,
         Message=>message,
         ProvisionalNotice=>provisional,
@@ -172,6 +180,24 @@ mod tests{
         let report=inspect(&a,&b);
         assert!(report.failures.iter().any(|f|f.rule==Account));
         assert!(!report.is_complete_and_valid());
+    }
+    #[test]
+    fn reception_rejects_cross_order_duplicate_tree_ids(){
+        let mut a=state();
+        // Directly exercise the same relation check invoked by the gate.
+        a["orders"]=json!([{"id":"a","recipients":[{"id":"r","items":[]}]},
+            {"id":"b","recipients":[{"id":"r","items":[]}]}]);
+        assert!(crate::relational_write::validate_order_tree_ids(&a).is_err());
+        assert!(reception(&a,&a).is_err());
+    }
+    #[test]
+    fn existing_workflow_cannot_be_removed_or_replaced_with_nonobject(){
+        let mut a=state();a["workflow"]=json!({"events":[{"id":"e"}]});
+        let mut b=a.clone();b["workflow"]=Value::Null;
+        assert!(workflow(&a,&b).is_err());
+        b["workflow"]=json!([]);assert!(workflow(&a,&b).is_err());
+        let report=inspect(&a,&b);
+        assert!(report.failures.iter().any(|f|f.rule==Workflow));
     }
     #[test]
     fn unknown_paths_require_full_and_never_authorize(){

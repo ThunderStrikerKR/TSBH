@@ -50,7 +50,13 @@ pub(super) fn validate(state: &Value, before: Option<&Value>) -> Result<(),Strin
 pub(super) fn validate_with_prior_core(state:&Value,before:Option<&Value>,
     prior_core:Option<&Value>)->Result<(),String>{
     let w = field(state,"workflow");
-    if w.is_null() { return Ok(()) }
+    if w.is_null() {
+        if before.is_some_and(|old|!field(old,"workflow").is_null()){
+            return Err("기존 업무 상태 전체를 제거할 수 없습니다.".into());
+        }
+        return Ok(());
+    }
+    if !w.is_object(){return Err("업무 상태 형식 오류".into());}
     for name in ["sources","groups","shipments","payments","queue","events","deliveries","changeRequests"] {
         if !unique_id(field(w,name)) { return Err("업무 기록 ID가 중복됩니다.".into()); }
     }

@@ -193,6 +193,15 @@ jobs:
           }
           if ($failed.Count -gt 0) { throw "Mandatory design contract failures: $($failed -join '; ')" }
 
+      - name: Mandatory business transition validators
+        shell: pwsh
+        run: |
+          $filter = 'validation_transitions::tests::'
+          $listed = cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($listed | Where-Object { $_ -like "*validation_transitions::tests::*: test" })) { throw "Missing business transition regression" }
+          cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Mandatory legacy defect comparison
         shell: pwsh
         run: |

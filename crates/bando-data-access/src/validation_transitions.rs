@@ -238,6 +238,10 @@ pub(super) fn factory_reply(before:&Value,next:&Value)->CheckResult{
     if a==b{return Ok(());}
     changed_ids(a,b)?;
     let added=append_only(a,b)?;
+    // A factory reply is a dedicated native transaction, not a combined
+    // payment/catalog/order edit. Reuse its existing protected boundaries.
+    crate::storage::validate_factory_scope(before,next)?;
+    crate::rules::ensure_customer_payment_unchanged(before,next)?;
     for record in added{
         if !matches!(text(record,"status"),"APPLIED"|"PARTIAL"|"REVIEW")||!record["rows"].is_array(){
             return Err("공장 회신 상태 또는 행 목록 오류".into());
@@ -398,6 +402,13 @@ mod tests{
         b["shipping"]["groups"][0]["current"]=json!({"version":"b","at":"u","fees":{"1":2},"maxBundle":1});
         b["shipping"]["groups"][0]["history"]=json!([a["shipping"]["groups"][0]["current"]]);
         assert!(shipping(&a,&b).is_ok());assert!(shipping_history(&a,&b).is_ok());
+    }
+    #[test] fn factory_reply_cannot_change_customer_payment_or_unrelated_data(){
+        let a=json!({"factoryReplies":[],"workflow":{"payments":[],"confirmations":[],"shipments":[]},"products":[]});
+        let mut b=a.clone();b["factoryReplies"]=json!([{"id":"f","status":"REVIEW","rows":[]}]);
+        assert!(factory_reply(&a,&b).is_ok());
+        b["workflow"]["payments"]=json!([{"id":"pay"}]);assert!(factory_reply(&a,&b).is_err());
+        b["workflow"]["payments"]=json!([]);b["products"]=json!([{"id":"p"}]);assert!(factory_reply(&a,&b).is_err());
     }
     #[test] fn factory_and_registration_history_cannot_be_rewritten(){
         let a=json!({"factoryReplies":[{"id":"f"}],"registrationBatches":[{"id":"r"}]});
