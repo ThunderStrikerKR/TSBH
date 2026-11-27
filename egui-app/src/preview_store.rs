@@ -1100,9 +1100,17 @@ impl PreviewStore {
         }
         let selected=if blend_registry_exists(&tx)?{selected_blend_model(&tx,&scope)?}else{None};
         let mut report=totals.wire();
+        match (input.get("baselineModelId"),input.get("candidateModelId")){
+            (None,None)=>{},
+            (Some(a),Some(b))=>{
+                report["modelComparison"]=totals.compare_models(
+                    a.as_str().ok_or("기존 모델 ID 오류")?,b.as_str().ok_or("신규 모델 ID 오류")?)?;
+            }
+            _=>return Err("비교할 기존·신규 모델 ID를 함께 명시하세요.".into())
+        }
         report["selectedModelId"]=json!(selected);
         report["fullSnapshotScanCompleted"]=json!(true);
-        report["allActiveOrdersEvaluated"]=json!(totals.unsynchronized==0&&totals.missing==0);
+        report["allActiveOrdersHaveEvaluationRecords"]=json!(totals.unsynchronized==0&&totals.missing==0);
         report["snapshotStartedAt"]=json!(started);
         report["crossDatabaseAtomicSnapshot"]=json!(false);
         if crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
