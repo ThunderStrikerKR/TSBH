@@ -27,9 +27,9 @@ use crate::ui_primitives::{management_body_state_inline,text_exceeds_rect,overfl
 fn management_dropdown_option_palette(ui:&mut Ui){
     let visuals=ui.visuals_mut();
     // egui::selectable_value uses selection.bg_fill for the current value.
-    // Keep that persistent state darker than the pointer's transient hover.
+    // Persistent selection is orange, pointer feedback is blue.
     visuals.selection.bg_fill=theme::MANAGEMENT_DROPDOWN_SELECTED_BG;
-    visuals.selection.stroke=Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::TEXT);
+    visuals.selection.stroke=Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::ORANGE_EMPHASIS_TEXT);
     visuals.widgets.hovered.bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
     visuals.widgets.hovered.weak_bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
     visuals.widgets.hovered.bg_stroke=Stroke::new(
@@ -308,9 +308,9 @@ fn management_dropdown_option_inner<T:PartialEq>(
     }else{
         typography::invisible_option_label(label).into()
     };
+    let selected=*current==value;
     let response=match style{
         ManagementDropdownOptionStyle::Compact(width)=>{
-            let selected=*current==value;
             let mut response=ui.add_sized(
                 Vec2::new(width,theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT),
                 egui::Button::selectable(selected,invisible)
@@ -327,6 +327,7 @@ fn management_dropdown_option_inner<T:PartialEq>(
     let painter=ui.painter().with_clip_rect(row.shrink(2.0));
     let caption_ink=match style{
         ManagementDropdownOptionStyle::Status(color)=>color,
+        _ if selected=>theme::ORANGE_EMPHASIS_TEXT,
         _=>theme::TEXT,
     };
     let galley=if let Some(values)=values{
