@@ -30,7 +30,7 @@ fn event_index(units:&[u16],first:&Value)->Vec<Event>{
 // as pattern identity. Keep repetition count outside the structural key.
 const DOCUMENT_PATTERN_VERSION:u32=1;
 const DOCUMENT_PATTERN_MAX_EVENTS:usize=4096;
-fn exact_role_period(roles:&[&str])->usize{
+fn prefix_role_period(roles:&[&str])->usize{
     if roles.is_empty(){return 0;}
     // Prefix function: O(n) time and O(n) bounded temporary storage.
     let mut prefix=vec![0usize;roles.len()];
@@ -40,8 +40,39 @@ fn exact_role_period(roles:&[&str])->usize{
         if roles[i]==roles[j]{j+=1;}
         prefix[i]=j;
     }
-    let p=roles.len()-prefix[roles.len()-1];
-    if roles.len()%p==0{p}else{roles.len()}
+    roles.len()-prefix[roles.len()-1]
+}
+fn exact_role_period(roles:&[&str])->usize{
+    let p=prefix_role_period(roles);
+    if p==0||roles.len()%p==0{p}else{roles.len()}
+}
+fn observed_segment(events:&[Event],ranges:&[(usize,usize)],start:usize,end:usize)->Value{
+    let first=ranges[start].0;
+    let last=ranges[end-1].1-1;
+    json!({"normalizedStart":start,"normalizedEnd":end,
+        "source":{"start":events[first].position.0,"end":events[last].position.1},
+        "startLine":events[first].line,"endLine":events[last].line})
+}
+// Exact local repetition between successive name anchors. Compare
+// adjacent blocks only, avoiding a cross-product of all possible starts.
+fn local_recipient_runs(roles:&[&str],events:&[Event],ranges:&[(usize,usize)])->Vec<Value>{
+    let mut anchors=roles.iter().enumerate().filter_map(|(i,r)|(*r=="name").then_some(i)).collect::<Vec<_>>();
+    anchors.push(roles.len());
+    let mut result=Vec::new();
+    let mut i=0;
+    while i+2<anchors.len(){
+        let start=anchors[i];let next=anchors[i+1];
+        let pattern=&roles[start..next];
+        if !(pattern.contains(&"address")||pattern.contains(&"contact")){i+=1;continue;}
+        let mut j=i+1;
+        while j+1<anchors.len()&&roles[anchors[j]..anchors[j+1]]==*pattern{j+=1;}
+        if j>i+1{
+            result.push(json!({"kind":"name_anchored_exact_run","cycle":pattern,"repeatCount":j-i,
+                "segment":observed_segment(events,ranges,start,anchors[j])}));
+            i=j;
+        }else{i+=1;}
+    }
+    result
 }
 fn document_pattern(events:&[Event],first:&Value)->Value{
     let unavailable=|reason:&str|json!({"patternVersion":DOCUMENT_PATTERN_VERSION,
@@ -57,6 +88,7 @@ fn document_pattern(events:&[Event],first:&Value)->Value{
     }
     let observed=events.iter().map(|e|e.role).collect::<Vec<_>>();
     let mut normalized=Vec::new();
+    let mut ranges:Vec<(usize,usize)>=Vec::new();
     let mut i=0;
     while i<events.len(){
         let e=&events[i];
@@ -67,14 +99,20 @@ fn document_pattern(events:&[Event],first:&Value)->Value{
         if e.role=="product"{
             normalized.push("product_section");
             let paragraph=e.paragraph;
+            let start=i;
             i+=1;
             while i<events.len()&&events[i].paragraph==paragraph&&
                 matches!(events[i].role,"product"|"quantity"){i+=1;}
+            ranges.push((start,i));
             continue;
         }
         if e.role=="contact"&&i>0&&events[i-1].role=="contact"&&
-            events[i-1].paragraph==e.paragraph{i+=1;continue;}
+            events[i-1].paragraph==e.paragraph{
+            if let Some(last)=ranges.last_mut(){last.1=i+1;}
+            i+=1;continue;
+        }
         normalized.push(e.role);
+        ranges.push((i,i+1));
         i+=1;
     }
     if normalized.is_empty(){return unavailable("no_structural_roles");}
@@ -86,12 +124,58 @@ fn document_pattern(events:&[Event],first:&Value)->Value{
     let cycle=if recipient_cycle{cycle}else{normalized.as_slice()};
     let repeats=normalized.len()/cycle.len();
     let candidate_key=json!([DOCUMENT_PATTERN_VERSION,"document_role_cycle",cycle]).to_string();
+    let repeat_segments=if repeats>1{(0..repeats).map(|i|
+        observed_segment(events,&ranges,i*cycle.len(),(i+1)*cycle.len())).collect::<Vec<_>>()
+    }else{Vec::new()};
+    // Incomplete prefix repetitions remain separate evidence and must
+    // never inherit the exact-cycle identity automatically.
+    let prefix=prefix_role_period(&normalized);
+    let incomplete=if prefix<normalized.len()&&normalized.len()%prefix!=0&&
+        normalized.len()/prefix>=1&&normalized[..prefix].contains(&"name")&&
+        (normalized[..prefix].contains(&"contact")||normalized[..prefix].contains(&"address")){
+        let count=normalized.len()/prefix;
+        json!({"cycle":&normalized[..prefix],"completeCycles":count,
+            "tailRoles":&normalized[count*prefix..],
+            "tail":observed_segment(events,&ranges,count*prefix,normalized.len())})
+    }else{Value::Null};
+    let runs=local_recipient_runs(&normalized,events,&ranges);
     json!({"patternVersion":DOCUMENT_PATTERN_VERSION,"status":"candidate_only",
         "candidateKey":candidate_key,"observedRoleSequence":observed,
         "normalizedRoleSequence":normalized,"cycle":cycle,"exactRepeatCount":repeats,
-        "recipientCycleObserved":recipient_cycle,"learningEligible":false})
+        "exactRepeatSegments":repeat_segments,"incompletePrefixRepeat":incomplete,
+        "localRecipientRuns":runs,"recipientCycleObserved":recipient_cycle,"learningEligible":false})
 }
 
+// Diagnostic feature projection only; do not change the v1 context key
+// or duplicate all candidate pair combinations. Exact source geometry is
+// available for adjacent events, including within one physical line.
+fn source_pair_features(units:&[u16],geometry:&super::SourceGeometry,from:&Event,to:&Event)->Value{
+    let (earlier,later,sign)=if from.position<=to.position{(from,to,1i64)}else{(to,from,-1i64)};
+    let source_gap=if earlier.position.1<=later.position.0{
+        let gap=&units[earlier.position.1..later.position.0];
+        let scalars=gap.iter().filter(|u|!(0xDC00u16..=0xDFFFu16).contains(*u)).count();
+        json!({"utf16":sign*(gap.len() as i64),"unicodeScalars":sign*(scalars as i64)})
+    }else{Value::Null};
+    let gap=geometry.between(earlier.line as usize,later.line as usize);
+    json!({"from":{"start":from.position.0,"end":from.position.1,"role":from.role},
+        "to":{"start":to.position.0,"end":to.position.1,"role":to.role},
+        "lineDelta":super::signed_line_distance(from.line,to.line),
+        "sourceGap":source_gap,"sameParagraph":from.paragraph==to.paragraph,
+        "blankLines":gap.blank_lines,"contentLines":gap.content_lines,
+        "maxConsecutiveBlankLines":gap.max_consecutive_blank_lines})
+}
+fn document_geometry(raw:&str,units:&[u16],events:&[Event],pattern:&Value)->Value{
+    if pattern["status"]!="candidate_only"{
+        return json!({"status":"unavailable","adjacentPairs":[]});
+    }
+    let newlines=units.iter().enumerate().filter_map(|(i,u)|(*u==10).then_some(i)).collect::<Vec<_>>();
+    if events.iter().any(|e|newlines.partition_point(|i|*i<e.position.0) as u64!=e.line){
+        return json!({"status":"source_line_mismatch","adjacentPairs":[]});
+    }
+    let geometry=super::SourceGeometry::new(raw);
+    let pairs=events.windows(2).map(|w|source_pair_features(units,&geometry,&w[0],&w[1])).collect::<Vec<_>>();
+    json!({"status":"diagnostic_only","adjacentPairs":pairs})
+}
 fn document_lead(events:&[Event])->&'static str{
     let mut leads=BTreeMap::new();
     for e in events{
@@ -155,7 +239,7 @@ fn owner_contexts_from_events(units:&[u16],first:&Value,events:&[Event],lead:&st
         // A bounded local sequence and between-anchor sequence describe
         // the observed order of fields without guessing their final owners.
         let local=events[i.saturating_sub(2)..(i+3).min(events.len())].iter().map(|e|
-            json!([e.role,e.position==s,distance_bucket(e.line.abs_diff(events[i].line)),
+            json!([e.role,e.position==s,distance_bucket(super::signed_line_distance(events[i].line,e.line).unsigned_abs()),
                 e.paragraph==events[i].paragraph])
         ).collect::<Vec<_>>();
         let begin=events.partition_point(|e|e.position.0<a.0);
@@ -226,7 +310,7 @@ fn field_contexts_from_events(units:&[u16],first:&Value,events:&[Event],lead:&st
         if i>0&&events[i-1].position==s || i+1<events.len()&&events[i+1].position==s{continue;}
         let Some(shape)=source_shape(units,s)else{continue;};
         let local=events[i.saturating_sub(2)..(i+3).min(events.len())].iter().map(|n|
-            json!([n.role,n.position==s,distance_bucket(n.line.abs_diff(e.line)),
+            json!([n.role,n.position==s,distance_bucket(super::signed_line_distance(e.line,n.line).unsigned_abs()),
                 n.paragraph==e.paragraph])).collect::<Vec<_>>();
         let line_order=line_roles.get(&e.line).filter(|v|v.len()<=16);
         let mut tasks=vec![("type",json!([e.role,shape]))];
@@ -454,6 +538,9 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
     }).collect::<Vec<_>>();
     let mut result=json!({"featureVersion":FEATURE_VERSION,"entries":entries,"fieldEntries":field_entries,
         "documentPattern":document_pattern(&events,first)});
+    if payload["includeDocumentFeatures"]==true{
+        result["documentFeatures"]=document_geometry(raw,&units,&events,&result["documentPattern"]);
+    }
     // Optional offline comparison. Ordinary context projection remains unchanged.
     if let Some(history)=payload.get("historicalOrders"){
         let orders=history.as_array().ok_or("비교 주문 목록 형식 오류")?;
@@ -857,11 +944,15 @@ mod tests{
             "product","quantity","name","phone","address"],1);
         assert_eq!(a["candidateKey"],twice["candidateKey"]);
         assert_eq!(twice["exactRepeatCount"],2);
+        assert_eq!(twice["exactRepeatSegments"].as_array().unwrap().len(),2);
         let different=project(&["name","phone","address","product","quantity"],1);
         assert_ne!(a["candidateKey"],different["candidateKey"]);
         let partial=project(&["product","name","phone","address","product","name"],1);
         assert_eq!(partial["exactRepeatCount"],1);
         assert_ne!(a["candidateKey"],partial["candidateKey"]);
+        assert_eq!(partial["incompletePrefixRepeat"]["completeCycles"],1);
+        let local=project(&["product","name","phone","address","name","phone","address"],1);
+        assert_eq!(local["localRecipientRuns"][0]["repeatCount"],2);
         assert_eq!(a["learningEligible"],false);
         assert_eq!(project(&["product","unknown"],1)["candidateKey"],Value::Null);
         let overlap=json!({"raw":"xx","initialAnalysis":{"candidates":[
@@ -870,6 +961,27 @@ mod tests{
         assert_eq!(lookup(&overlap).unwrap()["documentPattern"]["candidateKey"],Value::Null);
         assert_eq!(exact_role_period(&["name","phone","name","phone"]),2);
         assert_eq!(exact_role_period(&["name","phone","name"]),3);
+    }
+    #[test]
+    fn document_features_preserve_exact_unicode_distance_and_boundaries(){
+        let raw="A😀\n \nB";
+        let first=json!({"candidates":[
+            {"start":0,"end":1,"text":"A","kind":"name","line":0,"paragraph":0},
+            {"start":6,"end":7,"text":"B","kind":"address","line":2,"paragraph":1}]});
+        let result=lookup(&json!({"raw":raw,"initialAnalysis":first,"includeDocumentFeatures":true})).unwrap();
+        let pair=&result["documentFeatures"]["adjacentPairs"][0];
+        assert_eq!(pair["lineDelta"],2);
+        assert_eq!(pair["sourceGap"],json!({"utf16":5,"unicodeScalars":4}));
+        assert_eq!(pair["blankLines"],1);
+        assert_eq!(pair["sameParagraph"],false);
+        let units=raw.encode_utf16().collect::<Vec<_>>();
+        let events=event_index(&units,&first);
+        let reverse=source_pair_features(&units,&super::super::SourceGeometry::new(raw),&events[1],&events[0]);
+        assert_eq!(reverse["lineDelta"],-2);
+        assert_eq!(reverse["sourceGap"]["utf16"],-5);
+        let mut bad=first.clone();bad["candidates"][1]["line"]=json!(3);
+        assert_eq!(lookup(&json!({"raw":raw,"initialAnalysis":bad,"includeDocumentFeatures":true})).unwrap()
+            ["documentFeatures"]["status"],"source_line_mismatch");
     }
     #[test]
     fn shadow_trace_expansion_uses_only_bound_item_and_exact_source(){
