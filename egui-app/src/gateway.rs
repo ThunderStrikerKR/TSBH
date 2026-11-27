@@ -1146,7 +1146,11 @@ pub(crate) fn start_recognition_learning_worker(){
                     if sync_recognition_learning(&ids).is_err(){
                         for id in &ids{
                             if sync_recognition_learning(std::slice::from_ref(id)).is_err(){
-                                eprintln!("[BANDO HUB] 학습 근거 재동기화 실패: 이후 순회에서 재검증합니다.");
+                                if PreviewStore::quarantine_recognition_learning(id).is_err(){
+                                    eprintln!("[BANDO HUB] 학습 기여 격리 실패: 저장소 무결성 검증 필요.");
+                                }else{
+                                    eprintln!("[BANDO HUB] 학습 근거 격리: 이후 순회에서 재검증합니다.");
+                                }
                             }
                         }
                     }
@@ -1168,6 +1172,12 @@ pub(crate) fn sync_recognition_learning(ids:&[String])->Result<Value,String>{
     if !mode.trim().eq_ignore_ascii_case("local"){return Err("학습 통계 저장은 로컬 DB에서만 지원합니다.".into());}
     PreviewStore::sync_recognition_learning(ids,|order|recognition::execute(
         "summarize_owner_statistics",serde_json::json!({"orders":[order]})))
+}
+
+pub(crate) fn recognition_learning_integrity()->Result<Value,String>{
+    let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
+    if !mode.trim().eq_ignore_ascii_case("local"){return Err("학습 무결성 검증은 로컬 DB에서만 지원합니다.".into());}
+    PreviewStore::recognition_learning_integrity()
 }
 
 pub(crate) fn rebuild_recognition_learning()->Result<Value,String>{

@@ -928,6 +928,30 @@ impl PreviewStore {
         Ok(combined.into_iter().take(limit).collect())
     }
 
+    pub(crate) fn quarantine_recognition_learning(id:&str)->Result<(),String>{
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        recognition_learning_store::prepare(&tx)?;
+        recognition_learning_store::mark_pending(&tx,&scope,id)?;
+        tx.commit().map_err(|e|e.to_string())?;
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        recognition_learning_store::revoke_pending(&tx,&scope,id)?;
+        if crate::business_state::authorized_business_write_path()?.canonicalize()
+            .map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("학습 격리 중 업무 DB가 변경되었습니다.".into());
+        }
+        tx.commit().map_err(|e|e.to_string())
+    }
+
+    pub(crate) fn recognition_learning_integrity()->Result<Value,String>{
+        let (mut conn,_,scope)=Self::learning_connection()?;
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        recognition_learning_store::prepare(&tx)?;
+        let report=recognition_learning_store::integrity(&tx,&scope)?;
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(report)
+    }
+
     pub(crate) fn rebuild_recognition_learning()->Result<Value,String>{
         let (mut conn,business,scope)=Self::learning_connection()?;
         let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;

@@ -2,7 +2,6 @@
 //! values are copied into this store. Never use this diagnostic cache to
 //! change a recognition decision until lifecycle reconciliation is wired.
 use rusqlite::{params,Connection,OptionalExtension,Transaction};
-#[cfg(test)]
 use sha2::{Digest,Sha256};
 use serde_json::{json,Value};
 use std::collections::{BTreeMap,BTreeSet};
@@ -41,6 +40,15 @@ pub(super) fn prepare(conn:&Connection)->Result<(),String>{
         contribution_version INTEGER NOT NULL,
         fingerprint TEXT NOT NULL CHECK(length(fingerprint)=64),
         fact_count INTEGER NOT NULL CHECK(typeof(fact_count)='integer' AND fact_count>=0),
+        PRIMARY KEY(scope,feature_version,order_id));
+        CREATE TABLE IF NOT EXISTS recognition_learning_fact_proofs(
+        scope TEXT NOT NULL,feature_version INTEGER NOT NULL,order_id TEXT NOT NULL,
+        digest TEXT NOT NULL CHECK(length(digest)=64),
+        PRIMARY KEY(scope,feature_version,order_id),
+        FOREIGN KEY(scope,feature_version,order_id) REFERENCES recognition_learning_fingerprints
+          (scope,feature_version,order_id) ON DELETE CASCADE);
+        CREATE TABLE IF NOT EXISTS recognition_learning_pending(
+        scope TEXT NOT NULL,feature_version INTEGER NOT NULL,order_id TEXT NOT NULL,
         PRIMARY KEY(scope,feature_version,order_id));")
         .map_err(|e|e.to_string())?;
     let version:i64=conn.query_row("SELECT value FROM recognition_learning_meta WHERE key='schema'",[],|r|r.get(0)).map_err(|e|e.to_string())?;
@@ -141,6 +149,13 @@ fn fingerprint(order:&Value)->Result<String,String>{
     Ok(format!("{:x}",writer.0.finalize()))
 }
 
+fn fact_proof(facts:&[Fact])->Result<String,String>{
+    // Sorted, typed tuples with an unambiguous JSON encoding.
+    let encoded=serde_json::to_vec(facts).map_err(|_|"학습 기여 지문 생성 실패")?;
+    let mut hash=Sha256::new();hash.update(b"bando-learning-facts-v1\0");hash.update(encoded);
+    Ok(format!("{:x}",hash.finalize()))
+}
+
 pub(super) fn cached_count(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str)->Result<Option<i64>,String>{
     let count:Option<i64>=tx.query_row("SELECT fact_count FROM recognition_learning_fingerprints
         WHERE scope=?1 AND feature_version=?2 AND order_id=?3 AND contribution_version=?4 AND fingerprint=?5",
@@ -155,14 +170,26 @@ pub(super) fn cached_count(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str)->
     if expected!=actual || has_order!=i64::from(expected>0){
         return Err("학습 지문과 기여 원장이 불일치합니다.".into());
     }
+    let proof:Option<String>=tx.query_row("SELECT digest FROM recognition_learning_fact_proofs
+        WHERE scope=?1 AND feature_version=?2 AND order_id=?3",
+        params![scope,FEATURE_VERSION,id],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+    // Earlier builds have no proof. Re-project from the authoritative
+    // source rather than blessing the existing derived facts.
+    let Some(proof)=proof else{return Ok(None);};
+    if fact_proof(&existing(tx,scope,id)?)?!=proof{
+        return Err("학습 기여량 내용 지문 불일치".into());
+    }
     Ok(Some(expected))
 }
 
-fn save_fingerprint(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str,count:usize)->Result<(),String>{
+fn save_fingerprint(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str,facts:&[Fact])->Result<(),String>{
     tx.execute("INSERT INTO recognition_learning_fingerprints VALUES(?1,?2,?3,?4,?5,?6)
         ON CONFLICT(scope,feature_version,order_id) DO UPDATE SET
         contribution_version=excluded.contribution_version,fingerprint=excluded.fingerprint,fact_count=excluded.fact_count",
-        params![scope,FEATURE_VERSION,id,CONTRIBUTION_VERSION,digest,count as i64]).map_err(|e|e.to_string())?;
+        params![scope,FEATURE_VERSION,id,CONTRIBUTION_VERSION,digest,facts.len() as i64]).map_err(|e|e.to_string())?;
+    tx.execute("INSERT INTO recognition_learning_fact_proofs VALUES(?1,?2,?3,?4)
+        ON CONFLICT(scope,feature_version,order_id) DO UPDATE SET digest=excluded.digest",
+        params![scope,FEATURE_VERSION,id,fact_proof(facts)?]).map_err(|e|e.to_string())?;
     Ok(())
 }
 
@@ -193,6 +220,7 @@ pub(super) fn synchronize_with_digests(tx:&Transaction<'_>,scope:&str,ids:&[Stri
             if let Some(count)=cached_count(tx,scope,id,digest)?{
                 reused+=1;
                 if count>0{eligible+=1;}
+                clear_pending(tx,scope,id)?;
                 continue;
             }
             let order=by_id.get(id).ok_or("변경된 학습 주문 원본 누락")?;
@@ -200,7 +228,7 @@ pub(super) fn synchronize_with_digests(tx:&Transaction<'_>,scope:&str,ids:&[Stri
             recalculated+=1;
             if !new.is_empty(){eligible+=1;}
             if replace(tx,scope,id,&new)?{changed+=1;}
-            save_fingerprint(tx,scope,id,digest,new.len())?;
+            save_fingerprint(tx,scope,id,digest,&new)?;
         }else{
             // Missing/inactive orders revoke their prior contributions and
             // cache entry; reactivation must be checked from current inputs.
@@ -209,6 +237,7 @@ pub(super) fn synchronize_with_digests(tx:&Transaction<'_>,scope:&str,ids:&[Stri
                 WHERE scope=?1 AND feature_version=?2 AND order_id=?3",
                 params![scope,FEATURE_VERSION,id]).map_err(|e|e.to_string())?;
         }
+        clear_pending(tx,scope,id)?;
     }
     let stored:i64=tx.query_row("SELECT count(*) FROM recognition_learning_orders WHERE scope=?1 AND feature_version=?2",
         params![scope,FEATURE_VERSION],|r|r.get(0)).map_err(|e|e.to_string())?;
@@ -233,6 +262,8 @@ pub(super) fn order_page(conn:&Connection,scope:&str,after:&str,limit:usize)->Re
     let mut stmt=conn.prepare("SELECT order_id FROM recognition_learning_orders
         WHERE scope=?1 AND feature_version=?2 AND order_id>?3
         UNION SELECT order_id FROM recognition_learning_fingerprints
+        WHERE scope=?1 AND feature_version=?2 AND order_id>?3
+        UNION SELECT order_id FROM recognition_learning_pending
         WHERE scope=?1 AND feature_version=?2 AND order_id>?3 ORDER BY order_id LIMIT ?4")
         .map_err(|e|e.to_string())?;
     let rows=stmt.query_map(params![scope,FEATURE_VERSION,after,limit as i64],|r|r.get::<_,String>(0))
@@ -240,10 +271,74 @@ pub(super) fn order_page(conn:&Connection,scope:&str,after:&str,limit:usize)->Re
     rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
 }
 
+fn clear_pending(tx:&Transaction<'_>,scope:&str,id:&str)->Result<(),String>{
+    tx.execute("DELETE FROM recognition_learning_pending WHERE scope=?1 AND feature_version=?2 AND order_id=?3",
+        params![scope,FEATURE_VERSION,id]).map_err(|e|e.to_string())?;
+    Ok(())
+}
+
+pub(super) fn mark_pending(tx:&Transaction<'_>,scope:&str,id:&str)->Result<(),String>{
+    tx.execute("INSERT OR IGNORE INTO recognition_learning_pending VALUES(?1,?2,?3)",
+        params![scope,FEATURE_VERSION,id]).map_err(|e|e.to_string())?;
+    Ok(())
+}
+
+/// Only derived records are removed. If a damaged total cannot be safely
+/// decremented, the caller rolls back this revocation but keeps the pending
+/// marker committed separately; the scope is not eligible for activation.
+pub(super) fn revoke_pending(tx:&Transaction<'_>,scope:&str,id:&str)->Result<(),String>{
+    replace(tx,scope,id,&[])?;
+    tx.execute("DELETE FROM recognition_learning_fingerprints WHERE scope=?1 AND feature_version=?2 AND order_id=?3",
+        params![scope,FEATURE_VERSION,id]).map_err(|e|e.to_string())?;
+    Ok(())
+}
+
+pub(super) fn integrity(tx:&Transaction<'_>,scope:&str)->Result<Value,String>{
+    let mismatch:i64=tx.query_row("WITH expected AS (
+        SELECT family,context_key,metric,candidate,SUM(amount) amount
+        FROM recognition_learning_facts WHERE scope=?1 AND feature_version=?2
+        GROUP BY family,context_key,metric,candidate),
+        actual AS (SELECT family,context_key,metric,candidate,amount FROM recognition_learning_totals
+        WHERE scope=?1 AND feature_version=?2),
+        missing AS (SELECT * FROM expected EXCEPT SELECT * FROM actual),
+        extra AS (SELECT * FROM actual EXCEPT SELECT * FROM expected)
+        SELECT (SELECT count(*) FROM missing)+(SELECT count(*) FROM extra)",
+        params![scope,FEATURE_VERSION],|r|r.get(0)).map_err(|e|e.to_string())?;
+    let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending
+        WHERE scope=?1 AND feature_version=?2",params![scope,FEATURE_VERSION],|r|r.get(0)).map_err(|e|e.to_string())?;
+    let mut stmt=tx.prepare("SELECT order_id FROM recognition_learning_orders WHERE scope=?1 AND feature_version=?2
+        UNION SELECT order_id FROM recognition_learning_fingerprints WHERE scope=?1 AND feature_version=?2
+        UNION SELECT order_id FROM recognition_learning_facts WHERE scope=?1 AND feature_version=?2")
+        .map_err(|e|e.to_string())?;
+    let mut ids=stmt.query(params![scope,FEATURE_VERSION]).map_err(|e|e.to_string())?;
+    let mut invalid=0u64;let mut inspected=0u64;
+    while let Some(row)=ids.next().map_err(|e|e.to_string())?{
+        let id:String=row.get(0).map_err(|e|e.to_string())?;
+        let record:Option<(String,i64)>=tx.query_row("SELECT fingerprint,contribution_version
+            FROM recognition_learning_fingerprints WHERE scope=?1 AND feature_version=?2 AND order_id=?3",
+            params![scope,FEATURE_VERSION,id],|r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(|e|e.to_string())?;
+        inspected+=1;
+        match record{
+            Some((digest,version)) if version==CONTRIBUTION_VERSION=>{
+                if !matches!(cached_count(tx,scope,&id,&digest),Ok(Some(_))){invalid+=1;}
+            }
+            _=>invalid+=1,
+        }
+    }
+    Ok(json!({"status":"diagnostic_only","featureVersion":FEATURE_VERSION,
+        "inspectedOrders":inspected,"invalidContributionOrders":invalid,
+        "totalMismatchRows":mismatch,"pendingOrders":pending,
+        "internallyConsistent":invalid==0&&mismatch==0&&pending==0,
+        "fullHistoryReconciled":false,"automaticDecisionEnabled":false}))
+}
+
 /// Rebuild only this scope/version from its persisted per-order ledger.
 /// This repairs materialized totals, but cannot discover unsynchronized
 /// business orders. The entire replacement is transactional.
 pub(super) fn rebuild_totals(tx:&Transaction<'_>,scope:&str)->Result<Value,String>{
+    if integrity(tx,scope)?["invalidContributionOrders"]!=0{
+        return Err("검증되지 않은 기여 원장으로 합계를 재구축할 수 없습니다.".into());
+    }
     tx.execute("DELETE FROM recognition_learning_totals WHERE scope=?1 AND feature_version=?2",
         params![scope,FEATURE_VERSION]).map_err(|e|e.to_string())?;
     let rows=tx.execute("INSERT INTO recognition_learning_totals
@@ -372,6 +467,33 @@ mod recognition_learning_store_tests{
         let tx=c.transaction().unwrap();
         assert_eq!(synchronize(&tx,"db",&ids,&orders,|_|Ok(report(1))).unwrap()["recalculatedOrders"],1);
         tx.commit().unwrap();
+    }
+    #[test]
+    fn same_count_corruption_and_wrong_totals_are_detected(){
+        let mut c=conn();let ids=vec!["a".into()];let orders=vec![json!({"id":"a"})];
+        let tx=c.transaction().unwrap();synchronize(&tx,"db",&ids,&orders,|_|Ok(report(3))).unwrap();tx.commit().unwrap();
+        c.execute("UPDATE recognition_learning_totals SET amount=99 WHERE metric='weakUnchangedCount'",[]).unwrap();
+        let tx=c.transaction().unwrap();
+        assert_ne!(integrity(&tx,"db").unwrap()["totalMismatchRows"],0);
+        rebuild_totals(&tx,"db").unwrap();
+        assert_eq!(integrity(&tx,"db").unwrap()["internallyConsistent"],true);tx.commit().unwrap();
+        c.execute("UPDATE recognition_learning_facts SET amount=99 WHERE metric='weakUnchangedCount'",[]).unwrap();
+        let tx=c.transaction().unwrap();
+        assert_eq!(integrity(&tx,"db").unwrap()["invalidContributionOrders"],1);
+        assert!(rebuild_totals(&tx,"db").is_err());
+        assert!(synchronize(&tx,"db",&ids,&orders,|_|panic!("corrupt cache must not be trusted")).is_err());
+    }
+    #[test]
+    fn pending_survives_revocation_and_reactivation_clears_it(){
+        let mut c=conn();let ids=vec!["a".into()];let orders=vec![json!({"id":"a"})];
+        let tx=c.transaction().unwrap();synchronize(&tx,"db",&ids,&orders,|_|Ok(report(1))).unwrap();tx.commit().unwrap();
+        let tx=c.transaction().unwrap();mark_pending(&tx,"db","a").unwrap();tx.commit().unwrap();
+        let tx=c.transaction().unwrap();revoke_pending(&tx,"db","a").unwrap();tx.commit().unwrap();
+        assert_eq!(total(&c,"db","independentOrders"),0);
+        assert_eq!(order_page(&c,"db","",16).unwrap(),ids);
+        let tx=c.transaction().unwrap();assert_eq!(integrity(&tx,"db").unwrap()["pendingOrders"],1);
+        synchronize(&tx,"db",&ids,&orders,|_|Ok(report(1))).unwrap();
+        assert_eq!(integrity(&tx,"db").unwrap()["internallyConsistent"],true);tx.commit().unwrap();
     }
     #[test]
     fn failed_batch_rolls_back_all_deltas(){
