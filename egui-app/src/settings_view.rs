@@ -1,6 +1,7 @@
 //! React SettingsView + SettingsPanel native UI. Controls, field keys,
  //! section order, dirty-tab guard and CAS saves match the original React
  //! implementation. The shared theme/components own visual tokens.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::{gateway::BandoGateway, settings_store, theme::{self,ButtonRole}, typography};
 use crate::ui_primitives::UiWidthPolicyExt;
 use eframe::egui::{self,Align,Context,Layout,Ui,Vec2};
@@ -171,7 +172,7 @@ fn settings_title_row(
     crate::ui_layout::management_top_content(ui,|top|{
         let width=top.available_width().max(1.0);
         content_right=top.available_rect_before_wrap().right();
-        let row=top.allocate_ui_with_layout(
+        let row=top.shared_allocate_ui_with_layout(
             Vec2::new(width,theme::ACTION_STANDARD_HEIGHT),
             Layout::left_to_right(Align::Center),
             |heading|{
@@ -739,7 +740,7 @@ impl SettingsView{
                     let factor=(usable/targets.iter().sum::<f32>()).min(1.0);
                     for (column,(key,label)) in labels.into_iter().enumerate(){
                         let width=targets[column]*factor;
-                        row.allocate_ui_with_layout(
+                        row.shared_allocate_ui_with_layout(
                             Vec2::new(width+label_space,theme::INPUT_HEIGHT),
                             Layout::top_down(Align::Min),|input|{
                                 input.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,width+label_space);
