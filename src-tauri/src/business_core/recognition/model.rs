@@ -677,6 +677,40 @@ mod option_boundary_tests {
     use super::*;
 
     #[test]
+    fn collected_candidate_families_cover_evaluated_identities(){
+        let state=json!({"products":[
+            {"id":"a","name":"GT-1","brandId":"brand","variants":[]},
+            {"id":"b","name":"GT-2","brandId":"brand","variants":[]},
+            {"id":"c","name":"BD CONDUCTOR / 지휘자 보면대","category":"보면대","variants":[]},
+            {"id":"d","name":"BD 709","category":"보면대",
+                "variants":[{"id":"white","color":"White"}]}
+        ],"brands":[{"id":"brand","name":"SyntheticBrand"}],
+        "aliases":[{"id":"alias","text":"GT-1","productId":"b"}]});
+        for (raw,family,expected) in [
+            ("GT-1 2개","name","a"),
+            ("GT-1 2개","alias","b"),
+            ("지휘용 악보 스탠드","semantic","c"),
+            ("709W","color","d"),
+            ("SyntheticBrand","brand","a"),
+        ]{
+            let pool=collect(raw,&state,"");
+            let names=pool.names.iter().map(|e|str_field(e.p,"id")).collect::<HashSet<_>>();
+            let aliases=pool.aliases.iter().map(|(_,p)|str_field(p,"id")).collect::<HashSet<_>>();
+            let semantics=pool.semantic.iter().map(|e|str_field(e.p,"id")).collect::<HashSet<_>>();
+            let colors=pool.color_codes.iter().map(|e|str_field(e.p,"id")).collect::<HashSet<_>>();
+            let brands=pool.branded.iter().map(|p|str_field(p,"id")).collect::<HashSet<_>>();
+            let selected_family=match family{
+                "name"=>&names,"alias"=>&aliases,"semantic"=>&semantics,"color"=>&colors,_=>&brands
+            };
+            assert!(selected_family.contains(expected),"missing collected family {family}");
+            let all=names.into_iter().chain(aliases).chain(semantics).chain(colors).chain(brands)
+                .collect::<HashSet<_>>();
+            let decision=evaluate(raw,pool);
+            assert!(decision.product_id.as_deref().is_none_or(|id|all.contains(id)));
+            assert!(decision.candidates.iter().all(|c|c["productId"].as_str().is_some_and(|id|all.contains(id))));
+        }
+    }
+    #[test]
     fn collected_catalog_hypotheses_keep_competing_name_and_alias_before_selection(){
         let state=json!({"products":[
             {"id":"a","name":"GT-1","variants":[]},
