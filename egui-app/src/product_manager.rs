@@ -393,6 +393,10 @@ struct ProductWrite {
 pub struct ProductManager {
     gateway:Arc<dyn BandoGateway>,
     selection_client:Option<String>,
+    reference_selection:bool,
+    reference_eligible:Option<std::collections::HashSet<String>>,
+    reference_membership:HashMap<String,String>,
+    reference_excluded:std::collections::HashSet<String>,
     selection_result:Option<Value>,
     selection_detail_ids:Vec<String>,
     focus_search:bool,
@@ -488,7 +492,7 @@ impl ProductManager {
     }
     fn new_unloaded(gateway:Arc<dyn BandoGateway>)->Self {
         Self {
-            gateway,selection_client:None,selection_result:None,selection_detail_ids:Vec::new(),focus_search:false,
+            gateway,selection_client:None,reference_selection:false,reference_eligible:None,reference_membership:HashMap::new(),reference_excluded:Default::default(),selection_result:None,selection_detail_ids:Vec::new(),focus_search:false,
             catalog:None,products:Vec::new(),order_cache:Default::default(),
             query:String::new(),tab:0,tab_snapshots:crate::view_state::NavigationSnapshots::new(0),
             category_manager:CategoryManager::default(),
@@ -525,6 +529,23 @@ impl ProductManager {
         let mut page=Self::new_unloaded(gateway);
         page.selection_client=Some(client_id);
         page.query=query;
+        page.focus_search=true;
+        page.reload(ctx);
+        page
+    }
+    /// Catalog references select a product, not an order sale unit.
+    pub(crate) fn new_reference_selection(
+        gateway:Arc<dyn BandoGateway>,ctx:Context,catalog:Value,
+        eligible:Option<std::collections::HashSet<String>>,
+        membership:HashMap<String,String>,excluded:std::collections::HashSet<String>,
+    )->Self{
+        let mut page=Self::new_unloaded(gateway);
+        page.selection_client=Some(String::new());
+        page.reference_selection=true;
+        page.reference_eligible=eligible;
+        page.reference_membership=membership;
+        page.reference_excluded=excluded;
+        page.catalog=Some(catalog);
         page.focus_search=true;
         page.reload(ctx);
         page
@@ -606,8 +627,16 @@ impl ProductManager {
         let missing=self.missing;
         if !self.has_pending_prices(){self.error=None;}
         let selection_client=self.selection_client.clone();
+        let reference_selection=self.reference_selection;
+        let eligible=self.reference_eligible.clone();
+        let excluded=self.reference_excluded.clone();
         self.result.submit(ctx,move||{
-            if let Some(client)=selection_client{
+            if reference_selection{
+                let result=management_queries::query_reference_products(
+                    gateway.as_ref(),cached,&query,&category,&brand,eligible.as_ref(),&excluded
+                )?;
+                Ok((ManagementProductRows{catalog:result.catalog,products:result.products},result.detail_ids))
+            }else if let Some(client)=selection_client{
                 let result=management_queries::query_manual_products(
                     gateway.as_ref(),cached,&query,&client,&category,&brand
                 )?;
@@ -1096,7 +1125,7 @@ impl ProductManager {
         let mut begin_new=false;
         // Category/model/alias/brand views own one primary section each.
         // Only the product-list tab has extra actions above its table card.
-        if self.tab!=0 {
+        if !selecting && self.tab!=0 {
             crate::card::align_management_primary_card(ui,page_origin_y);
         }
         if self.tab==4 {
@@ -1141,7 +1170,7 @@ impl ProductManager {
         }
         // Product list starts at the exact Freight Assignment card anchor.
         // Actions and optional Excel/registration editors stay INSIDE the card.
-        crate::card::align_management_primary_card(ui,page_origin_y);
+        if !selecting{crate::card::align_management_primary_card(ui,page_origin_y);}
         let card_min_height=crate::card::management_master_table_card_min_inner_height(ui);
         crate::card::measured_management_master_card(ui,|panel|{
             crate::card::fill_management_primary_card(panel,card_min_height);
@@ -1369,8 +1398,11 @@ impl ProductManager {
                         let row_clip=row.clip_rect();
                                 let name=field(product,"name");
                                 let subtitle=field(product,"subtitle");
-                                let display=if subtitle.is_empty(){name.to_owned()}
+                                let mut display=if subtitle.is_empty(){name.to_owned()}
                                     else{format!("{name} / {subtitle}")};
+                                if let Some(group)=self.reference_membership.get(product_id){
+                                    display.push_str(&format!(" / 소속 모델군: {group}"));
+                                }
                                 product_table_text(
                                     row,cells[0],&display,typography::ManagementTableCellRole::ProductName,(product_id,0)
                                 );
@@ -1626,14 +1658,20 @@ impl ProductManager {
                                         actions.set_clip_rect(action_rect.intersect(row_clip));
                                         if selecting{
                                             // Order engine accepts only independent sale units.
-                                            let allowed=selection_ready && selectable_order_product(product)
-                                                && selected_variant.is_some_and(|v|!field(v,"id").is_empty());
+                                            let allowed=selection_ready && if self.reference_selection{
+                                                !product_id.is_empty() && !self.reference_membership.contains_key(product_id)
+                                            }else{
+                                                selectable_order_product(product)
+                                                    && selected_variant.is_some_and(|v|!field(v,"id").is_empty())
+                                            };
                                             if crate::button::action(actions,"선택",
                                                 theme::ButtonRole::TableSecondary,allowed
                                             ).clicked(){
-                                                picked=Some(serde_json::json!({
+                                                picked=Some(if self.reference_selection{
+                                                    serde_json::json!({"productId":product_id})
+                                                }else{serde_json::json!({
                                                     "productId":product_id,"variantId":selected_id
-                                                }));
+                                                })});
                                             }
                                             if selection_ready && self.selection_detail_ids.iter().any(|id|id==product_id){
                                                 if let Some(url)=variants.first().map(|v|field(v,"url")).filter(|url|!url.is_empty()){
@@ -1990,7 +2028,7 @@ impl ProductManager {
                 let editable=self.gateway.product_write_enabled()
                     && catalog["revision"].as_u64().is_some();
                 if let Some(data)=self.aliases.show_dialogs(
-                    ctx,work_area,&catalog,editable,self.writing.is_some()
+                    ctx,work_area,&catalog,editable,self.writing.is_some(),Arc::clone(&self.gateway)
                 ){
                     self.start_write("save_alias",data,None,ctx.clone());
                 }
