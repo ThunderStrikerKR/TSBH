@@ -45,7 +45,9 @@ jobs:
             'document_features_preserve_exact_unicode_distance_and_boundaries',
             'shared_source_geometry_preserves_legacy_line_ranges_and_direction',
             'shared_local_features_keep_legacy_context_keys_and_cache_once',
-            'legacy_owner_margin_is_redundant_after_gates'
+            'legacy_owner_margin_is_redundant_after_gates',
+            'symmetric_owner_comparison_can_choose_either_candidate_or_abstain',
+            'owner_order_evidence_excludes_target_and_conflicting_paragraphs'
           )
           foreach ($test in $expected) {
             $pattern = '(^|::)' + [regex]::Escape($test) + ': test$'
@@ -126,6 +128,8 @@ jobs:
           cargo test --manifest-path egui-app/Cargo.toml shared_source_geometry_preserves_legacy_line_ranges_and_direction -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml legacy_owner_margin_is_redundant_after_gates -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml symmetric_owner_comparison_can_choose_either_candidate_or_abstain -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml learning_lifecycle_excludes_cancelled_deleted_and_partial_orders -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
