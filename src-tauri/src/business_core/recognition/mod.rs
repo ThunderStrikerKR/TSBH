@@ -63,6 +63,8 @@ struct ProductHit {
     line: usize,
     raw: String,
     decision: Value,
+    source_candidates:Vec<model::SourceCandidate>,
+    source_len:usize,
     quantities: Vec<usize>,
     common: bool,
     each: bool,
@@ -431,10 +433,15 @@ fn delivery_boundary(line:&str,phone:&Regex)->bool{
 // Cache exact source slices within one document, including logical record
 // boundary checks. Catalog/client are fixed; source offsets still belong
 // to each evidence occurrence, not to the cached decision.
+#[derive(Clone)]
+struct CachedProductDecision{
+    output:Value,
+    candidates:Vec<model::SourceCandidate>,
+}
 struct ProductSearch<'a,'s>{
     state:&'s Value,
     client_id:&'s str,
-    decisions:HashMap<&'a str,Value>,
+    decisions:HashMap<&'a str,CachedProductDecision>,
     quantities:HashMap<&'a str,Vec<quantity::Quantity>>,
 }
 impl<'a,'s> ProductSearch<'a,'s>{
@@ -442,13 +449,19 @@ impl<'a,'s> ProductSearch<'a,'s>{
         Self{state,client_id,decisions:HashMap::new(),quantities:HashMap::new()}
     }
     fn decision(&mut self,text:&'a str)->&Value{
+        &self.result(text).output
+    }
+    fn result(&mut self,text:&'a str)->&CachedProductDecision{
         let state=self.state;
         let client=self.client_id;
         // Bound retained decisions for unusually large documents.
         if self.decisions.len()>=512&&!self.decisions.contains_key(text){
             self.decisions.clear();
         }
-        self.decisions.entry(text).or_insert_with(||model::decision_json(&model::decide(text,state,client)))
+        self.decisions.entry(text).or_insert_with(||{
+            let decision=model::decide(text,state,client);
+            CachedProductDecision{output:model::decision_json(&decision),candidates:decision.source_candidates}
+        })
     }
     fn quantities(&mut self,text:&'a str)->&[quantity::Quantity]{
         if self.quantities.len()>=512&&!self.quantities.contains_key(text){
@@ -520,14 +533,18 @@ fn split_product_records<'a>(lines:Vec<Line<'a>>,label:&Regex,phone:&Regex,
             if begin>=q.start||(i>0&&leading==0){valid=false;break;}
             let segment=&t[begin..q.end];
             let qty_start=q.start-begin;
-            let decision=search.decision(segment);
+            let result=search.result(segment);
+            let decision=&result.output;
             let evidence=&decision["evidence"];
             let end=evidence["end"].as_u64().and_then(|v|usize::try_from(v).ok());
             let registered=decision["productId"].as_str().is_some_and(|v|!v.is_empty());
             let bounded=evidence["start"].as_u64()==Some(0)&&end.is_some_and(|end|
                 end>0&&end<=qty_start&&segment.get(end..qty_start).is_some_and(|tail|
                     tail.chars().all(|c|c.is_whitespace()||c=='/')));
-            if !registered||!bounded{valid=false;break;}
+            let independently_grounded=decision["productId"].as_str().is_some_and(|id|
+                result.candidates.iter().any(|c|c.literal&&c.product_id==id&&
+                    c.span.0==0&&Some(c.span.1)==end));
+            if !registered||!bounded||!independently_grounded{valid=false;break;}
             ranges.push((begin,q.end));start=q.end;
         }
         if valid{
@@ -1188,7 +1205,8 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         let skip_until = ts_semantics::table_product_prefix(trimmed);
         // Never synthesize a new string and then treat its indexes as offsets
         // into raw: UTF-8/UTF-16 source-evidence contract must be lossless.
-        let matched=search.decision(skip_until).clone();
+        let cached=search.result(skip_until).clone();
+        let matched=cached.output;
         let mut quantity_values = if trimmed.contains('|') {
             let model_end=matched.get("evidence").and_then(Value::as_object)
                 .and_then(|o|o.get("end")).and_then(Value::as_u64)
@@ -1245,7 +1263,8 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         product_hits.push(ProductHit {
             evidence:product_evidence,source_start:line.start+offset,
             line:line.number,raw:original_product_line.to_owned(),
-            decision:matched,quantities:quantity_indexes,
+            decision:matched,source_candidates:cached.candidates,source_len:skip_until.len(),
+            quantities:quantity_indexes,
             common:Regex::new(r"공통|모두|전부|전원|각\s*수취인|같은\s*상품")
                 .expect("common item").is_match(trimmed),
             // order-evidence.ts:358-368: a common total is not a
@@ -1310,6 +1329,14 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     // rather than deleting events after product references were built.
     if events.iter().any(|e|exclusions.excludes(e.kind,e.start,e.end)){
         return Err("원문 후보의 채택·제외 상태가 충돌합니다.".into());
+    }
+    // All retained product hypotheses must still refer to the exact
+    // searched source slice, including candidates rejected by ranking.
+    if product_hits.iter().any(|h|h.source_candidates.iter().any(|c|{
+        let (a,b)=c.span;
+        a>=b||b>h.source_len||raw.get(h.source_start+a..h.source_start+b).is_none()
+    })){
+        return Err("상품 후보의 원문 위치가 일치하지 않습니다.".into());
     }
     let mut anchors: Vec<usize> = events.iter().enumerate()
         .filter_map(|(i,e)| (e.kind == "name").then_some(i)).collect();
@@ -2099,6 +2126,19 @@ mod tests {
             &&e.start<e.end&&raw.get(e.start..e.end).is_some()));
         assert!(!document.product_hits.is_empty());
         assert_eq!(assign_document(document,&state,None).unwrap(),analyze(raw,&state,None).unwrap());
+    }
+    #[test]
+    fn product_search_retains_pre_rank_candidates_in_extracted_document(){
+        let state=state();
+        let raw="709 GT-1 2개";
+        let doc=extract_document(raw,&state,None);
+        let hit=doc.product_hits.first().expect("product evidence");
+        for id in ["p709","pgt"]{
+            let c=hit.source_candidates.iter().find(|c|c.product_id==id&&c.literal)
+                .expect("pre-rank candidate");
+            assert!(raw.get(hit.source_start+c.span.0..hit.source_start+c.span.1).is_some());
+        }
+        assert!(assign_document(doc,&state,None).is_ok());
     }
     #[test]
     fn excluded_source_candidates_retain_offsets_without_entering_assignment(){
