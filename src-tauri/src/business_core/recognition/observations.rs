@@ -221,6 +221,126 @@ fn owner_observations(units:&[u16],first:&Value,final_rows:&Value)->Vec<Value>{
 // A changed snapshot is not itself an error label. Require an explicit
 // source binding audit, same frozen recognition, and independently verified
 // old/new owner anchors. Only the final confirmed direction contributes.
+// Verify the actual audited target, not a row number or a matching value
+// elsewhere in the order. Competing links at the same source remain ambiguous.
+fn audit_target<'a>(units:&[u16],rs:&'a Value,cell:&Value,s:Span)->Option<&'a Value>{
+    let rid=cell["recipientId"].as_str().filter(|v|!v.is_empty())?;
+    let mut matches=rows(rs).filter(|r|r["id"].as_str()==Some(rid));
+    let row=matches.next()?;
+    if matches.next().is_some(){return None;}
+    let target=if let Some(iid)=cell["itemId"].as_str().filter(|v|!v.is_empty()){
+        let mut items=rows(&row["items"]).filter(|i|i["id"].as_str()==Some(iid));
+        let item=items.next()?;
+        if items.next().is_some(){return None;}
+        item
+    }else{row};
+    let field=cell["field"].as_str()?;
+    let mut links=rows(rs).flat_map(|r|std::iter::once(r).chain(rows(&r["items"])))
+        .flat_map(|t|rows(&t["sources"]).map(move |source|(t,source)))
+        .filter(|(_,source)|span(units,source)==Some(s));
+    let (owner,source)=links.next()?;
+    if links.next().is_some()||!std::ptr::eq(owner,target)||source["field"].as_str()!=Some(field){return None;}
+    Some(target)
+}
+
+fn singleton(v:&Value)->Option<&str>{
+    let values=v.as_array().filter(|v|v.len()==1)?;
+    values[0].as_str().filter(|s|!s.trim().is_empty())
+}
+
+// A variant attached to a product source is not itself proof of a written
+// option. Accept a color correction only when a single product is on the
+// source line and a single written full color matches the audited target.
+// Other option forms are deliberately retained for review.
+fn verified_variant_color(units:&[u16],s:Span,rs:&Value,target:&Value)->bool{
+    let start=units[..s.0].iter().rposition(|u|*u==10).map_or(0,|p|p+1);
+    let end=s.1+units[s.1..].iter().position(|u|*u==10).unwrap_or(units.len()-s.1);
+    let Ok(line)=String::from_utf16(&units[start..end])else{return false;};
+    let products=rows(rs).flat_map(|r|rows(&r["items"])).flat_map(|i|rows(&i["sources"]))
+        .filter(|source|source["field"]=="product"&&span(units,source)
+            .is_some_and(|p|p.0>=start&&p.1<=end)).count();
+    if products!=1{return false;}
+    let colors=["black","블랙","검정","검정색","white","화이트","흰색","brown","브라운",
+        "gray","grey","그레이","회색","chrome","크롬","gold","골드","rose gold","로즈골드",
+        "cosmo black","cosmoblack","코스모블랙","silver","실버","red","레드","blue","블루",
+        "clear","클리어","frost","프로스트"];
+    let found=colors.iter().filter(|word|super::model::find_term(&line,word,false).is_some())
+        .map(|word|super::model::norm_color(word)).collect::<BTreeSet<_>>();
+    found.len()==1&&target["color"].as_str().is_some_and(|c|found.contains(&super::model::norm_color(c)))
+}
+
+fn reconcile_field_audits(units:&[u16],candidates:&BTreeMap<Span,Vec<(&Value,Value)>>,
+    observations:&mut [Value]){
+    for o in observations.iter_mut().filter(|v|v["task"]!="recipient_ownership"){
+        let Some(s)=position(units,&o["source"])else{continue;};
+        let Some(entries)=candidates.get(&s)else{continue;};
+        let task=o["task"].as_str().unwrap_or("");
+        let relevant=entries.iter().filter(|(_,c)|{
+            let field=c["target"]["field"].as_str().unwrap_or("");
+            match task{
+                "type"=>c["method"]=="explicit_binding"&&c["kind"]=="type_change",
+                "product"|"variant"=>field=="product",
+                "quantity"=>field=="quantity",
+                _=>false,
+            }
+        }).collect::<Vec<_>>();
+        if relevant.is_empty(){continue;}
+        if o["outcome"]=="unchanged_observed"{
+            // Product and option are distinct: an unchanged product in an
+            // option-only edit is not evidence of a product correction.
+            if task=="product"&&relevant.iter().all(|(_,c)|
+                c["beforeValue"]["productId"]==c["afterValue"]["productId"]&&
+                c["method"]!="explicit_binding"){continue;}
+            o["outcome"]=json!("changed_requires_review");
+            o["eligibleForCandidateLearning"]=json!(false);
+            o["requiresReview"]=json!(true);
+            continue;
+        }
+        if o["outcome"]!="changed_requires_review"||relevant.len()!=1{continue;}
+        let (event,candidate)=relevant[0];
+        let (Some(initial),Some(final_value))=(singleton(&o["initialCandidates"]),singleton(&o["finalCandidates"]))
+            else{continue;};
+        if initial==final_value{continue;}
+        let cell=&candidate["target"];
+        let Some(target)=audit_target(units,&event["afterRows"],cell,s)else{continue;};
+        let mut before=Candidates::new();
+        let mut after=Candidates::new();
+        linked(units,&event["beforeRows"],&mut before);
+        linked(units,&event["afterRows"],&mut after);
+        let task_key=match task{"type"=>"type","product"=>"product","variant"=>"variant","quantity"=>"quantity",_=>continue};
+        let exact=|index:&Candidates,key:&'static str,value:&str|
+            index.get(&(s,key)).is_some_and(|v|v.len()==1&&v.contains(value));
+        if !exact(&before,task_key,initial)||!exact(&after,task_key,final_value){continue;}
+        let verified=match task{
+            "type"=>candidate["method"]=="explicit_binding"&&candidate["kind"]=="type_change"
+                &&candidate["originalField"].as_str()==Some(initial)
+                &&cell["field"].as_str()==Some(final_value),
+            "product"=>target["productId"].as_str()==Some(final_value)
+                && candidate["afterValue"]["productId"].as_str()==Some(final_value),
+            "variant"=>target["variantId"].as_str()==Some(final_value)
+                &&candidate["afterValue"]["variantId"].as_str()==Some(final_value)
+                &&candidate["beforeValue"]["productId"]==candidate["afterValue"]["productId"]
+                &&target["productId"].as_str().is_some_and(|id|
+                    exact(&before,"product",id)&&exact(&after,"product",id))
+                &&verified_variant_color(units,s,&event["afterRows"],target),
+            "quantity"=>target["quantityConfirmed"]==true
+                &&target["quantity"].as_i64().is_some_and(|q|q>0&&q.to_string()==final_value)
+                &&{
+                    let qs=super::quantity::extract(&String::from_utf16_lossy(&units[s.0..s.1]));
+                    qs.len()==1&&qs[0].value.to_string()==final_value
+                },
+            _=>false,
+        };
+        if !verified{continue;}
+        o["outcome"]=json!("explicit_correction_observed");
+        o["reason"]=json!("verified_source_grounded_field_correction");
+        o["eligibleForCandidateLearning"]=json!(true);
+        o["requiresReview"]=json!(false);
+        o["negativeCandidates"]=o["initialCandidates"].clone();
+        o["positiveCandidates"]=o["finalCandidates"].clone();
+    }
+}
+
 fn reconcile_owner_audits(payload:&Value,units:&[u16],first:&Value,observations:&mut [Value])->Result<(),String>{
     let Some(events)=payload.get("recognitionAuditEvents")else{return Ok(());};
     let events=events.as_array().ok_or("정정 감사 목록 형식 오류")?;
@@ -244,15 +364,18 @@ fn reconcile_owner_audits(payload:&Value,units:&[u16],first:&Value,observations:
             continue;
         }
         let extracted=super::corrections::extract(event)?;
-        for candidate in rows(&extracted["candidates"]).filter(|c|c["method"]=="explicit_binding"){
+        for candidate in rows(&extracted["candidates"]){
             if let Some(s)=span(units,&candidate["source"]){
                 candidates.entry(s).or_default().push((event,candidate.clone()));
             }
         }
     }
+    reconcile_field_audits(units,&candidates,observations);
     for observation in observations.iter_mut().filter(|v|v["task"]=="recipient_ownership"){
         let Some(s)=position(units,&observation["source"])else{continue;};
-        let Some(entries)=candidates.get(&s)else{continue;};
+        let Some(all_entries)=candidates.get(&s)else{continue;};
+        let entries=all_entries.iter().filter(|(_,c)|c["method"]=="explicit_binding").collect::<Vec<_>>();
+        if entries.is_empty(){continue;}
         if observation["outcome"]=="unchanged_observed"{
             // An explicit intervention (including a reverted edit) is not
             // an untouched observation. Do not count it as weak success.
@@ -271,7 +394,7 @@ fn reconcile_owner_audits(payload:&Value,units:&[u16],first:&Value,observations:
         // Only an unambiguous direct old -> new transition is promoted.
         // Multiple explicit edits for the same span remain under review.
         if entries.len()!=1{continue;}
-        let (event,candidate)=&entries[0];
+        let (event,candidate)=entries[0];
         let cell=&candidate["target"];
         let field=cell["field"].as_str().unwrap_or("");
         if cell["itemId"].is_string() || !(kind==field||contact(kind)&&contact(field)){continue;}
@@ -332,7 +455,8 @@ pub(super) fn compare(payload:&Value)->Result<Value,String>{
         observations.push(json!({
             "source":{"start":position.0,"end":position.1},
             "task":task,"initialCandidates":old,"finalCandidates":new,
-            "outcome":status
+            "outcome":status,"eligibleForCandidateLearning":status=="unchanged_observed",
+            "requiresReview":status!="unchanged_observed"
         }));
     }
     observations.extend(owner_observations(&units,first,&snapshot["recipients"]));
