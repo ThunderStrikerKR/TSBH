@@ -212,25 +212,14 @@ impl BrandManager {
         editable:bool,busy:bool)->Option<Value>{
         let editor_save=self.show_editor(ctx,work_area,editable,busy);
         let Some(exit)=self.pending.clone()else{return editor_save;};
-        let mut cancel=false;
-        let mut discard=false;
-        let mut save=false;
         crate::popup::modal_backdrop(ctx,"brand-unsaved-dim",true);
-        crate::popup::show_decision_window(ctx,"브랜드","brand-unsaved-confirm",work_area,|dialog|{
-                crate::popup::decision_workspace(dialog,|decision|{
-                    cancel=decision.header("브랜드","취소",!busy);
-                    decision.body(|dialog|{
-                        dialog.label(typography::body("브랜드 변경사항을 저장할까요?"));
-                    });
-                    decision.actions(|buttons|{
-                            save=crate::button::action(buttons,"저장",
-                                theme::ButtonRole::Primary,editable&&!busy).clicked();
-                            discard=crate::button::action(buttons,"저장 안 함",
-                                theme::ButtonRole::Danger,!busy).clicked();
-                        }
-                    );
-                });
-            });
+        let decision=crate::popup::show_save_confirmation(
+            ctx,work_area,"brand-unsaved-confirm","브랜드",
+            "브랜드 변경사항을 저장할까요?","저장",!busy,editable&&!busy
+        );
+        let cancel=decision==crate::popup::ChangeDecision::Cancel;
+        let discard=decision==crate::popup::ChangeDecision::Discard;
+        let save=decision==crate::popup::ChangeDecision::Save;
         if cancel{
             self.pending=None;
             None
