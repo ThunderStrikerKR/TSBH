@@ -238,8 +238,11 @@ pub fn poll(ctx:&eframe::egui::Context){
         let due=t.is_none_or(|v|v.elapsed()>=RECONCILE);
         if due{*t=Some(Instant::now());}due
     }else{false};
+    let _=spawn_worker(ctx,move||{let _busy=Busy;if let Err(e)=run(reconcile){eprintln!("Excel aggregate: {e}");}});
+}
+fn spawn_worker(ctx:&eframe::egui::Context,work:impl FnOnce()+Send+'static)->std::thread::JoinHandle<()>{
     let ctx=ctx.clone();
-    std::thread::spawn(move||{let _busy=Busy;if let Err(e)=run(reconcile){eprintln!("Excel aggregate: {e}");}ctx.request_repaint();});
+    std::thread::spawn(move||{work();ctx.request_repaint();})
 }
 
 #[cfg(test)]
@@ -482,6 +485,73 @@ mod tests{
         assert_eq!((j.saved,j.desired),(3,3));
         let mut book=Xlsx::new(Cursor::new(fs::read(&j.path).unwrap())).unwrap();
         assert_eq!(book.worksheet_range("로젠택배").unwrap().end().unwrap().0,3);
+    }
+    #[test]
+    fn same_revision_legacy_binding_change_prevents_stale_replace(){
+        let mut f=Fixture::new();f.update(1);publish(&mut f.conn,&f.job,&f.root).unwrap();
+        let old=fs::read(&f.job.path).unwrap();f.update(2);
+        let db=f.root.join("binding.sqlite");let mut a=Connection::open(&db).unwrap();
+        a.execute_batch("CREATE TABLE core_schema(key TEXT PRIMARY KEY,version INTEGER);
+            INSERT INTO core_schema VALUES('business-core',2);
+            CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);").unwrap();
+        let state:String=f.conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0)).unwrap();
+        a.execute("INSERT INTO app_state VALUES(1,?1)",[state]).unwrap();jobs::initialize(&a).unwrap();
+        a.execute("INSERT INTO excel_aggregate_jobs(business_date,origin,target_path,desired_revision,saved_revision)
+            VALUES (?1,?2,?3,2,1)",rusqlite::params![f.job.date,f.job.origin,f.job.path]).unwrap();
+        let b=Connection::open(&db).unwrap();
+        let j=jobs::jobs(&a,0,false).unwrap().remove(0);
+        publish_with(&mut a,&j,&f.root,|stage|{
+            if stage=="before_commit_lock"{
+                b.execute("UPDATE excel_aggregate_jobs SET legacy_reply_ids=?1,saved_revision=0",
+                    ["[\"new-binding\"]"]).unwrap();
+            }
+            Ok(())
+        }).unwrap();
+        assert_eq!(fs::read(&j.path).unwrap(),old);
+        let pending=jobs::current(&a,&j).unwrap().unwrap();
+        assert_eq!((pending.saved,pending.desired),(0,2));
+        publish(&mut a,&pending,&f.root).unwrap();
+        assert_eq!(jobs::current(&a,&j).unwrap().unwrap().saved,2);
+    }
+    #[test]
+    fn durable_backoff_survives_connection_restart(){
+        let mut f=Fixture::new();f.update(1);publish(&mut f.conn,&f.job,&f.root).unwrap();
+        let old=fs::read(&f.job.path).unwrap();f.update(2);
+        let path=f.root.join("retry.sqlite");let c=Connection::open(&path).unwrap();
+        c.execute_batch("CREATE TABLE core_schema(key TEXT PRIMARY KEY,version INTEGER);
+            INSERT INTO core_schema VALUES('business-core',2);CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);").unwrap();
+        let state:String=f.conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0)).unwrap();
+        c.execute("INSERT INTO app_state VALUES(1,?1)",[state]).unwrap();jobs::initialize(&c).unwrap();
+        c.execute("INSERT INTO excel_aggregate_jobs(business_date,origin,target_path,desired_revision,saved_revision)
+            VALUES (?1,?2,?3,2,1)",rusqlite::params![f.job.date,f.job.origin,f.job.path]).unwrap();
+        let j=jobs::jobs(&c,100,false).unwrap().remove(0);
+        jobs::mark_failed(&c,&j,100,"offline").unwrap();drop(c);
+        let mut c=Connection::open(&path).unwrap();
+        assert!(jobs::jobs(&c,104,false).unwrap().is_empty());assert_eq!(fs::read(&j.path).unwrap(),old);
+        let pending=jobs::jobs(&c,100_000,false).unwrap().remove(0);
+        publish(&mut c,&pending,&f.root).unwrap();
+        assert!(jobs::jobs(&c,100_000,false).unwrap().is_empty());
+        assert_eq!(jobs::current(&c,&j).unwrap().unwrap().saved,2);
+    }
+    #[test]
+    fn worker_does_not_block_egui_frames_while_publication_waits(){
+        use std::sync::mpsc;
+        let ctx=eframe::egui::Context::default();
+        let (entered_tx,entered_rx)=mpsc::channel();
+        let (release_tx,release_rx)=mpsc::channel();
+        let worker=spawn_worker(&ctx,move||{
+            entered_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        });
+        entered_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        let mut rendered=0;
+        for _ in 0..10{
+            let _=ctx.run(eframe::egui::RawInput::default(),|ctx|{
+                eframe::egui::CentralPanel::default().show(ctx,|ui|{ui.label("업무 화면");rendered+=1;});
+            });
+        }
+        release_tx.send(()).unwrap();worker.join().unwrap();
+        assert!(rendered>=10);
     }
     #[test]
     fn isolated_archive_guard_rejects_other_workspace_before_creating_folders(){

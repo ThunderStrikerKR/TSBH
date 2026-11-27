@@ -18,7 +18,7 @@ D01~D07 구현 검증용 PR #68. 아래는 T01~T50의 현재 테스트 연결 �
 | T13 | process_kill_recovers_all_publication_boundaries |
 | T14 | independent_connections_cannot_publish_a_stale_generation (두 독립 DB 연결 경합 재현; 동시 프로세스 스트레스 잔여) |
 | T15-T17 | ten_real_replies_publish_only_latest_and_replays_do_not_change_customer_payment |
-| T18-T20 | 기존 공장 회신 업무 규칙 테스트군, same_filename_with_new_bytes_updates_and_invalid_reply_never_enters_aggregate (수취인 불일치 취합 제외; 빈 송장/타 배송 중복 취합 통합 잔여) |
+| T18-T20 | 기존 공장 회신 업무 규칙 테스트군, same_filename_with_new_bytes_updates_and_invalid_reply_never_enters_aggregate (수취인 불일치 취합 제외; 빈 송장까지 실제 접수 검증 추가; 타 배송 중복 취합 통합 잔여) |
 | T21-T22 | ten_real_replies_publish_only_latest_and_replays_do_not_change_customer_payment, explicit_ambiguity_resolution_preserves_other_order_and_rejects_wrong_target (최신 회신 이후 늦은 승인 거부) |
 | T23 | legacy_correction_reads_original_and_missing_original_fails_closed |
 | T24 | serialized_reply_keeps_q_waybill_and_g_freight_as_text |
@@ -29,14 +29,14 @@ D01~D07 구현 검증용 PR #68. 아래는 T01~T50의 현재 테스트 연결 �
 | T32-T33 | missing_archive_root_recovers_without_redirecting_to_other_folder |
 | T34-T37 | process_kill_recovers_all_publication_boundaries |
 | T38-T39 | actual_publish_rebuilds_from_db_after_damage_and_preserves_generation |
-| T40 | retry_delays_cap_and_new_work_resets_wait; 재실행 장기 대기 시험 잔여 |
+| T40 | retry_delays_cap_and_new_work_resets_wait, durable_backoff_survives_connection_restart |
 | T41-T42 | aggregate_filename_never_consumes_individual_sequence_and_date_is_frozen (고정 날짜 인자); 실제 시스템 시계 자정 전환 잔여 |
 | T43 | legacy_correction_reads_original_and_missing_original_fails_closed (과거 파일 불변 통합 검증 잔여) |
 | T44 | legacy_date_uses_korea_midnight_and_leap_year |
 | T45 | historical_legacy_reply_waits_for_configuration_then_keeps_original_binding |
 | T46 | isolated_archive_guard_rejects_other_workspace_before_creating_folders (경로 검사; 실제 앱 실행 프로필 통합 검증 잔여) |
 | T47 | large_daily_workbook_roundtrip_without_individual_files (5,000행, 시간 로그; 실행 결과 대기) |
-| T48 | UI 비차단 실측 잔여 |
+| T48 | worker_does_not_block_egui_frames_while_publication_waits (작업 스레드 대기 중 10개 egui 프레임 렌더링; 실제 전체 앱 입력/프레임 시간 측정 잔여) |
 | T49-T50 | reply_commit_is_not_reverted_when_aggregate_path_is_unavailable, ten_real_replies_publish_only_latest_and_replays_do_not_change_customer_payment |
 
 추가: legacy_original_is_verified_and_read_from_exact_row, stale_temp_cleanup_ignores_original_and_unknown_files, restore_reopens_generation_and_preserves_business_revision, missing_export_rows_never_generates_silent_empty_workbook.
@@ -44,4 +44,6 @@ D01~D07 구현 검증용 PR #68. 아래는 T01~T50의 현재 테스트 연결 �
 
 추가 백업 검증: aggregate_jobs_survive_real_backup_and_restore_with_new_generation (실제 SQLite 백업/복원). 최신 커밋 CI 실행 전에는 통과로 표시하지 않는다.
 
-동일 DB revision에서 과거 회신 경로 연결 집합이 달라지면 이전 작업의 파일 교체를 차단하도록 최종 갱신 검사를 보강했다. 이 경합 자체의 직접 시험은 잔여다.
+동일 DB revision에서 과거 회신 경로 연결 집합이 달라지면 이전 작업의 파일 교체를 차단하도록 최종 갱신 검사를 보강했다. same_revision_legacy_binding_change_prevents_stale_replace로 해당 CAS 조건을 직접 시험한다.
+
+운영 환경 실기 잔여: 실제 Excel 열림 상태, OS 권한 및 디스크 고갈, 전체 앱 UI 입력/프레임 시간, 실제 시계 자정 전환. 해시나 신뢰할 수 있는 원본 출력 행이 없는 과거 발송 이력은 임의 복원하지 않는다.
