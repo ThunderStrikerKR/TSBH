@@ -972,9 +972,13 @@ impl PreviewStore {
                 entry["candidateCoverage"].as_str().filter(|s|matches!(*s,"observed_only"|"traced_partial"))
                     .ok_or("후보 추적 범위 오류")?
             };
-            locations.push(json!({"start":start,"end":end,"task":task,"contextKeys":local,
+            let mut location=json!({"start":start,"end":end,"task":task,"contextKeys":local,
                 "candidates":candidates,"candidateCoverage":coverage,
-                "traceReferences":entry["traceReferences"],"traceIsTrainingEvidence":false}));
+                "traceReferences":entry["traceReferences"],"traceIsTrainingEvidence":false});
+            if task=="type"{
+                location["legacyTypeCandidate"]=entry["legacyTypeCandidate"].clone();
+            }
+            locations.push(location);
         }
         if keys.is_empty(){return Ok((json!({"status":"no_eligible_context","skippedMissingCandidates":skipped,
             "decisionChanged":false,"calibratedProbability":null}),Ok(None)));}
