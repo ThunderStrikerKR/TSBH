@@ -633,7 +633,7 @@ impl PreviewStore {
         // A saved audit is never deleted when an employee deletes the draft.
         for receipt in &source.drafts {
             for event in &receipt.edit_history {
-                tx.execute(
+                let inserted=tx.execute(
                     "INSERT OR IGNORE INTO reception_edit_audit
                      (id,order_id,source_raw,initial_analysis_json,
                       before_rows_json,after_rows_json,recorded_at,context_json)
@@ -649,6 +649,22 @@ impl PreviewStore {
                         event.get("context").filter(|v|!v.is_null()).map(Value::to_string)
                     ],
                 ).map_err(|e|format!("수취인/품목 수정 감사 이력 저장 실패: {e}"))?;
+                if inserted==0{
+                    // Re-saving an identical immutable event is idempotent.
+                    // A conflicting UUID must not be silently accepted.
+                    let identical:i64=tx.query_row(
+                        "SELECT count(*) FROM reception_edit_audit WHERE
+                         id=?1 AND order_id=?2 AND source_raw=?3 AND initial_analysis_json=?4
+                         AND before_rows_json=?5 AND after_rows_json=?6 AND recorded_at=?7
+                         AND context_json IS ?8",
+                        params![event["id"].as_str().unwrap_or(""),receipt.id.as_str(),
+                            event["sourceRaw"].as_str().unwrap_or(""),event["initialAnalysis"].to_string(),
+                            event["beforeRows"].to_string(),event["afterRows"].to_string(),
+                            event["at"].as_str().unwrap_or(""),
+                            event.get("context").filter(|v|!v.is_null()).map(Value::to_string)],
+                        |r|r.get(0)).map_err(|e|e.to_string())?;
+                    if identical!=1{return Err("동일 정정 감사 ID에 상충된 기록이 있습니다.".into());}
+                }
             }
         }
         tx.commit().map_err(|e| format!("egui 접수 목록 저장 확정 실패: {e}"))?;
