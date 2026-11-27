@@ -615,6 +615,46 @@ impl DailySettlementManager{
 mod tests{
     use super::*;
     #[test]
+    fn settlement_date_toolbar_uses_one_shared_segmented_date_picker(){
+        fn measure(settlement:bool)->Rect{
+            let ctx=crate::ui_test_support::test_context();
+            let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,400.0));
+            let mut date="2026-11-28".to_owned();
+            let mut input=date.clone();
+            let mut month=NaiveDate::from_ymd_opt(2026,11,1).unwrap();
+            crate::ui_test_support::begin_component_geometry();
+            let _=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    if settlement{
+                        assert!(!settlement_date_toolbar(ui,&mut date,&mut input,&mut month));
+                    }else{
+                        ui.horizontal(|row|{
+                            crate::navigation::apply_management_date_control_spacing(row);
+                            assert!(!crate::navigation::range_date_picker(
+                                row,false,&mut input,&mut month,"settlement-reference-picker"));
+                        });
+                    }
+                });
+            });
+            assert_eq!(date,"2026-11-28");
+            assert_eq!(input,date);
+            let samples=crate::ui_test_support::finish_component_geometry(screen);
+            let frames=samples.iter().filter(|sample|sample.role=="segmented frame")
+                .collect::<Vec<_>>();
+            assert_eq!(frames.len(),1,"date picker must allocate exactly one shared outer frame");
+            let frame=frames[0];
+            assert!(frame.clip.expand(0.5).contains(frame.rect.min));
+            assert!(frame.clip.expand(0.5).contains(frame.rect.max));
+            frame.rect
+        }
+        let actual=measure(true);
+        let reference=measure(false);
+        assert!((actual.width()-reference.width()).abs()<=0.5);
+        assert!((actual.height()-reference.height()).abs()<=0.5);
+        assert!((actual.height()-theme::INPUT_HEIGHT).abs()<=0.5);
+    }
+
+    #[test]
     fn rendered_report_viewport_shrinks_to_actual_record_count(){
         fn measure(count:usize)->f32{
             let ctx=crate::ui_test_support::test_context();
