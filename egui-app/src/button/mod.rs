@@ -656,21 +656,21 @@ pub(crate) fn kakao_menu_icon(ui:&mut Ui) -> Response {
     let side=theme::KAKAO_MENU_ICON_SIZE;
     let (rect,response)=ui.shared_allocate_exact_size(Vec2::splat(side),Sense::hover());
     let painter=ui.painter();
-    painter.rect_filled(rect,4.0,theme::KAKAO_ICON_YELLOW);
+    painter.rect_filled(rect,4.0,theme::kakao_icon_ink(theme::KakaoIconPart::Background));
     let bubble=Rect::from_min_max(
         egui::pos2(rect.left()+3.6,rect.top()+4.7),
         egui::pos2(rect.right()-3.6,rect.bottom()-5.8),
     );
-    painter.rect_filled(bubble,5.0,theme::KAKAO_ICON_INK);
+    painter.rect_filled(bubble,5.0,theme::kakao_icon_ink(theme::KakaoIconPart::Bubble));
     painter.add(egui::Shape::convex_polygon(vec![
         egui::pos2(rect.left()+6.0,rect.bottom()-6.5),
         egui::pos2(rect.left()+5.3,rect.bottom()-3.0),
         egui::pos2(rect.left()+9.2,rect.bottom()-6.3),
-    ],theme::KAKAO_ICON_INK,Stroke::NONE));
+    ],theme::kakao_icon_ink(theme::KakaoIconPart::Bubble),Stroke::NONE));
     for dx in [-2.8,0.0,2.8] {
         painter.circle_filled(
             egui::pos2(rect.center().x+dx,rect.center().y-0.8),
-            0.75,theme::KAKAO_ICON_YELLOW
+            0.75,theme::kakao_icon_ink(theme::KakaoIconPart::Background)
         );
     }
     response

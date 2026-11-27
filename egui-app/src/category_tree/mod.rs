@@ -278,7 +278,7 @@ fn tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>,product:bool,enabled:bool,dragga
         paint_management_chevron(&painter,geo.chevron.center(),
             if item.open{ManagementChevronDirection::Down}else{ManagementChevronDirection::Right});
     }
-    let ink=if item.selected{theme::CATALOG_TREE_SELECTED_INK}else{CATALOG_TREE_FOLDER_COLOR};
+    let ink=if item.selected{theme::category_ink(theme::CategoryInkRole::Current)}else{CATALOG_TREE_FOLDER_COLOR};
     if product{
         // A small parcel glyph occupies the exact shared folder slot.
         let p=|x:f32,y:f32|egui::pos2(geo.folder.left()+geo.folder.width()*x/20.0,

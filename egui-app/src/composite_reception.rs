@@ -73,7 +73,7 @@ fn reception_keycap(ui:&mut Ui,key:&str){
     let painter=ui.painter();
 
     // Silhouette and angled lower wall, visible from slightly below.
-    painter.rect_filled(rect,radius,theme::RECEPTION_KEYCAP_SIDE);
+    painter.rect_filled(rect,radius,theme::keycap_ink(theme::KeycapPart::Side));
     painter.add(egui::Shape::convex_polygon(
         vec![
             egui::pos2(face.left(),face.bottom()-0.5),
@@ -81,7 +81,7 @@ fn reception_keycap(ui:&mut Ui,key:&str){
             egui::pos2(rect.right()-1.0,rect.bottom()-1.0),
             egui::pos2(rect.left()+1.0,rect.bottom()-1.0)
         ],
-        theme::RECEPTION_KEYCAP_SIDE,
+        theme::keycap_ink(theme::KeycapPart::Side),
         Stroke::NONE
     ));
     painter.rect_stroke(
@@ -89,9 +89,9 @@ fn reception_keycap(ui:&mut Ui,key:&str){
         egui::StrokeKind::Inside
     );
     // Recessed upper rim and light-catching front face.
-    painter.rect_filled(face,radius,theme::RECEPTION_KEYCAP_FACE);
+    painter.rect_filled(face,radius,theme::keycap_ink(theme::KeycapPart::Face));
     painter.rect_stroke(
-        face,radius,Stroke::new(1.0_f32,theme::RECEPTION_KEYCAP_EDGE),
+        face,radius,Stroke::new(1.0_f32,theme::keycap_ink(theme::KeycapPart::Edge)),
         egui::StrokeKind::Inside
     );
     painter.line_segment(
@@ -99,14 +99,14 @@ fn reception_keycap(ui:&mut Ui,key:&str){
             egui::pos2(face.left()+5.0,face.top()+1.5),
             egui::pos2(face.right()-5.0,face.top()+1.5)
         ],
-        Stroke::new(1.0_f32,theme::RECEPTION_KEYCAP_HIGHLIGHT)
+        Stroke::new(1.0_f32,theme::keycap_ink(theme::KeycapPart::Highlight))
     );
     painter.line_segment(
         [
             egui::pos2(rect.left()+4.0,rect.bottom()-1.7),
             egui::pos2(rect.right()-4.0,rect.bottom()-1.7)
         ],
-        Stroke::new(1.0_f32,theme::RECEPTION_KEYCAP_BOTTOM_HIGHLIGHT)
+        Stroke::new(1.0_f32,theme::keycap_ink(theme::KeycapPart::BottomHighlight))
     );
     if key=="Win"{
         paint_windows_key_glyph(painter,face);

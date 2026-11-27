@@ -305,11 +305,8 @@
       ]
     },
     "KAKAO_ICON_INK": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "button/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "KAKAO_ICON_MODE_GAP": {
       "decision": "restricted",
@@ -319,11 +316,8 @@
       ]
     },
     "KAKAO_ICON_YELLOW": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "button/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "KAKAO_MENU_ICON_SIZE": {
       "decision": "restricted",

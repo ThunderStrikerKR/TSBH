@@ -228,7 +228,7 @@ fn crumb_text(ui:&mut Ui,name:&str,width:f32,current:bool,enabled:bool)->Respons
     let galley=typography::category_tree_name_galley(ui,&visible,false);
     let pos=egui::pos2(rect.left()+theme::CATEGORY_EXPLORER_CRUMB_TEXT_INSET,rect.center().y-galley.size().y/2.0);
     ui.painter().with_shared_clip(rect).galley_with_override_text_color(pos,galley,
-        if current{theme::CATALOG_TREE_SELECTED_INK}else{theme::CATEGORY_EXPLORER_ANCESTOR_INK});
+        if current{theme::category_ink(theme::CategoryInkRole::Current)}else{theme::category_ink(theme::CategoryInkRole::Ancestor)});
     crate::ui_primitives::overflow_tooltip(response,visible!=name,name)
 }
 pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryNode>,
@@ -286,7 +286,7 @@ fn crumbs_row_with_drop(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,
     let omitted=omitted_count(width,&widths[..last],widths[last],dots,sep);
     let separator=|bar:&mut Ui|{let (r,_)=bar.shared_allocate_exact_size(Vec2::new(sep,height),egui::Sense::hover());
         let galley=typography::category_tree_name_galley(bar,"›",false);
-        bar.painter().galley_with_override_text_color(r.center()-galley.size()/2.0,galley,theme::CATEGORY_EXPLORER_SEPARATOR_INK);};
+        bar.painter().galley_with_override_text_color(r.center()-galley.size()/2.0,galley,theme::category_ink(theme::CategoryInkRole::Separator));};
     if omitted>0{
         if crumb_text(&mut bar,"…",dots,false,enabled).clicked(){
             state.ancestors_open=!state.ancestors_open;
@@ -796,12 +796,12 @@ mod tests{
     #[test]
     fn breadcrumb_palette_keeps_only_current_folder_prominent(){
         assert!(theme::CATEGORY_EXPLORER_BACK_WIDTH>theme::CATEGORY_EXPLORER_CRUMB_HEIGHT);
-        assert_eq!(theme::CATEGORY_EXPLORER_ANCESTOR_INK,theme::MUTED);
-        assert!(theme::CATEGORY_EXPLORER_SEPARATOR_INK.r()<theme::CATEGORY_EXPLORER_ANCESTOR_INK.r());
-        assert!(theme::CATALOG_TREE_SELECTED_INK.r()>theme::CATEGORY_EXPLORER_ANCESTOR_INK.r());
+        assert_eq!(theme::category_ink(theme::CategoryInkRole::Ancestor),theme::MUTED);
+        assert!(theme::category_ink(theme::CategoryInkRole::Separator).r()<theme::category_ink(theme::CategoryInkRole::Ancestor).r());
+        assert!(theme::category_ink(theme::CategoryInkRole::Current).r()>theme::category_ink(theme::CategoryInkRole::Ancestor).r());
         let source=include_str!("category_dropdown.rs");
         let row=source.split("fn crumb_text(").nth(1).unwrap().split("fn crumbs_row(").next().unwrap();
-        assert!(row.contains("if current{theme::CATALOG_TREE_SELECTED_INK}else{theme::CATEGORY_EXPLORER_ANCESTOR_INK}"));
+        assert!(row.contains("if current{theme::category_ink(theme::CategoryInkRole::Current)}else{theme::category_ink(theme::CategoryInkRole::Ancestor)}"));
     }
     #[test]
     fn category_back_is_a_centered_standard_block(){

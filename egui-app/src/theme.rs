@@ -141,8 +141,8 @@ pub const CATEGORY_EXPLORER_CRUMB_HEIGHT:f32=ACTION_PRIMARY_HEIGHT;
 pub const CATEGORY_EXPLORER_SEPARATOR_WIDTH:f32=12.0;
 // Fixed standard-action slot, including the arrow and parent-navigation label.
 pub const CATEGORY_EXPLORER_BACK_WIDTH:f32=108.0;
-pub const CATEGORY_EXPLORER_ANCESTOR_INK:Color32=MUTED;
-pub const CATEGORY_EXPLORER_SEPARATOR_INK:Color32=Color32::from_gray(110);
+const CATEGORY_EXPLORER_ANCESTOR_INK:Color32=MUTED;
+const CATEGORY_EXPLORER_SEPARATOR_INK:Color32=Color32::from_gray(110);
 pub const CATEGORY_EXPLORER_OMITTED_WIDTH:f32=36.0;
 pub const CATEGORY_EXPLORER_APPLY_WIDTH:f32=70.0;
 // React workflow.css and receipt-layout.css amber palette; paint only.
@@ -337,11 +337,11 @@ pub const RECEPTION_SHORTCUT_ROW_HEIGHT:f32 = 30.0;
 pub const RECEPTION_KEYCAP_HEIGHT:f32 = 27.0;
 pub const RECEPTION_KEYCAP_DEPTH:f32 = 5.0;
 pub const RECEPTION_KEYCAP_RADIUS:u8 = 4;
-pub const RECEPTION_KEYCAP_FACE:Color32 = Color32::from_rgb(82,82,82);
-pub const RECEPTION_KEYCAP_SIDE:Color32 = Color32::from_rgb(34,34,34);
-pub const RECEPTION_KEYCAP_EDGE:Color32 = Color32::from_rgb(112,112,112);
-pub const RECEPTION_KEYCAP_HIGHLIGHT:Color32 = Color32::from_rgb(150,150,150);
-pub const RECEPTION_KEYCAP_BOTTOM_HIGHLIGHT:Color32 = Color32::from_rgb(70,70,70);
+const RECEPTION_KEYCAP_FACE:Color32 = Color32::from_rgb(82,82,82);
+const RECEPTION_KEYCAP_SIDE:Color32 = Color32::from_rgb(34,34,34);
+const RECEPTION_KEYCAP_EDGE:Color32 = Color32::from_rgb(112,112,112);
+const RECEPTION_KEYCAP_HIGHLIGHT:Color32 = Color32::from_rgb(150,150,150);
+const RECEPTION_KEYCAP_BOTTOM_HIGHLIGHT:Color32 = Color32::from_rgb(70,70,70);
 // React recipient detail grid: full-width rows and paired contact cells.
 // Three-character labels (휴대폰/메시지) fit with a compact 56pt column.
 // All recipient rows share this left-aligned label width.
@@ -371,8 +371,8 @@ pub const KAKAO_TOOLBAR_PAD_X: f32 = SPACE_4;
 // mode-to-mode spacing stays at the shared 4pt.
 pub const KAKAO_ICON_MODE_GAP: f32 = SPACE_8;
 pub const KAKAO_MENU_ICON_SIZE: f32 = 20.0;
-pub const KAKAO_ICON_YELLOW: Color32 = Color32::from_rgb(254,229,0);
-pub const KAKAO_ICON_INK: Color32 = Color32::from_rgb(40,35,36);
+const KAKAO_ICON_YELLOW: Color32 = Color32::from_rgb(254,229,0);
+const KAKAO_ICON_INK: Color32 = Color32::from_rgb(40,35,36);
 // Splitter hit target stays 6pt; only the painted line is 1pt (2pt on hover).
 pub const DOCK_SPLITTER_LINE: f32 = 1.0;
 pub const DOCK_SPLITTER_HOVER_LINE: f32 = 2.0;
@@ -525,7 +525,7 @@ pub const MODAL_VIEWPORT_GUTTER: f32 = 18.0;
 pub const CATALOG_TREE_ROW_HEIGHT:f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
 pub const CATALOG_TREE_INDENT:f32 = 24.0;
 pub const CATEGORY_EXPLORER_CRUMB_TEXT_INSET:f32=SPACE_6;
-pub const CATALOG_TREE_SELECTED_INK:Color32 = ORANGE_EMPHASIS_TEXT;
+const CATALOG_TREE_SELECTED_INK:Color32 = ORANGE_EMPHASIS_TEXT;
 // Keep category search useful without stretching a single field across
 // the full management panel width.
 pub const CATALOG_SEARCH_WIDTH:f32 = 560.0;
@@ -1378,5 +1378,57 @@ mod source_palette_tests {
         let classified=source_block_palette(SourceBlockRole::ManualClassified);
         assert_eq!((classified.fill,classified.text,classified.border),(
             Color32::from_gray(48),Color32::from_gray(232),Color32::from_gray(96)));
+    }
+}
+
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum CategoryInkRole { Current, Ancestor, Separator }
+
+pub(crate) const fn category_ink(role:CategoryInkRole)->Color32 {
+    match role {
+        CategoryInkRole::Current=>CATALOG_TREE_SELECTED_INK,
+        CategoryInkRole::Ancestor=>CATEGORY_EXPLORER_ANCESTOR_INK,
+        CategoryInkRole::Separator=>CATEGORY_EXPLORER_SEPARATOR_INK,
+    }
+}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum KeycapPart { Face, Side, Edge, Highlight, BottomHighlight }
+
+pub(crate) const fn keycap_ink(part:KeycapPart)->Color32 {
+    match part {
+        KeycapPart::Face=>RECEPTION_KEYCAP_FACE,
+        KeycapPart::Side=>RECEPTION_KEYCAP_SIDE,
+        KeycapPart::Edge=>RECEPTION_KEYCAP_EDGE,
+        KeycapPart::Highlight=>RECEPTION_KEYCAP_HIGHLIGHT,
+        KeycapPart::BottomHighlight=>RECEPTION_KEYCAP_BOTTOM_HIGHLIGHT,
+    }
+}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum KakaoIconPart { Background, Bubble }
+
+pub(crate) const fn kakao_icon_ink(part:KakaoIconPart)->Color32 {
+    match part {
+        KakaoIconPart::Background=>KAKAO_ICON_YELLOW,
+        KakaoIconPart::Bubble=>KAKAO_ICON_INK,
+    }
+}
+
+#[cfg(test)]
+mod icon_role_color_tests {
+    use super::*;
+    #[test]
+    fn category_keycap_and_kakao_roles_keep_existing_colors() {
+        assert_eq!(category_ink(CategoryInkRole::Current),Color32::from_rgb(255,228,188));
+        assert_eq!(category_ink(CategoryInkRole::Ancestor),Color32::from_gray(153));
+        assert_eq!(category_ink(CategoryInkRole::Separator),Color32::from_gray(110));
+        for (part,gray) in [(KeycapPart::Face,82),(KeycapPart::Side,34),(KeycapPart::Edge,112),
+            (KeycapPart::Highlight,150),(KeycapPart::BottomHighlight,70)] {
+            assert_eq!(keycap_ink(part),Color32::from_gray(gray));
+        }
+        assert_eq!(kakao_icon_ink(KakaoIconPart::Background),Color32::from_rgb(254,229,0));
+        assert_eq!(kakao_icon_ink(KakaoIconPart::Bubble),Color32::from_rgb(40,35,36));
     }
 }
