@@ -345,6 +345,22 @@ mod recognition_learning_store_tests{
         assert!(order_page(&c,"db","",16).unwrap().is_empty());
     }
     #[test]
+    fn cached_raw_digest_requires_no_decoded_order_and_misses_fail_closed(){
+        let mut c=conn();let ids=vec!["a".into()];
+        let digests=BTreeMap::from([("a".to_owned(),"a".repeat(64))]);
+        let tx=c.transaction().unwrap();
+        synchronize_with_digests(&tx,"db",&ids,&digests,&[json!({"id":"a"})],|_|Ok(report(1))).unwrap();
+        tx.commit().unwrap();
+        let tx=c.transaction().unwrap();
+        let result=synchronize_with_digests(&tx,"db",&ids,&digests,&[],|_|panic!("cached order was decoded")).unwrap();
+        assert_eq!(result["reusedOrders"],1);
+        assert_eq!(result["recalculatedOrders"],0);tx.commit().unwrap();
+        let changed=BTreeMap::from([("a".to_owned(),"b".repeat(64))]);
+        let tx=c.transaction().unwrap();
+        assert!(synchronize_with_digests(&tx,"db",&ids,&changed,&[],|_|panic!("missing input")).is_err());
+        drop(tx);assert_eq!(total(&c,"db","independentOrders"),1);
+    }
+    #[test]
     fn version_changes_and_reactivation_force_recalculation(){
         let mut c=conn();let ids=vec!["a".into()];let orders=vec![json!({"id":"a"})];
         let tx=c.transaction().unwrap();synchronize(&tx,"db",&ids,&orders,|_|Ok(report(1))).unwrap();tx.commit().unwrap();

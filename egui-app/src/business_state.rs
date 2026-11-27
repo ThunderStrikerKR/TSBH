@@ -407,7 +407,7 @@ pub(crate) struct LearningSource{
     pub audit_needed:bool,
     pub digest:String,
 }
-type LearningSources=std::collections::BTreeMap<String,LearningSource>;
+pub(crate) type LearningSources=std::collections::BTreeMap<String,LearningSource>;
 
 /// Hash SQLite's borrowed text bytes before any serde JSON allocation.
 pub(crate) fn hash_learning_text(hash:&mut sha2::Sha256,value:rusqlite::types::ValueRef<'_>)->Result<usize,String>{
@@ -514,6 +514,31 @@ pub(crate) fn read_owner_snapshots(ids:&[String])->Result<Vec<Value>,String>{
 #[cfg(test)]
 mod auto_database_location_tests {
     use super::*;
+    #[test]
+    fn learning_raw_snapshot_digest_tracks_content_and_approval(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT NOT NULL);
+            CREATE TABLE core_orders(id TEXT PRIMARY KEY,confirmed_at TEXT,payload TEXT)").unwrap();
+        let mut workflow=serde_json::json!({"workflow":{"groups":[{"id":"g"}],
+            "shipments":[{"orderId":"a","groupId":"g","step":1}]}});
+        conn.execute("INSERT INTO app_state VALUES(1,?1)",[workflow.to_string()]).unwrap();
+        let mut order=serde_json::json!({"confirmationSnapshot":{"raw":"a",
+            "recognitionBaseline":{"schemaVersion":1}}});
+        conn.execute("INSERT INTO core_orders VALUES('a','t',?1)",[order.to_string()]).unwrap();
+        let ids=vec!["a".into()];let first=learning_sources(&conn,&ids).unwrap();
+        assert!(first["a"].active&&first["a"].audit_needed);
+        assert_eq!(learning_sources(&conn,&ids).unwrap(),first);
+        order["confirmationSnapshot"]["raw"]=serde_json::json!("b");
+        conn.execute("UPDATE core_orders SET payload=?1",[order.to_string()]).unwrap();
+        let changed=learning_sources(&conn,&ids).unwrap();
+        assert_ne!(changed["a"].digest,first["a"].digest);
+        workflow["workflow"]["shipments"][0]["step"]=serde_json::json!(0);
+        conn.execute("UPDATE app_state SET payload=?1",[workflow.to_string()]).unwrap();
+        let inactive=learning_sources(&conn,&ids).unwrap();
+        assert_eq!(inactive["a"].digest,changed["a"].digest);
+        assert!(!inactive["a"].active&&!inactive["a"].audit_needed);
+        assert_ne!(inactive,changed);
+    }
     #[test]
     fn learning_lifecycle_excludes_cancelled_deleted_and_partial_orders(){
         let conn=Connection::open_in_memory().unwrap();

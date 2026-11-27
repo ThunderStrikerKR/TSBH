@@ -1366,6 +1366,27 @@ mod reception_edit_audit_tests {
     use super::*;
 
     #[test]
+    fn learning_raw_audit_digest_detects_same_id_edits_missing_rows_and_null(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE reception_edit_audit(id TEXT PRIMARY KEY,order_id TEXT,
+            source_raw TEXT,initial_analysis_json TEXT,before_rows_json TEXT,after_rows_json TEXT,
+            recorded_at TEXT,context_json TEXT)").unwrap();
+        let ids=vec!["a".into()];
+        let empty=query_learning_audit_digests(&conn,&ids).unwrap();
+        conn.execute("INSERT INTO reception_edit_audit VALUES('e','a','raw','{}','[]','[]','t',NULL)",[]).unwrap();
+        let first=query_learning_audit_digests(&conn,&ids).unwrap();
+        assert_ne!(first,empty);
+        assert_eq!(first,query_learning_audit_digests(&conn,&ids).unwrap());
+        conn.execute("UPDATE reception_edit_audit SET after_rows_json='[1]' WHERE id='e'",[]).unwrap();
+        let edited=query_learning_audit_digests(&conn,&ids).unwrap();
+        assert_ne!(edited,first);
+        conn.execute("UPDATE reception_edit_audit SET context_json='null' WHERE id='e'",[]).unwrap();
+        assert_ne!(query_learning_audit_digests(&conn,&ids).unwrap(),edited);
+        conn.execute("INSERT INTO reception_edit_audit VALUES('unrelated','b','x','{}','[]','[]','t',NULL)",[]).unwrap();
+        conn.execute("DELETE FROM reception_edit_audit WHERE id='e'",[]).unwrap();
+        assert_eq!(query_learning_audit_digests(&conn,&ids).unwrap(),empty);
+    }
+    #[test]
     fn audit_batch_reads_complete_selected_pages_and_rejects_oversized_history(){
         let conn=Connection::open_in_memory().unwrap();
         conn.execute_batch("CREATE TABLE reception_edit_audit(
