@@ -203,6 +203,156 @@ def pixel_math_violations(name, code):
         report(match.start(), "independent physical pixel rounding formula; use shared paint math")
     return findings
 
+
+# Public API contract: exact declaration tokens, independent of whitespace,
+# comments and function bodies. A new, removed or changed public signature
+# requires an explicit contract update. Trait members and enum variants are
+# included because they are public without a pub keyword.
+API_CONTRACT = {
+    OWNER: [
+        ("module", "pub(crate) fn aligned_rect(rect:Rect)->Rect {"),
+        ("module", "pub(crate) fn set_fixed_height(ui:&mut Ui,height:f32){"),
+        ("module", "pub(crate) fn reserve_min_height(ui:&mut Ui,height:f32){"),
+        ("module", "pub(crate) fn reserve_min_size(ui:&mut Ui,size:Vec2){"),
+        ("module", "pub(crate) trait AlignedUiBuilderExt { fn aligned_max_rect(self,rect:Rect)->Self; }"),
+        ("module", """pub(crate) trait SharedAllocationExt {
+            fn shared_allocate_exact_size(&mut self,size:Vec2,sense:Sense)->(Rect,egui::Response);
+            fn shared_allocate_space(&mut self,size:Vec2)->(egui::Id,Rect);
+            fn shared_allocate_ui_with_layout<R>(&mut self,size:Vec2,layout:Layout,draw:impl FnOnce(&mut Ui)->R)->egui::InnerResponse<R>;
+            fn shared_add_sized(&mut self,size:impl Into<Vec2>,widget:impl egui::Widget)->egui::Response;
+            fn shared_allocate_response(&mut self,size:Vec2,sense:Sense)->egui::Response;
+        }"""),
+        ("module", """pub(crate) trait SharedUiClipExt {
+            fn restrict_shared_clip(&mut self,requested:Rect);
+            fn use_owner_pane_clip(&mut self,owner_pane:Rect);
+        }"""),
+        ("module", "pub(crate) trait SharedPainterClipExt { fn with_shared_clip(&self,requested:Rect)->egui::Painter; }"),
+        ("module", """pub(crate) enum CardWidthPolicy {
+            #[default] FitContent, FillAvailable, Fixed, Bounded, UpperLimit,
+        }"""),
+        ("module", "pub(crate) trait UiWidthPolicyExt { fn apply_shared_width(&mut self,policy:CardWidthPolicy,target:f32); }"),
+    ],
+    PIXEL_MATH_OWNER: [
+        ("module", "pub(crate) struct PaintRect(Rect);"),
+        ("module", "pub(crate) fn snap_paint_rect(rect:Rect,pixels_per_point:f32)->PaintRect {"),
+        ("module", "pub(crate) fn centered_paint_axis_rect(rect:Rect,vertical:bool,logical_width:f32,pixels_per_point:f32)->PaintRect {"),
+        ("PaintRect", "pub(crate) fn fill(self,painter:&Painter,radius:impl Into<CornerRadius>,color:Color32){"),
+        ("PaintRect", "pub(crate) fn edge_rule(self,logical_width:f32,inset:f32,ppp:f32,at_bottom:bool)->Self{"),
+        ("PaintRect", "pub(crate) fn toolbar_rule(self,title_height:f32,logical_width:f32,inset:f32,ppp:f32)->Self{"),
+        ("PaintRect", """pub(crate) fn finish_frame(self,painter:&Painter,ppp:f32,toolbar_bottom:f32,divider_x:Option<f32>,
+            divider_width:f32,frame_width:f32,radius:impl Into<CornerRadius>,color:Color32){"""),
+        ("PaintRect", "#[cfg(test)] pub(crate) fn test_rect(self)->Rect {"),
+    ],
+}
+API_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|\d+|::|->|[^\s]")
+API_EXPORT_NAMES = re.compile(
+    r"\b(?:geometry|pixel_paint|aligned_rect|set_fixed_height|reserve_min_height|reserve_min_size|"
+    r"AlignedUiBuilderExt|SharedAllocationExt|SharedUiClipExt|SharedPainterClipExt|"
+    r"CardWidthPolicy|UiWidthPolicyExt|PaintRect|snap_paint_rect|centered_paint_axis_rect)\b"
+)
+
+def api_tokens(text):
+    return [m.group() for m in API_TOKEN.finditer(text)]
+
+def api_contract_violations(name, source):
+    code = production(source)
+    findings = []
+    def report(offset, rule):
+        findings.append((code.count("\n", 0, offset) + 1, rule))
+    # No direct or grouped public forwarding imports from the two owners.
+    # Ordinary private imports remain valid.
+    for match in re.finditer(r"\bpub(?:\s*\([^)]*\))?\s+use\s+[^;]+;", code):
+        if API_EXPORT_NAMES.search(match.group()):
+            report(match.start(), "shared geometry or pixel paint re-export prohibited")
+    if name == "ui_layout.rs":
+        for module in ("geometry", "pixel_paint"):
+            pattern = r"\bpub\s*\(\s*crate\s*\)\s+mod\s+" + module + r"\s*;"
+            if len(re.findall(pattern, code)) != 1:
+                report(0, f"expected exactly one crate-visible {module} module declaration")
+    if name not in API_CONTRACT:
+        return findings
+
+    matches = list(API_TOKEN.finditer(code))
+    tokens = [m.group() for m in matches]
+    # Track braces rather than treating all pub fn declarations as free
+    # functions. PaintRect's approved methods must belong to its own impl.
+    scopes = []
+    scope_at = []
+    for i, token in enumerate(tokens):
+        scope_at.append(tuple(scopes))
+        if token == "{":
+            scopes.append(i)
+        elif token == "}":
+            if not scopes:
+                report(matches[i].start(), "unbalanced API contract scope")
+                return findings
+            scopes.pop()
+    if scopes:
+        report(0, "unbalanced API contract scope")
+        return findings
+
+    covered = set()
+    for scope, declaration in API_CONTRACT[name]:
+        expected = api_tokens(declaration)
+        candidates = []
+        # Test-only marker is part of its declaration, not a separate
+        # allowlist exception. Removing it therefore fails the contract.
+        for i in range(len(tokens) - len(expected) + 1):
+            if tokens[i:i+len(expected)] != expected:
+                continue
+            parents = scope_at[i]
+            if scope == "module":
+                valid = not parents
+            else:
+                valid = len(parents) == 1 and tokens[parents[0]-2:parents[0]] == ["impl", scope]
+            if valid:
+                candidates.append(i)
+        if len(candidates) != 1:
+            report(0, f"API contract requires exactly one {scope} declaration: {declaration.strip()}")
+            continue
+        i = candidates[0]
+        covered.update(j for j in range(i, i+len(expected)) if tokens[j] == "pub")
+    for i, token in enumerate(tokens):
+        if token == "pub" and i not in covered:
+            report(matches[i].start(), "unapproved public API or visibility; update the owner contract explicitly")
+    return findings
+
+def api_contract_self_test():
+    # Synthetic complete declarations keep tests independent of the current
+    # owner files; production is checked separately below.
+    def fixture(name):
+        top, methods = [], []
+        for scope, decl in API_CONTRACT[name]:
+            line = decl + (" }" if decl.endswith("{") else "")
+            (top if scope == "module" else methods).append(line)
+        if methods:
+            top.append("impl PaintRect { " + "\n".join(methods) + " }")
+        return "\n".join(top)
+    geometry = fixture(OWNER)
+    paint = fixture(PIXEL_MATH_OWNER)
+    assert not api_contract_violations(OWNER, geometry)
+    assert not api_contract_violations(PIXEL_MATH_OWNER, paint)
+    assert not api_contract_violations(OWNER, geometry + "\nfn private_helper() {}")
+    assert not api_contract_violations(OWNER, geometry.replace("fn aligned_rect", "fn /* comment */ aligned_rect"))
+    for name, source in ((OWNER, geometry), (PIXEL_MATH_OWNER, paint)):
+        assert api_contract_violations(name, source + "\npub(crate) fn extra() {}")
+        assert api_contract_violations(name, source + "\npub(super) const EXTRA:u8=0;")
+        assert api_contract_violations(name, source.replace("pub(crate)", "pub", 1))
+        assert api_contract_violations(name, source.replace("pub(crate)", "", 1))
+        assert api_contract_violations(name, source + "\npub(crate) use other::Extra;")
+    assert api_contract_violations(OWNER, geometry.replace("fn aligned_max_rect", "fn changed_method"))
+    assert api_contract_violations(OWNER, geometry.replace("FitContent,", "Extra, FitContent,"))
+    assert api_contract_violations(OWNER, geometry.replace("->Rect {", "->Vec2 {", 1))
+    assert api_contract_violations(PIXEL_MATH_OWNER, paint.replace("PaintRect(Rect)", "PaintRect(pub Rect)"))
+    assert api_contract_violations(PIXEL_MATH_OWNER, paint.replace("#[cfg(test)]", ""))
+    assert api_contract_violations(PIXEL_MATH_OWNER, paint.replace("impl PaintRect", "impl Other"))
+    assert api_contract_violations("screen.rs", "pub(crate) use crate::ui_layout::{geometry::aligned_rect as align};")
+    assert api_contract_violations("screen.rs", "pub use crate::ui_layout::pixel_paint::*;")
+    assert not api_contract_violations("screen.rs", "use crate::ui_layout::geometry::aligned_rect;")
+    assert not api_contract_violations("ui_layout.rs", "pub(crate) mod geometry; pub(crate) mod pixel_paint;")
+    assert api_contract_violations("ui_layout.rs", "pub mod geometry; pub(crate) mod pixel_paint;")
+
+
 def violations(name, source):
     code = production(source)
     findings = pixel_paint_violations(name, code) + pixel_math_violations(name, code)
@@ -346,6 +496,7 @@ def self_test():
 
 def main():
     self_test()
+    api_contract_self_test()
     failures = []
     checked = 0
     for path in sorted(ROOT.rglob("*.rs")):
@@ -355,6 +506,10 @@ def main():
             continue
         checked += 1
         failures.extend(f"{name}:{line}: {rule}" for line, rule in violations(name, source))
+        failures.extend(f"{name}:{line}: {rule}" for line, rule in api_contract_violations(name, source))
+    for required in (*API_CONTRACT, "ui_layout.rs"):
+        if not (ROOT / required).is_file():
+            failures.append(f"{required}:1: required API contract owner missing")
     for finding in failures:
         print(finding, file=sys.stderr)
     print(f"egui explicit placement ownership: {checked} Rust files, {len(failures)} violation(s)")
