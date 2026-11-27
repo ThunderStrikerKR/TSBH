@@ -48,18 +48,19 @@ jobs:
           key: egui-compile
       - name: Compile current Windows egui source
         run: cargo check --manifest-path egui-app/Cargo.toml
-      - name: Mandatory UI notice no-reflow contract
+      - name: Mandatory UI notice no-reflow and editor footer contracts
         shell: pwsh
         run: |
           $names = @(
             'ui_regressions::notice_no_reflow_contract_tests::guard_detects_direct_feedback_and_multiline_input_hint',
             'ui_regressions::notice_no_reflow_contract_tests::production_screens_reject_direct_inline_transient_notices',
-            'brand_manager::modal_lifecycle_tests::actual_brand_popup_feedback_never_moves_controls'
+            'brand_manager::modal_lifecycle_tests::actual_brand_popup_feedback_never_moves_controls',
+            'popup::regression_tests::shared_editor_footer_keeps_delete_left_and_save_right'
           )
           foreach ($name in $names) {
             $listed = cargo test --manifest-path egui-app/Cargo.toml $name -- --exact --list
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            if (-not ($listed | Where-Object { $_ -eq "${name}: test" })) { throw "Missing mandatory UI notice regression: $name" }
+            if (-not ($listed | Where-Object { $_ -eq "${name}: test" })) { throw "Missing mandatory UI regression: $name" }
             cargo test --manifest-path egui-app/Cargo.toml $name -- --exact --nocapture
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
