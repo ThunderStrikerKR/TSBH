@@ -562,7 +562,7 @@ mod money_live_format_tests{
                 match &shape.shape{
                     egui::Shape::Text(t)=>text.push((t.galley.text().to_owned(),
                         Rect::from_min_size(t.pos,t.galley.size()))),
-                    egui::Shape::Rect(r) if r.stroke.color==theme::ONE_TOUCH_BORDER
+                    egui::Shape::Rect(r) if r.stroke.color==theme::one_touch_palette().border
                         =>highlights.push(r.rect),
                     _=>{}
                 }

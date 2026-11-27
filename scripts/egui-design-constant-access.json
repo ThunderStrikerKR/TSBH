@@ -375,11 +375,8 @@
       ]
     },
     "MANAGEMENT_DROPDOWN_HOVER_BG": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "highlight/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT": {
       "decision": "internalized",
@@ -394,11 +391,8 @@
       "note": "private component token"
     },
     "MANAGEMENT_DROPDOWN_SELECTED_BG": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "highlight/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "MANAGEMENT_SEARCHABLE_POPUP_MIN_WIDTH": {
       "decision": "internalized",
@@ -480,28 +474,16 @@
       "note": "private component token"
     },
     "ONE_TOUCH_BG": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "highlight/mod.rs",
-        "one_touch.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "ONE_TOUCH_TEXT": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "highlight/mod.rs",
-        "one_touch.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "ONE_TOUCH_TINT": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "highlight/mod.rs",
-        "one_touch.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "ORANGE_EMPHASIS_TEXT": {
       "decision": "restricted",

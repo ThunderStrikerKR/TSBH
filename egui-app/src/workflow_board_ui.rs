@@ -1976,7 +1976,7 @@ mod compact_virtualization_tests{
                 _=>None
             }).expect("visible compact amount");
             let frame=output.shapes.iter().find_map(|s|match &s.shape{
-                egui::Shape::Rect(r) if r.stroke.color==theme::ONE_TOUCH_BORDER
+                egui::Shape::Rect(r) if r.stroke.color==theme::one_touch_palette().border
                     && r.stroke.width==theme::ONE_TOUCH_BORDER_WIDTH=>Some(r.rect),
                 _=>None
             });

@@ -109,12 +109,12 @@ pub(crate) fn palette(role:Role)->Palette{
         LightHover=>(Some(theme::BUTTON_HOVER_LIGHT_BG),Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::BUTTON_HOVER_LIGHT_BORDER)),Some(theme::BRIGHT_TEXT)),
         LinkedPreview=>(Some(theme::linked_preview_palette().fill),Some(Stroke::new(theme::LINKED_PREVIEW_BORDER_WIDTH,theme::linked_preview_palette().border)),Some(theme::linked_preview_palette().text)),
         Selected=>(Some(theme::ORANGE_EMPHASIS_BG),Some(Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::SELECTED_ORDER)),Some(theme::ORANGE_EMPHASIS_TEXT)),
-        RequiredReview=>(Some(theme::ONE_TOUCH_BG),Some(Stroke::new(theme::ONE_TOUCH_BORDER_WIDTH,theme::ONE_TOUCH_BORDER)),Some(theme::ONE_TOUCH_TEXT)),
+        RequiredReview=>(Some(theme::one_touch_palette().fill),Some(Stroke::new(theme::ONE_TOUCH_BORDER_WIDTH,theme::one_touch_palette().border)),Some(theme::one_touch_palette().text)),
         RequiredInput=>(Some(theme::REQUIRED_INPUT_TINT),Some(Stroke::new(theme::REQUIRED_INPUT_STROKE_WIDTH,theme::REQUIRED_INPUT_BORDER)),None),
         Focus=>(None,Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::SELECTION)),None),
         DropTarget=>(Some(theme::MANUAL_ASSIGNMENT_TINT),Some(Stroke::new(theme::MANUAL_ASSIGNMENT_STROKE_WIDTH,theme::SELECTION)),None),
         DropHovered=>(Some(theme::BUTTON_HOVER_TINT),Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::SELECTION)),None),
-        ReviewTint=>(Some(theme::ONE_TOUCH_TINT),Some(Stroke::new(theme::ONE_TOUCH_BORDER_WIDTH,theme::ONE_TOUCH_BORDER)),None),
+        ReviewTint=>(Some(theme::one_touch_palette().tint),Some(Stroke::new(theme::ONE_TOUCH_BORDER_WIDTH,theme::one_touch_palette().border)),None),
         // Continuous table rows do not introduce a second border over grid rules.
         RowHover=>(Some(theme::BUTTON_HOVER_BG),None,None),
         ChooserSelected=>(Some(theme::SELECTION.linear_multiply(0.22)),Some(Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::SELECTION)),None),
@@ -292,10 +292,10 @@ pub(crate) fn dropdown_options(ui:&mut Ui){
     let visuals=ui.visuals_mut();
     let selected=palette(Role::Selected);
     let hover=palette(Role::Hover);
-    visuals.selection.bg_fill=selected.fill.unwrap_or(theme::MANAGEMENT_DROPDOWN_SELECTED_BG);
+    visuals.selection.bg_fill=selected.fill.unwrap_or(theme::management_option_fill(theme::ManagementOptionState::Selected));
     visuals.selection.stroke=Stroke::new(theme::SELECTION_STROKE_WIDTH,selected.ink.unwrap_or(theme::TEXT));
     // Opaque blue for native option backgrounds, not a tint over text.
-    let fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
+    let fill=theme::management_option_fill(theme::ManagementOptionState::Hovered);
     visuals.widgets.hovered.bg_fill=fill;
     visuals.widgets.hovered.weak_bg_fill=fill;
     visuals.widgets.hovered.bg_stroke=hover.stroke.unwrap_or(Stroke::NONE);

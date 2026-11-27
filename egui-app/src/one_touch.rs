@@ -2,7 +2,7 @@
 use crate::ui_layout::geometry::SharedPainterClipExt as _;
 use eframe::egui::{self,Color32,Context,Rect,Stroke,Ui};
 use crate::{theme,typography};
-pub const INK:Color32=theme::ONE_TOUCH_TEXT;
+pub const INK:Color32=theme::one_touch_palette().text;
 #[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
 pub enum Stage{#[default] None,Review,Freight,PaymentCopy,PaymentConfirm}
 impl Stage{
@@ -75,7 +75,7 @@ pub fn value_rect(ink:Rect,slot:Rect)->Rect{
 }
 fn background_shape(rect:Rect)->egui::Shape{
     crate::highlight::fill_shape(rect,crate::highlight::Geometry::Control,
-        crate::highlight::palette(crate::highlight::Role::RequiredReview).fill.unwrap_or(theme::ONE_TOUCH_BG))
+        crate::highlight::palette(crate::highlight::Role::RequiredReview).fill.unwrap_or(theme::one_touch_palette().fill))
 }
 fn outline_shape(rect:Rect)->egui::Shape{
     crate::highlight::outline_shape(rect,crate::highlight::Geometry::Control,
@@ -206,13 +206,13 @@ mod tests{
         assert_eq!(frame.right(),slot.right());
     }
     #[test] fn one_touch_palette_keeps_orange_fill_and_tint(){
-        assert_eq!(theme::ONE_TOUCH_BG,Color32::from_rgb(59,43,27));
-        assert_ne!(theme::ONE_TOUCH_BG,theme::PANEL);
-        assert_ne!(theme::ONE_TOUCH_BG,theme::INPUT);
-        assert_eq!(theme::ONE_TOUCH_TEXT,Color32::from_rgb(255,228,188));
-        assert_eq!(theme::ONE_TOUCH_BORDER,Color32::from_rgb(245,158,11));
+        assert_eq!(theme::one_touch_palette().fill,Color32::from_rgb(59,43,27));
+        assert_ne!(theme::one_touch_palette().fill,theme::PANEL);
+        assert_ne!(theme::one_touch_palette().fill,theme::INPUT);
+        assert_eq!(theme::one_touch_palette().text,Color32::from_rgb(255,228,188));
+        assert_eq!(theme::one_touch_palette().border,Color32::from_rgb(245,158,11));
         assert_eq!(theme::ONE_TOUCH_BORDER_WIDTH,2.0);
-        assert!(theme::ONE_TOUCH_TINT.a()>0 && theme::ONE_TOUCH_TINT.a()<255);
+        assert!(theme::one_touch_palette().tint.a()>0 && theme::one_touch_palette().tint.a()<255);
         let ctx=egui::Context::default();
         let output=ctx.run(egui::RawInput::default(),|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
@@ -222,9 +222,9 @@ mod tests{
                 crate::highlight::paint(ui,r,crate::highlight::Geometry::Control,crate::highlight::Role::ReviewTint);
             });
         });
-        assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r) if r.fill==theme::ONE_TOUCH_BG)));
-        assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r) if r.fill==theme::ONE_TOUCH_TINT)));
-        assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r) if r.stroke.color==theme::ONE_TOUCH_BORDER && r.stroke.width==theme::ONE_TOUCH_BORDER_WIDTH)));
+        assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r) if r.fill==theme::one_touch_palette().fill)));
+        assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r) if r.fill==theme::one_touch_palette().tint)));
+        assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r) if r.stroke.color==theme::one_touch_palette().border && r.stroke.width==theme::ONE_TOUCH_BORDER_WIDTH)));
         let job=payment_job("합계 8,000원 (부가세 포함)","",true,400.0);
         assert!(job.sections.iter().any(|s|s.format.color==INK));
         assert!(job.sections.iter().all(|s|s.format.background==Color32::TRANSPARENT));
@@ -258,7 +258,7 @@ mod tests{
             });
         });
         assert!(output.shapes.iter().any(|s|matches!(&s.shape,egui::Shape::Rect(r)
-            if r.stroke.color==theme::ONE_TOUCH_BORDER
+            if r.stroke.color==theme::one_touch_palette().border
                 && r.stroke.width==theme::ONE_TOUCH_BORDER_WIDTH)));
     }
     #[test] fn freight_scope_excludes_price_and_non_remote_address(){

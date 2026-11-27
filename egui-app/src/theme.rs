@@ -123,8 +123,8 @@ const DANGER_ACTION_BG:Color32=Color32::from_rgb(53,37,37);
 const DANGER_ACTION_BORDER:Color32=Color32::from_rgb(117,68,68);
 // Persistent single-select state uses the existing shared orange palette;
 // transient pointer hover remains blue.
-pub const MANAGEMENT_DROPDOWN_SELECTED_BG: Color32 = ORANGE_EMPHASIS_BG;
-pub const MANAGEMENT_DROPDOWN_HOVER_BG: Color32 = Color32::from_rgb(57, 91, 118);
+const MANAGEMENT_DROPDOWN_SELECTED_BG: Color32 = ORANGE_EMPHASIS_BG;
+const MANAGEMENT_DROPDOWN_HOVER_BG: Color32 = Color32::from_rgb(57, 91, 118);
 // Hierarchical category explorer reuses the management dropdown master.
 // Exploration is neutral; confirmed filtering uses the existing orange role.
 // One fixed popup width independent of the category text/depth.
@@ -155,11 +155,11 @@ pub const ORANGE_EMPHASIS_TEXT:Color32=Color32::from_rgb(255,228,188);
 const CHECKBOX_CHECKED_BG:Color32=RAISED;
 const CHECKBOX_CHECKED_MARK:Color32=BRIGHT;
 const CHECKBOX_CHECKED_STROKE_WIDTH:f32=2.0;
-pub const ONE_TOUCH_BG:Color32=ORANGE_EMPHASIS_BG;
-pub const ONE_TOUCH_TEXT:Color32=ORANGE_EMPHASIS_TEXT;
-pub const ONE_TOUCH_BORDER:Color32=SELECTED_ORDER;
+const ONE_TOUCH_BG:Color32=ORANGE_EMPHASIS_BG;
+const ONE_TOUCH_TEXT:Color32=ORANGE_EMPHASIS_TEXT;
+const ONE_TOUCH_BORDER:Color32=SELECTED_ORDER;
 pub const ONE_TOUCH_BORDER_WIDTH:f32=2.0;
-pub const ONE_TOUCH_TINT:Color32=Color32::from_rgba_unmultiplied_const(245,158,11,18);
+const ONE_TOUCH_TINT:Color32=Color32::from_rgba_unmultiplied_const(245,158,11,18);
 // Approved selected shipment row: a single rounded surface, not an
 // added left stripe. The enclosing order card retains its own accent.
 const WORKFLOW_SELECTED_ROW_TEXT:Color32=Color32::from_rgb(244,214,162);
@@ -1469,5 +1469,42 @@ mod workflow_role_color_tests {
             Color32::from_gray(27));
         assert_eq!(workflow_text_ink(WorkflowTextRole::SelectedRow),Color32::from_rgb(244,214,162));
         assert_eq!(workflow_text_ink(WorkflowTextRole::Vat),Color32::from_rgb(185,215,246));
+    }
+}
+
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) struct OneTouchPalette {
+    pub fill:Color32,
+    pub text:Color32,
+    pub border:Color32,
+    pub tint:Color32,
+}
+
+pub(crate) const fn one_touch_palette()->OneTouchPalette {
+    OneTouchPalette{fill:ONE_TOUCH_BG,text:ONE_TOUCH_TEXT,border:ONE_TOUCH_BORDER,tint:ONE_TOUCH_TINT}
+}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum ManagementOptionState { Selected, Hovered }
+
+pub(crate) const fn management_option_fill(state:ManagementOptionState)->Color32 {
+    match state {
+        ManagementOptionState::Selected=>MANAGEMENT_DROPDOWN_SELECTED_BG,
+        ManagementOptionState::Hovered=>MANAGEMENT_DROPDOWN_HOVER_BG,
+    }
+}
+
+#[cfg(test)]
+mod action_role_color_tests {
+    use super::*;
+    #[test]
+    fn one_touch_and_management_options_keep_approved_colors() {
+        let action=one_touch_palette();
+        assert_eq!((action.fill,action.text,action.border),(
+            Color32::from_rgb(59,43,27),Color32::from_rgb(255,228,188),Color32::from_rgb(245,158,11)));
+        assert_eq!(action.tint,Color32::from_rgba_unmultiplied_const(245,158,11,18));
+        assert_eq!(management_option_fill(ManagementOptionState::Selected),Color32::from_rgb(59,43,27));
+        assert_eq!(management_option_fill(ManagementOptionState::Hovered),Color32::from_rgb(57,91,118));
     }
 }

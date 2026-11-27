@@ -316,10 +316,10 @@ mod management_dropdown_unification_tests {
 
     #[test]
     fn selected_and_hovered_options_have_distinct_scoped_colors(){
-        assert_eq!(theme::MANAGEMENT_DROPDOWN_SELECTED_BG,theme::ORANGE_EMPHASIS_BG);
+        assert_eq!(theme::management_option_fill(theme::ManagementOptionState::Selected),theme::ORANGE_EMPHASIS_BG);
         assert_ne!(
-            theme::MANAGEMENT_DROPDOWN_SELECTED_BG,
-            theme::MANAGEMENT_DROPDOWN_HOVER_BG
+            theme::management_option_fill(theme::ManagementOptionState::Selected),
+            theme::management_option_fill(theme::ManagementOptionState::Hovered)
         );
         let ctx=egui::Context::default();
         let _=ctx.run(egui::RawInput::default(),|ctx|{
@@ -329,14 +329,14 @@ mod management_dropdown_unification_tests {
                 ui.scope(|popup|{
                     management_dropdown_option_palette(popup);
                     assert_eq!(popup.visuals().selection.bg_fill,
-                        theme::MANAGEMENT_DROPDOWN_SELECTED_BG);
+                        theme::management_option_fill(theme::ManagementOptionState::Selected));
                     assert_eq!(popup.visuals().selection.stroke.color,theme::ORANGE_EMPHASIS_TEXT);
                     assert_eq!(popup.visuals().widgets.hovered.weak_bg_fill,
-                        theme::MANAGEMENT_DROPDOWN_HOVER_BG);
+                        theme::management_option_fill(theme::ManagementOptionState::Hovered));
                     assert_eq!(popup.visuals().widgets.hovered.bg_fill,
-                        theme::MANAGEMENT_DROPDOWN_HOVER_BG);
+                        theme::management_option_fill(theme::ManagementOptionState::Hovered));
                     assert_eq!(popup.visuals().widgets.active.weak_bg_fill,
-                        theme::MANAGEMENT_DROPDOWN_HOVER_BG);
+                        theme::management_option_fill(theme::ManagementOptionState::Hovered));
                 });
                 assert_eq!(ui.visuals().selection.bg_fill,original_selection);
                 assert_eq!(ui.visuals().widgets.hovered.weak_bg_fill,original_hover);
@@ -378,7 +378,7 @@ mod shared_dropdown_rendered_geometry_tests{
             if phase==3{
                 assert!(output.shapes.iter().any(|s|has_fill(&s.shape,selected,theme::ORANGE_EMPHASIS_BG)),
                     "selected option must actually paint orange");
-                assert!(output.shapes.iter().any(|s|has_fill(&s.shape,other,theme::MANAGEMENT_DROPDOWN_HOVER_BG)),
+                assert!(output.shapes.iter().any(|s|has_fill(&s.shape,other,theme::management_option_fill(theme::ManagementOptionState::Hovered))),
                     "unselected hovered option must actually paint blue");
                 assert_eq!(current,"a");
             }
@@ -412,7 +412,7 @@ mod shared_dropdown_rendered_geometry_tests{
                 });
                 if phase==3{
                     assert!(output.shapes.iter().any(|s|fill_at(&s.shape,selected.center(),theme::ORANGE_EMPHASIS_BG)));
-                    assert!(output.shapes.iter().any(|s|fill_at(&s.shape,other.center(),theme::MANAGEMENT_DROPDOWN_HOVER_BG)));
+                    assert!(output.shapes.iter().any(|s|fill_at(&s.shape,other.center(),theme::management_option_fill(theme::ManagementOptionState::Hovered))));
                     assert!(current==selected_value);
                 }
             }
