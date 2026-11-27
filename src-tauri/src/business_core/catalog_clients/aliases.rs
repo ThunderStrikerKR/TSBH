@@ -117,6 +117,17 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
     match operation{
         "save_alias"=>save_alias(state,payload.get("record")
             .ok_or("별칭 저장 정보가 없습니다.")?),
+        "delete_alias"=>{
+            let id=field(payload,"aliasId");
+            if id.trim().is_empty(){return Err("삭제할 별칭을 확인할 수 없습니다.".into());}
+            let mut next=state.clone();
+            let aliases=next.get_mut("aliases").and_then(Value::as_array_mut)
+                .ok_or("별칭 목록이 없습니다.")?;
+            let index=aliases.iter().position(|row|field(row,"id")==id)
+                .ok_or("삭제할 별칭을 찾을 수 없습니다.")?;
+            aliases.remove(index);
+            Ok(json!({"state":next}))
+        }
         "alias_problems"=>{
             let all=items(state,"aliases");let products=items(state,"products");
             Ok(json!(all.iter().map(|a|json!({
@@ -133,6 +144,15 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn delete_only_selected_alias_and_preserve_products_and_orders(){
+        let state=json!({"aliases":[{"id":"a"},{"id":"b"}],"products":[{"id":"p"}],"orders":[{"id":"o"}]});
+        let next=execute("delete_alias",&json!({"state":state,"aliasId":"a"})).unwrap();
+        assert_eq!(next["state"]["aliases"],json!([{"id":"b"}]));
+        assert_eq!(next["state"]["products"],state["products"]);
+        assert_eq!(next["state"]["orders"],state["orders"]);
+        assert!(execute("delete_alias",&json!({"state":state,"aliasId":"missing"})).is_err());
+    }
     #[test]
     fn overwrite_same_scope_preserves_id_and_old_orders(){
         let state=json!({"aliases":[{"id":"a1","text":"보면대","productId":"p",

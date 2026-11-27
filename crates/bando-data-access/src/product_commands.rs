@@ -187,12 +187,16 @@ fn check_catalog_write_scope(before:&Value,action:&str,data:&Value,
             return Ok(());
         }
     }
+    if action=="delete_alias" && !data.get("expectedEntity").is_some_and(Value::is_object){
+        return Err("삭제할 별칭의 원본 정보가 없습니다.".into());
+    }
     if let Some(original)=data.get("expectedEntity"){
         let (collection,id)=match action{
             "upsert_product"=>("products",data["product"]["id"].as_str().unwrap_or("")),
             "archive_product"=>("products",data["productId"].as_str().unwrap_or("")),
             "upsert_brand"=>("brands",data["editing"].as_str().unwrap_or("")),
             "save_alias"=>("aliases",data["record"]["id"].as_str().unwrap_or("")),
+            "delete_alias"=>("aliases",data["aliasId"].as_str().unwrap_or("")),
             _=>return Err("지원하지 않는 개별 저장 기준입니다.".into())
         };
         let actual=before[collection].as_array().into_iter().flatten()
@@ -337,6 +341,12 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
             result.get("state").filter(|v|v.is_object()).cloned()
                 .ok_or("Rust 별칭 저장 결과 형식 오류")?
         }
+        "delete_alias"=>{
+            let id=required(data,"aliasId")?;
+            let result=catalog_clients::execute("delete_alias",json!({"state":before,"aliasId":id}))?;
+            result.get("state").filter(|v|v.is_object()).cloned()
+                .ok_or("Rust 별칭 삭제 결과 형식 오류")?
+        }
         "change_category" | "delete_category"=>{
             // React CategoryManager supplies virtual catalog roots in its
             // state. The same roots must be present before native validation,
@@ -423,6 +433,16 @@ mod management_scope_cas_tests{
         assert_eq!(management_scope_token(&new,"categories"),cat);
         new["products"][0]["category"]=json!("c2");
         assert_ne!(management_scope_token(&new,"categories"),cat);
+    }
+    #[test]
+    fn alias_delete_checks_original_entity_not_unrelated_revision(){
+        let alias=json!({"id":"a","text":"709","productId":"p"});
+        let state=json!({"aliases":[alias.clone()]});
+        let request=json!({"aliasId":"a","expectedEntity":alias});
+        assert!(check_catalog_write_scope(&state,"delete_alias",&request,1,2).is_ok());
+        assert!(check_catalog_write_scope(&state,"delete_alias",&json!({"aliasId":"a"}),2,2).is_err());
+        let changed=json!({"aliases":[{"id":"a","text":"other","productId":"p"}]});
+        assert!(check_catalog_write_scope(&changed,"delete_alias",&request,2,2).is_err());
     }
     #[test]
     fn target_entity_cas_and_bulk_review_have_different_scope(){

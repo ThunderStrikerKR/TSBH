@@ -254,7 +254,7 @@ pub(crate) fn show<R>(
 pub(crate) struct RegistryColumns<const N:usize>{
     base:[f32;N],
     stretch:usize,
-    redistribution:Option<([f32;N],usize)>,
+    redistribution:Option<([f32;N],usize,f32)>,
 }
 impl<const N:usize> From<[f32;N]> for RegistryColumns<N>{
     fn from(base:[f32;N])->Self{Self{base,stretch:1,redistribution:None}}
@@ -265,18 +265,39 @@ impl<const N:usize> RegistryColumns<N>{
     }
     /// Retain each specified fraction of its resolved width and transfer
     /// the released space to one column. Fixed columns use a scale of 1.
-    pub(crate) fn redistribute_to(mut self,scales:[f32;N],target:usize)->Self{
-        assert!(target<N && scales[target]==1.0);
+    pub(crate) fn redistribute_to(self,scales:[f32;N],target:usize)->Self{
         assert!(scales.iter().all(|scale|(0.0..=1.0).contains(scale)));
-        self.redistribution=Some((scales,target));
+        self.redistribute_with_minimum(scales,target,0.0)
+    }
+    /// Growth of fixed columns is paid for by the remainder column.
+    /// Widen the scrollable table minimum when the viewport is too narrow.
+    pub(crate) fn redistribute_with_minimum(mut self,scales:[f32;N],target:usize,min:f32)->Self{
+        assert!(target<N && scales[target]==1.0 && min.is_finite() && min>=0.0);
+        assert!(scales.iter().all(|scale|scale.is_finite()&&*scale>0.0));
+        self.redistribution=Some((scales,target,min));
         self
+    }
+    fn base_width(&self,gap:f32)->f32{
+        self.base.iter().sum::<f32>()+N.saturating_sub(1) as f32*gap
+    }
+    fn minimum_width(&self,gap:f32)->f32{
+        let base=self.base_width(gap);
+        let Some((scales,target,min))=self.redistribution else{return base};
+        let remainder=self.base[target]+self.base.iter().zip(scales)
+            .map(|(width,scale)|width*(1.0-scale)).sum::<f32>();
+        let slope=(scales.iter().take(self.stretch).map(|scale|1.0-scale).sum::<f32>()
+            +if target<self.stretch{1.0}else{0.0})/self.stretch as f32;
+        assert!(slope>=0.0);
+        if remainder>=min{return base;}
+        assert!(slope>0.0);
+        base+((min-remainder)/slope).ceil()
     }
     fn widths(&self,available:f32,gap:f32)->[f32;N]{
         let mut widths=self.base;
-        let minimum=widths.iter().sum::<f32>()+N.saturating_sub(1) as f32*gap;
-        let extra=(available-minimum).max(0.0)/self.stretch as f32;
+        let minimum=self.base_width(gap);
+        let extra=(available.max(self.minimum_width(gap))-minimum).max(0.0)/self.stretch as f32;
         for width in widths.iter_mut().take(self.stretch){*width+=extra;}
-        if let Some((scales,target))=self.redistribution{
+        if let Some((scales,target,_))=self.redistribution{
             let mut released=0.0;
             for (width,scale) in widths.iter_mut().zip(scales){
                 let retained=*width*scale;
@@ -299,7 +320,7 @@ pub(crate) fn registry_table<const N:usize>(
 )->Rect{
     let gap=theme::SPACE_8;
     let columns=columns.into();
-    let minimum=columns.base.iter().sum::<f32>()+N.saturating_sub(1) as f32*gap;
+    let minimum=columns.minimum_width(gap);
     let spacing=crate::table::management_table_container_style(ui);
     let inner=crate::table::show(ui,crate::table::Header::List(minimum),|ui,layout|{
         let widths=columns.widths(layout.table_width,gap);
@@ -1169,6 +1190,24 @@ fn registry_redistributes_resolved_widths_and_preserves_fixed_columns(){
         assert_eq!(new[2],old[2]);
         assert!((new[3]-(old[3]+old[0]*0.3+old[1]*0.2)).abs()<0.01);
         assert!((new.iter().sum::<f32>()-old.iter().sum::<f32>()).abs()<0.01);
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn registry_expands_fixed_columns_and_keeps_remainder_positive(){
+    let old=RegistryColumns::from([150.0,160.0,150.0,220.0,120.0]);
+    let new=RegistryColumns::from([150.0,160.0,150.0,220.0,120.0])
+        .redistribute_with_minimum([0.5,1.7,2.0,1.0,1.0],4,48.0);
+    for available in [600.0,1100.0,1400.0,1800.0]{
+        let effective=available.max(new.minimum_width(theme::SPACE_8));
+        let prior=old.widths(effective,theme::SPACE_8);
+        let widths=new.widths(available,theme::SPACE_8);
+        for (i,scale) in [0.5,1.7,2.0,1.0].into_iter().enumerate(){
+            assert!((widths[i]-prior[i]*scale).abs()<0.01);
+        }
+        assert!(widths[4]>=47.99);
+        assert!((widths.iter().sum::<f32>()+4.0*theme::SPACE_8-effective).abs()<0.01);
     }
 }
 

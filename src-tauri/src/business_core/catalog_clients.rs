@@ -236,7 +236,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "reception_client_candidates" | "kakao_manual_candidates" => title_clients::execute(operation,&payload),
         "preview_client_rows" => client_preview::preview(&payload),
         "upsert_product_from_editor" => editor::execute(&payload),
-        "save_alias" | "alias_problems" | "alias_problems_one" => aliases::execute(operation,&payload),
+        "save_alias" | "delete_alias" | "alias_problems" | "alias_problems_one" => aliases::execute(operation,&payload),
         "validate_model_groups" | "validate_model_group_products" |
         "eligible_model_group_product_ids" => model_groups::execute(operation,&payload),
         "preview_official_product_html" => official_html::preview(&payload),

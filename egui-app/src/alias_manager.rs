@@ -2,7 +2,7 @@
 //! Alias collision, product matching and persistence decisions remain in
 //! original catalog_clients Rust. This UI owns only explicit operator edits.
 use crate::{catalog_query_bridge,product_manager::ProductManager,gateway::BandoGateway,theme,typography};
-use eframe::egui::{Align,Context,Layout,Rect,Ui};
+use eframe::egui::{Align,Context,Layout,Rect,Sense,Ui};
 #[cfg(test)]
 use eframe::egui;
 use serde_json::{json,Value};
@@ -65,6 +65,7 @@ pub struct AliasManager{
     product_search:bool,
     product_picker:Option<Box<ProductManager>>,
     pending:Option<Exit>,
+    confirm_delete:bool,
     after_save:Option<Exit>,
     next_tab:Option<usize>,
     global_approved:bool,
@@ -74,6 +75,7 @@ pub struct AliasManager{
     warnings:Arc<Warnings>,
 
 }
+pub(crate) struct AliasWrite{pub action:&'static str,pub data:Value}
 impl AliasManager {
     /// Called only when ProductManager accepts a catalog snapshot, never on paint.
     pub fn set_catalog(&mut self,catalog:&Value,ctx:&Context){
@@ -99,7 +101,7 @@ impl AliasManager {
         }
     }
     fn dirty(&self)->bool{self.form!=self.original}
-    pub fn has_overlay(&self)->bool{self.editor_open||self.product_search||self.pending.is_some()}
+    pub fn has_overlay(&self)->bool{self.editor_open||self.product_search||self.pending.is_some()||self.confirm_delete}
     pub fn global_leave_in_progress(&self)->bool{
         self.pending==Some(Exit::Global)||self.after_save==Some(Exit::Global)
     }
@@ -112,18 +114,19 @@ impl AliasManager {
         self.product_picker=None;
         self.product_search=false;
         self.pending=None;
+        self.confirm_delete=false;
         self.after_save=None;
         self.form=Form::default();
         self.original=self.form.clone();
         self.error=None;
     }
     pub fn request_tab_leave(&mut self,tab:usize)->bool{
-        if self.product_search{return false;}
+        if self.product_search||self.confirm_delete{return false;}
         if self.dirty(){self.pending=Some(Exit::Tab(tab));false}
         else{true}
     }
     pub fn request_global_leave(&mut self)->bool{
-        if self.product_search{return false;}
+        if self.product_search||self.confirm_delete{return false;}
         if self.dirty(){self.pending=Some(Exit::Global);false}
         else{true}
     }
@@ -157,6 +160,7 @@ impl AliasManager {
     }
     fn close_editor(&mut self){
         self.editor_open=false;self.product_search=false;self.product_picker=None;
+        self.confirm_delete=false;
         let scope=self.original.scope.clone();
         self.form=Form{scope,..Form::default()};self.original=self.form.clone();self.error=None;
     }
@@ -170,8 +174,15 @@ impl AliasManager {
             }else{json!(self.form.scope)}
         }})
     }
+    fn delete_request(&self)->Option<AliasWrite>{
+        let id=self.form.editing.as_deref()?;
+        Some(AliasWrite{action:"delete_alias",data:json!({
+            "aliasId":id,"expectedEntity":self.expected_entity
+        })})
+    }
     pub fn on_saved(&mut self,catalog:&Value){
         self.editor_open=false;self.product_search=false;self.product_picker=None;
+        self.confirm_delete=false;
         // Preserve the last saved scope for the next registration.
         let scope=self.form.scope.clone();
         self.form=Form{scope,..Form::default()};
@@ -216,11 +227,19 @@ impl AliasManager {
             }).collect::<Vec<_>>();
             let height=(card.available_height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
             let rect=crate::table::registry_table(card,"alias-registered-list",
-                ["별칭","적용 범위","연결 상품","충돌 안내","관리"],
-                [150.0,160.0,150.0,220.0,120.0],height,aliases.len(),
+                ["별칭","적용 범위","연결 상품","충돌 안내","비고"],
+                crate::table::RegistryColumns::from([150.0,160.0,150.0,220.0,120.0])
+                    .redistribute_with_minimum([0.5,1.7,2.0,1.0,1.0],4,48.0),
+                height,aliases.len(),
                 |i|self.form.editing.as_deref()==Some(field(&aliases[i],"id")),
                 |row,cells,i,rect|{
                     let item=&aliases[i];let id=field(item,"id");
+                    let enabled=!busy&&!self.editor_open;
+                    let selected=self.form.editing.as_deref()==Some(id);
+                    let hit=row.interact(rect,row.make_persistent_id(id),if enabled{Sense::click()}else{Sense::hover()});
+                    if hit.hovered()&&!selected&&enabled{
+                        crate::table::paint_management_interactive_row_background(row.painter(),rect,i,true);
+                    }
                     let target=products.get(field(item,"productId"))
                         .map(|p|display_model(field(p,"name"))).unwrap_or_else(||"과거 상품".into());
                     let scope=if field(item,"clientId").is_empty(){"회사 공통"}
@@ -230,11 +249,8 @@ impl AliasManager {
                     crate::table::registry_cell(row,cells[1],scope,Role::Text,false,(id,1));
                     crate::table::registry_cell(row,cells[2],&target,Role::ProductName,false,(id,2));
                     crate::table::registry_cell(row,cells[3],&diagnostic,Role::Status,false,(id,3));
-                    crate::table::registry_actions(row,cells[4],|actions|{
-                        if crate::button::action(actions,"연결 정정",theme::ButtonRole::Standard,!busy&&!self.editor_open).clicked(){
-                            choose=Some(id.to_owned());
-                        }
-                    });
+                    crate::table::registry_cell(row,cells[4],"",Role::Text,false,(id,4));
+                    if hit.clicked()&&enabled{choose=Some(id.to_owned());}
                     #[cfg(test)]
                     crate::ui_test_support::record("catalog data row",rect);
                     let _=rect;
@@ -249,9 +265,9 @@ impl AliasManager {
     }
     fn show_editor(&mut self,ctx:&Context,work_area:Rect,catalog:&Value,editable:bool,busy:bool)->Option<Value>{
         if !self.editor_open||self.product_search{return None;}
-        let title=if self.form.editing.is_some(){"별칭 정정"}else{"별칭 추가"};
+        let title=if self.form.editing.is_some(){"별칭 편집"}else{"별칭 추가"};
         let mut close=false;let mut save=false;
-        let nested=self.pending.is_some();
+        let nested=self.pending.is_some()||self.confirm_delete;
         crate::popup::modal_backdrop(ctx,"alias-editor-dim",false);
         crate::popup::modal_window(ctx,title,"alias-editor",work_area)
             .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
@@ -259,7 +275,13 @@ impl AliasManager {
                 crate::popup::modal_flow_workspace(modal,|workspace|{
                     close=workspace.header(title,"닫기",!busy&&!nested);
                     workspace.scroll_region("alias-editor-body",crate::popup::modal_editor_body_max_height(work_area.height()),|body|{
-                        body.add_enabled_ui(editable&&!busy&&!nested,|body|{
+                        if self.form.editing.is_some(){
+                            body.horizontal(|toolbar|toolbar.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                                if crate::button::action(actions,"별칭 삭제",theme::ButtonRole::Danger,
+                                    editable&&!busy&&!nested).clicked(){self.confirm_delete=true;}
+                            }));
+                        }
+                        body.add_enabled_ui(editable&&!busy&&!nested&&!self.confirm_delete,|body|{
                             body.label(typography::field_label("별칭"));
                             let width=body.available_width();
                             crate::input::flexible_text_field(body,&mut self.form.text,width,"관리 별칭");
@@ -286,7 +308,7 @@ impl AliasManager {
                     });
                     workspace.footer_single(|actions|{
                         save=crate::button::action(actions,"별칭 저장",theme::ButtonRole::Primary,
-                            editable&&!busy&&!nested&&self.dirty()).clicked();
+                            editable&&!busy&&!nested&&!self.confirm_delete&&self.dirty()).clicked();
                     });
                 });
             });
@@ -294,8 +316,24 @@ impl AliasManager {
         save.then(||self.save_request())
     }
     pub fn show_dialogs(&mut self,ctx:&Context,work_area:Rect,catalog:&Value,
-        editable:bool,busy:bool,gateway:Arc<dyn BandoGateway>)->Option<Value>{
+        editable:bool,busy:bool,gateway:Arc<dyn BandoGateway>)->Option<AliasWrite>{
         let mut save=self.show_editor(ctx,work_area,catalog,editable,busy);
+        if self.confirm_delete{
+            crate::popup::modal_backdrop(ctx,"alias-delete-dim",true);
+            let decision=crate::popup::show_delete_confirmation(
+                ctx,work_area,"alias-delete-confirm","별칭 삭제","삭제",
+                !busy,editable&&!busy&&self.form.editing.is_some(),crate::popup::DeleteBody::Plain,|body|{
+                    body.label(typography::body("별칭을 삭제할까요? 기존 상품과 주문은 유지됩니다."));
+                    if self.dirty(){body.label(typography::caption("저장하지 않은 별칭 변경사항도 사라집니다."));}
+                }
+            );
+            if decision==crate::popup::ConfirmDecision::Cancel{self.confirm_delete=false;}
+            if decision==crate::popup::ConfirmDecision::Confirm{
+                self.confirm_delete=false;
+                return self.delete_request();
+            }
+            return None;
+        }
         if self.product_search{
             if !editable||busy{
                 self.product_search=false;
@@ -334,7 +372,7 @@ impl AliasManager {
                 save=Some(self.save_request());
             }
         }
-        save
+        save.map(|data|AliasWrite{action:"save_alias",data})
     }
 }
 
@@ -410,6 +448,18 @@ mod tests {
 #[cfg(test)]
 mod modal_lifecycle_tests{
     use super::*;
+    #[test]
+    fn delete_request_uses_original_entity_and_requires_existing_alias(){
+        let catalog=json!({"aliases":[{"id":"a","text":"709","productId":"p","clientId":"c"}]});
+        let mut manager=AliasManager::default();
+        assert!(manager.delete_request().is_none());
+        manager.choose("a".into(),&catalog);
+        manager.form.text="unsaved".into();
+        let request=manager.delete_request().unwrap();
+        assert_eq!(request.action,"delete_alias");
+        assert_eq!(request.data["aliasId"],"a");
+        assert_eq!(request.data["expectedEntity"],catalog["aliases"][0]);
+    }
     #[test]
     fn correction_and_close_preserve_catalog_and_clear_editor(){
         let catalog=json!({"aliases":[{"id":"a","text":"709","productId":"p","clientId":"c"}]});

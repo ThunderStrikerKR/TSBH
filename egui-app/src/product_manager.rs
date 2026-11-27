@@ -844,7 +844,7 @@ impl ProductManager {
                                 });
                         }
                     }
-                    if job.kind=="save_alias" {
+                    if matches!(job.kind.as_str(),"save_alias"|"delete_alias") {
                         self.aliases.on_saved(&catalog);
                     }
                     if job.kind=="upsert_brand" {
@@ -878,6 +878,7 @@ impl ProductManager {
                             "change_category"=>"카테고리 변경사항을 저장했습니다.",
                             "delete_category"=>"빈 분류를 삭제했습니다.",
                             "save_alias"=>"별칭을 저장했습니다.",
+                            "delete_alias"=>"별칭을 삭제했습니다.",
                             "upsert_brand"=>"브랜드 정보를 저장했습니다. 기존 연결 상품은 유지됩니다.",
                             _=>"상품 변경을 저장했습니다.",
                         }).into())
@@ -2088,10 +2089,10 @@ impl ProductManager {
             if let Some(catalog)=self.catalog.clone(){
                 let editable=self.gateway.product_write_enabled()
                     && catalog["revision"].as_u64().is_some();
-                if let Some(data)=self.aliases.show_dialogs(
+                if let Some(request)=self.aliases.show_dialogs(
                     ctx,work_area,&catalog,editable,self.writing.is_some(),Arc::clone(&self.gateway)
                 ){
-                    self.start_write("save_alias",data,None,ctx.clone());
+                    self.start_write(request.action,request.data,None,ctx.clone());
                 }
             }
             return;
