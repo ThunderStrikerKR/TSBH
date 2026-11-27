@@ -198,11 +198,7 @@ fn action_with_palette(
         if light_surface{
             // Native button fill is painted before its dark label. Explicit
             // .fill() overrides hover visuals, so use the scoped widget style.
-            let widgets=&mut ui.visuals_mut().widgets;
-            widgets.inactive.weak_bg_fill=fill;
-            widgets.hovered.weak_bg_fill=theme::BUTTON_HOVER_LIGHT_BG;
-            widgets.active.weak_bg_fill=theme::BUTTON_HOVER_LIGHT_BG;
-            widgets.open.weak_bg_fill=theme::BUTTON_HOVER_LIGHT_BG;
+            crate::highlight::light_button(ui,fill);
         }else{button=button.fill(fill);}
         ui.add_enabled(enabled, button)
     }).inner;
@@ -410,7 +406,9 @@ pub(crate) fn workflow_fixed_action(
     let role=if stage{theme::ButtonRole::Emphasized}else{theme::ButtonRole::Standard};
     let (_,fill,ink,stroke)=crate::button::action_style(role,enabled,false);
     let light_surface=enabled&&fill==theme::BRIGHT;
-    let fill=if light_surface&&response.hovered(){theme::BUTTON_HOVER_LIGHT_BG}else{fill};
+    let fill=if light_surface&&response.hovered(){
+        crate::highlight::palette(crate::highlight::Role::LightHover).fill.unwrap_or(fill)
+    }else{fill};
     let radius=5.0;
     let painter=ui.painter();
     painter.rect_filled(rect,radius,fill);
