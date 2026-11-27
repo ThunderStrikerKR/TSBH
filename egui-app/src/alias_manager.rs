@@ -227,9 +227,9 @@ impl AliasManager {
             }).collect::<Vec<_>>();
             let height=(card.available_height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
             let rect=crate::table::registry_table(card,"alias-registered-list",
-                ["별칭","적용 범위","연결 상품","충돌 안내","비고"],
-                crate::table::RegistryColumns::from([150.0,160.0,150.0,220.0,120.0])
-                    .redistribute_with_minimum([0.5,1.7,2.0,1.0,1.0],4,48.0),
+                ["별칭","적용 범위","연결 상품","비고"],
+                crate::table::RegistryColumns::from([150.0,160.0,150.0,220.0+120.0+theme::SPACE_8])
+                    .redistribute_with_minimum([0.5,1.7,2.0,1.0],3,48.0),
                 height,aliases.len(),
                 |i|self.form.editing.as_deref()==Some(field(&aliases[i],"id")),
                 |row,cells,i,rect|{
@@ -249,7 +249,6 @@ impl AliasManager {
                     crate::table::registry_cell(row,cells[1],scope,Role::Text,false,(id,1));
                     crate::table::registry_cell(row,cells[2],&target,Role::ProductName,false,(id,2));
                     crate::table::registry_cell(row,cells[3],&diagnostic,Role::Status,false,(id,3));
-                    crate::table::registry_cell(row,cells[4],"",Role::Text,false,(id,4));
                     if hit.clicked()&&enabled{choose=Some(id.to_owned());}
                     #[cfg(test)]
                     crate::ui_test_support::record("catalog data row",rect);
@@ -413,7 +412,25 @@ mod tests {
         assert!(manager.warnings["a1"].is_empty());
     }
     #[test]
-    fn diagnostic_column_keeps_next_alias_row_fixed_when_long_warnings_arrive(){
+    fn notes_show_only_existing_alias_diagnostics(){
+        let item=json!({"id":"a","clientId":null});
+        let mut warnings=Warnings::new();
+        assert!(alias_diagnostic(&item,&warnings).is_empty());
+        warnings.insert("a".into(),vec![]);
+        assert!(alias_diagnostic(&item,&warnings).is_empty());
+        warnings.insert("a".into(),vec!["같은 적용 범위의 별칭이 충돌합니다.".into()]);
+        assert_eq!(alias_diagnostic(&item,&warnings),
+            "충돌: 같은 적용 범위의 별칭이 충돌합니다. / 영향 범위: 모든 거래처의 이후 주문");
+        assert!(alias_diagnostic(&json!({"id":"b"}),&warnings).is_empty());
+        let source=include_str!("alias_manager.rs");
+        let list=source.split("pub fn show_page(").nth(1).unwrap()
+            .split("fn show_editor(").next().unwrap();
+        assert!(list.contains("[\"별칭\",\"적용 범위\",\"연결 상품\",\"비고\"]"));
+        assert!(list.contains("registry_cell(row,cells[3],&diagnostic,Role::Status,false,(id,3))"));
+        assert!(!list.contains("cells[4]"));
+    }
+    #[test]
+    fn notes_column_keeps_next_alias_row_fixed_when_long_warnings_arrive(){
         fn render(warnings:Warnings)->Vec<Rect>{
             let ctx=Context::default();
             crate::typography::install(&ctx);
@@ -423,7 +440,7 @@ mod tests {
             let _=ctx.run(raw,|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
                     crate::table::registry_table(ui,"test-alias-diagnostic",
-                        ["별칭","충돌 안내"],[120.0,240.0],180.0,2,|_|false,|row,cells,index,rect|{
+                        ["별칭","비고"],[120.0,240.0],180.0,2,|_|false,|row,cells,index,rect|{
                             let item=json!({"id":format!("alias-{index}"),"clientId":""});
                             let detail=alias_diagnostic(&item,&warnings);
                             crate::table::registry_cell(row,cells[1],&detail,
