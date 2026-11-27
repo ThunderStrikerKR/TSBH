@@ -5567,25 +5567,17 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             crate::popup::modal_backdrop(
                 ctx,"ocr-discard-nested-backdrop",true
             );
-            crate::popup::show_decision_window(ctx,"변경사항 확인","ocr-review-discard-confirm",work_area,|ui|{
-                crate::popup::decision_workspace(ui,|decision|{
-                    if decision.header("변경사항 확인","돌아가기",true
-                    ) {
-                        self.discard_ocr_confirm=false;
-                    }
-                    decision.body(|ui|{
-                        ui.label("OCR 검토에서 수정한 내용을 버릴까요?");
-                    });
-                    decision.actions(|buttons|{
-                        if crate::button::action(
-                            buttons,"수정 내용 버리기",ButtonRole::Danger,true
-                        ).clicked() {
-                            self.ocr_review=None;
-                            self.discard_ocr_confirm=false;
-                        }
-                    });
-                });
-            });
+            match crate::popup::show_discard_confirmation(
+                ctx,work_area,"ocr-review-discard-confirm","변경사항 확인",
+                "OCR 검토에서 수정한 내용을 버릴까요?","돌아가기","수정 내용 버리기",true
+            ){
+                crate::popup::ChangeDecision::Cancel=>self.discard_ocr_confirm=false,
+                crate::popup::ChangeDecision::Discard=>{
+                    self.ocr_review=None;
+                    self.discard_ocr_confirm=false;
+                }
+                _=>{}
+            }
         }
     }
 
@@ -9975,35 +9967,26 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
         crate::popup::modal_backdrop(ctx,"freight-global-leave-backdrop",
             manager.has_rate_modal());
-        crate::popup::show_decision_window(ctx,"저장하지 않은 변경사항","freight-global-leave",work_area,|dialog|{
-            crate::popup::decision_workspace(dialog,|decision|{
-                if decision.header("저장하지 않은 변경사항","취소",!manager.busy()
-                ){
-                    self.freight_pending_page=None;
-                    self.freight_pending_save=false;
-                }
-                decision.body(|dialog|{
-                    dialog.label(typography::body(
-                        "운임 관리에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
-                    ));
-                });
-                decision.actions(|bar|{
-                    if crate::button::action(bar,"저장하고 이동",ButtonRole::Primary,
-                        manager.can_save_dirty()).clicked(){
-                        if manager.save_dirty(ctx.clone()){
-                            self.freight_pending_save=true;
-                        }
-                    }
-                    if crate::button::action(bar,"저장 안 함",ButtonRole::Danger,
-                        !manager.busy()).clicked(){
-                        manager.discard_drafts();
-                        self.page=next;
-                        self.freight_pending_page=None;
-                        self.freight_pending_save=false;
-                    }
-                });
-            });
-        });
+        match crate::popup::show_save_confirmation(
+            ctx,work_area,"freight-global-leave","저장하지 않은 변경사항",
+            "운임 관리에서 수정한 내용이 있습니다. 변경사항을 저장할까요?",
+            "저장하고 이동",!manager.busy(),manager.can_save_dirty()
+        ){
+            crate::popup::ChangeDecision::Cancel=>{
+                self.freight_pending_page=None;
+                self.freight_pending_save=false;
+            }
+            crate::popup::ChangeDecision::Save=>{
+                if manager.save_dirty(ctx.clone()){self.freight_pending_save=true;}
+            }
+            crate::popup::ChangeDecision::Discard=>{
+                manager.discard_drafts();
+                self.page=next;
+                self.freight_pending_page=None;
+                self.freight_pending_save=false;
+            }
+            crate::popup::ChangeDecision::Pending=>{}
+        }
     }
 
     fn show_settings_leave_guard(&mut self,ctx:&egui::Context,work_area:Rect){
@@ -10024,30 +10007,23 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.settings_pending_save=false;
         }
         crate::popup::modal_backdrop(ctx,"settings-page-leave-backdrop",false);
-        crate::popup::show_decision_window(ctx,"저장하지 않은 변경사항","settings-global-leave",work_area,|ui|{
-            crate::popup::decision_workspace(ui,|decision|{
-                if decision.header("저장하지 않은 변경사항","취소",!view.busy()
-                ){self.settings_pending_page=None;}
-                decision.body(|ui|{
-                    ui.label(typography::body(
-                        "설정에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
-                    ));
-                });
-                decision.actions(|actions|{
-                    if crate::button::action(actions,"저장하고 이동",ButtonRole::Primary,
-                        !view.busy()&&!view.read_only()).clicked(){
-                        self.settings_pending_save=true;
-                        view.save(Arc::clone(&self.gateway),ctx.clone());
-                    }
-                    if crate::button::action(actions,"저장 안 함",ButtonRole::Danger,
-                        !view.busy()).clicked(){
-                        view.discard();
-                        self.page=next;
-                        self.settings_pending_page=None;
-                    }
-                });
-            });
-        });
+        match crate::popup::show_save_confirmation(
+            ctx,work_area,"settings-global-leave","저장하지 않은 변경사항",
+            "설정에서 수정한 내용이 있습니다. 변경사항을 저장할까요?",
+            "저장하고 이동",!view.busy(),!view.busy()&&!view.read_only()
+        ){
+            crate::popup::ChangeDecision::Cancel=>self.settings_pending_page=None,
+            crate::popup::ChangeDecision::Save=>{
+                self.settings_pending_save=true;
+                view.save(Arc::clone(&self.gateway),ctx.clone());
+            }
+            crate::popup::ChangeDecision::Discard=>{
+                view.discard();
+                self.page=next;
+                self.settings_pending_page=None;
+            }
+            crate::popup::ChangeDecision::Pending=>{}
+        }
     }
 
     fn other_page(&mut self, ctx: &egui::Context) {
