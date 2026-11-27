@@ -202,15 +202,15 @@ pub const WORKFLOW_TITLE_TRAILING_INSET:f32=SPACE_4;
 pub const WORKFLOW_SUMMARY_BOTTOM_INSET:f32=7.0;
 pub const WORKFLOW_VAT_TOP_INSET:f32=3.0;
 pub const WORKFLOW_SIGNAL_GAP: f32 = 3.0;
-pub const WORKFLOW_SIGNAL_DONE: Color32 = Color32::from_rgb(73, 166, 106);
-pub const WORKFLOW_SIGNAL_DONE_BORDER: Color32 = Color32::from_rgb(105, 198, 136);
-pub const WORKFLOW_SIGNAL_CURRENT: Color32 = Color32::from_rgb(233, 154, 53);
-pub const WORKFLOW_SIGNAL_CURRENT_BORDER: Color32 = Color32::from_rgb(245, 183, 96);
+const WORKFLOW_SIGNAL_DONE: Color32 = Color32::from_rgb(73, 166, 106);
+const WORKFLOW_SIGNAL_DONE_BORDER: Color32 = Color32::from_rgb(105, 198, 136);
+const WORKFLOW_SIGNAL_CURRENT: Color32 = Color32::from_rgb(233, 154, 53);
+const WORKFLOW_SIGNAL_CURRENT_BORDER: Color32 = Color32::from_rgb(245, 183, 96);
 // Initial order review: keep all four outlines visible with no status fill.
-pub const WORKFLOW_SIGNAL_EMPTY: Color32 = Color32::TRANSPARENT;
-pub const WORKFLOW_SIGNAL_EMPTY_BORDER: Color32 = DISABLED_ACTION_TEXT;
-pub const WORKFLOW_SIGNAL_PENDING: Color32 = Color32::from_rgb(51, 51, 51);
-pub const WORKFLOW_SIGNAL_PENDING_BORDER: Color32 = Color32::from_rgb(85, 85, 85);
+const WORKFLOW_SIGNAL_EMPTY: Color32 = Color32::TRANSPARENT;
+const WORKFLOW_SIGNAL_EMPTY_BORDER: Color32 = DISABLED_ACTION_TEXT;
+const WORKFLOW_SIGNAL_PENDING: Color32 = Color32::from_rgb(51, 51, 51);
+const WORKFLOW_SIGNAL_PENDING_BORDER: Color32 = Color32::from_rgb(85, 85, 85);
 pub const WORKFLOW_VAT_TEXT: Color32 = Color32::from_rgb(185, 215, 246);
 // At the 1920×1080 reference, the right-pane card is ~394pt wide.
 // Usable width = 394 - 2 border - (6 left + 6 right) = 380pt.
@@ -245,10 +245,10 @@ pub const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
 pub const REQUIRED_INPUT_BORDER:Color32=ERROR_BORDER;
 pub const REQUIRED_INPUT_TINT:Color32=Color32::from_rgba_unmultiplied_const(199,107,107,18);
 // Product sales status: one palette for dropdown captions, options and table cells.
-pub const SALE_STATUS_SELLING: Color32 = Color32::from_rgb(123, 207, 148);
-pub const SALE_STATUS_SOLD_OUT: Color32 = Color32::from_rgb(231, 122, 120);
-pub const SALE_STATUS_PREPARING: Color32 = Color32::from_rgb(228, 195, 104);
-pub const SALE_STATUS_STOPPED: Color32 = Color32::from_rgb(145, 145, 145);
+const SALE_STATUS_SELLING: Color32 = Color32::from_rgb(123, 207, 148);
+const SALE_STATUS_SOLD_OUT: Color32 = Color32::from_rgb(231, 122, 120);
+const SALE_STATUS_PREPARING: Color32 = Color32::from_rgb(228, 195, 104);
+const SALE_STATUS_STOPPED: Color32 = Color32::from_rgb(145, 145, 145);
 pub const BRIGHT: Color32 = Color32::WHITE;
 pub const BRIGHT_TEXT: Color32 = Color32::from_rgb(23, 23, 23);
 /// Resting white primary-action palette. Manual unassigned source tokens use 90% of this gray channel.
@@ -745,14 +745,14 @@ pub const MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH: f32 = 330.0;
 /// Consistent leading inset for text columns in master headers and rows.
 pub const MANAGEMENT_TABLE_TEXT_LEADING_INSET: f32 = SPACE_6;
 // Existing React TierBadge palette; color is display-only, never a pricing rule.
-pub const CLIENT_TIER_WHOLESALE_BG: Color32 = Color32::from_rgb(35,76,55);
-pub const CLIENT_TIER_WHOLESALE_TEXT: Color32 = Color32::from_rgb(166,237,192);
-pub const CLIENT_TIER_SEMI_BG: Color32 = Color32::from_rgb(83,69,28);
-pub const CLIENT_TIER_SEMI_TEXT: Color32 = Color32::from_rgb(255,227,147);
-pub const CLIENT_TIER_RETAIL_BG: Color32 = Color32::from_rgb(84,44,48);
-pub const CLIENT_TIER_RETAIL_TEXT: Color32 = Color32::from_rgb(255,178,185);
-pub const CLIENT_TIER_SPECIAL_BG: Color32 = Color32::from_rgb(68,48,92);
-pub const CLIENT_TIER_SPECIAL_TEXT: Color32 = Color32::from_rgb(218,181,255);
+const CLIENT_TIER_WHOLESALE_BG: Color32 = Color32::from_rgb(35,76,55);
+const CLIENT_TIER_WHOLESALE_TEXT: Color32 = Color32::from_rgb(166,237,192);
+const CLIENT_TIER_SEMI_BG: Color32 = Color32::from_rgb(83,69,28);
+const CLIENT_TIER_SEMI_TEXT: Color32 = Color32::from_rgb(255,227,147);
+const CLIENT_TIER_RETAIL_BG: Color32 = Color32::from_rgb(84,44,48);
+const CLIENT_TIER_RETAIL_TEXT: Color32 = Color32::from_rgb(255,178,185);
+const CLIENT_TIER_SPECIAL_BG: Color32 = Color32::from_rgb(68,48,92);
+const CLIENT_TIER_SPECIAL_TEXT: Color32 = Color32::from_rgb(218,181,255);
 pub const MANAGEMENT_MODAL_BODY_MAX_HEIGHT: f32 = 670.0;
 // Fixed cells fit a ten-character client name, an 11-digit phone number
 // (plus separators), and a tier badge followed by its transaction terms.

@@ -1376,10 +1376,10 @@ mod pending_matching_tests {
 
     #[test]
     fn dealer_unconfirmed_is_empty_and_order_review_activates_first_lamp(){
-        let empty=(theme::WORKFLOW_SIGNAL_EMPTY,theme::WORKFLOW_SIGNAL_EMPTY_BORDER);
-        let pending=(theme::WORKFLOW_SIGNAL_PENDING,theme::WORKFLOW_SIGNAL_PENDING_BORDER);
-        let current=(theme::WORKFLOW_SIGNAL_CURRENT,theme::WORKFLOW_SIGNAL_CURRENT_BORDER);
-        let done=(theme::WORKFLOW_SIGNAL_DONE,theme::WORKFLOW_SIGNAL_DONE_BORDER);
+        let empty=(egui::Color32::TRANSPARENT,egui::Color32::from_gray(124));
+        let pending=(egui::Color32::from_gray(51),egui::Color32::from_gray(85));
+        let current=(egui::Color32::from_rgb(233,154,53),egui::Color32::from_rgb(245,183,96));
+        let done=(egui::Color32::from_rgb(73,166,106),egui::Color32::from_rgb(105,198,136));
         assert_eq!(empty.0,egui::Color32::TRANSPARENT);
         assert!(empty.1.r().saturating_sub(theme::WORKFLOW_SIGNAL_BLOCK_BG.r())>=80);
         for index in 0..STEP_NAMES.len(){
@@ -1393,8 +1393,8 @@ mod pending_matching_tests {
 
     #[test]
     fn independent_approved_stages_keep_their_green_lamps(){
-        let done=(theme::WORKFLOW_SIGNAL_DONE,theme::WORKFLOW_SIGNAL_DONE_BORDER);
-        let current=(theme::WORKFLOW_SIGNAL_CURRENT,theme::WORKFLOW_SIGNAL_CURRENT_BORDER);
+        let done=(egui::Color32::from_rgb(73,166,106),egui::Color32::from_rgb(105,198,136));
+        let current=(egui::Color32::from_rgb(233,154,53),egui::Color32::from_rgb(245,183,96));
         let stages=Some([false,false,true,true]);
         assert_eq!(workflow_signal_palette(stages,0),current);
         assert_eq!(workflow_signal_palette(stages,2),done);
