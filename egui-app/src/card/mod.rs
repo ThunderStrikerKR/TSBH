@@ -42,43 +42,8 @@ pub(crate) fn apply_height_policy(ui:&mut Ui,policy:CardHeightPolicy,target:f32)
     }
 }
 
-/// Card width is independent of height. Natural cards do not reserve space;
-/// full-width cards reserve a minimum, fixed columns retain their allocation,
-/// and bounded report cards additionally constrain wrapping before scrolling.
-#[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
-pub(crate) enum CardWidthPolicy {
-    #[default]
-    FitContent,
-    FillAvailable,
-    Fixed,
-    Bounded,
-    /// Upper bound only: preserve the content's natural minimum width.
-    UpperLimit,
-}
-pub(crate) fn apply_width_policy(ui:&mut Ui,policy:CardWidthPolicy,target:f32){
-    if !target.is_finite(){return;}
-    let width=target.max(0.0);
-    match policy{
-        CardWidthPolicy::FitContent=>{},
-        CardWidthPolicy::FillAvailable=>ui.set_min_width(width),
-        CardWidthPolicy::Fixed=>ui.set_width(width),
-        CardWidthPolicy::UpperLimit=>ui.set_max_width(width),
-        CardWidthPolicy::Bounded=>{
-            ui.set_width(width);
-            ui.set_max_width(width);
-        }
-    }
-}
-
-/// Same policy for owned Ui and borrowed Ui receivers.
-pub(crate) trait UiWidthPolicyExt {
-    fn apply_shared_width(&mut self,policy:CardWidthPolicy,target:f32);
-}
-impl UiWidthPolicyExt for Ui {
-    fn apply_shared_width(&mut self,policy:CardWidthPolicy,target:f32){
-        apply_width_policy(self,policy,target);
-    }
-}
+// Compatibility exports: one implementation in low-level primitives.
+pub(crate) use crate::ui_primitives::{CardWidthPolicy,UiWidthPolicyExt,apply_width_policy};
 
 /// Width arithmetic for the outer card, its horizontal frame insets and
 /// optional scrollbar reservation. Preserve caller-approved minimum widths.
