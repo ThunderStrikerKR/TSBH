@@ -101,11 +101,10 @@ pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
     );
     let geo=CategoryTreeGeometry::new(rect,item.depth);
     let painter=ui.painter().with_clip_rect(rect);
-    let radius=egui::CornerRadius::same(theme::CONTROL_RADIUS);
     if item.selected{
-        crate::highlight::paint(ui,rect,radius,crate::highlight::Role::Selected);
+        crate::highlight::paint(ui,rect,crate::highlight::Geometry::Control,crate::highlight::Role::Selected);
     }else{
-        crate::button::paint_button_hover(ui,&response,theme::CONTROL_RADIUS as f32);
+        crate::button::paint_button_hover(ui,&response,crate::highlight::Geometry::Control);
     }
     let guide=Stroke::new(theme::CATALOG_TREE_GUIDE_WIDTH,theme::CATALOG_TREE_GUIDE_COLOR);
     geo.guides(item.ancestor_guides,item.is_last,item.has_children,item.open,

@@ -81,7 +81,7 @@ pub fn workflow_shipment_row(
     if previewed && !chosen{
         // Keep the existing preview fill; the linked outline replaces the
         // ordinary row border rather than layering over it.
-        crate::highlight::paint_parts(ui.painter(),block,theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,
+        crate::highlight::paint_parts(ui.painter(),block,crate::highlight::Geometry::Shipment,
             Some(fill),crate::highlight::palette(crate::highlight::Role::LinkedPreview).stroke);
     }else{
         paint_shipment_detail_surface(ui,block,fill,chosen);
@@ -154,7 +154,7 @@ mod workflow_freight_typography_tests{
 pub fn workflow_shipment_hover(ui:&Ui,response:&Response,chosen:bool,previewed:bool){
     if !chosen && !previewed{
         // The common hover painter already records the action origin.
-        crate::button::paint_button_hover(ui,response,theme::CONTROL_RADIUS as f32);
+        crate::button::paint_button_hover(ui,response,crate::highlight::Geometry::Control);
     }else{
         crate::floating_notice::remember_response(ui.ctx(),response);
     }

@@ -46,8 +46,8 @@ impl<const N:usize> FieldHighlights<N>{
         States{required:self.required[index],linked:self.linked[index],review,..Default::default()}.resolve()
     }
 }
-pub(crate) fn field_radius(role:Role)->CornerRadius{
-    CornerRadius::same(if role==Role::LinkedPreview{SOURCE_RADIUS as u8}else{CONTROL_RADIUS})
+fn field_geometry(role:Role)->Geometry{
+    if role==Role::LinkedPreview{Geometry::Source}else{Geometry::Control}
 }
 fn composite_opaque(t:Color32,rest:Color32)->Color32{
     let [r,g,b,a]=t.to_array();
@@ -57,10 +57,10 @@ fn composite_opaque(t:Color32,rest:Color32)->Color32{
 }
 pub(crate) fn field_background(ui:&Ui,rect:Rect,role:Role,opaque:bool){
     let fill=palette(role).fill.map(|t|if opaque{composite_opaque(t,theme::INPUT)}else{t});
-    paint_parts(ui.painter(),rect,field_radius(role),fill,None);
+    paint_parts(ui.painter(),rect,field_geometry(role),fill,None);
 }
 pub(crate) fn field_outline(ui:&Ui,rect:Rect,role:Role){
-    paint_outline(ui.painter(),rect,field_radius(role),role);
+    paint_outline(ui.painter(),rect,field_geometry(role),role);
 }
 pub(crate) fn prioritized_stroke(rest:Stroke,states:States)->Stroke{
     states.resolve().and_then(|role|palette(role).stroke).unwrap_or(rest)
@@ -118,47 +118,87 @@ pub(crate) fn palette(role:Role)->Palette{
     };
     Palette{fill,stroke,ink}
 }
-pub(crate) fn fill_shape(rect:Rect,radius:impl Into<CornerRadius>,fill:Color32)->egui::Shape{
-    egui::Shape::rect_filled(rect,radius,fill)
+/// Closed set of approved shapes; callers cannot pass an arbitrary radius.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum Geometry{
+    Control,Navigation,Compact,Source,Shipment,TableRow,SortHeader,
+    DateLeading,DateMiddle,DateTrailing,QuantityUp,QuantityDown,CountDecrease,CountIncrease,
 }
-pub(crate) fn outline_shape(rect:Rect,radius:impl Into<CornerRadius>,stroke:Stroke)->egui::Shape{
-    egui::Shape::rect_stroke(rect,radius,stroke,egui::StrokeKind::Inside)
+impl Geometry{
+    pub(crate) fn corners(self)->CornerRadius{
+        let r=CONTROL_RADIUS.saturating_sub(theme::FRAME_STROKE_WIDTH as u8);
+        let count=CONTROL_RADIUS.saturating_sub(2);
+        match self{
+            Self::Control=>CornerRadius::same(CONTROL_RADIUS),
+            Self::Navigation=>CornerRadius::same(NAVIGATION_RADIUS),
+            Self::Compact=>CornerRadius::same(COMPACT_RADIUS),
+            Self::Source=>CornerRadius::same(SOURCE_RADIUS as u8),
+            Self::Shipment=>CornerRadius::same(theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS as u8),
+            Self::TableRow|Self::DateMiddle=>CornerRadius::same(0),
+            Self::SortHeader=>CornerRadius::same(2),
+            Self::DateLeading=>CornerRadius{nw:r,sw:r,ne:0,se:0},
+            Self::DateTrailing=>CornerRadius{nw:0,sw:0,ne:r,se:r},
+            Self::QuantityUp=>CornerRadius{nw:3,sw:0,ne:0,se:0},
+            Self::QuantityDown=>CornerRadius{nw:0,sw:3,ne:0,se:0},
+            Self::CountDecrease=>CornerRadius{nw:count,sw:count,ne:0,se:0},
+            Self::CountIncrease=>CornerRadius{nw:0,sw:0,ne:count,se:count},
+        }
+    }
+}
+pub(crate) fn item_cell_rect(rect:Rect)->Rect{
+    rect.shrink2(egui::Vec2::splat(theme::SPACE_4))
+}
+pub(crate) fn segment_outline_rect(rect:Rect)->Rect{rect.shrink(0.5)}
+pub(crate) fn separate_source_blocks(mut rect:Rect,left:bool,right:bool)->Rect{
+    let trim=theme::SOURCE_BLOCK_HORIZONTAL_PADDING+theme::SOURCE_RECOGNIZED_BORDER_WIDTH
+        +theme::SOURCE_BLOCK_ADJACENT_GAP*0.5;
+    if left{rect.min.x+=trim;}
+    if right{rect.max.x-=trim;}
+    rect
+}
+pub(crate) fn focused_source_rect(rect:Rect)->Rect{
+    rect.expand((theme::LINKED_PREVIEW_BORDER_WIDTH-theme::SOURCE_RECOGNIZED_BORDER_WIDTH).max(0.0))
+}
+pub(crate) fn fill_shape(rect:Rect,geometry:Geometry,fill:Color32)->egui::Shape{
+    egui::Shape::rect_filled(rect,geometry.corners(),fill)
+}
+pub(crate) fn outline_shape(rect:Rect,geometry:Geometry,stroke:Stroke)->egui::Shape{
+    egui::Shape::rect_stroke(rect,geometry.corners(),stroke,egui::StrokeKind::Inside)
 }
 pub(crate) fn painter(ui:&Ui,rect:Rect)->Option<Painter>{
     (rect.is_positive()&&rect.intersects(ui.clip_rect())).then(||ui.painter().clone())
 }
-pub(crate) fn paint_parts(painter:&Painter,rect:Rect,radius:impl Into<CornerRadius>,fill:Option<Color32>,stroke:Option<Stroke>){
+pub(crate) fn paint_parts(painter:&Painter,rect:Rect,geometry:Geometry,fill:Option<Color32>,stroke:Option<Stroke>){
     if !rect.is_positive()||!rect.intersects(painter.clip_rect()){return;}
-    let radius=radius.into();
-    if let Some(fill)=fill{painter.add(fill_shape(rect,radius,fill));}
-    if let Some(stroke)=stroke{painter.add(outline_shape(rect,radius,stroke));}
+    if let Some(fill)=fill{painter.add(fill_shape(rect,geometry,fill));}
+    if let Some(stroke)=stroke{painter.add(outline_shape(rect,geometry,stroke));}
 }
-pub(crate) fn paint(ui:&Ui,rect:Rect,radius:impl Into<CornerRadius>,role:Role){
+pub(crate) fn paint(ui:&Ui,rect:Rect,geometry:Geometry,role:Role){
     let p=palette(role);
-    paint_parts(ui.painter(),rect,radius,p.fill,p.stroke);
+    paint_parts(ui.painter(),rect,geometry,p.fill,p.stroke);
 }
-pub(crate) fn paint_fill(painter:&Painter,rect:Rect,radius:impl Into<CornerRadius>,role:Role){
-    paint_parts(painter,rect,radius,palette(role).fill,None);
+pub(crate) fn paint_fill(painter:&Painter,rect:Rect,geometry:Geometry,role:Role){
+    paint_parts(painter,rect,geometry,palette(role).fill,None);
 }
-pub(crate) fn paint_outline(painter:&Painter,rect:Rect,radius:impl Into<CornerRadius>,role:Role){
-    paint_parts(painter,rect,radius,None,palette(role).stroke);
+pub(crate) fn paint_outline(painter:&Painter,rect:Rect,geometry:Geometry,role:Role){
+    paint_parts(painter,rect,geometry,None,palette(role).stroke);
 }
 /// Preserve the card's existing status stripe geometry, using the same
 /// semantic border color as the associated selection or linked preview.
 pub(crate) fn paint_stripe(painter:&Painter,rect:Rect,role:Role){
     if let Some(stroke)=palette(role).stroke{
-        paint_parts(painter,rect,0.0,Some(stroke.color),None);
+        paint_parts(painter,rect,Geometry::TableRow,Some(stroke.color),None);
     }
 }
 pub(crate) fn button_hover_palette(hovered:bool,focused:bool)->(Option<Color32>,Option<Stroke>){
     (if hovered{palette(Role::Hover).fill}else{None},
         if hovered||focused{palette(Role::Focus).stroke}else{None})
 }
-pub(crate) fn action_hover(ui:&Ui,response:&Response,radius:CornerRadius,light:bool){
+pub(crate) fn action_hover(ui:&Ui,response:&Response,geometry:Geometry,light:bool){
     if !response.hovered()&&!response.has_focus(){return;}
     let (fill,stroke)=if light{(None,palette(Role::LightHover).stroke)}
         else{button_hover_palette(response.hovered(),response.has_focus())};
-    paint_parts(ui.painter(),response.rect,radius,fill,stroke);
+    paint_parts(ui.painter(),response.rect,geometry,fill,stroke);
 }
 /// Common highlight geometry preserves each approved surface hierarchy.
 /// A surface uses its own corners, never a second independent outline radius.
@@ -229,9 +269,9 @@ pub(crate) fn action_widget(ui:&mut Ui,rest:Color32,stroke:Stroke,state:impl Int
         visual.expansion=0.0;
     }
 }
-pub(crate) fn fixed_action_surface(ui:&Ui,response:&Response,radius:impl Into<CornerRadius>,rest:Color32,stroke:Stroke,light:bool,interactive:bool){
+pub(crate) fn fixed_action_surface(ui:&Ui,response:&Response,geometry:Geometry,rest:Color32,stroke:Stroke,light:bool,interactive:bool){
     let (fill,border)=action_surface(rest,stroke,light,interactive&&response.hovered(),interactive&&response.has_focus());
-    paint_parts(ui.painter(),response.rect,radius,Some(fill),Some(border));
+    paint_parts(ui.painter(),response.rect,geometry,Some(fill),Some(border));
 }
 /// Native widgets retain hit testing, layout and text; only their scoped
 /// visual state is configured here. Light button fill is behind dark text.

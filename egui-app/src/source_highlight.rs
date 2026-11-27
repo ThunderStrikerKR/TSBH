@@ -390,19 +390,19 @@ pub fn is_active_field(active:Option<&LinkKey>,recipient:&str,target:&str,field:
 /// Fill must be painted before the value text. For TextEdit use its
 /// background_color() instead, so the native editor paints behind glyphs.
 pub fn paint_active_background(ui:&egui::Ui,rect:egui::Rect) {
-    crate::highlight::paint_fill(ui.painter(),rect,ACTIVE_RADIUS,crate::highlight::Role::LinkedPreview);
+    crate::highlight::paint_fill(ui.painter(),rect,crate::highlight::Geometry::Source,crate::highlight::Role::LinkedPreview);
 }
 
 /// Draw the same 2pt outline whenever the shared visible projection
 /// marks a field active. A board-driven recipient preview and a span-driven
 /// hover MUST produce exactly the same border, even when no LinkKey has
 /// completed its 50ms entrance timer yet.
-pub(crate) fn paint_active_outline(ui:&egui::Ui,rect:egui::Rect,radius:impl Into<egui::CornerRadius>){
-    crate::highlight::paint_outline(ui.painter(),rect,radius,crate::highlight::Role::LinkedPreview);
+pub(crate) fn paint_active_outline(ui:&egui::Ui,rect:egui::Rect,geometry:crate::highlight::Geometry){
+    crate::highlight::paint_outline(ui.painter(),rect,geometry,crate::highlight::Role::LinkedPreview);
 }
 pub fn paint_active_if(ui:&egui::Ui, response:&egui::Response, highlighted:bool) {
     if highlighted {
-        paint_active_outline(ui,response.rect,ACTIVE_RADIUS);
+        paint_active_outline(ui,response.rect,crate::highlight::Geometry::Source);
     }
 }
 
@@ -713,19 +713,13 @@ fn compact_block_rect(
 
 /// At boundaries between adjacent classified ranges, trim only their shared
 /// edges to leave a 0.5pt gap, preserving full padding on open edges.
-fn separate_touching_blocks(mut rect:egui::Rect,left:bool,right:bool)->egui::Rect {
-    let trim=theme::SOURCE_BLOCK_HORIZONTAL_PADDING
-        +theme::SOURCE_RECOGNIZED_BORDER_WIDTH
-        +theme::SOURCE_BLOCK_ADJACENT_GAP*0.5;
-    if left {rect.min.x+=trim;}
-    if right {rect.max.x-=trim;}
-    rect
+fn separate_touching_blocks(rect:egui::Rect,left:bool,right:bool)->egui::Rect {
+    crate::highlight::separate_source_blocks(rect,left,right)
 }
 
-/// Focus adds its extra stroke outside the normal chip so its thicker
-/// outline cannot consume the restored ink clearance.
+/// Focus expands into the approved row clearance, not the text area.
 fn source_focused_block_rect(rect:egui::Rect)->egui::Rect{
-    rect.expand((ACTIVE_BORDER_WIDTH-theme::SOURCE_RECOGNIZED_BORDER_WIDTH).max(0.0))
+    crate::highlight::focused_source_rect(rect)
 }
 
 // Rounded blocks are painted beneath the editor glyphs, but the blue focus
@@ -928,12 +922,12 @@ fn block_shapes_with_states(
                     rect=source_focused_block_rect(rect);
                 }
                 if !rect.intersects(clip) {continue;}
-                let radius=theme::SOURCE_BLOCK_RADIUS;
-                let background=crate::highlight::fill_shape(rect,radius,block.fill);
+                let geometry=crate::highlight::Geometry::Source;
+                let background=crate::highlight::fill_shape(rect,geometry,block.fill);
                 if block.focused {
                     focused.push(background);
                     focused_outlines.push(crate::highlight::outline_shape(
-                        rect,radius,egui::Stroke::new(ACTIVE_BORDER_WIDTH,ACTIVE_BORDER)
+                        rect,geometry,egui::Stroke::new(ACTIVE_BORDER_WIDTH,ACTIVE_BORDER)
                     ));
                 } else {
                     normal.push(background);
@@ -955,7 +949,7 @@ fn block_shapes_with_states(
                         ),
                     };
                     outlines.push(crate::highlight::outline_shape(
-                        rect,radius,egui::Stroke::new(width,border)
+                        rect,geometry,egui::Stroke::new(width,border)
                     ));
                 }
             }

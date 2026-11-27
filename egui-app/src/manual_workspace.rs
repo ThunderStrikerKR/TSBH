@@ -258,7 +258,7 @@ fn paint_manual_assignment_recommendation(
     ui:&egui::Ui,rect:egui::Rect,hovered:bool
 ){
     let role=if hovered{crate::highlight::Role::DropHovered}else{crate::highlight::Role::DropTarget};
-    crate::highlight::paint(ui,rect,theme::CONTROL_RADIUS,role);
+    crate::highlight::paint(ui,rect,crate::highlight::Geometry::Control,role);
 }
 
 /// Paint only the selected source evidence while preserving the original
@@ -320,13 +320,13 @@ fn paint_manual_source_drag_preview(
         egui::Id::new("manual-source-drag-preview")) else{return;};
     for rect in &original_geometry.rects {
         crate::highlight::paint_parts(&painter,rect.translate(translation),
-            original_geometry.style.radius,Some(original_geometry.style.fill),None);
+            crate::highlight::Geometry::Source,Some(original_geometry.style.fill),None);
     }
     painter.galley(galley_pos,galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
     // Match the source document's paint order: glyphs first, then the outline.
     for rect in &original_geometry.rects {
         crate::highlight::paint_parts(&painter,rect.translate(translation),
-            original_geometry.style.radius,None,Some(egui::Stroke::new(
+            crate::highlight::Geometry::Source,None,Some(egui::Stroke::new(
                 original_geometry.style.border_width,original_geometry.style.border)));
     }
 }

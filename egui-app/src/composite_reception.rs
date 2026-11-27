@@ -326,9 +326,7 @@ pub fn reception_item_row(
     // A 42pt row previously lost 8pt top and bottom, leaving a 26pt
     // highlight rectangle. Give 16pt glyphs a 34pt value surface instead;
     // the 4pt inset keeps both rounded corners and the border inside the row.
-    let padded = |index: usize| columns[index].shrink2(
-        egui::vec2(theme::SPACE_4, theme::SPACE_4)
-    );
+    let padded = |index: usize| crate::highlight::item_cell_rect(columns[index]);
     let cells = [padded(0), padded(1), padded(2)];
     let compact_quantity=reception_compact_quantity(quantity);
     // Use explicit column anchors for all three text cells. Ui::put(Label)

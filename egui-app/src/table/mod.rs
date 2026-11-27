@@ -156,7 +156,7 @@ pub(crate) fn paint_management_table_row_background(painter:&egui::Painter,rect:
 /// Interactive table rows retain the standard alternating background when idle.
 /// The hover surface is owned by the table, not by an individual screen.
 pub(crate) fn paint_management_interactive_row_background(painter:&egui::Painter,rect:Rect,index:usize,hovered:bool){
-    if hovered{crate::highlight::paint_fill(painter,rect,0.0,crate::highlight::Role::RowHover);}
+    if hovered{crate::highlight::paint_fill(painter,rect,crate::highlight::Geometry::TableRow,crate::highlight::Role::RowHover);}
     else{paint_management_table_row_background(painter,rect,index);}
 }
 
@@ -512,9 +512,9 @@ pub(crate) fn fixed_row<const N:usize>(
         row.allocate_exact_size(rect.size(),egui::Sense::hover());
         let selected=matches!(tone,RowTone::SelectedIf(true));
         if selected{
-            crate::highlight::paint_fill(row.painter(),rect,0.0,crate::highlight::Role::Selected);
+            crate::highlight::paint_fill(row.painter(),rect,crate::highlight::Geometry::TableRow,crate::highlight::Role::Selected);
         }else if matches!(tone,RowTone::SelectedIf(false))&&row.rect_contains_pointer(rect){
-            crate::highlight::paint_fill(row.painter(),rect,0.0,crate::highlight::Role::RowHover);
+            crate::highlight::paint_fill(row.painter(),rect,crate::highlight::Geometry::TableRow,crate::highlight::Role::RowHover);
         }else{paint_management_table_row_background(row.painter(),rect,index);}
         let cells=management_table_cells(rect.min,widths,rect.height(),gap);
         draw(row,cells);
@@ -522,7 +522,7 @@ pub(crate) fn fixed_row<const N:usize>(
         if selected{
             // The selected bottom edge replaces the ordinary horizontal rule.
             // Column rules remain structural and retain their exact positions.
-            crate::highlight::paint_outline(row.painter(),rect,0.0,crate::highlight::Role::Selected);
+            crate::highlight::paint_outline(row.painter(),rect,crate::highlight::Geometry::TableRow,crate::highlight::Role::Selected);
         }else{
             paint_management_table_row_rule(row.painter(),rect);
         }
@@ -614,7 +614,7 @@ pub(crate) fn history_row<const N:usize>(
 /// Identical sort-hover outline for all freight management list headers.
 /// The caller supplies the column intersected with the 34pt text area.
 fn management_master_header_sort_hover(ui:&Ui,hit:Rect){
-    crate::highlight::paint(ui,hit,2.0,crate::highlight::Role::Hover);
+    crate::highlight::paint(ui,hit,crate::highlight::Geometry::SortHeader,crate::highlight::Role::Hover);
 }
 
 

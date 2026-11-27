@@ -204,8 +204,8 @@ pub(crate) fn date_navigation_segmented_surface_with_state<R>(
     let content=add_segments(&mut segments,inner);
     let stroke=crate::highlight::prioritized_stroke(
         Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::border_ink(theme::BorderRole::Standard)),state(&content));
-    crate::highlight::paint_parts(ui.painter(),outer.shrink(0.5),
-        crate::highlight::CONTROL_RADIUS,None,Some(stroke));
+    crate::highlight::paint_parts(ui.painter(),crate::highlight::segment_outline_rect(outer),
+        crate::highlight::Geometry::Control,None,Some(stroke));
     (outer,content)
 }
 
@@ -283,16 +283,16 @@ pub fn form_field_label(ui:&mut Ui,label:&str)->Response {
 }
 
 /// A selected item's fixed blue outline, with caller-owned inset and corner geometry.
-pub(crate) fn paint_selection_outline(painter:&egui::Painter,rect:Rect,radius:impl Into<egui::CornerRadius>){
-    crate::highlight::paint_outline(painter,rect,radius,crate::highlight::Role::ChooserSelected);
+pub(crate) fn paint_selection_outline(painter:&egui::Painter,rect:Rect,geometry:crate::highlight::Geometry){
+    crate::highlight::paint_outline(painter,rect,geometry,crate::highlight::Role::ChooserSelected);
 }
 
 pub(crate) use crate::highlight::button_hover_palette;
-pub(crate) fn paint_action_hover_corners(ui:&Ui,response:&Response,corners:egui::CornerRadius){
-    crate::highlight::action_hover(ui,response,corners,false);
+pub(crate) fn paint_action_hover_corners(ui:&Ui,response:&Response,geometry:crate::highlight::Geometry){
+    crate::highlight::action_hover(ui,response,geometry,false);
 }
-pub(crate) fn paint_action_hover_surface(ui:&Ui,response:&Response,corners:egui::CornerRadius,light_surface:bool){
-    crate::highlight::action_hover(ui,response,corners,light_surface);
+pub(crate) fn paint_action_hover_surface(ui:&Ui,response:&Response,geometry:crate::highlight::Geometry,light_surface:bool){
+    crate::highlight::action_hover(ui,response,geometry,light_surface);
 }
 pub(crate) use crate::highlight::painter as highlight_painter;
 

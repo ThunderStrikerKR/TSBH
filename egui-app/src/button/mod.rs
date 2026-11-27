@@ -5,16 +5,15 @@ use crate::theme::*;
 use crate::ui_primitives::{paint_workflow_icon,WorkflowIcon,ManagementChevronDirection,paint_management_chevron,paint_management_chevron_with_color,paint_chevron_at_angle_scaled};
 
 /// Register an actual interaction, then paint using the shared primitive.
-fn paint_button_hover_corners(ui:&Ui,response:&Response,corners:egui::CornerRadius){
+fn paint_button_hover_corners(ui:&Ui,response:&Response,geometry:crate::highlight::Geometry){
     crate::floating_notice::remember_response(ui.ctx(),response);
-    crate::ui_primitives::paint_action_hover_corners(ui,response,corners);
+    crate::ui_primitives::paint_action_hover_corners(ui,response,geometry);
 }
 
 /// Existing buttons keep their uniform corner radius. Segmented controls can
 /// use paint_button_hover_corners without altering other components.
-pub(crate) fn paint_button_hover(ui:&Ui,response:&Response,radius:f32){
-    let radius=egui::CornerRadius::same(radius.round().clamp(0.0,255.0) as u8);
-    paint_button_hover_corners(ui,response,radius);
+pub(crate) fn paint_button_hover(ui:&Ui,response:&Response,geometry:crate::highlight::Geometry){
+    paint_button_hover_corners(ui,response,geometry);
 }
 
 /// Fixed-rectangle remove action for compact rows.
@@ -28,7 +27,7 @@ pub(crate) fn remove_at_response(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->Resp
     let enabled=enabled && ui.is_enabled();
     let response=ui.interact(hit,id,if enabled{Sense::click()}else{Sense::hover()});
     let ink=theme::icon_ink(theme::IconRole::Secondary,theme::VisualState::enabled(enabled));
-    if enabled{paint_button_hover(ui,&response,theme::CONTROL_RADIUS as f32);}
+    if enabled{paint_button_hover(ui,&response,crate::highlight::Geometry::Control);}
     let center=hit.center();
     let stroke=Stroke::new(1.5_f32,ink);
     for sign in [-1.0_f32,1.0]{
@@ -43,7 +42,7 @@ pub(crate) fn remove_at_response(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->Resp
 /// Shared disclosure chevron, overflow tooltip and hover policy.
 pub(crate) fn disclosure_at(
     ui:&Ui,hit:Rect,id:egui::Id,center:egui::Pos2,arrow_clip:Option<Rect>,
-    open:bool,overflow:bool,full:&str,hover_radius:f32
+    open:bool,overflow:bool,full:&str,geometry:crate::highlight::Geometry
 )->Response{
     let painter=ui.painter().with_clip_rect(arrow_clip.unwrap_or(ui.clip_rect()));
     paint_management_chevron(&painter,center,if open{
@@ -51,7 +50,7 @@ pub(crate) fn disclosure_at(
     }else{ManagementChevronDirection::Right});
     let response=ui.interact(hit,id,Sense::click());
     let response=crate::ui_primitives::overflow_tooltip(response,overflow,full);
-    paint_button_hover(ui,&response,hover_radius);
+    paint_button_hover(ui,&response,geometry);
     response
 }
 
@@ -192,7 +191,7 @@ pub(crate) fn window_control(ui: &mut Ui, control: WindowControl) -> Response {
     }).inner;
     // Window chrome uses the same hover outline as every other actionable
     // control, without shifting the 32pt hit rectangle or painted glyph.
-    paint_button_hover(ui,&response,4.0);
+    paint_button_hover(ui,&response,crate::highlight::Geometry::Compact);
     let center = response.rect.center();
     let ink = theme::icon_ink(theme::IconRole::Interactive,theme::VisualState::pointer(true,response.hovered()));
     let line = Stroke::new(1.35_f32, ink);
@@ -299,7 +298,7 @@ pub(crate) fn icon_action_button(
         .min_size(Vec2::splat(theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH)));
     if enabled{
         crate::button::paint_button_hover(
-            ui,&response,theme::CONTROL_RADIUS as f32
+            ui,&response,crate::highlight::Geometry::Control
         );
     }
     response
@@ -364,9 +363,8 @@ pub(crate) fn workflow_fixed_action(
     let role=if stage{theme::ButtonRole::Emphasized}else{theme::ButtonRole::Standard};
     let (_,fill,ink,stroke)=crate::button::action_style(role,enabled,false);
     let light_surface=enabled&&fill==theme::BRIGHT;
-    let radius=crate::highlight::NAVIGATION_RADIUS;
     let rest_stroke=if !stage || !enabled{stroke}else{Stroke::NONE};
-    crate::highlight::fixed_action_surface(ui,&response,radius,fill,rest_stroke,light_surface,enabled||stage);
+    crate::highlight::fixed_action_surface(ui,&response,crate::highlight::Geometry::Navigation,fill,rest_stroke,light_surface,enabled||stage);
     let painter=ui.painter();
     match action{
         WorkflowFixedAction::Auxiliary(action)=>
@@ -396,21 +394,15 @@ pub(crate) fn workflow_fixed_action(
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub(crate) enum ManagementDateSegmentEdge{Leading,Middle,Trailing}
 
-fn management_date_segment_corners(
-    edge:ManagementDateSegmentEdge
-)->egui::CornerRadius{
-    let r=theme::CONTROL_RADIUS.saturating_sub(
-        theme::FRAME_STROKE_WIDTH as u8
-    );
-    match edge {
-        ManagementDateSegmentEdge::Leading=>egui::CornerRadius{
-            nw:r,ne:0,sw:r,se:0
-        },
-        ManagementDateSegmentEdge::Middle=>egui::CornerRadius::same(0),
-        ManagementDateSegmentEdge::Trailing=>egui::CornerRadius{
-            nw:0,ne:r,sw:0,se:r
-        },
+fn management_date_segment_geometry(edge:ManagementDateSegmentEdge)->crate::highlight::Geometry{
+    match edge{
+        ManagementDateSegmentEdge::Leading=>crate::highlight::Geometry::DateLeading,
+        ManagementDateSegmentEdge::Middle=>crate::highlight::Geometry::DateMiddle,
+        ManagementDateSegmentEdge::Trailing=>crate::highlight::Geometry::DateTrailing,
     }
+}
+fn management_date_segment_corners(edge:ManagementDateSegmentEdge)->egui::CornerRadius{
+    management_date_segment_geometry(edge).corners()
 }
 
 /// Keep the date segment's hit target, fill, asymmetric rounding and hover
@@ -418,7 +410,8 @@ fn management_date_segment_corners(
 pub(crate) fn management_date_segment(
     ui:&mut Ui,label:&str,width:f32,edge:ManagementDateSegmentEdge
 )->Response{
-    let corners=management_date_segment_corners(edge);
+    let geometry=management_date_segment_geometry(edge);
+    let corners=geometry.corners();
     let direction=match label {
         "‹"=>Some(ManagementChevronDirection::Left),
         "›"=>Some(ManagementChevronDirection::Right),
@@ -435,7 +428,7 @@ pub(crate) fn management_date_segment(
             .corner_radius(corners),
         None
     );
-    crate::button::paint_button_hover_corners(ui,&response,corners);
+    crate::button::paint_button_hover_corners(ui,&response,geometry);
     if let Some(direction)=direction{
         let painter=ui.painter().with_clip_rect(response.rect);
         paint_management_chevron(
@@ -487,7 +480,7 @@ pub(crate) fn date_navigation_segment_button(
             Some(enabled)
         );
         let ink=theme::icon_ink(theme::IconRole::Navigation,theme::VisualState::pointer(enabled,response.hovered()));
-        if enabled{crate::button::paint_button_hover(ui,&response,0.0);}
+        if enabled{crate::button::paint_button_hover(ui,&response,crate::highlight::Geometry::TableRow);}
         let painter=ui.painter().with_clip_rect(response.rect);
         paint_management_chevron_with_color(&painter,response.rect.center(),direction,ink);
         return response;
@@ -495,21 +488,16 @@ pub(crate) fn date_navigation_segment_button(
     // Preserve the established IDs, exact hit area and separate corner
     // geometry of the horizontal count and half-height vertical steppers.
     let rect=ui.max_rect().intersect(ui.clip_rect());
-    let (id,corners)=match glyph{
+    let (id,geometry)=match glyph{
         DateNavigationSegmentGlyph::CompactVerticalChevron{up}=>(
-            "compact-chevron",egui::CornerRadius{
-                nw:if up{3}else{0},ne:0,sw:if up{0}else{3},se:0
-            }
+            "compact-chevron",if up{crate::highlight::Geometry::QuantityUp}else{crate::highlight::Geometry::QuantityDown}
         ),
-        DateNavigationSegmentGlyph::CountStep{increase}=>{
-            let radius=theme::CONTROL_RADIUS.saturating_sub(2);
-            ("count-step",egui::CornerRadius{
-                nw:if increase{0}else{radius},sw:if increase{0}else{radius},
-                ne:if increase{radius}else{0},se:if increase{radius}else{0},
-            })
-        }
+        DateNavigationSegmentGlyph::CountStep{increase}=>(
+            "count-step",if increase{crate::highlight::Geometry::CountIncrease}else{crate::highlight::Geometry::CountDecrease}
+        ),
         DateNavigationSegmentGlyph::Chevron(_)=>unreachable!("handled above"),
     };
+    let corners=geometry.corners();
     let response=ui.interact(rect,ui.id().with(id),
         if enabled{Sense::click()}else{Sense::hover()});
     let painter=ui.painter().with_clip_rect(rect);
@@ -525,7 +513,7 @@ pub(crate) fn date_navigation_segment_button(
         DateNavigationSegmentGlyph::Chevron(_)=>unreachable!("handled above"),
     };
     if let Some(fill)=fill{painter.rect_filled(rect,corners,fill);}
-    if enabled{crate::button::paint_button_hover_corners(ui,&response,corners);}
+    if enabled{crate::button::paint_button_hover_corners(ui,&response,geometry);}
     match glyph{
         DateNavigationSegmentGlyph::CompactVerticalChevron{up}=>{
             let angle=if up{-std::f32::consts::FRAC_PI_2}else{std::f32::consts::FRAC_PI_2};

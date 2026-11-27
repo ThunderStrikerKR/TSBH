@@ -437,7 +437,7 @@ fn workflow_header(
     );
     let title_response=crate::button::disclosure_at(ui,arrow.union(title_rect),
         workflow_widget_id("workflow-header",id,in_preview),arrow.center(),None,
-        open,allow_title_tooltip&&visible!=title,title,theme::CONTROL_RADIUS as f32);
+        open,allow_title_tooltip&&visible!=title,title,crate::highlight::Geometry::Control);
 
     let block=workflow_control_rect(signal);
     theme::paint_bordered_surface(ui.painter(),block,theme::WORKFLOW_SIGNAL_BLOCK_RADIUS,

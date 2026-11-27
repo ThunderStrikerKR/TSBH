@@ -20,7 +20,7 @@ pub fn management_chooser_row(
     );
     let painter=ui.painter().clone();
     if selected{
-        crate::highlight::paint(ui,rect,theme::CONTROL_RADIUS,crate::highlight::Role::ChooserSelected);
+        crate::highlight::paint(ui,rect,crate::highlight::Geometry::Control,crate::highlight::Role::ChooserSelected);
     }else{
         painter.rect_filled(rect,theme::CONTROL_RADIUS,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
     }
@@ -44,7 +44,7 @@ pub fn management_chooser_row(
     );
     if !selected {
         crate::button::paint_button_hover(
-            ui,&response,theme::CONTROL_RADIUS as f32
+            ui,&response,crate::highlight::Geometry::Control
         );
     }
     response
@@ -279,7 +279,7 @@ pub fn management_row_with_tags(
     let state=crate::highlight::States{selected,focused:response.has_focus(),hovered:response.hovered(),..Default::default()};
     let role=state.resolve();
     if selected{
-        crate::highlight::paint_fill(ui.painter(),rect,0.0,crate::highlight::Role::Selected);
+        crate::highlight::paint_fill(ui.painter(),rect,crate::highlight::Geometry::TableRow,crate::highlight::Role::Selected);
     }else{
         paint_management_interactive_row_background(ui.painter(),rect,visible_index,response.hovered());
     }
@@ -348,7 +348,7 @@ pub fn management_row_with_tags(
     }
     management_master_column_rules(ui,rect,edges);
     if let Some(role)=role{
-        crate::highlight::paint_outline(ui.painter(),rect,0.0,role);
+        crate::highlight::paint_outline(ui.painter(),rect,crate::highlight::Geometry::TableRow,role);
     }else{
         paint_management_table_row_rule(ui.painter(),rect);
     }

@@ -540,7 +540,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let response=crate::button::disclosure_at(ui,open_area,
                 ui.make_persistent_id(("order-history-toggle",id)),center,
                 Some(columns[2].intersect(area)),expanded.contains(id),
-                history_text_overflow(ui,summary_rect,&summary,typography::ManagementTableCellRole::ProductName),&summary,0.0);
+                history_text_overflow(ui,summary_rect,&summary,typography::ManagementTableCellRole::ProductName),&summary,crate::highlight::Geometry::TableRow);
             if response.clicked(){*pending_toggle=Some(id.to_owned());}
             paint_center(ui,columns[3],field(row,"status"));
             let total=won(&row["total"]);
