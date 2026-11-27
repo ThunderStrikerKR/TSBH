@@ -1,9 +1,9 @@
 //! Mouse-only contextual help for the native Settings screen.
 //! Matches React HelpTooltip: 500ms hover, 180ms leave, mouse click pin,
 //! outside pointer/keyboard/wheel dismissal. It is NOT an alert or modal.
-use crate::ui_layout::SharedAllocationExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
 use crate::{theme,typography};
-use crate::ui_primitives::UiWidthPolicyExt;
+use crate::ui_layout::geometry::UiWidthPolicyExt;
 use eframe::egui::{self,Align2,Pos2,Rect,Sense,Stroke,Ui,Vec2};
 use std::time::{Duration,Instant};
 
@@ -400,11 +400,11 @@ pub fn icon(heading:&mut Ui,title:&str){
                     crate::overlay::attach_popup(popup.ctx(),response.layer_id,popup.layer_id());
                     crate::card::settings_help_surface_frame()
                         .show(popup,|panel|{
-                            crate::ui_primitives::apply_width_policy(panel,crate::ui_primitives::CardWidthPolicy::Fixed,width-theme::SPACE_24);
+                            crate::ui_layout::geometry::apply_width_policy(panel,crate::ui_layout::geometry::CardWidthPolicy::Fixed,width-theme::SPACE_24);
                             crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                 .max_height(viewport.height().min(500.0)*0.7)
                                 .show(panel,|details|{
-                                    details.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,width-theme::SPACE_24);
+                                    details.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,width-theme::SPACE_24);
                                     content(details,title,help);
                                 });
                         });
