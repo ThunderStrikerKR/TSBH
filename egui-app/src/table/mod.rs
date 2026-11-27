@@ -510,15 +510,21 @@ pub(crate) fn fixed_row<const N:usize>(
     row_scope(ui,id,rect,|row|{
         row.set_clip_rect(row.clip_rect().intersect(rect));
         row.allocate_exact_size(rect.size(),egui::Sense::hover());
-        if matches!(tone,RowTone::SelectedIf(true)){
-            row.painter().rect_filled(rect,0.0,theme::WORKFLOW_SELECTED_BG);
-            row.painter().rect_filled(Rect::from_min_size(rect.min,
-                Vec2::new(theme::WORKFLOW_SELECTED_STRIPE,rect.height())),0.0,theme::SELECTION);
+        let selected=matches!(tone,RowTone::SelectedIf(true));
+        if selected{
+            row.painter().rect_filled(rect,0.0,theme::ORANGE_EMPHASIS_BG);
+        }else if matches!(tone,RowTone::SelectedIf(false))&&row.rect_contains_pointer(rect){
+            row.painter().rect_filled(rect,0.0,theme::BUTTON_HOVER_BG);
         }else{paint_management_table_row_background(row.painter(),rect,index);}
         let cells=management_table_cells(rect.min,widths,rect.height(),gap);
         draw(row,cells);
         management_table_column_rules(row,rect,&cells,gap);
         paint_management_table_row_rule(row.painter(),rect);
+        if selected{
+            row.painter().rect_stroke(rect,0.0,
+                Stroke::new(theme::FRAME_STROKE_WIDTH,theme::SELECTED_ORDER),
+                egui::StrokeKind::Inside);
+        }
     });
 }
 /// Only column content and business sort state are supplied by the caller.
