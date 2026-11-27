@@ -334,6 +334,16 @@ impl BandoGateway for LocalGateway {
             let (mut shadow,selected_model)=PreviewStore::capture_recognition_learning(order,&contexts)?;
             let support_us=support_started.elapsed().as_micros() as u64;
             let combined_started=std::time::Instant::now();
+            // Verified full model payloads are transient; do not persist
+            // training order IDs or parameters in the first-analysis capture.
+            let field_models=shadow.as_object_mut().and_then(|o|o.remove("verifiedFieldModels")).unwrap_or_else(||serde_json::json!([]));
+            if field_models.as_array().is_some_and(|a|!a.is_empty()){
+                let result=recognition::execute("run_field_blend_shadow",serde_json::json!({
+                    "raw":raw,"initialAnalysis":first,"learningShadow":shadow,"models":field_models,
+                    "predictionAt":chrono::Utc::now().to_rfc3339(),"clientBuildVersion":env!("CARGO_PKG_VERSION")}));
+                shadow["fieldCombinedShadow"]=result.unwrap_or_else(|_|serde_json::json!({
+                    "status":"unavailable_or_incompatible_field_model","decisionChanged":false,"eligibleForAutomaticDecision":false}));
+            }
             // Always preserve the original recognition. An absent or rejected
             // developer model is a recorded abstention, never a parser error.
             let combined=(||->Result<Value,String>{
