@@ -22,6 +22,7 @@ fn product_url_ok(value:&str)->bool {
 mod client_search;
 #[path = "../../src-tauri/src/business_core/catalog_clients/queries.rs"]
 mod native_queries;
+pub(crate) use native_queries::UNASSIGNED_BRAND_FILTER;
 #[path = "../../src-tauri/src/business_core/catalog_clients/model_groups.rs"]
 mod native_model_groups;
 #[path = "../../src-tauri/src/business_core/catalog_clients/aliases.rs"]
