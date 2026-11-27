@@ -26,7 +26,7 @@ jobs:
         shell: pwsh
         run: |
           # A Cargo filter matching no tests can still return exit code zero.
-          # Require every separately filtered P08 regression before accepting this job.
+          # Require every separately filtered learning regression before accepting this job.
           $listed = cargo test --manifest-path egui-app/Cargo.toml -- --list
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $expected = @(
@@ -56,66 +56,7 @@ jobs:
             'recognition::learning_context::tests'
           )
           foreach ($module in $requiredModules) {
-            $pattern = '(^|::)' + [regex]::Escape($module) + '::.+: test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Recognition support and learning ledger regression
-        run: |
-          cargo test --manifest-path egui-app/Cargo.toml recognition_support_tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml recognition_learning_store_tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml learning_two_database_disk_replay_uses_real_snapshot_and_audit_paths -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml learning_raw_audit_digest_detects_same_id_edits_missing_rows_and_null -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml audit_batch_reads_complete_selected_pages_and_rejects_oversized_history -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml blend_registry_stores_immutable_revisions_and_separate_selection -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml governance_never_promotes_on_missing_coverage_or_normal_case_regression -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Field blend models and dependency protection
-        shell: pwsh
-        run: |
-          $listed = cargo test --manifest-path egui-app/Cargo.toml -- --list
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $expected = @(
-            'type_baseline_requires_unique_original_kind_and_exact_source_link',
-            'type_comparison_requires_traced_candidates_and_qualified_context',
-            'field_blend_calibration_weights_and_outside_are_independent',
-            'field_blend_evaluation_and_inference_share_protected_fallback',
-            'common_candidate_distribution_rejects_mismatched_or_invalid_vectors',
-            'owner_pair_calibration_preserves_outside_abstention_without_third_class_fit',
-            'retrain_cohort_is_invalidated_by_calibration_revision',
-            'owner_replay_recomputes_source_links_without_changing_original_analysis',
-            'owner_joint_replay_rejects_duplicate_sources_and_preserves_both_transfers',
-            'confirmation_evaluation_preserves_legacy_when_parser_replay_is_unverified',
-            'field_blend_task_evaluation_includes_unjoined_observations',
-            'field_blend_rejects_overlapping_time_windows_and_duplicate_orders',
-            'field_dependency_contract_blocks_joint_edits_and_preserves_owner_selection',
-            'field_blend_registry_keeps_tasks_and_revisions_separate',
-            'model_registry_rejects_manual_selection_and_clear',
-            'owner_bootstrap_compares_legacy_without_requiring_manual_model',
-            'field_runtime_shadow_uses_frozen_model_and_preserves_initial_product',
-            'field_paired_replay_excludes_training_orders_and_duplicate_ids'
-          )
-          foreach ($test in $expected) {
-            $pattern = '(^|::)' + [regex]::Escape($test) + ': test$'
-            if (@($listed | Where-Object { $_ -match $pattern }).Count -ne 1) {
-              throw "Expected exactly one field regression test: $test"
-            }
-            cargo test --manifest-path egui-app/Cargo.toml $test -- --nocapture
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-      - name: First analysis and correction regressions
-        run: |
-          cargo test --manifest-path egui-app/Cargo.toml recognition::observations::tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml recognition::learning_context::tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml learning_lifecycle_excludes_cancelled_deleted_and_partial_orders -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
+            $pattern = '(^|::)' + [regex]::Escape($module) + '::.+: test$'
             if (@($listed | Where-Object { $_ -match $pattern }).Count -eq 0) {
               throw "Expected at least one learning regression test in module: $module"
             }
