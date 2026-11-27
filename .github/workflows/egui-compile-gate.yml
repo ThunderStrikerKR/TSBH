@@ -23,6 +23,11 @@ on:
       - src-tauri/src/business_core/rules/reception_merge.rs
       - src-tauri/resources/legacy-state-seed-303.json
       - src-tauri/src/business_core/**
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/egui-compile-gate.yml
+      - egui-app/**
   workflow_dispatch:
 permissions:
   contents: read
@@ -33,7 +38,7 @@ concurrency:
 jobs:
   compile:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -43,3 +48,18 @@ jobs:
           key: egui-compile
       - name: Compile current Windows egui source
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Mandatory UI notice no-reflow contract
+        shell: pwsh
+        run: |
+          $names = @(
+            'ui_regressions::notice_no_reflow_contract_tests::guard_detects_direct_feedback_and_multiline_input_hint',
+            'ui_regressions::notice_no_reflow_contract_tests::production_screens_reject_direct_inline_transient_notices',
+            'brand_manager::modal_lifecycle_tests::actual_brand_popup_feedback_never_moves_controls'
+          )
+          foreach ($name in $names) {
+            $listed = cargo test --manifest-path egui-app/Cargo.toml $name -- --exact --list
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if (-not ($listed | Where-Object { $_ -eq "${name}: test" })) { throw "Missing mandatory UI notice regression: $name" }
+            cargo test --manifest-path egui-app/Cargo.toml $name -- --exact --nocapture
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
