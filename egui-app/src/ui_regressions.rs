@@ -1163,7 +1163,11 @@ pub(crate) mod general_screen_geometry_tests {
         measured
     }
     fn screen_trace(name:&str,tab:usize,loaded:bool,screen:Vec2,work:Rect)->Vec<Sample>{
+        screen_trace_at_scale(name,tab,loaded,screen,work,1.0)
+    }
+    fn screen_trace_at_scale(name:&str,tab:usize,loaded:bool,screen:Vec2,work:Rect,scale:f32)->Vec<Sample>{
         let ctx=test_context();
+        ctx.set_pixels_per_point(scale);
         let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
         match name{
             "freight"=>{let mut p=crate::freight_manager::FreightManager::geometry_fixture(gateway,ctx.clone(),tab,loaded);render(&ctx,screen,work,|ui|p.show_page(ui))},
@@ -1367,6 +1371,24 @@ pub(crate) mod general_screen_geometry_tests {
                         let trace=screen_trace(name,tab,loaded,screen,work);
                         verify_rects(name,tab,work,&trace);
                     }
+                }
+            }
+        }
+    }
+    #[test]
+    fn actual_management_pages_keep_geometry_at_fractional_display_scales(){
+        // Logical work area remains fixed while device pixel density varies.
+        // The compact populated pages exercise every management subtab.
+        let screen=Vec2::new(1280.0,720.0);
+        let work=Rect::from_min_max(egui::pos2(380.0,80.0),egui::pos2(1262.0,702.0));
+        let cases=[("freight",4),("history",1),("products",5),("clients",3),
+            ("excel",3),("settings",4),("settlement",1)];
+        for scale in [1.25_f32,1.5]{
+            for (name,tabs) in cases{
+                for tab in 0..tabs{
+                    eprintln!("FRACTIONAL_GEOMETRY_CASE {name}/{tab} scale={scale}");
+                    let trace=screen_trace_at_scale(name,tab,true,screen,work,scale);
+                    verify_rects(name,tab,work,&trace);
                 }
             }
         }
