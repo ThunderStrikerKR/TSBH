@@ -165,6 +165,8 @@ pub(crate) fn assert_rect_inside(role:&str,inner:Rect,outer:Rect,tolerance:f32){
 enum CaptionPaint {
     Text{rect:Rect,clip:Rect,elided:bool},
     OpaqueRect(Rect),
+    OpaqueTriangle([egui::Pos2;3],Rect),
+    OtherText(Rect),
 }
 // Approximate convex opaque fills from the inside, never from their bounding
 // box. Every emitted rectangle lies in the actual fill. This is a conservative
@@ -226,7 +228,8 @@ fn convex_path_fill_strips(points:&[egui::Pos2],clip:Rect,out:&mut Vec<CaptionPa
     },out);
 }
 fn caption_paint(output:&egui::FullOutput,label:&str,widget:Rect)->Vec<CaptionPaint>{
-    fn visit(shape:&egui::Shape,clip:Rect,widget:Rect,label:&str,out:&mut Vec<CaptionPaint>){
+    fn visit(shape:&egui::Shape,clip:Rect,widget:Rect,label:&str,out:&mut Vec<CaptionPaint>,
+        tess:&mut egui::epaint::Tessellator,opaque_textures:&std::collections::BTreeSet<egui::TextureId>){
         match shape{
             egui::Shape::Text(text) if text.galley.text()==label=>{
                 out.push(CaptionPaint::Text{
@@ -236,7 +239,7 @@ fn caption_paint(output:&egui::FullOutput,label:&str,widget:Rect)->Vec<CaptionPa
             // Two conservative interior strips of a rounded fill.
             // Never treat its transparent corner arcs as opaque.
             // Translucent fills, strokes and arbitrary meshes are excluded.
-            egui::Shape::Rect(shape) if shape.fill.a()==255=>{
+            egui::Shape::Rect(shape) if shape.fill.a()==255&&shape.brush.is_none()&&shape.blur_width==0.0=>{
                 let r=shape.rect;
                 let c=shape.corner_radius;
                 let radius=f32::from(c.nw.max(c.ne).max(c.sw).max(c.se));
@@ -252,13 +255,91 @@ fn caption_paint(output:&egui::FullOutput,label:&str,widget:Rect)->Vec<CaptionPa
                 ellipse_fill_strips(shape.center,shape.radius,clip.intersect(widget),out),
             egui::Shape::Path(shape) if shape.closed&&shape.fill.a()==255=>
                 convex_path_fill_strips(&shape.points,clip.intersect(widget),out),
-            egui::Shape::Vec(shapes)=>for shape in shapes{visit(shape,clip,widget,label,out);},
+            egui::Shape::Text(text) if text.opacity_factor>=1.0=>{
+                let bounds=text.visual_bounding_rect().intersect(clip).intersect(widget);
+                if bounds.is_positive(){out.push(CaptionPaint::OtherText(bounds));}
+            }
+            egui::Shape::Vec(shapes)=>for shape in shapes{visit(shape,clip,widget,label,out,tess,opaque_textures);},
             _=>{}
         }
+        // Only inspect non-text primitives here; font alpha is not implied by
+        // the color of a text vertex. Skip the already-proven ordinary fills
+        // unless they also have a stroke, brush or blur.
+        let needs_mesh=match shape{
+            egui::Shape::Rect(r)=>!r.stroke.is_empty()||r.brush.is_some()||r.blur_width>0.0,
+            egui::Shape::Circle(c)=>!c.stroke.is_empty(),
+            egui::Shape::Ellipse(e)=>!e.stroke.is_empty(),
+            egui::Shape::Path(p)=>!p.stroke.is_empty(),
+            egui::Shape::LineSegment{..}|egui::Shape::QuadraticBezier(_)|
+            egui::Shape::CubicBezier(_)|egui::Shape::Mesh(_)=>true,
+            _=>false,
+        };
+        let visible_clip=clip.intersect(widget);
+        if needs_mesh&&visible_clip.is_positive()&&shape.visual_bounding_rect().intersects(visible_clip){
+            tess.set_clip_rect(visible_clip);
+            let mut primitives=Vec::new();
+            tess.tessellate_clipped_shape(egui::epaint::ClippedShape{clip_rect:visible_clip,shape:shape.clone()},&mut primitives);
+            for primitive in primitives{
+                if let egui::epaint::Primitive::Mesh(mesh)=primitive.primitive{
+                    for indices in mesh.triangles(){
+                        let vertices=indices.map(|i|mesh.vertices[i as usize]);
+                        if vertices.iter().all(|v|v.color.a()==255)&&
+                            (opaque_textures.contains(&mesh.texture_id)||
+                            (mesh.texture_id==egui::TextureId::default()&&vertices.iter().all(|v|v.uv==egui::epaint::WHITE_UV))){
+                            let points=vertices.map(|v|v.pos);
+                            if Rect::from_points(&points).intersects(primitive.clip_rect){
+                                out.push(CaptionPaint::OpaqueTriangle(points,primitive.clip_rect));
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
+    // A texture is proven opaque only by a full upload in this output, with
+    // no subsequent transparent patch. Unknown cached textures stay unknown.
+    let mut opaque_textures=std::collections::BTreeSet::new();
+    for (id,delta) in &output.textures_delta.set{
+        if *id==egui::TextureId::default(){continue;}
+        let egui::ImageData::Color(image)=&delta.image;
+        let opaque=image.pixels.iter().all(|p|p.a()==255);
+        if !opaque{opaque_textures.remove(id);}
+        else if delta.pos.is_none(){opaque_textures.insert(*id);}
+    }
+    let mut tess=egui::epaint::Tessellator::new(output.pixels_per_point,
+        egui::epaint::TessellationOptions::default(),[1,1],Vec::new());
     let mut out=Vec::new();
-    for shape in &output.shapes{visit(&shape.shape,shape.clip_rect,widget,label,&mut out);}
+    for shape in &output.shapes{visit(&shape.shape,shape.clip_rect,widget,label,&mut out,&mut tess,&opaque_textures);}
     out
+}
+// Clip a triangle to the protected caption region. Bounding-box intersection
+// alone would incorrectly report a diagonal line passing beside the caption.
+fn triangle_overlap_area(points:[egui::Pos2;3],clip:Rect)->f32{
+    if !clip.is_positive(){return 0.0;}
+    let mut polygon=points.to_vec();
+    for (axis,edge,lower) in [(0,clip.left(),true),(0,clip.right(),false),
+        (1,clip.top(),true),(1,clip.bottom(),false)]{
+        let coord=|p:egui::Pos2|if axis==0{p.x}else{p.y};
+        let inside=|p:egui::Pos2|if lower{coord(p)>=edge}else{coord(p)<=edge};
+        let mut next=Vec::new();
+        if polygon.is_empty(){return 0.0;}
+        let mut prev=*polygon.last().unwrap();
+        for &point in &polygon{
+            if inside(prev)!=inside(point){
+                let t=(edge-coord(prev))/(coord(point)-coord(prev));
+                next.push(prev+(point-prev)*t);
+            }
+            if inside(point){next.push(point);}
+            prev=point;
+        }
+        polygon=next;
+    }
+    if polygon.len()<3{return 0.0;}
+    let origin=polygon[0];
+    polygon[1..].windows(2).map(|pair|{
+        let a=pair[0]-origin;let b=pair[1]-origin;
+        (a.x*b.y-a.y*b.x)*0.5
+    }).sum::<f32>().abs()
 }
 /// Check a named caption within a known visible slot. Horizontal clipping is
 /// allowed only for an explicitly overflow-capable value; vertical clipping
@@ -287,9 +368,22 @@ pub(crate) fn assert_caption_visibility(output:&egui::FullOutput,label:&str,widg
         // interpreting antialiasing or subpixel boundary noise as occlusion.
         let core=visible.shrink(1.0);
         let mut partial=false;
+        let mut text_overlap=false;
         let mut remaining=vec![visible];
         for entry in &paint[index+1..]{
-            let CaptionPaint::OpaqueRect(cover)=*entry else{continue};
+            let cover=match *entry{
+                CaptionPaint::OpaqueRect(cover)=>cover,
+                CaptionPaint::OpaqueTriangle(points,clip)=>{
+                    partial|=triangle_overlap_area(points,core.intersect(clip))>1.0;
+                    continue;
+                }
+                CaptionPaint::OtherText(bounds)=>{
+                    let overlap=core.intersect(bounds);
+                    if overlap.width()>1.0&&overlap.height()>1.0{text_overlap=true;}
+                    continue;
+                }
+                _=>continue,
+            };
             let overlap=core.intersect(cover);
             partial|=overlap.width()>1.0&&overlap.height()>1.0;
             remaining=remaining.into_iter().flat_map(|part|{
@@ -309,6 +403,9 @@ pub(crate) fn assert_caption_visibility(output:&egui::FullOutput,label:&str,widg
         }
         if partial{
             failure="partially occluded caption";continue;
+        }
+        if text_overlap{
+            failure="overlapping caption text bounds";continue;
         }
         return rect;
     }
@@ -390,6 +487,31 @@ mod shared_component_screen_trace_tests{
                 painter.with_clip_rect(clip).galley(pos,galley,egui::Color32::WHITE);
                 if mode=="covered"{painter.rect_filled(widget,0.0,egui::Color32::BLACK);}
                 if mode=="rounded"{painter.rect_filled(widget,8.0,egui::Color32::BLACK);}
+                if mode=="stroke-cover"||mode=="stroke-outside"{
+                    let y=if mode=="stroke-cover"{ink.center().y}else{widget.bottom()+5.0};
+                    painter.line_segment([egui::pos2(ink.left(),y),egui::pos2(ink.right(),y)],
+                        egui::Stroke::new(6.0,egui::Color32::BLACK));
+                }
+                if mode=="border-cover"{
+                    painter.rect_stroke(Rect::from_min_max(ink.min,egui::pos2(ink.center().x,ink.bottom())),
+                        0.0,egui::Stroke::new(6.0,egui::Color32::BLACK),egui::StrokeKind::Middle);
+                }
+                if mode=="curve-cover"{
+                    let p=ink.center();
+                    painter.add(egui::epaint::QuadraticBezierShape::from_points_stroke(
+                        [p+egui::vec2(-18.0,0.0),p+egui::vec2(0.0,-5.0),p+egui::vec2(18.0,0.0)],
+                        false,egui::Color32::TRANSPARENT,egui::Stroke::new(6.0,egui::Color32::BLACK)));
+                }
+                if mode=="other-text"{
+                    painter.text(ink.center(),egui::Align2::CENTER_CENTER,"OVERLAP",
+                        egui::FontId::proportional(18.0),egui::Color32::WHITE);
+                }
+                if mode=="texture-opaque"||mode=="texture-transparent"{
+                    let color=if mode=="texture-opaque"{egui::Color32::BLACK}else{egui::Color32::TRANSPARENT};
+                    let tex=ctx.load_texture("caption-overlap-fixture",egui::ColorImage::filled([2,2],color),egui::TextureOptions::NEAREST);
+                    painter.image(tex.id(),widget,Rect::from_min_max(egui::Pos2::ZERO,egui::pos2(1.0,1.0)),egui::Color32::WHITE);
+                }
+
                 if mode=="circle-partial"||mode=="circle-translucent"||mode=="circle-clipped"{
                     let center=ink.center();
                     let color=if mode=="circle-translucent"{egui::Color32::from_black_alpha(80)}
@@ -435,7 +557,8 @@ mod shared_component_screen_trace_tests{
     #[test]
     fn caption_detector_accepts_visible_background_and_explicit_horizontal_overflow(){
         for mode in ["normal","background","translucent","horizontal","clipped-cover","edge-cover",
-            "circle-bounds-only","circle-translucent","circle-clipped","polygon-outline"]{
+            "circle-bounds-only","circle-translucent","circle-clipped","polygon-outline",
+            "stroke-outside","texture-transparent"]{
             let (output,widget)=paint_case(mode);
             assert_caption_visibility(&output,"검증 라벨",widget,mode=="horizontal");
         }
@@ -453,6 +576,11 @@ mod shared_component_screen_trace_tests{
             ("circle-partial",true,"partially occluded"),
             ("ellipse-partial",true,"partially occluded"),
             ("polygon-partial",true,"partially occluded"),
+            ("stroke-cover",true,"partially occluded"),
+            ("border-cover",true,"partially occluded"),
+            ("curve-cover",true,"partially occluded"),
+            ("texture-opaque",true,"partially occluded"),
+            ("other-text",true,"overlapping caption text bounds"),
         ]{
             let (output,widget)=paint_case(mode);
             let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
