@@ -1072,6 +1072,14 @@ pub(crate) fn read_recognition_owner_statistics(ids:&[String])->Result<Value,Str
     Ok(summary)
 }
 
+/// Explicit developer maintenance, never called during analysis or UI rendering.
+pub(crate) fn sync_recognition_learning(ids:&[String])->Result<Value,String>{
+    let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
+    if !mode.trim().eq_ignore_ascii_case("local"){return Err("학습 통계 저장은 로컬 DB에서만 지원합니다.".into());}
+    PreviewStore::sync_recognition_learning(ids,|order|recognition::execute(
+        "summarize_owner_statistics",serde_json::json!({"orders":[order]})))
+}
+
 pub fn from_environment() -> Result<Arc<dyn BandoGateway>, String> {
     let mode = std::env::var("BANDO_HUB_GATEWAY")
         .unwrap_or_else(|_| "local".to_owned());

@@ -156,6 +156,7 @@ jobs:
           cargo test --manifest-path egui-app/Cargo.toml reception_product_ellipsis_respects_width_and_korean_boundaries -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml quote_identity_tests -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml recognition_learning_store_tests -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml cell_navigation:: -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

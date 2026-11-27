@@ -6,6 +6,9 @@ use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde_json::{json, Value};
 use std::{collections::HashSet, fs, path::PathBuf, time::Duration};
 
+#[path="recognition_learning_store.rs"]
+mod recognition_learning_store;
+
 const SIGNATURE: &str = "bando-hub-egui-preview-v1";
 const SOURCE_LIMIT_BYTES: usize = 2 * 1024 * 1024;
 
@@ -843,6 +846,47 @@ impl PreviewStore {
         let result=query_reception_audit_batch(&conn,ids)?;
         conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
         Ok(result)
+    }
+
+    /// Explicit selected-order synchronization. Lock the existing audit DB
+    /// before reading either source; the business DB is still read-only.
+    pub(crate) fn sync_recognition_learning(ids:&[String],
+        summarize:impl Fn(&Value)->Result<Value,String>)->Result<Value,String>{
+        use sha2::{Digest,Sha256};
+        let business=crate::business_state::authorized_business_write_path()?.canonicalize()
+            .map_err(|_|"업무 DB 식별 실패")?;
+        // Scope by the canonical bound DB, not a potentially shared order ID.
+        let scope=format!("{:x}",Sha256::digest(business.as_os_str().as_encoded_bytes()));
+        let path=Self::directory()?.join("egui-preview.sqlite3");
+        let mut conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
+            .map_err(|_|"기존 정정 이력 DB 연결 실패")?;
+        conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
+        conn.execute_batch("PRAGMA foreign_keys=ON").map_err(|e|e.to_string())?;
+        let signature:String=conn.query_row("SELECT value FROM preview_meta WHERE key='signature'",[],|r|r.get(0))
+            .map_err(|e|e.to_string())?;
+        if signature!=SIGNATURE{return Err("egui 전용 DB 식별자가 다릅니다.".into());}
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        recognition_learning_store::prepare(&tx)?;
+        let frozen=crate::business_state::read_owner_snapshots(ids)?;
+        let audit_ids=frozen.iter().filter(|order|
+            order["confirmationSnapshot"]["recognitionBaseline"]["schemaVersion"]==1 &&
+            !order["deletedAt"].as_str().is_some_and(|v|!v.trim().is_empty()))
+            .map(|order|order["id"].as_str().map(str::to_owned).ok_or("확정 주문 ID 누락"))
+            .collect::<Result<Vec<_>,_>>()?;
+        let mut audit=if audit_ids.is_empty(){std::collections::BTreeMap::new()}
+            else{query_reception_audit_batch(&tx,&audit_ids)?};
+        let mut orders=frozen.clone();
+        for order in &mut orders{
+            let id=order["id"].as_str().ok_or("확정 주문 ID 누락")?;
+            if let Some(events)=audit.remove(id){order["recognitionAuditEvents"]=json!(events);}
+        }
+        let report=recognition_learning_store::synchronize(&tx,&scope,ids,&orders,summarize)?;
+        if crate::business_state::read_owner_snapshots(ids)?!=frozen ||
+            crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("학습 갱신 중 확정 주문 또는 업무 DB가 변경되었습니다.".into());
+        }
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(report)
     }
 
     pub fn path(&self) -> &std::path::Path { &self.path }

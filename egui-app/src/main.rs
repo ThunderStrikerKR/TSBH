@@ -10930,6 +10930,19 @@ fn recognition_correction_audit_summary()->Result<serde_json::Value,String>{
 }
 
 fn main() -> eframe::Result<()> {
+    if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-learning-sync"){
+        let result=(||->Result<serde_json::Value,String>{
+            let ids=std::env::args_os().skip(2).map(|arg|
+                arg.into_string().map_err(|_|"주문 ID 형식 오류".to_owned())
+            ).collect::<Result<Vec<_>,_>>()?;
+            gateway::sync_recognition_learning(&ids)
+        })();
+        match result{
+            Ok(report)=>println!("{report}"),
+            Err(_)=>{eprintln!("[BANDO HUB] 학습 통계 저장 실패. 기존 DB 연결과 주문 범위를 확인하세요.");std::process::exit(2);}
+        }
+        return Ok(());
+    }
     if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-owner-statistics"){
         let result=(||->Result<serde_json::Value,String>{
             let ids=std::env::args_os().skip(2).map(|arg|
