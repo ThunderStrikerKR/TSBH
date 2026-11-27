@@ -233,6 +233,7 @@ struct CategoryMapIndex {
     children:std::sync::Arc<HashMap<String,Vec<usize>>>,
     totals:std::sync::Arc<HashMap<String,usize>>,
     products:std::sync::Arc<HashMap<String,Vec<(String,String)>>>,
+    active_folders:std::sync::Arc<HashSet<String>>,
     visible:Option<HashSet<String>>,
 }
 impl CategoryMapIndex {
@@ -282,8 +283,19 @@ impl CategoryMapIndex {
                     .push((field(product,"id").to_owned(),name.to_owned()));
             }
         }
+        let active_folders=cats.iter().filter(|item|{
+            let mut current=item.id.as_str();
+            let mut seen=HashSet::new();
+            while !current.is_empty(){
+                if !seen.insert(current){return false;}
+                let Some(&index)=by_id.get(current)else{return false;};
+                if !cats[index].active{return false;}
+                current=cats[index].parent.as_str();
+            }
+            true
+        }).map(|item|item.id.clone()).collect();
         Self{children:std::sync::Arc::new(children),totals:std::sync::Arc::new(totals),
-            products:std::sync::Arc::new(products),visible:Self::visibility(cats,query)}
+            products:std::sync::Arc::new(products),active_folders:std::sync::Arc::new(active_folders),visible:Self::visibility(cats,query)}
     }
     fn visibility(cats:&[Category],query:&str)->Option<HashSet<String>>{
         let q=query.trim().to_lowercase();
@@ -613,7 +625,7 @@ impl CategoryManager {
                 name:&item.name,summary:&summary,depth,ancestor_guides,is_last,
                 root:is_root(&item.id),has_children,open,
                 selected:self.selected==item.id,
-            },&item.id,&item.parent,folder_enabled,move_enabled&&item.active&&!is_root(&item.id))
+            },&item.id,&item.parent,folder_enabled,move_enabled&&index.active_folders.contains(&item.id)&&!is_root(&item.id))
         ).inner;
         #[cfg(test)]
         if item.id.starts_with("geometry-cat-"){
@@ -624,7 +636,7 @@ impl CategoryManager {
         }
         let allow_drop=move_enabled&&product_enabled&&!locked&&item.active;
         if let Some(request)=category_tree::folder_drop_target(ui,&response,&item.id,
-            allow_drop&&path(cats,&item.id).iter().all(|c|c.active),|id|ancestors.contains(id)){
+            allow_drop&&index.active_folders.contains(&item.id),|id|ancestors.contains(id)){
             self.folder_drop=Some(request);
         }else if let Some(request)=category_tree::product_drop_target(ui,&response,&item.id,allow_drop){
             self.product_move=Some(request);
@@ -793,11 +805,9 @@ impl CategoryManager {
                 let height=(panel.available_height()-theme::CATEGORY_EXPLORER_CRUMB_HEIGHT-theme::SECTION_DIVIDER_HEIGHT)
                     .max(theme::CATALOG_TREE_ROW_HEIGHT);
                 let search_focused=panel.ctx().memory(|mem|mem.focused().is_some());
-                let allowed=cats.iter().filter(|c|c.active&&path(cats,&c.id).iter().all(|p|p.active))
-                    .map(|c|c.id.clone()).collect::<HashSet<_>>();
                 let (request,product_move,folder_move)=category_dropdown::explorer_body(panel,&nodes,&node_index,&mut self.focus,
                     !busy,height,search_focused,Some(&index.totals),Some(&index.products),editable,
-                    Some(&mut self.drag_hover),Some(&mut self.product_selection),Some(&allowed));
+                    Some(&mut self.drag_hover),Some(&mut self.product_selection),Some(index.active_folders.as_ref()));
                 self.product_request=request;
                 self.product_move=product_move;
                 self.folder_drop=folder_move;
@@ -891,10 +901,12 @@ impl CategoryManager {
                 decision.body(|body|{
                     body.label(typography::body("이 분류와 하위 분류를 함께 이동합니다. 연결된 상품은 유지되며 카테고리 경로가 변경됩니다."));
                     crate::ui_primitives::section_divider(body);
-                    body.label(typography::field_label("현재 경로"));
-                    body.label(typography::body(&pending.before_path));
-                    body.label(typography::field_label("이동 후 경로"));
-                    body.label(typography::body(&pending.after_path));
+                    crate::popup::modal_labeled_row(body,"현재 경로",|line|{
+                        line.label(typography::body(&pending.before_path));
+                    });
+                    crate::popup::modal_labeled_row(body,"이동 후 경로",|line|{
+                        line.label(typography::body(&pending.after_path));
+                    });
                     crate::ui_primitives::section_divider(body);
                     body.label(typography::body(&format!("하위 분류 {}개 · 연결 상품 {}개",pending.folders,pending.products)));
                     if stale{body.label(typography::body("분류 또는 상품 소속이 변경되었습니다. 취소한 뒤 다시 이동해 주세요."));}
@@ -1291,6 +1303,43 @@ mod modal_layout_contract_tests{
             .split("    pub fn show_overlays(").next().unwrap();
         assert!(!page.contains("crate::checkbox::checkbox("));
         assert!(page.contains("panel.set_opacity(alpha)"));
+    }
+    #[test]
+    fn folder_drag_confirmation_rejects_cycles_roots_and_stale_source_and_counts_subtree(){
+        let root="catalog-root:BANDOSTAND";
+        let catalog=json!({"revision":1,"categories":[
+            {"id":"a","name":"원본","parentId":root},
+            {"id":"b","name":"하위","parentId":"a"},
+            {"id":"c","name":"대상","parentId":root},
+            {"id":"d","name":"비활성","parentId":root,"active":false},
+            {"id":"e","name":"원본","parentId":"c"}
+        ],"products":[
+            {"id":"p1","categories":["a","b"]},
+            {"id":"p2","categories":["b"]},
+            {"id":"p3","categories":["b"],"deletedAt":"2026-01-01"}
+        ]});
+        let cats=categories(&catalog);
+        let prepare=|id:&str,parent:&str,target:&str|folder_confirmation(&cats,&catalog,
+            category_tree::FolderMove{id:id.into(),parent:parent.into(),target:target.into()});
+        let pending=prepare("a",root,"catalog-root:BANDOMALL").unwrap();
+        assert_eq!(pending.folders,1);
+        assert_eq!(pending.products,2);
+        assert_eq!(pending.before_path,"반도스탠드 > 원본");
+        assert_eq!(pending.after_path,"반도몰 > 원본");
+        assert!(prepare("a",root,"a").is_none());
+        assert!(prepare("a",root,"b").is_none());
+        assert!(prepare("a",root,root).is_none());
+        assert!(prepare("a",root,"c").is_none());
+        assert!(prepare("a",root,"d").is_none());
+        assert!(prepare("a","stale","catalog-root:BANDOMALL").is_none());
+        assert!(prepare(root,"","catalog-root:BANDOMALL").is_none());
+        let mut manager=CategoryManager::default();
+        manager.folder_confirmation=Some(pending);
+        assert!(manager.has_overlay());
+        assert!(!manager.request_tab_leave(&catalog));
+        assert!(!manager.request_global_leave(&catalog));
+        manager.clear_for_leave();
+        assert!(!manager.has_overlay());
     }
     #[test]
     fn category_map_index_counts_each_product_once_per_ancestor(){

@@ -137,10 +137,9 @@ pub(crate) fn folder_drop_target(ui:&Ui,response:&Response,target:&str,enabled:b
     contains_source:impl Fn(&str)->bool)->Option<FolderMove>{
     if !enabled||!ui.is_enabled()||target.is_empty(){return None;}
     let valid=|drag:&FolderDrag|drag.id!=target&&drag.parent!=target&&!contains_source(&drag.id);
-    if response.dnd_hover_payload::<FolderDrag>().is_some_and(|drag|valid(&drag)){
-        crate::highlight::paint(ui,response.rect.intersect(ui.clip_rect()),
-            crate::highlight::Geometry::Control,crate::highlight::Role::DropHovered);
-    }
+    if !response.dnd_hover_payload::<FolderDrag>().is_some_and(|drag|valid(&drag)){return None;}
+    crate::highlight::paint(ui,response.rect.intersect(ui.clip_rect()),
+        crate::highlight::Geometry::Control,crate::highlight::Role::DropHovered);
     response.dnd_release_payload::<FolderDrag>().filter(|drag|valid(drag))
         .map(|drag|FolderMove{id:drag.id.clone(),parent:drag.parent.clone(),target:target.to_owned()})
 }
@@ -233,10 +232,9 @@ pub(crate) fn product_drop_target(ui:&Ui,response:&Response,target:&str,enabled:
     if !enabled||!ui.is_enabled()||target.is_empty(){return None;}
     let valid=response.dnd_hover_payload::<ProductDrag>()
         .is_some_and(|drag|drag.members.iter().any(|(_,source)|source!=target));
-    if valid{
-        crate::highlight::paint(ui,response.rect.intersect(ui.clip_rect()),
-            crate::highlight::Geometry::Control,crate::highlight::Role::DropHovered);
-    }
+    if !valid{return None;}
+    crate::highlight::paint(ui,response.rect.intersect(ui.clip_rect()),
+        crate::highlight::Geometry::Control,crate::highlight::Role::DropHovered);
     response.dnd_release_payload::<ProductDrag>().and_then(|drag|{
         let moves=drag.members.iter().filter(|(_,source)|source!=target)
             .map(|(id,source)|ProductMove{id:id.clone(),source:source.clone(),target:target.to_owned()})
