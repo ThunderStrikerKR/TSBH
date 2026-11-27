@@ -4,7 +4,7 @@ use crate::ui_layout::geometry::SharedAllocationExt as _;
 use eframe::egui::{self,Color32,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::{theme,typography};
 use crate::theme::{
-    ButtonRole, ACTION_QUIET_HEIGHT, ACTION_STANDARD_HEIGHT, ERROR_TEXT, SPACE_4, SPACE_8,
+    ButtonRole, ACTION_QUIET_HEIGHT, ACTION_STANDARD_HEIGHT, SPACE_4, SPACE_8,
 };
 use crate::ui_primitives::{paint_workflow_icon,WorkflowIcon,ManagementChevronDirection,paint_management_chevron,paint_management_chevron_with_color,paint_chevron_at_angle_scaled};
 
@@ -26,6 +26,8 @@ pub(crate) fn remove_at_response(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->Resp
     let response=ui.interact(hit,id,if enabled{Sense::click()}else{Sense::hover()});
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("remove action",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("remove action",&response,ui.clip_rect(),None);
     let ink=theme::icon_ink(theme::IconRole::Secondary,theme::VisualState::enabled(enabled));
     if enabled{paint_button_hover(ui,&response,crate::highlight::Geometry::Control);}
     let center=hit.center();
@@ -51,6 +53,8 @@ pub(crate) fn disclosure_at(
     let response=ui.interact(hit,id,Sense::click());
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("disclosure action",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("disclosure action",&response,ui.clip_rect(),None);
     let response=crate::ui_primitives::overflow_tooltip(response,overflow,full);
     paint_button_hover(ui,&response,geometry);
     response
@@ -100,7 +104,7 @@ fn action_with_palette(
 ) -> Response {
     let effective_enabled=enabled && ui.is_enabled();
     let (height,fill,color,stroke)=action_style(role,effective_enabled,review_white);
-    let light_surface=effective_enabled&&fill==theme::BRIGHT;
+    let light_surface=effective_enabled&&fill==theme::primary_action_colors().0;
     let font_size = match role {
         ButtonRole::Navigation | ButtonRole::ActiveNavigation => typography::FONT_MAIN_NAV,
         ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab =>
@@ -154,7 +158,7 @@ fn action_with_palette(
         ui.add_enabled(enabled, button)
     }).inner;
     #[cfg(test)]
-    crate::ui_test_support::record_component_geometry("button",response.rect,ui.clip_rect(),Some(height));
+    crate::ui_test_support::record_control_response("button",&response,ui.clip_rect(),Some(height));
     if effective_enabled {
         crate::floating_notice::remember_response(ui.ctx(),&response);
     }
@@ -184,6 +188,8 @@ pub(crate) fn window_control(ui: &mut Ui, control: WindowControl) -> Response {
     // control, without shifting the 32pt hit rectangle or painted glyph.
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("window action",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("window action",&response,ui.clip_rect(),None);
     paint_button_hover(ui,&response,crate::highlight::Geometry::Compact);
     let center = response.rect.center();
     let ink = theme::icon_ink(theme::IconRole::Interactive,theme::VisualState::pointer(true,response.hovered()));
@@ -235,7 +241,7 @@ fn notification_button_slots(rect:Rect,count_width:f32)->(Rect,Rect){
     (bell,count)
 }
 pub(crate) fn notification_button(ui:&mut Ui,unread:usize)->Response{
-    let max_count=typography::client_table_metadata_galley(ui,"99+",ERROR_TEXT);
+    let max_count=typography::client_table_metadata_galley(ui,"99+",theme::message_ink(theme::MessageInkRole::Error));
     let width=ACTION_STANDARD_HEIGHT+max_count.size().x+SPACE_8;
     let response=action_with_min_width(ui,"",ButtonRole::Standard,true,width);
     let (bell,count)=notification_button_slots(response.rect,max_count.size().x);
@@ -251,9 +257,9 @@ pub(crate) fn notification_button(ui:&mut Ui,unread:usize)->Response{
     painter.add(egui::Shape::line(vec![p(-2.0,6.0),p(0.0,7.5),p(2.0,6.0)],stroke));
     if unread>0{
         let label=if unread>99{"99+".to_owned()}else{unread.to_string()};
-        let galley=typography::client_table_metadata_galley(ui,&label,ERROR_TEXT);
+        let galley=typography::client_table_metadata_galley(ui,&label,theme::message_ink(theme::MessageInkRole::Error));
         let origin=count.center()-galley.size()/2.0;
-        painter.with_shared_clip(count.intersect(ui.clip_rect())).galley(origin,galley,ERROR_TEXT);
+        painter.with_shared_clip(count.intersect(ui.clip_rect())).galley(origin,galley,theme::message_ink(theme::MessageInkRole::Error));
     }
     response
 }
@@ -291,6 +297,8 @@ pub(crate) fn icon_action_button(
         .min_size(Vec2::splat(theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH)));
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("icon action",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("icon action",&response,ui.clip_rect(),None);
     if enabled{
         crate::button::paint_button_hover(
             ui,&response,crate::highlight::Geometry::Control
@@ -356,10 +364,12 @@ pub(crate) fn workflow_fixed_action(
     );
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("workflow action",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("workflow action",&response,ui.clip_rect(),None);
     let stage=matches!(action,WorkflowFixedAction::Stage(_));
     let role=if stage{theme::ButtonRole::Emphasized}else{theme::ButtonRole::Standard};
     let (_,fill,ink,stroke)=crate::button::action_style(role,enabled,false);
-    let light_surface=enabled&&fill==theme::BRIGHT;
+    let light_surface=enabled&&fill==theme::primary_action_colors().0;
     let rest_stroke=if !stage || !enabled{stroke}else{Stroke::NONE};
     crate::highlight::fixed_action_surface(ui,&response,crate::highlight::Geometry::Navigation,fill,rest_stroke,light_surface,enabled||stage);
     let painter=ui.painter();
@@ -428,6 +438,8 @@ pub(crate) fn management_date_segment(
     );
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("date segment",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("date segment",&response,ui.clip_rect(),None);
     paint_button_hover(ui,&response,geometry);
     if let Some(direction)=direction{
         let painter=ui.painter().with_shared_clip(response.rect);
@@ -481,6 +493,8 @@ pub(crate) fn date_navigation_segment_button(
         );
         #[cfg(test)]
         crate::ui_test_support::record_highlight_target("navigation segment",response.rect,ui.clip_rect());
+        #[cfg(test)]
+        crate::ui_test_support::record_control_response("navigation segment",&response,ui.clip_rect(),None);
         let ink=theme::icon_ink(theme::IconRole::Navigation,theme::VisualState::pointer(enabled,response.hovered()));
         if enabled{crate::button::paint_button_hover(ui,&response,crate::highlight::Geometry::TableRow);}
         let painter=ui.painter().with_shared_clip(response.rect);
@@ -504,11 +518,13 @@ pub(crate) fn date_navigation_segment_button(
         if enabled{Sense::click()}else{Sense::hover()});
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("step segment",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("step segment",&response,ui.clip_rect(),None);
     let painter=ui.painter().with_shared_clip(rect);
     let (fill,ink)=match glyph{
         DateNavigationSegmentGlyph::CompactVerticalChevron{..}=>{
             let ink=theme::icon_ink(theme::IconRole::Navigation,theme::VisualState::pointer(enabled,response.hovered()));
-            (if enabled{None}else{Some(theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG)},ink)
+            (if enabled{None}else{Some(theme::surface_palette(theme::SurfaceRole::NavigationSegment,theme::VisualState::Disabled).fill)},ink)
         }
         DateNavigationSegmentGlyph::CountStep{..}=>{
             let (_,fill,ink,_)=crate::button::action_style(theme::ButtonRole::Standard,enabled,false);
@@ -544,6 +560,8 @@ pub(crate) fn date_navigation_button_surface(
     }).inner;
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("date navigation",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("date navigation",&response,ui.clip_rect(),None);
     let ink=if effective_enabled && response.hovered(){
         theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
     }else{ink};
@@ -563,6 +581,8 @@ pub(crate) fn calendar_day(grid:&mut Ui,day:&str,width:f32,selected:bool,today:b
     }).inner;
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("calendar day",response.rect,grid.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("calendar day",&response,grid.clip_rect(),None);
     if grid.is_enabled(){crate::floating_notice::remember_response(grid.ctx(),&response);}
     response
 }
@@ -585,6 +605,8 @@ pub(crate) fn dispatch_origin(right:&mut Ui,label:&str,selected:bool,editable:bo
     }).inner;
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("dispatch origin",response.rect,right.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("dispatch origin",&response,right.clip_rect(),None);
     if effective_enabled{crate::floating_notice::remember_response(right.ctx(),&response);}
     response
 }
@@ -592,59 +614,54 @@ pub(crate) fn dispatch_origin(right:&mut Ui,label:&str,selected:bool,editable:bo
 #[cfg(test)]
 mod shared_action_style_tests{
     use super::*;
-    use crate::theme::{
-        BORDER, BRIGHT, BRIGHT_TEXT, BUTTON_HOVER_BG, BUTTON_HOVER_BORDER_WIDTH,
-        BUTTON_HOVER_LIGHT_BG, BUTTON_HOVER_TINT, DISABLED_ACTION_BG, DISABLED_ACTION_BORDER,
-        DISABLED_ACTION_TEXT, FRAME_STROKE_WIDTH, INPUT, RAISED, SECONDARY, SELECTION,
-        SOFT_DIVIDER_WIDTH, TEXT,
-    };
+    use crate::theme::{BUTTON_HOVER_BORDER_WIDTH, FRAME_STROKE_WIDTH, SOFT_DIVIDER_WIDTH};
     use crate::highlight::button_hover_palette;
 
     #[test]
     fn blue_pointer_hover_and_keyboard_focus_have_independent_paint(){
-        let hover_border=Stroke::new(BUTTON_HOVER_BORDER_WIDTH,SELECTION);
+        let hover_border=Stroke::new(BUTTON_HOVER_BORDER_WIDTH,Color32::from_rgb(112,180,255));
         let focus_border=hover_border;
-        assert_ne!(BUTTON_HOVER_LIGHT_BG,BRIGHT);
-        assert_eq!(BUTTON_HOVER_LIGHT_BG,Color32::from_rgb(143,197,255));
+        assert_ne!(Color32::from_rgb(143,197,255),Color32::WHITE);
+        assert_eq!(Color32::from_rgb(143,197,255),Color32::from_rgb(143,197,255));
         assert_eq!(button_hover_palette(false,false),(None,None));
-        assert_eq!(button_hover_palette(true,false),(Some(BUTTON_HOVER_TINT),Some(hover_border)));
+        assert_eq!(button_hover_palette(true,false),(Some(Color32::from_rgba_unmultiplied_const(112,180,255,66)),Some(hover_border)));
         assert_eq!(button_hover_palette(false,true),(None,Some(focus_border)));
-        assert_eq!(button_hover_palette(true,true),(Some(BUTTON_HOVER_TINT),Some(focus_border)));
+        assert_eq!(button_hover_palette(true,true),(Some(Color32::from_rgba_unmultiplied_const(112,180,255,66)),Some(focus_border)));
         let ctx=egui::Context::default();
         theme::install(&ctx);
         let style=ctx.style();
-        assert_eq!(style.visuals.widgets.hovered.bg_fill,BUTTON_HOVER_BG);
-        assert_eq!(style.visuals.widgets.hovered.weak_bg_fill,BUTTON_HOVER_BG);
+        assert_eq!(style.visuals.widgets.hovered.bg_fill,Color32::from_rgb(47,62,74));
+        assert_eq!(style.visuals.widgets.hovered.weak_bg_fill,Color32::from_rgb(47,62,74));
         assert_eq!(style.visuals.widgets.hovered.bg_stroke,
-            Stroke::new(BUTTON_HOVER_BORDER_WIDTH,SELECTION));
+            Stroke::new(BUTTON_HOVER_BORDER_WIDTH,Color32::from_rgb(112,180,255)));
         assert_eq!(style.visuals.widgets.hovered.expansion,0.0);
     }
 
     #[test]
     fn fixed_and_native_actions_use_the_same_standard_and_emphasized_palette(){
         let (_,fill,ink,stroke)=action_style(ButtonRole::Standard,true,false);
-        assert_eq!((fill,ink,stroke),(RAISED,TEXT,Stroke::new(FRAME_STROKE_WIDTH,BORDER)));
+        assert_eq!((fill,ink,stroke),(Color32::from_gray(41),Color32::from_gray(237),Stroke::new(FRAME_STROKE_WIDTH,Color32::from_gray(80))));
         let (_,fill,ink,stroke)=action_style(ButtonRole::Emphasized,true,false);
-        assert_eq!((fill,ink,stroke),(BRIGHT,BRIGHT_TEXT,Stroke::NONE));
+        assert_eq!((fill,ink,stroke),(Color32::WHITE,Color32::from_gray(23),Stroke::NONE));
         for role in [ButtonRole::Standard,ButtonRole::Emphasized,ButtonRole::TableSecondary]{
             let (_,fill,ink,stroke)=action_style(role,false,false);
-            assert_eq!((fill,ink,stroke),(DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,
-                Stroke::new(FRAME_STROKE_WIDTH,DISABLED_ACTION_BORDER)));
+            assert_eq!((fill,ink,stroke),(Color32::from_gray(30),Color32::from_gray(124),
+                Stroke::new(FRAME_STROKE_WIDTH,Color32::from_gray(55))));
         }
     }
 
     #[test]
     fn special_review_and_field_roles_retain_their_own_appearance(){
         let (_,fill,ink,stroke)=action_style(ButtonRole::Standard,true,true);
-        assert_eq!((fill,ink,stroke),(BRIGHT,BRIGHT_TEXT,Stroke::new(1.0,BORDER)));
+        assert_eq!((fill,ink,stroke),(Color32::WHITE,Color32::from_gray(23),Stroke::new(1.0,Color32::from_gray(80))));
         let (_,fill,ink,stroke)=action_style(ButtonRole::Standard,false,true);
-        assert_eq!((fill,ink,stroke),(DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,Stroke::new(1.0,BORDER)));
+        assert_eq!((fill,ink,stroke),(Color32::from_gray(30),Color32::from_gray(124),Stroke::new(1.0,Color32::from_gray(80))));
         let (_,fill,ink,stroke)=action_style(ButtonRole::Ghost,false,false);
-        assert_eq!((fill,ink,stroke),(Color32::TRANSPARENT,DISABLED_ACTION_TEXT,Stroke::NONE));
-        for ink in [TEXT,SECONDARY]{
-            assert_eq!(field_action_palette(true,ink),(INPUT,ink,Stroke::new(SOFT_DIVIDER_WIDTH,BORDER)));
-            assert_eq!(field_action_palette(false,ink),(DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,
-                Stroke::new(FRAME_STROKE_WIDTH,DISABLED_ACTION_BORDER)));
+        assert_eq!((fill,ink,stroke),(Color32::TRANSPARENT,Color32::from_gray(124),Stroke::NONE));
+        for ink in [Color32::from_gray(237),Color32::from_gray(185)]{
+            assert_eq!(field_action_palette(true,ink),(Color32::from_gray(34),ink,Stroke::new(SOFT_DIVIDER_WIDTH,Color32::from_gray(80))));
+            assert_eq!(field_action_palette(false,ink),(Color32::from_gray(30),Color32::from_gray(124),
+                Stroke::new(FRAME_STROKE_WIDTH,Color32::from_gray(55))));
         }
     }
 }

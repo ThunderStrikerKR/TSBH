@@ -316,10 +316,10 @@ mod management_dropdown_unification_tests {
 
     #[test]
     fn selected_and_hovered_options_have_distinct_scoped_colors(){
-        assert_eq!(theme::MANAGEMENT_DROPDOWN_SELECTED_BG,theme::ORANGE_EMPHASIS_BG);
+        assert_eq!(theme::management_option_fill(theme::ManagementOptionState::Selected),theme::selected_palette().fill);
         assert_ne!(
-            theme::MANAGEMENT_DROPDOWN_SELECTED_BG,
-            theme::MANAGEMENT_DROPDOWN_HOVER_BG
+            theme::management_option_fill(theme::ManagementOptionState::Selected),
+            theme::management_option_fill(theme::ManagementOptionState::Hovered)
         );
         let ctx=egui::Context::default();
         let _=ctx.run(egui::RawInput::default(),|ctx|{
@@ -329,14 +329,14 @@ mod management_dropdown_unification_tests {
                 ui.scope(|popup|{
                     management_dropdown_option_palette(popup);
                     assert_eq!(popup.visuals().selection.bg_fill,
-                        theme::MANAGEMENT_DROPDOWN_SELECTED_BG);
-                    assert_eq!(popup.visuals().selection.stroke.color,theme::ORANGE_EMPHASIS_TEXT);
+                        theme::management_option_fill(theme::ManagementOptionState::Selected));
+                    assert_eq!(popup.visuals().selection.stroke.color,theme::selected_palette().text);
                     assert_eq!(popup.visuals().widgets.hovered.weak_bg_fill,
-                        theme::MANAGEMENT_DROPDOWN_HOVER_BG);
+                        theme::management_option_fill(theme::ManagementOptionState::Hovered));
                     assert_eq!(popup.visuals().widgets.hovered.bg_fill,
-                        theme::MANAGEMENT_DROPDOWN_HOVER_BG);
+                        theme::management_option_fill(theme::ManagementOptionState::Hovered));
                     assert_eq!(popup.visuals().widgets.active.weak_bg_fill,
-                        theme::MANAGEMENT_DROPDOWN_HOVER_BG);
+                        theme::management_option_fill(theme::ManagementOptionState::Hovered));
                 });
                 assert_eq!(ui.visuals().selection.bg_fill,original_selection);
                 assert_eq!(ui.visuals().widgets.hovered.weak_bg_fill,original_hover);
@@ -376,9 +376,9 @@ mod shared_dropdown_rendered_geometry_tests{
                 });
             });
             if phase==3{
-                assert!(output.shapes.iter().any(|s|has_fill(&s.shape,selected,theme::ORANGE_EMPHASIS_BG)),
+                assert!(output.shapes.iter().any(|s|has_fill(&s.shape,selected,theme::selected_palette().fill)),
                     "selected option must actually paint orange");
-                assert!(output.shapes.iter().any(|s|has_fill(&s.shape,other,theme::MANAGEMENT_DROPDOWN_HOVER_BG)),
+                assert!(output.shapes.iter().any(|s|has_fill(&s.shape,other,theme::management_option_fill(theme::ManagementOptionState::Hovered))),
                     "unselected hovered option must actually paint blue");
                 assert_eq!(current,"a");
             }
@@ -411,8 +411,8 @@ mod shared_dropdown_rendered_geometry_tests{
                     });
                 });
                 if phase==3{
-                    assert!(output.shapes.iter().any(|s|fill_at(&s.shape,selected.center(),theme::ORANGE_EMPHASIS_BG)));
-                    assert!(output.shapes.iter().any(|s|fill_at(&s.shape,other.center(),theme::MANAGEMENT_DROPDOWN_HOVER_BG)));
+                    assert!(output.shapes.iter().any(|s|fill_at(&s.shape,selected.center(),theme::selected_palette().fill)));
+                    assert!(output.shapes.iter().any(|s|fill_at(&s.shape,other.center(),theme::management_option_fill(theme::ManagementOptionState::Hovered))));
                     assert!(current==selected_value);
                 }
             }
@@ -449,7 +449,13 @@ mod shared_dropdown_rendered_geometry_tests{
                 assert_geometry_value("dropdown","left caption inset",clip.left()-rect.left(),theme::SPACE_12,1.0);
                 assert!(clip.right()<=rect.right()-30.0+1.0,"caption clip enters arrow slot");
                 assert!(ink.intersect(clip).is_positive());
-                if label=="선불"{assert_painted_caption(&output,label,rect);}
+                if label=="선불"{
+                    assert_painted_caption(&output,label,rect);
+                }else{
+                    // Long selected values may overflow horizontally, but
+                    // never disappear or lose the top/bottom of their glyphs.
+                    crate::ui_test_support::assert_caption_visibility(&output,label,rect,true);
+                }
                 if let Some((old,following))=baseline{
                     assert_rect_geometry("dropdown state",rect,old,0.5);
                     assert_rect_geometry("following widget",next,following,0.5);

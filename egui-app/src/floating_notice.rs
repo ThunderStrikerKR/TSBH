@@ -352,9 +352,9 @@ fn placement_element(anchor:Pos2,below:Pos2,size:Vec2,screen:Rect,_kind:AnchorKi
 // Align to the first text row, not the middle of a multi-line explanation.
 fn paint_status_icon(painter: &egui::Painter, center: Pos2, tone: Tone) {
     let ink = match tone {
-        Tone::Success => theme::SUCCESS,
+        Tone::Success => theme::message_ink(theme::MessageInkRole::Success),
         Tone::Info => theme::icon_ink(theme::IconRole::Secondary,theme::VisualState::Normal),
-        Tone::Validation | Tone::Error => theme::DANGER,
+        Tone::Validation | Tone::Error => theme::message_ink(theme::MessageInkRole::Danger),
     };
     let stroke = Stroke::new(1.5_f32, ink);
     painter.circle_stroke(center,6.5,stroke);
@@ -560,6 +560,8 @@ pub fn show(ctx: &Context) {
                 );
                 #[cfg(test)]
                 crate::ui_test_support::record_highlight_target("notice close",response.rect,ui.clip_rect());
+                #[cfg(test)]
+                crate::ui_test_support::record_control_response("notice close",&response,ui.clip_rect(),None);
                 remember_response(ui.ctx(),&response);
                 crate::highlight::action_hover(ui,&response,crate::highlight::Geometry::Compact,false);
                 paint_close(&painter,center);

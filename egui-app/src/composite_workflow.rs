@@ -2,7 +2,7 @@
 use crate::ui_layout::geometry::SharedPainterClipExt as _;
 use crate::ui_layout::geometry::SharedAllocationExt as _;
 use eframe::egui::{self,Color32,Rect,Response,Sense,Ui,Vec2};
-use crate::{theme,typography,source_highlight};
+use crate::{theme,typography};
 use crate::ui_primitives::text_exceeds_rect;
 use crate::card::paint_shipment_detail_surface;
 use crate::table::{paint_table_galley,shipment_detail_cells,shipment_detail_product_galley,shipment_detail_block_height,paint_shipment_detail_products,workflow_shipment_columns};
@@ -15,7 +15,7 @@ use crate::table::management_inline_list_table_header;
 pub fn workflow_compact_money(
     ui:&Ui,price:Rect,price_ink:Rect,bottom_y:f32,amount:&str,emphasis:bool,state:theme::TextState
 )->bool{
-    let color=if emphasis{crate::one_touch::INK}else{theme::text_ink(theme::TextRole::Value,state)};
+    let color=if emphasis{crate::theme::one_touch_palette().text}else{theme::text_ink(theme::TextRole::Value,state)};
     let galley=ui.painter().layout_no_wrap(
         amount.to_owned(),typography::data_value_font(
             typography::DataValueKind::Money,typography::DataValueContext::CompactCard
@@ -65,10 +65,10 @@ pub fn workflow_shipment_row(
 )->egui::Response{
     let outer=ui.available_width();
     let (widths,gap)=workflow_shipment_columns(outer);
-    let preview_ink=if chosen{theme::WORKFLOW_SELECTED_ROW_TEXT}
-        else if previewed{source_highlight::ACTIVE_TEXT}else{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)};
+    let preview_ink=if chosen{theme::workflow_text_ink(theme::WorkflowTextRole::SelectedRow)}
+        else if previewed{theme::linked_preview_palette().text}else{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)};
     let summary_ink=if chosen{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)}else{preview_ink};
-    let freight_ink=if freight_emphasis{crate::one_touch::INK}else{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)};
+    let freight_ink=if freight_emphasis{crate::theme::one_touch_palette().text}else{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)};
     let name_galley=shipment_detail_product_galley(ui,widths[0],name,preview_ink);
     let product_galley=shipment_detail_product_galley(ui,widths[1],summary,summary_ink);
     let freight_text=freight.unwrap_or("—");
@@ -134,8 +134,8 @@ mod workflow_freight_typography_tests{
     #[test]
     fn freight_uses_semantic_money_and_stable_layout_in_both_states(){
         let text="4,000원 / —";
-        let regular=workflow_freight_text_job(text,theme::TEXT);
-        let emphasized=workflow_freight_text_job(text,crate::one_touch::INK);
+        let regular=workflow_freight_text_job(text,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
+        let emphasized=workflow_freight_text_job(text,crate::theme::one_touch_palette().text);
         assert_eq!(regular.text,text);
         assert_eq!(regular.sections.len(),emphasized.sections.len());
         let money=typography::data_value_font(typography::DataValueKind::Money,typography::DataValueContext::Form);
@@ -147,7 +147,7 @@ mod workflow_freight_typography_tests{
             assert_eq!(a.format.font_id,b.format.font_id);
             assert_eq!(a.format.line_height,b.format.line_height);
         }
-        let cod=workflow_freight_text_job("착불",theme::TEXT);
+        let cod=workflow_freight_text_job("착불",theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
         assert_eq!(cod.sections[0].format.font_id.family,egui::FontFamily::Proportional);
     }
 }

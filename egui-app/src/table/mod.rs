@@ -37,6 +37,8 @@ pub(crate) fn editable_cell_hit(
     let response=ui.interact(rect,id,if editable{Sense::click()}else{Sense::hover()});
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("editable table cell",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("editable table cell",&response,ui.clip_rect(),None);
     let response=crate::ui_primitives::overflow_tooltip(response,overflow,full);
     if editable{response.on_hover_cursor(cursor)}else{response}
 }
@@ -47,6 +49,8 @@ pub(crate) fn registry_row_hit(ui:&Ui,rect:Rect,id:egui::Id,enabled:bool)->egui:
     let response=ui.interact(rect,id,if enabled{Sense::click()}else{Sense::hover()});
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("registry row",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("registry row",&response,ui.clip_rect(),None);
     response
 }
 
@@ -62,7 +66,7 @@ pub(crate) fn header_finish(ui:&Ui,header:Rect){
     ui.painter().with_shared_clip(header).rect_filled(
         Rect::from_min_max(egui::pos2(header.left(),
             header.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT),
-            header.right_bottom()),0.0,theme::TABLE_HEADER_OUTLINE);
+            header.right_bottom()),0.0,theme::border_ink(theme::BorderRole::TableHeader));
 }
 
 fn outline_bounds(header:Rect,body:Rect)->Rect{
@@ -632,6 +636,8 @@ pub(crate) fn sort_clicked(ui:&mut Ui,hit:Rect,id:impl std::hash::Hash)->bool{
     let response=ui.interact(hit,ui.make_persistent_id(id),egui::Sense::click());
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("sort header",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("sort header",&response,ui.clip_rect(),None);
     if response.hovered(){management_master_header_sort_hover(ui,hit);}
     response.clicked()
 }

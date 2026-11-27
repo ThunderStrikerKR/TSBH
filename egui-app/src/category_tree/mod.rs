@@ -12,10 +12,9 @@ const CATALOG_TREE_CHEVRON_SIZE:f32 = theme::SPACE_16;
 const CATALOG_TREE_FOLDER_SIZE:f32 = 20.0;
 const CATALOG_TREE_GAP:f32 = theme::SPACE_8;
 const CATALOG_TREE_TERMINAL_GAP:f32 = theme::SPACE_4;
-const CATALOG_TREE_GUIDE_COLOR:Color32 = Color32::from_rgb(74,74,74);
 const CATALOG_TREE_GUIDE_WIDTH:f32 = 1.0;
 const CATALOG_TREE_FOLDER_STROKE:f32 = 1.5;
-const CATALOG_TREE_FOLDER_COLOR:Color32 = theme::SECONDARY;
+const CATALOG_TREE_FOLDER_COLOR:Color32 = theme::text_ink(theme::TextRole::Label,theme::TextState::Normal);
 
 /// CategoryTree presentation contract. The caller owns data, selection and
 /// expansion; all tree row geometry and painting are centralized here.
@@ -263,6 +262,8 @@ fn tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>,product:bool,enabled:bool,dragga
     );
     #[cfg(test)]
     if !product{crate::ui_test_support::record_highlight_target("category row",rect,ui.clip_rect());}
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response(if product{"category product row"}else{"category folder row"},&response,ui.clip_rect(),None);
     let geo=CategoryTreeGeometry::new(rect,item.depth);
     let painter=ui.painter().with_shared_clip(rect);
     if item.selected{
@@ -271,7 +272,7 @@ fn tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>,product:bool,enabled:bool,dragga
         crate::button::paint_button_hover(ui,&response,crate::highlight::Geometry::Control);
     }
     let response=if product&&enabled{response.on_hover_cursor(egui::CursorIcon::PointingHand)}else{response};
-    let guide=Stroke::new(CATALOG_TREE_GUIDE_WIDTH,CATALOG_TREE_GUIDE_COLOR);
+    let guide=Stroke::new(CATALOG_TREE_GUIDE_WIDTH,theme::border_ink(theme::BorderRole::TreeGuide));
     geo.guides(item.ancestor_guides,item.is_last,item.has_children,item.open,
         |segment|{painter.line_segment(segment,guide);});
     if item.has_children{

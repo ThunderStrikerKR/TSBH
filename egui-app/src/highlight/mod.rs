@@ -56,7 +56,7 @@ fn composite_opaque(t:Color32,rest:Color32)->Color32{
     Color32::from_rgb(mix(r,rest.r()),mix(g,rest.g()),mix(b,rest.b()))
 }
 pub(crate) fn field_background(ui:&Ui,rect:Rect,role:Role,opaque:bool){
-    let fill=palette(role).fill.map(|t|if opaque{composite_opaque(t,theme::INPUT)}else{t});
+    let fill=palette(role).fill.map(|t|if opaque{composite_opaque(t,theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill)}else{t});
     paint_parts(ui.painter(),rect,field_geometry(role),fill,None);
 }
 pub(crate) fn field_outline(ui:&Ui,rect:Rect,role:Role){
@@ -76,15 +76,15 @@ pub(crate) fn card_stripe_rect(rect:Rect)->Rect{
 }
 pub(crate) fn calendar_widget(ui:&mut Ui,selected:bool,today:bool){
     let widgets=&mut ui.visuals_mut().widgets;
-    let chosen_stroke=Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::SELECTION);
-    let today_stroke=Stroke::new(theme::FRAME_STROKE_WIDTH,theme::BORDER);
+    let chosen_stroke=Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::border_ink(theme::BorderRole::Focus));
+    let today_stroke=Stroke::new(theme::FRAME_STROKE_WIDTH,theme::border_ink(theme::BorderRole::Standard));
     for (visual,hovered,focused) in [
         (&mut widgets.inactive,false,false),
         (&mut widgets.hovered,true,false),
         (&mut widgets.active,false,true),
         (&mut widgets.open,false,true),
     ]{
-        let fill=if selected{theme::WORKFLOW_SELECTED_BG}else{visual.weak_bg_fill};
+        let fill=if selected{theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Selected).fill}else{visual.weak_bg_fill};
         let stroke=if selected{chosen_stroke}
             else if today{today_stroke}else{visual.bg_stroke};
         let (fill,stroke)=if selected{(fill,stroke)}
@@ -105,19 +105,19 @@ pub(crate) fn palette(role:Role)->Palette{
         DropTarget, DropHovered, ReviewTint, RowHover, ChooserSelected,
     };
     let (fill,stroke,ink)=match role{
-        Hover=>(Some(theme::BUTTON_HOVER_TINT),Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::SELECTION)),None),
-        LightHover=>(Some(theme::BUTTON_HOVER_LIGHT_BG),Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::BUTTON_HOVER_LIGHT_BORDER)),Some(theme::BRIGHT_TEXT)),
+        Hover=>(Some(theme::hover_palette().overlay),Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::border_ink(theme::BorderRole::Focus))),None),
+        LightHover=>(Some(theme::hover_palette().light_fill),Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::hover_palette().light_border)),Some(theme::primary_action_colors().1)),
         LinkedPreview=>(Some(theme::linked_preview_palette().fill),Some(Stroke::new(theme::LINKED_PREVIEW_BORDER_WIDTH,theme::linked_preview_palette().border)),Some(theme::linked_preview_palette().text)),
-        Selected=>(Some(theme::ORANGE_EMPHASIS_BG),Some(Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::SELECTED_ORDER)),Some(theme::ORANGE_EMPHASIS_TEXT)),
-        RequiredReview=>(Some(theme::ONE_TOUCH_BG),Some(Stroke::new(theme::ONE_TOUCH_BORDER_WIDTH,theme::ONE_TOUCH_BORDER)),Some(theme::ONE_TOUCH_TEXT)),
-        RequiredInput=>(Some(theme::REQUIRED_INPUT_TINT),Some(Stroke::new(theme::REQUIRED_INPUT_STROKE_WIDTH,theme::REQUIRED_INPUT_BORDER)),None),
-        Focus=>(None,Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::SELECTION)),None),
-        DropTarget=>(Some(theme::MANUAL_ASSIGNMENT_TINT),Some(Stroke::new(theme::MANUAL_ASSIGNMENT_STROKE_WIDTH,theme::SELECTION)),None),
-        DropHovered=>(Some(theme::BUTTON_HOVER_TINT),Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::SELECTION)),None),
-        ReviewTint=>(Some(theme::ONE_TOUCH_TINT),Some(Stroke::new(theme::ONE_TOUCH_BORDER_WIDTH,theme::ONE_TOUCH_BORDER)),None),
+        Selected=>(Some(theme::selected_palette().fill),Some(Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::selected_palette().border)),Some(theme::selected_palette().text)),
+        RequiredReview=>(Some(theme::one_touch_palette().fill),Some(Stroke::new(theme::ONE_TOUCH_BORDER_WIDTH,theme::one_touch_palette().border)),Some(theme::one_touch_palette().text)),
+        RequiredInput=>(Some(theme::required_input_palette().fill),Some(Stroke::new(theme::REQUIRED_INPUT_STROKE_WIDTH,theme::required_input_palette().border)),None),
+        Focus=>(None,Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::border_ink(theme::BorderRole::Focus))),None),
+        DropTarget=>(Some(theme::drop_target_tint()),Some(Stroke::new(theme::MANUAL_ASSIGNMENT_STROKE_WIDTH,theme::border_ink(theme::BorderRole::Focus))),None),
+        DropHovered=>(Some(theme::hover_palette().overlay),Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::border_ink(theme::BorderRole::Focus))),None),
+        ReviewTint=>(Some(theme::one_touch_palette().tint),Some(Stroke::new(theme::ONE_TOUCH_BORDER_WIDTH,theme::one_touch_palette().border)),None),
         // Continuous table rows do not introduce a second border over grid rules.
-        RowHover=>(Some(theme::BUTTON_HOVER_BG),None,None),
-        ChooserSelected=>(Some(theme::SELECTION.linear_multiply(0.22)),Some(Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::SELECTION)),None),
+        RowHover=>(Some(theme::hover_palette().row_fill),None,None),
+        ChooserSelected=>(Some(theme::border_ink(theme::BorderRole::Focus).linear_multiply(0.22)),Some(Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::border_ink(theme::BorderRole::Focus))),None),
     };
     Palette{fill,stroke,ink}
 }
@@ -292,14 +292,14 @@ pub(crate) fn dropdown_options(ui:&mut Ui){
     let visuals=ui.visuals_mut();
     let selected=palette(Role::Selected);
     let hover=palette(Role::Hover);
-    visuals.selection.bg_fill=selected.fill.unwrap_or(theme::MANAGEMENT_DROPDOWN_SELECTED_BG);
-    visuals.selection.stroke=Stroke::new(theme::SELECTION_STROKE_WIDTH,selected.ink.unwrap_or(theme::TEXT));
+    visuals.selection.bg_fill=selected.fill.unwrap_or(theme::management_option_fill(theme::ManagementOptionState::Selected));
+    visuals.selection.stroke=Stroke::new(theme::SELECTION_STROKE_WIDTH,selected.ink.unwrap_or(theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)));
     // Opaque blue for native option backgrounds, not a tint over text.
-    let fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
+    let fill=theme::management_option_fill(theme::ManagementOptionState::Hovered);
     visuals.widgets.hovered.bg_fill=fill;
     visuals.widgets.hovered.weak_bg_fill=fill;
     visuals.widgets.hovered.bg_stroke=hover.stroke.unwrap_or(Stroke::NONE);
-    visuals.widgets.hovered.fg_stroke=Stroke::new(1.5,theme::TEXT);
+    visuals.widgets.hovered.fg_stroke=Stroke::new(1.5,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
     visuals.widgets.active.bg_fill=fill;
     visuals.widgets.active.weak_bg_fill=fill;
 }
@@ -326,19 +326,19 @@ mod tests{
     #[test]
     fn semantic_highlight_roles_keep_distinct_state_colors(){
         assert_eq!(palette(Role::Hover).stroke.unwrap().width,2.0);
-        assert_eq!(palette(Role::LightHover).fill,Some(theme::BUTTON_HOVER_LIGHT_BG));
-        assert_eq!(palette(Role::LightHover).ink,Some(theme::BRIGHT_TEXT));
+        assert_eq!(palette(Role::LightHover).fill,Some(theme::hover_palette().light_fill));
+        assert_eq!(palette(Role::LightHover).ink,Some(theme::primary_action_colors().1));
         assert_eq!(palette(Role::DropHovered).fill,palette(Role::Hover).fill);
-        assert_eq!(palette(Role::Selected).fill,Some(theme::ORANGE_EMPHASIS_BG));
-        assert_eq!(palette(Role::RequiredInput).stroke.unwrap().color,theme::ERROR_BORDER);
+        assert_eq!(palette(Role::Selected).fill,Some(theme::selected_palette().fill));
+        assert_eq!(palette(Role::RequiredInput).stroke.unwrap().color,Color32::from_rgb(199,107,107));
         assert_ne!(palette(Role::LinkedPreview).fill,palette(Role::RequiredReview).fill);
     }
     #[test]
     fn action_surface_replaces_instead_of_stacking_borders(){
-        let rest=theme::BRIGHT;
-        let border=Stroke::new(1.0,theme::DIVIDER);
+        let rest=theme::primary_action_colors().0;
+        let border=Stroke::new(1.0,theme::border_ink(theme::BorderRole::Divider));
         assert_eq!(action_surface(rest,border,true,false,false),(rest,border));
-        assert_eq!(action_surface(rest,border,true,true,false),(theme::BUTTON_HOVER_LIGHT_BG,palette(Role::LightHover).stroke.unwrap()));
+        assert_eq!(action_surface(rest,border,true,true,false),(theme::hover_palette().light_fill,palette(Role::LightHover).stroke.unwrap()));
         assert_eq!(action_surface(rest,border,true,false,true),(rest,palette(Role::LightHover).stroke.unwrap()));
         assert_eq!(value_rect(Rect::from_min_max(egui::pos2(5.0,5.0),egui::pos2(10.0,10.0)),Rect::from_min_max(egui::pos2(3.0,3.0),egui::pos2(12.0,12.0))),Rect::from_min_max(egui::pos2(3.0,3.0),egui::pos2(12.0,12.0)));
     }
@@ -351,7 +351,7 @@ mod tests{
         assert_eq!(States{required:false,selected:false,linked:false,..all}.resolve(),Some(Role::RequiredReview));
         assert_eq!(States{focused:true,hovered:true,..States::default()}.resolve(),Some(Role::Focus));
         assert_eq!(States::default().resolve(),None);
-        assert_eq!(prioritized_stroke(Stroke::NONE,all).color,theme::ERROR_BORDER);
+        assert_eq!(prioritized_stroke(Stroke::NONE,all).color,Color32::from_rgb(199,107,107));
         let fields=FieldHighlights::new([true,true,false],[true,true,false],[false,true,false]);
         assert_eq!(fields.role(0,true),Some(Role::RequiredInput));
         assert_eq!(fields.role(1,true),None);
@@ -359,7 +359,7 @@ mod tests{
         assert_eq!(fields.role(2,true),Some(Role::RequiredReview));
         assert_eq!(freight_role(true,true),Some(Role::RequiredInput));
         assert_eq!(freight_role(false,true),Some(Role::ReviewTint));
-        assert_eq!(persistent_surface(theme::INPUT,Stroke::NONE,freight_role(true,true)).1.color,theme::ERROR_BORDER);
+        assert_eq!(persistent_surface(theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill,Stroke::NONE,freight_role(true,true)).1.color,Color32::from_rgb(199,107,107));
     }
     #[test]
     fn common_painter_preserves_parent_clip(){

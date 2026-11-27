@@ -223,6 +223,8 @@ fn crumb_text(ui:&mut Ui,name:&str,width:f32,current:bool,enabled:bool)->Respons
         if enabled&&!current{egui::Sense::click()}else{egui::Sense::hover()});
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("category breadcrumb",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("category breadcrumb",&response,ui.clip_rect(),None);
     if enabled&&!current{crate::button::paint_button_hover(ui,&response,crate::highlight::Geometry::Control);}
     let visible=typography::fit_category_path(ui,name,(width-12.0).max(0.0),typography::CategoryPathFont::Body);
     let galley=typography::category_tree_name_galley(ui,&visible,false);
@@ -796,7 +798,7 @@ mod tests{
     #[test]
     fn breadcrumb_palette_keeps_only_current_folder_prominent(){
         assert!(theme::CATEGORY_EXPLORER_BACK_WIDTH>theme::CATEGORY_EXPLORER_CRUMB_HEIGHT);
-        assert_eq!(theme::category_ink(theme::CategoryInkRole::Ancestor),theme::MUTED);
+        assert_eq!(theme::category_ink(theme::CategoryInkRole::Ancestor),theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal));
         assert!(theme::category_ink(theme::CategoryInkRole::Separator).r()<theme::category_ink(theme::CategoryInkRole::Ancestor).r());
         assert!(theme::category_ink(theme::CategoryInkRole::Current).r()>theme::category_ink(theme::CategoryInkRole::Ancestor).r());
         let source=include_str!("category_dropdown.rs");

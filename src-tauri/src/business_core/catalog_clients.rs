@@ -44,7 +44,7 @@ fn value_present(v: &Value, name: &str) -> bool {
 fn items<'a>(v: &'a Value, name: &str) -> &'a [Value] {
     v.get(name).and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[])
 }
-fn valid_money(value: &Value) -> bool {
+pub(crate) fn valid_money(value: &Value) -> bool {
     value.is_null() || value.as_u64().is_some_and(|n| n <= 9_007_199_254_740_991)
 }
 fn normalized_name(value: &str) -> String {
@@ -83,7 +83,27 @@ pub(super) fn product_url_ok(value: &str) -> bool {
 fn validate_client(state: &Value, client: &Value) -> Result<(), String> {
     client_mutation::validate_client(state,client)
 }
+/// Borrow the existing model-group validator without constructing a
+/// JSON dispatcher command. The dispatcher delegates to the same rule.
+pub(crate) fn validate_model_groups(state:&Value)->Result<(),String>{
+    model_groups::validate(state)
+}
+pub(crate) fn model_group_diagnostics(state:&Value)->Vec<(Vec<String>,Value,String)>{
+    model_groups::diagnostics(state)
+}
+
+/// Pure hierarchy validation, without repeating the assignment transition.
+pub(crate) fn validate_category_topology(state:&Value)->Result<(),String>{
+    categories::validate_topology(state)
+}
+
 fn validate_product(state: &Value, product: &Value) -> Result<(), String> {
+    bando_data_access::validate_product_assignment(state,product)?;
+    validate_product_fields(state,product,!items(state,"products").iter().any(|p|field(p,"id")==field(product,"id")))
+}
+/// Existing product checks, with explicit newness supplied by the
+/// authoritative before-image. Candidate references use the next snapshot.
+pub(crate) fn validate_product_fields(state:&Value,product:&Value,is_new:bool)->Result<(),String>{
     // src/domain.ts::productSchema and validateProduct: one sale unit only,
     // valid immutable identity, nonnegative safe prices and trusted links.
     for key in ["id", "code", "name", "createdAt", "updatedAt"] {
@@ -120,8 +140,7 @@ fn validate_product(state: &Value, product: &Value) -> Result<(), String> {
     // Preserve the original TS semantics: duplicate detection only applies
     // to a *new* product; editing an existing product is not blocked here.
     let existing = items(state, "products");
-    let is_existing = existing.iter().any(|p| field(p, "id") == field(product, "id"));
-    if !is_existing {
+    if is_new {
         let name = normalized_name(field(product, "name"));
         if existing.iter().any(|other| {
             field(other, "id") != field(product, "id")
@@ -177,6 +196,7 @@ fn apply_product_workbook(state: &Value, preview: &Value) -> Result<Value, Strin
         .ok_or("상품 Excel 후보 목록이 없습니다.")?;
     let mut next = state.clone();
     next["products"] = products.clone();
+    bando_data_access::validate_category_transition(state,&next)?;
     Ok(json!({
         "next":next,
         "createdProducts":preview.get("createdProducts").cloned().unwrap_or(json!(0)),
@@ -186,12 +206,15 @@ fn apply_product_workbook(state: &Value, preview: &Value) -> Result<Value, Strin
     }))
 }
 
+pub(crate) fn alias_findings(state:&Value,record:&Value)->Vec<(Vec<String>,Value,String)>{
+    aliases::alias_findings(record,items(state,"aliases"),items(state,"products"))
+}
 fn archive_client(state: &Value, id: &str, at: &str) -> Result<Value, String> {
     client_mutation::archive_client(state,id,at)
 }
 /// Original productKey uses a compact upper-case model code and a stable
 /// single-sale-variant ID. Deletion must not relink a later catalog import.
-fn product_key(product: &Value) -> String {
+pub(crate) fn product_key(product: &Value) -> String {
     let catalog = product.get("catalog").and_then(Value::as_str).unwrap_or_else(|| {
         if items(product, "variants").iter().any(|v| field(v, "source") == "DEMO") {
             "DEMO"

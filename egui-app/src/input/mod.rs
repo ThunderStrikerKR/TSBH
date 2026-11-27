@@ -3,7 +3,7 @@ use crate::ui_layout::geometry::SharedPainterClipExt as _;
 use crate::ui_layout::geometry::SharedAllocationExt as _;
 use crate::ui_layout::geometry::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Layout,Rect,Response,Stroke,Ui,Vec2};
-use crate::{source_highlight,theme,typography};
+use crate::{theme,typography};
 use crate::button::{date_navigation_segment_button,DateNavigationSegmentGlyph};
 use crate::ui_primitives::{navigation_segment_child,date_navigation_segmented_surface_with_state};
 #[cfg(test)]
@@ -73,7 +73,7 @@ pub(crate) fn allocate_singleline_field(
         None=>place(ui),
     };
     #[cfg(test)]
-    crate::ui_test_support::record_component_geometry("input",response.rect,ui.clip_rect(),Some(size.y));
+    crate::ui_test_support::record_control_response("input",&response,ui.clip_rect(),Some(size.y));
     response
 }
 
@@ -420,6 +420,8 @@ pub(crate) fn multiline_text_field_sized(
     let response=ui.shared_add_sized(size,editor);
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("multiline input",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("multiline input",&response,ui.clip_rect(),None);
     response
 }
 
@@ -491,7 +493,7 @@ pub(crate) fn reception_recipient_text_edit(
         // TextEdit's native background uses a different square/filled
         // geometry. Let the shared evidence surface own the rounded fill
         // and the outer caller own the common 2pt border instead.
-        input.frame(false).text_color(source_highlight::ACTIVE_TEXT)
+        input.frame(false).text_color(theme::linked_preview_palette().text)
     }else{input}
 }
 
@@ -864,6 +866,8 @@ pub(crate) fn reception_recipient_value_hit(ui:&mut Ui,display:&Response)->Respo
     );
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("recipient field hit",hit.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("recipient field hit",&hit,ui.clip_rect(),None);
     if hit.hovered(){
         ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
     }
@@ -879,6 +883,8 @@ pub(crate) fn ocr_zoom_slider(ui:&mut Ui,zoom:&mut f32)->Response{
     );
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("OCR slider",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("OCR slider",&response,ui.clip_rect(),None);
     response
 }
 

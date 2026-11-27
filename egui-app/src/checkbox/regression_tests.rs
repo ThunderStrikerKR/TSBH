@@ -142,8 +142,8 @@ mod shared_checkbox_rendered_geometry_tests{
                     assert!(output.shapes.iter().any(|s|has_fill(&s.shape,hit,theme::checkbox_palette(true,theme::VisualState::Normal).expect("checked palette").fill)));
                 }
                 assert!(!output.shapes.iter().any(|s|
-                    has_fill(&s.shape,hit,theme::ORANGE_EMPHASIS_BG)||
-                    has_fill(&s.shape,hit,theme::SELECTED_ORDER)||
+                    has_fill(&s.shape,hit,theme::selected_palette().fill)||
+                    has_fill(&s.shape,hit,theme::selected_palette().border)||
                     has_fill(&s.shape,hit,egui::Color32::from_rgb(140,76,16))));
                 assert_eq!(value,checked);
                 if let Some((old_width,old_height,old_hit))=baseline{

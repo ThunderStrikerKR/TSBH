@@ -128,6 +128,7 @@ fn write_snapshot(conn: &mut Connection, mut state: Value, expected_revision: u6
     if current_revision != expected_revision {
         return Err("다른 작업에서 데이터가 수정되었습니다. 새로고침 후 다시 저장하세요.".into());
     }
+    bando_data_access::validate_category_transition(&current,&state)?;
     bando_data_access::validate_clients(&current, &state)?;
     bando_data_access::validate_brands(&current, &state)?;
     if validate_orders { reception::validate_reception(&current, &state)?; }

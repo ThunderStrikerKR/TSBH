@@ -7,7 +7,7 @@ use sha2::{Digest,Sha256};
 use std::io::Cursor;
 
 const CLIENT_FORMAT:&str="BANDO-HUB-CLIENTS-V2";
-#[cfg(windows)]
+#[cfg(any(windows,test))]
 const CLIENT_LEGACY:&str="BANDO-HUB-CLIENTS-V1";
 const CLIENT_SHEET:&str="거래처 목록";
 const META:&str="__반도허브_관리정보";
@@ -34,7 +34,7 @@ fn open_book(bytes:&[u8],limit:usize)->Result<Xlsx<Cursor<&[u8]>>,String>{
     }
     Xlsx::new(Cursor::new(bytes)).map_err(|e|format!("XLSX 파일을 읽지 못했습니다: {e}"))
 }
-#[cfg(windows)]
+#[cfg(any(windows,test))]
 fn safe_sheet(book:&mut Xlsx<Cursor<&[u8]>>,name:&str)->Result<(),String>{
     if !book.merge_cells_by_sheet_name(name).map_err(|e|e.to_string())?.is_empty(){
         return Err("병합된 셀은 허용되지 않습니다.".into());
@@ -140,7 +140,7 @@ pub fn export_clients(state:&Value)->Result<Vec<u8>,String>{
     }
     book.save_to_buffer().map_err(|e|e.to_string())
 }
-#[cfg(windows)]
+#[cfg(any(windows,test))]
 pub fn read_clients(bytes:&[u8])->Result<Value,String>{
     let mut book=open_book(bytes,20*1024*1024)?;
     safe_sheet(&mut book,META)?;
@@ -175,6 +175,19 @@ pub fn read_clients(bytes:&[u8])->Result<Value,String>{
     }
     // Preserve 18-column V1 source; existing Rust client_preview owns conversion.
     Ok(json!({"sourceRevision":revision,"input":input}))
+}
+
+#[cfg(test)]
+mod client_binary_unit_tests{
+    use super::*;
+    #[test]
+    fn client_reader_preserves_text_identity_and_revision(){
+        let state=json!({"revision":7,"clients":[{"id":"001","name":"합성 거래처","postcode":"01234","phone":"02-1234-5678","mobile":"010-0000-0000","tier":"special","payment":"PREPAID","active":true}],"settings":{"accounts":[]},"orders":[]});
+        let parsed=read_clients(&export_clients(&state).unwrap()).unwrap();
+        assert_eq!(parsed["sourceRevision"],7);
+        assert_eq!(parsed["input"][0]["cells"][0],"001");
+        assert_eq!(parsed["input"][0]["cells"][3],"01234");
+    }
 }
 
 /// Shared instructions for reply review and contextual help.

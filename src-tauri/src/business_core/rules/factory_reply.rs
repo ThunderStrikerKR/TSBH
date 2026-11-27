@@ -345,7 +345,7 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
     ensure_customer_payment_unchanged(input,&next)?;
     Ok(next)
 }
-fn ensure_customer_payment_unchanged(before:&Value,next:&Value)->Result<(),String>{
+pub(crate) fn ensure_customer_payment_unchanged(before:&Value,next:&Value)->Result<(),String>{
     let old=field(before,"workflow");
     let new=field(next,"workflow");
     let old_ships=rows(old,"shipments");

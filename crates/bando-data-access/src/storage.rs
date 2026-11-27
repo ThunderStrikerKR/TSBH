@@ -7,7 +7,7 @@ use serde_json::{json,Value};
 use crate::{validate_brands,validate_clients};
 fn err<E:std::fmt::Display>(e:E)->String{e.to_string()}
 #[path = "../../../src-tauri/src/reception.rs"]
-mod reception;
+pub(super) mod reception;
 
 fn read_current_envelope(tx:&Transaction<'_>,expected_revision:u64)->Result<Value,String>{
     let version:i64=tx.query_row(
@@ -90,6 +90,12 @@ where F:FnOnce(&Value)->Result<Option<Value>,String>{
 // Brand deletion changes only explicitly approved product brandId links.
 // Avoid unrelated color migrations during this narrow catalog mutation.
 pub(crate) fn update_v2_brand_delete<F>(conn:&mut Connection,mutate:F)
+    ->Result<Value,String>
+where F:FnOnce(&Value)->Result<Option<Value>,String>{
+    update_v2_entity_with_color_policy(conn,true,false,mutate)
+}
+// Category edits must never trigger an unrelated legacy color migration.
+pub(crate) fn update_v2_category_change<F>(conn:&mut Connection,mutate:F)
     ->Result<Value,String>
 where F:FnOnce(&Value)->Result<Option<Value>,String>{
     update_v2_entity_with_color_policy(conn,true,false,mutate)
@@ -183,7 +189,7 @@ fn hydrate_factory_scope(tx:&Transaction<'_>,before:&mut Value,ids:&[String])->R
     Ok(())
 }
 
-fn validate_factory_scope(before:&Value,next:&Value)->Result<(),String>{
+pub(super) fn validate_factory_scope(before:&Value,next:&Value)->Result<(),String>{
     // This reducer may mutate workflow and append reply records, but it
     // must never alter the candidate order trees or other envelope fields.
     let old=before.as_object().ok_or("기존 회신 상태 오류")?;
@@ -577,6 +583,8 @@ fn verify_order_domain(tx:&Transaction<'_>,old:Value,next:&Value)
 
 fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
     current_revision:u64,validate_orders:bool,prefer_workflow_patch:bool)->Result<(Value,WriteScope),String>{
+    // A category topology change can invalidate unchanged product rows.
+    crate::validate_category_transition(current,&state)?;
     let products_changed = current["products"] != state["products"];
     let clients_changed = current["clients"] != state["clients"];
     let orders_changed = current["orders"] != state["orders"];

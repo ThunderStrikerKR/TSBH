@@ -6,9 +6,6 @@
 use rusqlite::Connection;
 use serde_json::Value;
 
-#[path = "../../../src-tauri/src/business_core/rules/settings_accounts.rs"]
-mod settings_accounts;
-
 /// Apply the original Tauri settings_patch rules to an authoritative snapshot.
 /// Also used for legacy Tauri snapshots so no second host-owned rule remains.
 pub fn apply_settings_changes(
@@ -60,7 +57,7 @@ pub fn apply_settings_changes(
     }
     if ["accounts","defaultAccountId","brandAccounts"]
         .iter().any(|key|changes.contains_key(*key)){
-        settings_accounts::validate(&state)?;
+        crate::validation::validate_accounts(&state)?;
     }
     Ok(state)
 }

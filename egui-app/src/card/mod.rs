@@ -11,7 +11,7 @@ use crate::theme::{
     FREIGHT_SUMMARY_PADDING_Y, MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING,
     ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS, PANEL_RADIUS, RECEPTION_PANE_PADDING_Y,
     SECTION_PADDING, SECTION_RADIUS, SPACE_12, SPACE_4, SPACE_8, WORKFLOW_CARD_RADIUS,
-    WORKFLOW_DETAIL_ROW_BORDER, WORKFLOW_DETAIL_ROW_PADDING_X, WORKFLOW_SELECTED_ROW_BORDER,
+    WORKFLOW_DETAIL_ROW_PADDING_X,
 };
 use crate::scrollbar::{scroll_area,ScrollAxes};
 #[cfg(test)]
@@ -127,7 +127,7 @@ fn workflow_group_card_frame(highlighted:bool)->Frame{
 }
 pub(crate) fn workflow_shipment_row_frame(fill:Color32,chosen:bool)->Frame{
     // Keep the existing stroke width and inner margin in every state.
-    bordered_surface(fill,if chosen{WORKFLOW_SELECTED_ROW_BORDER}else{WORKFLOW_DETAIL_ROW_BORDER},ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS as u8)
+    bordered_surface(fill,surface_palette(SurfaceRole::WorkflowDetailRow,if chosen{VisualState::Selected}else{VisualState::Normal}).border,ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS as u8)
         .inner_margin(egui::Margin::symmetric(
             WORKFLOW_DETAIL_ROW_PADDING_X as i8,SPACE_4 as i8
         ))
@@ -536,7 +536,7 @@ pub(crate) fn reception_document_viewport<R>(
 /// master's muted inner-row colors to establish a quieter visual tier.
 pub(crate) fn paint_reception_client_summary_surface(ui:&Ui,rect:Rect){
     theme::paint_bordered_surface(ui.painter(),rect,theme::CONTROL_RADIUS,
-        theme::RECEPTION_CLIENT_SUMMARY_BG,theme::RECEPTION_CLIENT_SUMMARY_BORDER);
+        theme::surface_palette(theme::SurfaceRole::ReceptionClientSummary,theme::VisualState::Normal).fill,theme::surface_palette(theme::SurfaceRole::ReceptionClientSummary,theme::VisualState::Normal).border);
 }
 
 #[cfg(test)]
@@ -567,5 +567,5 @@ pub(crate) fn workflow_group_card<R>(
 
 /// Divider inside the existing workflow card band, not an extra frame.
 pub(crate) fn paint_workflow_band_divider(ui:&Ui,rect:Rect){
-    ui.painter().with_shared_clip(rect.intersect(ui.clip_rect())).rect_filled(rect,0.0,theme::WORKFLOW_CARD_BORDER);
+    ui.painter().with_shared_clip(rect.intersect(ui.clip_rect())).rect_filled(rect,0.0,theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Normal).border);
 }

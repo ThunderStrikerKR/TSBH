@@ -6,7 +6,7 @@ use crate::ui_layout::geometry::SharedAllocationExt as _;
 use eframe::egui::{self, Id, Pos2, Rect, Ui, Vec2};
 use crate::ui_layout::geometry::UiWidthPolicyExt;
 use std::time::{Duration, Instant};
-use crate::{preview_store::WorkingReception, source_highlight, theme, typography};
+use crate::{preview_store::WorkingReception, theme, typography};
 use std::collections::{HashMap,HashSet};
 use crate::workflow_board::{BoardSnapshot, GroupRow, ShipmentRow};
 
@@ -443,7 +443,7 @@ fn workflow_header(
 
     let block=workflow_control_rect(signal);
     theme::paint_bordered_surface(ui.painter(),block,theme::WORKFLOW_SIGNAL_BLOCK_RADIUS,
-        theme::WORKFLOW_SIGNAL_BLOCK_BG,theme::WORKFLOW_SIGNAL_BLOCK_BORDER);
+        theme::surface_palette(theme::SurfaceRole::WorkflowSignalBlock,theme::VisualState::Normal).fill,theme::surface_palette(theme::SurfaceRole::WorkflowSignalBlock,theme::VisualState::Normal).border);
     let lamp_width=theme::WORKFLOW_SIGNAL_SIZE;
     let lamp_height=theme::WORKFLOW_SIGNAL_HEIGHT;
     let lamp_span=lamp_width*STEP_NAMES.len() as f32
@@ -586,11 +586,11 @@ fn workflow_action_line(
             else{format!("({vat})")};
         let vat_galley=ui.painter().layout_no_wrap(
             visible,egui::FontId::proportional(typography::WORKFLOW_VAT_FONT_SIZE),
-            theme::WORKFLOW_VAT_TEXT
+            theme::workflow_text_ink(theme::WorkflowTextRole::Vat)
         );
         ui.painter().with_shared_clip(price_ink).galley(
             Pos2::new(price_ink.right()-vat_galley.size().x,price.top()+theme::WORKFLOW_VAT_TOP_INSET),
-            vat_galley,theme::WORKFLOW_VAT_TEXT
+            vat_galley,theme::workflow_text_ink(theme::WorkflowTextRole::Vat)
         );
     }
     crate::ui_primitives::overflow_region_tooltip(ui,price,
@@ -653,9 +653,9 @@ fn shipment_row_fill(chosen:bool,previewed:bool)->egui::Color32{
         // A confirmed choice must never be overwritten by a hover preview.
         theme::workflow_selected_row_fill()
     }else if previewed {
-        source_highlight::ACTIVE_FILL
+        theme::linked_preview_palette().fill
     }else {
-        theme::WORKFLOW_DETAIL_ROW_BG
+        theme::surface_palette(theme::SurfaceRole::WorkflowDetailRow,theme::VisualState::Normal).fill
     }
 }
 #[cfg(test)]
@@ -756,6 +756,8 @@ fn group_frame(
                     label.rect,Id::new(("workflow-shipment",ship.id.as_str(),in_preview)),
                     egui::Sense::click()
                 );
+                #[cfg(test)]
+                crate::ui_test_support::record_control_response("workflow shipment row",&response,ui.clip_rect(),None);
                 if in_preview && response.hovered(){
                     *hovered_row=Some(ship.id.clone());
                 }
@@ -953,6 +955,8 @@ fn pending_frame(
                 let action=ui.interact(response.rect,
                     Id::new(("pending-reception-row",draft.id.as_str(),0usize,in_preview)),
                     egui::Sense::click());
+                #[cfg(test)]
+                crate::ui_test_support::record_control_response("pending shipment row",&action,ui.clip_rect(),None);
                 crate::composite_workflow::workflow_shipment_hover(ui,&action,false,false);
                 if action.hovered() {
                     *hovered_pending=Some(PendingTarget::order(&draft.id));
@@ -995,6 +999,8 @@ fn pending_frame(
                     let action=ui.interact(response.rect,
                         Id::new(("pending-reception-row",draft.id.as_str(),index,in_preview)),
                         egui::Sense::click());
+                    #[cfg(test)]
+                    crate::ui_test_support::record_control_response("pending shipment row",&action,ui.clip_rect(),None);
                     crate::composite_workflow::workflow_shipment_hover(ui,&action,chosen,previewed);
                     if action.hovered(){
                         *hovered_pending=Some(
@@ -1349,7 +1355,7 @@ mod shipment_list_tests {
             assert_eq!(rect.height(),measured[0].height());
             assert!(rect.height()>=theme::ACTION_STANDARD_HEIGHT);
         }
-        assert_eq!(theme::WORKFLOW_DETAIL_ROW_BG,theme::PANEL);
+        assert_eq!(theme::surface_palette(theme::SurfaceRole::WorkflowDetailRow,theme::VisualState::Normal).fill,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
     }
 }
 
@@ -1381,7 +1387,7 @@ mod pending_matching_tests {
         let current=(egui::Color32::from_rgb(233,154,53),egui::Color32::from_rgb(245,183,96));
         let done=(egui::Color32::from_rgb(73,166,106),egui::Color32::from_rgb(105,198,136));
         assert_eq!(empty.0,egui::Color32::TRANSPARENT);
-        assert!(empty.1.r().saturating_sub(theme::WORKFLOW_SIGNAL_BLOCK_BG.r())>=80);
+        assert!(empty.1.r().saturating_sub(theme::surface_palette(theme::SurfaceRole::WorkflowSignalBlock,theme::VisualState::Normal).fill.r())>=80);
         for index in 0..STEP_NAMES.len(){
             assert_eq!(workflow_signal_palette(None,index),empty);
             assert_eq!(workflow_signal_palette(Some([false;4]),index),
@@ -1879,42 +1885,42 @@ mod linked_highlight_palette_tests {
     use super::*;
     #[test]
     fn preview_row_matches_linked_source_recipient_and_item_palette() {
-        assert_eq!(shipment_row_fill(false,true),source_highlight::ACTIVE_FILL);
-        assert_ne!(shipment_row_fill(true,true),source_highlight::ACTIVE_FILL);
-        assert_eq!(shipment_row_fill(false,false),theme::WORKFLOW_DETAIL_ROW_BG);
-        assert_eq!(source_highlight::ACTIVE_BORDER_WIDTH,2.0);
+        assert_eq!(shipment_row_fill(false,true),theme::linked_preview_palette().fill);
+        assert_ne!(shipment_row_fill(true,true),theme::linked_preview_palette().fill);
+        assert_eq!(shipment_row_fill(false,false),theme::surface_palette(theme::SurfaceRole::WorkflowDetailRow,theme::VisualState::Normal).fill);
+        assert_eq!(crate::source_highlight::ACTIVE_BORDER_WIDTH,2.0);
     }
 
     #[test]
     fn shared_selection_palette_preserves_selection_geometry_and_white_buttons() {
         use egui::Color32;
-        assert_eq!(theme::SELECTED_ORDER,Color32::from_rgb(245,158,11));
-        assert_eq!(crate::highlight::palette(crate::highlight::Role::Selected).stroke.unwrap().color,theme::SELECTED_ORDER);
+        assert_eq!(theme::selected_palette().border,Color32::from_rgb(245,158,11));
+        assert_eq!(crate::highlight::palette(crate::highlight::Role::Selected).stroke.unwrap().color,theme::selected_palette().border);
         assert_eq!(theme::WORKFLOW_SELECTED_STRIPE,2.0);
-        assert_eq!(theme::WORKFLOW_SELECTED_BG,theme::WORKFLOW_CARD_BG);
-        assert_eq!(theme::WORKFLOW_CARD_BG,theme::INPUT);
-        assert_ne!(theme::WORKFLOW_CARD_BG,theme::PANEL);
-        assert_eq!(theme::CANVAS,Color32::from_rgb(16,16,16));
-        assert_eq!(theme::PANEL,Color32::from_rgb(24,24,24));
-        assert_eq!(theme::INPUT,Color32::from_rgb(34,34,34));
-        assert_eq!(theme::RAISED,Color32::from_rgb(41,41,41));
+        assert_eq!(theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Selected).fill,theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Normal).fill);
+        assert_eq!(theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Normal).fill,theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill);
+        assert_ne!(theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Normal).fill,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
+        assert_eq!(theme::surface_palette(theme::SurfaceRole::Workspace,theme::VisualState::Normal).fill,Color32::from_rgb(16,16,16));
+        assert_eq!(theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill,Color32::from_rgb(24,24,24));
+        assert_eq!(theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill,Color32::from_rgb(34,34,34));
+        assert_eq!(theme::surface_palette(theme::SurfaceRole::Button,theme::VisualState::Normal).fill,Color32::from_rgb(41,41,41));
         assert_eq!(shipment_row_fill(true,false),Color32::from_rgb(48,42,34));
         let selected=crate::card::workflow_shipment_row_frame(shipment_row_fill(true,false),true);
         let normal=crate::card::workflow_shipment_row_frame(shipment_row_fill(false,false),false);
         assert_eq!(selected.fill,Color32::from_rgb(48,42,34));
         assert_eq!(selected.stroke.color,Color32::TRANSPARENT);
-        assert_eq!(normal.stroke.color,theme::DIVIDER);
+        assert_eq!(normal.stroke.color,theme::border_ink(theme::BorderRole::Divider));
         assert_eq!(selected.stroke.width,normal.stroke.width);
         assert_eq!(selected.inner_margin,normal.inner_margin);
         assert_eq!(selected.corner_radius,normal.corner_radius);
-        assert_eq!(theme::WORKFLOW_SELECTED_ROW_TEXT,Color32::from_rgb(244,214,162));
+        assert_eq!(theme::workflow_text_ink(theme::WorkflowTextRole::SelectedRow),Color32::from_rgb(244,214,162));
         assert_eq!(shipment_row_fill(true,true),shipment_row_fill(true,false));
         assert_eq!(theme::ReviewTone::Action.palette(),(
-            theme::ORANGE_EMPHASIS_BG,Color32::from_rgb(245,158,11),
+            theme::selected_palette().fill,Color32::from_rgb(245,158,11),
             Color32::from_rgb(255,228,188),Color32::from_rgb(217,188,152)
         ));
         assert_eq!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill,Color32::from_rgb(214,214,214));
-        assert_eq!(theme::BRIGHT,Color32::WHITE);
+        assert_eq!(theme::primary_action_colors().0,Color32::WHITE);
     }
 }
 
@@ -1976,7 +1982,7 @@ mod compact_virtualization_tests{
                 _=>None
             }).expect("visible compact amount");
             let frame=output.shapes.iter().find_map(|s|match &s.shape{
-                egui::Shape::Rect(r) if r.stroke.color==theme::ONE_TOUCH_BORDER
+                egui::Shape::Rect(r) if r.stroke.color==theme::one_touch_palette().border
                     && r.stroke.width==theme::ONE_TOUCH_BORDER_WIDTH=>Some(r.rect),
                 _=>None
             });

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "category-move-integrity-157",
+  "screen": "상품/카테고리 이동 데이터 무결성",
+  "files": [
+    "egui-app/src/product_manager.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "상품 이동 요청에서 후보 상품 전체 전송 제거, 원본 및 분류 scope 비교; Rust 좁은 변경과 무관한 색상 정규화 방지. UI 시각 변화 없음, 저장·Windows 검증 미실시.",
+  "defects": [],
+  "releaseDecision": "NOT_APPROVED",
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "noClipping",
+      "footerVisible",
+      "scrollReachable",
+      "inputReadable",
+      "alignment",
+      "interaction",
+      "hoverAndFocus"
+    ]
+  }
+}

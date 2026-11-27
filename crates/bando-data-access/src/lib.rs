@@ -14,6 +14,14 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 mod validation;
+// Read-only analysis interface for the upcoming validation planner.
+pub mod change_set;
+pub mod validation_dependencies;
+pub mod validation_gate;
+mod validation_transitions;
+mod validation_policy;
+mod category_assignment;
+pub use category_assignment::{validate_product_assignment,validate_category_transition};
 mod relational_write;
 mod storage;
 pub mod notification_store;

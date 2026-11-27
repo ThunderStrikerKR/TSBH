@@ -4193,7 +4193,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     let status_width=ui.available_width();
                     crate::ui_layout::fixed_status_slot(
                         ui,status_width,typography::METADATA_LINE_HEIGHT,
-                        error,error,theme::DANGER
+                        error,error,theme::message_ink(theme::MessageInkRole::Danger)
                     );
                 });
                 decision.actions(|buttons|{
@@ -5786,6 +5786,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     ui.make_persistent_id("header-empty-top-drag"),
                     Sense::click_and_drag(),
                 );
+                #[cfg(test)]
+                crate::ui_test_support::record_control_response("header drag",&top_drag,ui.clip_rect(),None);
                 Self::handle_header_drag(ctx, &top_drag, maximized);
 
                 // Every header child shares this one 62pt-high center line.
@@ -5955,6 +5957,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     Vec2::new(empty, theme::NAV_HEIGHT),
                                     Sense::click_and_drag(),
                                 );
+                                #[cfg(test)]
+                                crate::ui_test_support::record_control_response("header drag",&drag,actions.clip_rect(),None);
                                 Self::handle_header_drag(ctx, &drag, maximized);
                             }
                         });
@@ -6218,6 +6222,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 let response = ui.interact(splitter, id, Sense::click_and_drag());
                                 #[cfg(test)]
                                 crate::ui_test_support::record_highlight_target("pane splitter",response.rect,ui.clip_rect());
+                                #[cfg(test)]
+                                crate::ui_test_support::record_control_response("pane splitter",&response,ui.clip_rect(),None);
                                 if response.hovered() || response.dragged() {
                                     ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                                 }
@@ -6331,6 +6337,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             splitter_rect, ui.make_persistent_id("source-message-splitter"),
             Sense::click_and_drag(),
         );
+        #[cfg(test)]
+        crate::ui_test_support::record_control_response("source-message splitter",&response,ui.clip_rect(),None);
         if response.hovered() || response.dragged() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
         }
@@ -10260,6 +10268,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         let response=host.interact(
                             splitter,id,Sense::click_and_drag()
                         );
+                        #[cfg(test)]
+                        crate::ui_test_support::record_control_response("management splitter",&response,host.clip_rect(),None);
                         if response.hovered() || response.dragged(){
                             ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                         }

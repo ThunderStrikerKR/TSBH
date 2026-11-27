@@ -64,7 +64,8 @@ pub(crate) fn store_single_order_delta(tx:&Transaction<'_>,before:&Value,state:&
     position:i64)->Result<usize,String>{
     if before["orders"].as_array().map(Vec::len)!=Some(1) ||
         !stable_orders(&before["orders"],&state["orders"]) ||
-        before["products"]!=state["products"] || before["clients"]!=state["clients"]{
+        before["products"]!=state["products"] || before["clients"]!=state["clients"] ||
+        before["categories"]!=state["categories"]{
         return Err("단일 주문 저장 범위 오류".into());
     }
     store_relational(tx,state,Some(before),Some(position))

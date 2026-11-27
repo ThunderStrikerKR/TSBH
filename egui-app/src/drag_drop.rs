@@ -71,27 +71,27 @@ pub(crate) fn paint_pointer_label(ui:&Ui,name:&str,count:&str){
     if !bounds.is_positive()||!bounds.contains(pointer){return;}
     let Some(painter)=preview_painter(ctx,ui.layer_id(),false,Id::new("business-drag-pointer-label"))else{return;};
     let pad=theme::SPACE_8;
-    let count_galley=typography::client_table_metadata_galley(ui,count,theme::SECONDARY);
+    let count_galley=typography::client_table_metadata_galley(ui,count,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
     let count_w=count_galley.size().x;
     let max_width=bounds.width().min(320.0);
     let name_width=max_width-pad*3.0-count_w;
     if name_width<=0.0{return;}
     let visible=typography::fit_category_path(ui,name,name_width,typography::CategoryPathFont::Body);
-    let name_galley=typography::management_control_text_galley(ui,&visible,theme::TEXT);
+    let name_galley=typography::management_control_text_galley(ui,&visible,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
     let size=egui::vec2((name_galley.size().x+count_w+pad*3.0).min(max_width),
         name_galley.size().y.max(count_galley.size().y)+pad*2.0);
     if size.y>bounds.height(){return;}
     let rect=pointer_label_rect(bounds,pointer,size);
     let painter=painter.with_shared_clip(bounds);
-    painter.rect(rect,theme::CONTROL_RADIUS,theme::RAISED,
-        egui::Stroke::new(1.0,theme::BORDER),egui::StrokeKind::Inside);
+    painter.rect(rect,theme::CONTROL_RADIUS,theme::surface_palette(theme::SurfaceRole::Button,theme::VisualState::Normal).fill,
+        egui::Stroke::new(1.0,theme::border_ink(theme::BorderRole::Standard)),egui::StrokeKind::Inside);
     let name_y=rect.center().y-name_galley.size().y/2.0;
     let count_y=rect.center().y-count_galley.size().y/2.0;
     let count_x=rect.right()-pad-count_w;
     let name_clip=Rect::from_min_max(rect.min+egui::vec2(pad,0.0),
         egui::pos2((count_x-pad).max(rect.left()+pad),rect.bottom()));
-    painter.with_shared_clip(name_clip).galley(egui::pos2(rect.left()+pad,name_y),name_galley,theme::TEXT);
-    painter.galley(egui::pos2(count_x,count_y),count_galley,theme::SECONDARY);
+    painter.with_shared_clip(name_clip).galley(egui::pos2(rect.left()+pad,name_y),name_galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
+    painter.galley(egui::pos2(count_x,count_y),count_galley,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
     cursor(ctx,true);
 }
 

@@ -18,7 +18,7 @@ fn unique(tag: &str, index: usize) -> Result<String, String> {
 /// Explicit safety ceiling for editable freight worksheets; shared by UI and command validation.
 pub const MAX_BUNDLE_QUANTITY:i64=1000;
 
-fn validate_rate_input(rule:&Value)->Result<(),String>{
+pub(crate) fn validate_rate_input(rule:&Value)->Result<(),String>{
     if !rule["maxBundle"].is_null() &&
         !rule["maxBundle"].as_i64().is_some_and(|v|(1..=MAX_BUNDLE_QUANTITY).contains(&v)){
         return Err(format!("최대 묶음 수량은 1~{MAX_BUNDLE_QUANTITY}개까지 입력할 수 있습니다."));

@@ -2516,6 +2516,8 @@ impl ManualWorkspace {
                                                                     egui::Label::new(typography::body("신규 품목으로 분류"))
                                                                         .sense(egui::Sense::click())
                                                                 ).on_hover_cursor(egui::CursorIcon::PointingHand);
+                                                                #[cfg(test)]
+                                                                crate::ui_test_support::record_control_response("manual new item target",&response,items_ui.clip_rect(),None);
                                                                 let dragging=self.assignment_gesture.dragging.is_some();
                                                                 let hovered=if dragging{
                                                                     manual_assignment_drop_hit(items_ui,response.rect,drag_pointer)
@@ -3240,7 +3242,7 @@ mod manual_assignment_gesture_tests{
         let model=json!({"rows":[{"id":"r1","items":[]},{"id":"r2","items":[]}],
             "blocks":[{"id":"p","field":"product","text":"270"},
                 {"id":"q","field":"quantity","text":"2개"}],"assignments":{}});
-        let state=json!({"clients":[{"id":"c1","tier":"wholesale"}],"products":[]});
+        let state=json!({"clients":[{"id":"c1","tier":"wholesale"}],"products":[],"aliases":[]});
         let order=json!({"clientId":"c1"});
         let mut payload=json!({"model":model,"order":order,"state":state,
             "assignmentOrder":[],"id":"p","recipientId":"r1","itemId":"i1"});

@@ -78,7 +78,7 @@ fn detector_rejects_duplicate_and_clipped_actual_shapes(){
     assert_outline(&good,rect,p,Geometry::Control);
     let duplicate=frame(&ctx,600.0,vec![],|ui|{
         ui.painter().rect_stroke(rect.shrink(0.5),Geometry::Control.corners(),
-            Stroke::new(1.0,theme::BORDER),egui::StrokeKind::Inside);
+            Stroke::new(1.0,theme::border_ink(theme::BorderRole::Standard)),egui::StrokeKind::Inside);
         paint(ui,rect,Geometry::Control,Role::Hover);
     });
     assert!(inspect(&duplicate,rect,p,Geometry::Control).unwrap_err().contains("duplicate"));
@@ -131,7 +131,7 @@ fn native_action_hover_and_persistent_error_keep_one_outline_at_dpi_and_widths()
                         assert!(hovered,"fixture never reached real widget hover");
                         assert_rect_geometry("native action hover",rect,baseline,0.75);
                         let (_,rest,_,_)=crate::button::action_style(role,true,false);
-                        let highlight=persistent.unwrap_or(if rest==theme::BRIGHT{Role::LightHover}else{Role::Hover});
+                        let highlight=persistent.unwrap_or(if rest==theme::primary_action_colors().0{Role::LightHover}else{Role::Hover});
                         assert_outline(&output,rect,palette(highlight).stroke.unwrap(),button_geometry(role));
                     }
                 }
@@ -177,7 +177,7 @@ fn actual_selected_calendar_and_table_row_keep_one_perimeter(){
                 crate::table::RowTone::SelectedIf(true),|_,_|{});
         });
         if phase==2{
-            assert_outline(&output,day,Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::SELECTION),Geometry::Control);
+            assert_outline(&output,day,Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::border_ink(theme::BorderRole::Focus)),Geometry::Control);
             assert_outline(&output,row,palette(Role::Selected).stroke.unwrap(),Geometry::TableRow);
         }
     }
@@ -293,14 +293,14 @@ fn highlight_invariance_source_glyphs_and_adjacent_slots(){
                 let (rect,_)=ui.allocate_exact_size(Vec2::new(420.0,80.0),Sense::hover());
                 let active=active.then_some(&key);
                 let job=source_highlight::layout(raw,&spans,Some("r1"),active,rect.width()-16.0,
-                    egui::FontId::proportional(crate::typography::FONT_RECEPTION_SOURCE_TEXT),theme::TEXT);
+                    egui::FontId::proportional(crate::typography::FONT_RECEPTION_SOURCE_TEXT),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
                 let galley=ui.painter().layout_job(job);
                 let origin=rect.min+egui::vec2(8.0,8.0);
                 let (backgrounds,outlines)=source_highlight::block_shapes(raw,&galley,origin,&spans,
                     Some("r1"),active,rect);
                 let painter=ui.painter().with_clip_rect(rect);
                 for shape in backgrounds{painter.add(shape);}
-                painter.galley(origin,galley,theme::TEXT);
+                painter.galley(origin,galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
                 for shape in outlines{painter.add(shape);}
                 crate::ui_test_support::record("source viewport",rect);
                 crate::button::action(ui,"복사",theme::ButtonRole::Standard,true);

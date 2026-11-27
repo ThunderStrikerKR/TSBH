@@ -176,7 +176,7 @@ mod tests {
         let job=source_highlight::layout(
             raw,&spans,None,None,320.0,
             FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),
-            theme::TEXT,
+            theme::text_ink(theme::TextRole::Value,theme::TextState::Normal),
         );
         let galley=ctx.fonts_mut(|fonts|fonts.layout_job(job));
         let glyph=&galley.rows[0].row.glyphs[0];
@@ -231,7 +231,7 @@ mod tests {
             ..Default::default()
         },raw,&spans,&mut origin,true);
         let job=source_highlight::layout(raw,&spans,None,None,320.0,
-            FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),theme::TEXT);
+            FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
         let galley=ctx.fonts_mut(|fonts|fonts.layout_job(job));
         let glyph=&galley.rows[0].row.glyphs[0];
         let from=origin+egui::vec2(glyph.pos.x+glyph.advance_width*0.5,
@@ -247,7 +247,7 @@ mod tests {
         assert!(!pressed.drag_moved);
         let original_job=source_highlight::layout_manual(
             raw,&spans,None,None,&HashSet::new(),pressed.drag_layout_width,
-            FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),theme::TEXT
+            FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
         );
         let original_galley=ctx.fonts_mut(|fonts|fonts.layout_job(original_job));
         let original_visual=source_highlight::manual_source_block_visual(
@@ -294,7 +294,7 @@ mod tests {
         let job=source_highlight::layout(
             raw,&spans,None,None,320.0,
             FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),
-            theme::TEXT,
+            theme::text_ink(theme::TextRole::Value,theme::TextState::Normal),
         );
         let galley=ctx.fonts_mut(|fonts|fonts.layout_job(job));
         let glyph=&galley.rows[0].row.glyphs[0];

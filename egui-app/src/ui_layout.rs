@@ -258,7 +258,7 @@ pub(crate) fn fixed_status_slot(
         ui,Vec2::new(width,height),Layout::left_to_right(Align::Center),
         |slot|{
             if let Some(text)=display.filter(|text|!text.trim().is_empty()){
-                let display=if color==theme::DANGER{
+                let display=if color==theme::message_ink(theme::MessageInkRole::Danger){
                     crate::user_error::display("status",text)
                 }else{std::borrow::Cow::Borrowed(text)};
                 let natural=slot.painter().layout_no_wrap(display.as_ref().to_owned(),
@@ -269,7 +269,7 @@ pub(crate) fn fixed_status_slot(
                     truncated_label_for_explicit_tooltip(label)
                 }else{truncated_label(label)});
                 if let Some(tooltip)=tooltip{
-                    let detail=if color==theme::DANGER{
+                    let detail=if color==theme::message_ink(theme::MessageInkRole::Danger){
                         crate::user_error::display("status",tooltip)
                     }else{std::borrow::Cow::Borrowed(tooltip)};
                     overflow_tooltip(response,overflow,detail.as_ref());

@@ -100,7 +100,7 @@ fn settlement_date_toolbar(
     let status_width=ui.available_width();
     crate::ui_layout::fixed_status_slot(
         ui,status_width,typography::METADATA_LINE_HEIGHT,
-        date_error,date_error,theme::DANGER
+        date_error,date_error,theme::message_ink(theme::MessageInkRole::Danger)
     );
     changed
 }
@@ -253,12 +253,16 @@ fn report_table<const N:usize>(
     // at its OWN row viewport and cannot extend into later sections.
     let scroll_max_height=ui.ctx().content_rect().height()
         *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION;
-    let scroll_track=crate::table::management_table_scroll_track_rect(
-        ui,scroll_max_height
-    );
+    // A nested report can start below the outer scroll viewport. Reserve
+    // its logical row slot independently of the parent's remaining visible
+    // height; the inherited clip still hides off-screen rows.
     let mut first_x=None;
-    let scroll=crate::table::fixed_rows_snapshot(
-                ui,crate::table::Viewport{width:width,height:scroll_max_height,rail:Some(scroll_track)},
+    let slot_width=ui.available_width();
+    let (_,scroll)=crate::ui_layout::fixed_row(ui,Vec2::new(slot_width,scroll_max_height),
+        egui::Layout::top_down(egui::Align::Min),|body|{
+    let scroll_track=crate::table::management_table_scroll_track_rect(body,scroll_max_height);
+    crate::table::fixed_rows_snapshot(
+                body,crate::table::Viewport{width:width,height:scroll_max_height,rail:Some(scroll_track)},
                 id,ROW_HEIGHT,indices.len(),ready,Some(scroll_keys),
                 |list,visible_rows|{
             crate::table::management_table_row_body(list,width);
@@ -283,7 +287,8 @@ fn report_table<const N:usize>(
                 );
             }
         }
-    );
+    )
+    });
     crate::status_notice::management_body_state_overlay(ui,scroll.inner_rect,empty_notice);
     crate::table::restore_management_table_spacing(ui,previous_gap);
     let left=first_x.unwrap_or(header.left()-scroll.state.offset.x);

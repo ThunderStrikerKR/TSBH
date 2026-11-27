@@ -10,33 +10,33 @@ use eframe::egui::{
     self, Color32, CornerRadius, Frame, Stroke, Ui, Vec2,
 };
 
-pub const CANVAS: Color32 = Color32::from_rgb(16, 16, 16);
+const CANVAS: Color32 = Color32::from_rgb(16, 16, 16);
 const HEADER_BG: Color32 = Color32::from_rgb(27, 27, 27);
 // Level-2 / primary section surface. Darker than INPUT (#292929) so
 // repeated order cards remain distinguishable inside the workflow pane.
 // This shared token intentionally updates every egui panel using PANEL.
-pub const PANEL: Color32 = Color32::from_rgb(24, 24, 24);
+const PANEL: Color32 = Color32::from_rgb(24, 24, 24);
 // Shared surface level 2.5: subtle alternate rows inside PANEL lists.
 // Never use INPUT/RAISED (fields/buttons) as a table zebra fill.
 const TABLE_ROW_ALT_BG: Color32 = Color32::from_rgb(30, 30, 30);
-pub const INPUT: Color32 = Color32::from_rgb(34, 34, 34);
+const INPUT: Color32 = Color32::from_rgb(34, 34, 34);
 // Strong disabled styling shared by management select and action controls.
 // Avoid changing the approved enabled #292929 field / #303030 button roles.
-pub const DISABLED_ACTION_BG: Color32 = Color32::from_rgb(30, 30, 30);
-pub const DISABLED_ACTION_TEXT: Color32 = Color32::from_rgb(124, 124, 124);
-pub const DISABLED_ACTION_BORDER: Color32 = Color32::from_rgb(55, 55, 55);
-pub const RAISED: Color32 = Color32::from_rgb(41, 41, 41);
+const DISABLED_ACTION_BG: Color32 = Color32::from_rgb(30, 30, 30);
+const DISABLED_ACTION_TEXT: Color32 = Color32::from_rgb(124, 124, 124);
+const DISABLED_ACTION_BORDER: Color32 = Color32::from_rgb(55, 55, 55);
+const RAISED: Color32 = Color32::from_rgb(41, 41, 41);
 // One component-wide floating feedback style; management screens never define
 // independent toast backgrounds, dimensions, type sizes or offsets.
 const FLOATING_NOTICE_BG: Color32 = RAISED;
-pub const BORDER: Color32 = Color32::from_rgb(80, 80, 80);
-pub const DIVIDER: Color32 = Color32::from_rgb(63, 63, 63);
+const BORDER: Color32 = Color32::from_rgb(80, 80, 80);
+const DIVIDER: Color32 = Color32::from_rgb(63, 63, 63);
 // Stronger than the normal 1pt row divider so fixed table headers have a
 // readable bottom boundary, including when their final pixel is clipped.
-pub const TABLE_HEADER_OUTLINE: Color32 = Color32::from_rgb(106, 106, 106);
-pub const TEXT: Color32 = Color32::from_rgb(237, 237, 237);
-pub const SECONDARY: Color32 = Color32::from_rgb(185, 185, 185);
-pub const MUTED: Color32 = Color32::from_rgb(153, 153, 153);
+const TABLE_HEADER_OUTLINE: Color32 = Color32::from_rgb(106, 106, 106);
+const TEXT: Color32 = Color32::from_rgb(237, 237, 237);
+const SECONDARY: Color32 = Color32::from_rgb(185, 185, 185);
+const MUTED: Color32 = Color32::from_rgb(153, 153, 153);
 const PLACEHOLDER_TEXT:Color32=Color32::from_gray(96);
 
 /// Information role is independent of typography, widget and business state.
@@ -95,20 +95,20 @@ pub const fn text_ink(role:TextRole,state:TextState)->Color32{
         TextState::Complete=>ReviewTone::Complete.text_color(),
     }
 }
-pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
+const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
 const INTERACTION_BLUE_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,20);
 const SOURCE_BLOCK_FILL:Color32=Color32::from_rgb(66,66,66);
 const SOURCE_CONTEXT_FILL:Color32=Color32::from_rgb(73,73,73);
-pub const MANUAL_ASSIGNMENT_TINT:Color32=INTERACTION_BLUE_TINT;
+const MANUAL_ASSIGNMENT_TINT:Color32=INTERACTION_BLUE_TINT;
 pub const MANUAL_ASSIGNMENT_STROKE_WIDTH:f32=1.25;
 const CARD_BORDER:Color32=DIVIDER;
 // Restore the original shared blue pointer feedback; focus stays independent.
-pub const BUTTON_HOVER_BG:Color32=Color32::from_rgb(47,62,74);
+const BUTTON_HOVER_BG:Color32=Color32::from_rgb(47,62,74);
 const ACTIVE_NAVIGATION_BG:Color32=Color32::from_rgb(41,72,92);
 // Strong pointer feedback belongs to controls, not the subdued table/sort tint.
-pub const BUTTON_HOVER_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,66);
-pub const BUTTON_HOVER_LIGHT_BG:Color32=Color32::from_rgb(143,197,255);
-pub const BUTTON_HOVER_LIGHT_BORDER:Color32=Color32::from_rgb(35,103,174);
+const BUTTON_HOVER_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,66);
+const BUTTON_HOVER_LIGHT_BG:Color32=Color32::from_rgb(143,197,255);
+const BUTTON_HOVER_LIGHT_BORDER:Color32=Color32::from_rgb(35,103,174);
 pub const BUTTON_HOVER_BORDER_WIDTH:f32=2.0;
 const LINKED_PREVIEW_BG:Color32=Color32::from_rgb(23,67,109);
 const LINKED_PREVIEW_TEXT:Color32=Color32::from_rgb(234,244,255);
@@ -117,14 +117,14 @@ pub const LINKED_PREVIEW_BORDER_WIDTH:f32=2.0;
 const REQUIRED_REVIEW_TEXT:Color32=ORANGE_EMPHASIS_TEXT;
 const REQUIRED_REVIEW_BORDER:Color32=SELECTED_ORDER;
 const ERROR_BG:Color32=Color32::from_rgb(51,37,37);
-pub const ERROR_TEXT:Color32=Color32::from_rgb(240,160,160);
-pub const ERROR_BORDER:Color32=Color32::from_rgb(199,107,107);
+const ERROR_TEXT:Color32=Color32::from_rgb(240,160,160);
+const ERROR_BORDER:Color32=Color32::from_rgb(199,107,107);
 const DANGER_ACTION_BG:Color32=Color32::from_rgb(53,37,37);
 const DANGER_ACTION_BORDER:Color32=Color32::from_rgb(117,68,68);
 // Persistent single-select state uses the existing shared orange palette;
 // transient pointer hover remains blue.
-pub const MANAGEMENT_DROPDOWN_SELECTED_BG: Color32 = ORANGE_EMPHASIS_BG;
-pub const MANAGEMENT_DROPDOWN_HOVER_BG: Color32 = Color32::from_rgb(57, 91, 118);
+const MANAGEMENT_DROPDOWN_SELECTED_BG: Color32 = ORANGE_EMPHASIS_BG;
+const MANAGEMENT_DROPDOWN_HOVER_BG: Color32 = Color32::from_rgb(57, 91, 118);
 // Hierarchical category explorer reuses the management dropdown master.
 // Exploration is neutral; confirmed filtering uses the existing orange role.
 // One fixed popup width independent of the category text/depth.
@@ -146,25 +146,25 @@ const CATEGORY_EXPLORER_SEPARATOR_INK:Color32=Color32::from_gray(110);
 pub const CATEGORY_EXPLORER_OMITTED_WIDTH:f32=36.0;
 pub const CATEGORY_EXPLORER_APPLY_WIDTH:f32=70.0;
 // React workflow.css and receipt-layout.css amber palette; paint only.
-pub const SELECTED_ORDER: Color32 = Color32::from_rgb(245, 158, 11); // #F59E0B
-pub const ORANGE_EMPHASIS_BG: Color32 = Color32::from_rgb(59, 43, 27); // #3B2B1B
+const SELECTED_ORDER: Color32 = Color32::from_rgb(245, 158, 11); // #F59E0B
+const ORANGE_EMPHASIS_BG: Color32 = Color32::from_rgb(59, 43, 27); // #3B2B1B
 // Orange confirmation surfaces share a single palette regardless of
 // whether the trigger is a persistent review card or a one-touch hover.
-pub const ORANGE_EMPHASIS_TEXT:Color32=Color32::from_rgb(255,228,188);
+const ORANGE_EMPHASIS_TEXT:Color32=Color32::from_rgb(255,228,188);
 // Checkbox marks are neutral; row/option selection retains its independent orange palette.
 const CHECKBOX_CHECKED_BG:Color32=RAISED;
 const CHECKBOX_CHECKED_MARK:Color32=BRIGHT;
 const CHECKBOX_CHECKED_STROKE_WIDTH:f32=2.0;
-pub const ONE_TOUCH_BG:Color32=ORANGE_EMPHASIS_BG;
-pub const ONE_TOUCH_TEXT:Color32=ORANGE_EMPHASIS_TEXT;
-pub const ONE_TOUCH_BORDER:Color32=SELECTED_ORDER;
+const ONE_TOUCH_BG:Color32=ORANGE_EMPHASIS_BG;
+const ONE_TOUCH_TEXT:Color32=ORANGE_EMPHASIS_TEXT;
+const ONE_TOUCH_BORDER:Color32=SELECTED_ORDER;
 pub const ONE_TOUCH_BORDER_WIDTH:f32=2.0;
-pub const ONE_TOUCH_TINT:Color32=Color32::from_rgba_unmultiplied_const(245,158,11,18);
+const ONE_TOUCH_TINT:Color32=Color32::from_rgba_unmultiplied_const(245,158,11,18);
 // Approved selected shipment row: a single rounded surface, not an
 // added left stripe. The enclosing order card retains its own accent.
-pub const WORKFLOW_SELECTED_ROW_TEXT:Color32=Color32::from_rgb(244,214,162);
+const WORKFLOW_SELECTED_ROW_TEXT:Color32=Color32::from_rgb(244,214,162);
 const WORKFLOW_SELECTED_ROW_BG:Color32=Color32::from_rgb(48,42,34); // #302A22
-pub const WORKFLOW_SELECTED_ROW_BORDER:Color32=Color32::TRANSPARENT;
+const WORKFLOW_SELECTED_ROW_BORDER:Color32=Color32::TRANSPARENT;
 pub fn workflow_selected_row_fill() -> Color32 {
     WORKFLOW_SELECTED_ROW_BG
 }
@@ -172,9 +172,9 @@ pub fn workflow_selected_row_fill() -> Color32 {
 // The horizontal outer inset, inter-control gaps and vertical insets use
 // the same 6pt rhythm. Long dealer text cannot move any control.
 // Nested order cards use the internal-content tier; no second lower surface.
-pub const WORKFLOW_CARD_BG: Color32 = INPUT;
-pub const WORKFLOW_SELECTED_BG: Color32 = WORKFLOW_CARD_BG;
-pub const WORKFLOW_CARD_BORDER: Color32 = DIVIDER;
+const WORKFLOW_CARD_BG: Color32 = INPUT;
+const WORKFLOW_SELECTED_BG: Color32 = WORKFLOW_CARD_BG;
+const WORKFLOW_CARD_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_CARD_PADDING_X: f32 = SPACE_6;
 pub const WORKFLOW_CARD_PADDING_Y: f32 = SPACE_8;
 pub const WORKFLOW_CARD_RADIUS: u8 = 7;
@@ -190,8 +190,8 @@ pub const WORKFLOW_BAND_DIVIDER_HEIGHT: f32 = SOFT_DIVIDER_WIDTH;
 pub const WORKFLOW_CARD_SLOT_GAP: f32 = SPACE_6;
 pub const WORKFLOW_SIGNAL_WIDTH: f32 = 104.0;
 pub const WORKFLOW_SIGNAL_BLOCK_HEIGHT: f32 = 30.0;
-pub const WORKFLOW_SIGNAL_BLOCK_BG: Color32 = INPUT;
-pub const WORKFLOW_SIGNAL_BLOCK_BORDER: Color32 = DIVIDER;
+const WORKFLOW_SIGNAL_BLOCK_BG: Color32 = INPUT;
+const WORKFLOW_SIGNAL_BLOCK_BORDER: Color32 = DIVIDER;
 // Square-ish four-stage indicators; group container remains 104×30pt.
 pub const WORKFLOW_SIGNAL_SIZE: f32 = 21.0;
 pub const WORKFLOW_SIGNAL_HEIGHT: f32 = 20.0;
@@ -211,7 +211,7 @@ const WORKFLOW_SIGNAL_EMPTY: Color32 = Color32::TRANSPARENT;
 const WORKFLOW_SIGNAL_EMPTY_BORDER: Color32 = DISABLED_ACTION_TEXT;
 const WORKFLOW_SIGNAL_PENDING: Color32 = Color32::from_rgb(51, 51, 51);
 const WORKFLOW_SIGNAL_PENDING_BORDER: Color32 = Color32::from_rgb(85, 85, 85);
-pub const WORKFLOW_VAT_TEXT: Color32 = Color32::from_rgb(185, 215, 246);
+const WORKFLOW_VAT_TEXT: Color32 = Color32::from_rgb(185, 215, 246);
 // At the 1920×1080 reference, the right-pane card is ~394pt wide.
 // Usable width = 394 - 2 border - (6 left + 6 right) = 380pt.
 // Upper: 12 toggle + 164 title + 104 status + 44 manage + 32 delete
@@ -234,26 +234,26 @@ pub const WORKFLOW_TOGGLE_ICON_WIDTH: f32 = 12.0;
 // Expanded working-order shipments are a plain list, not a table.
 // All rows use one bottom-tier surface; only real hover/selection tint it.
 // The header, alternating row fills and product-chip surfaces were removed.
-pub const WORKFLOW_DETAIL_ROW_BG: Color32 = PANEL;
-pub const WORKFLOW_DETAIL_ROW_BORDER: Color32 = DIVIDER;
+const WORKFLOW_DETAIL_ROW_BG: Color32 = PANEL;
+const WORKFLOW_DETAIL_ROW_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_DETAIL_ROW_PADDING_X: f32 = SPACE_12;
 // History recipient-detail blocks are independent of workflow product chips.
 // Keep their existing 4pt corner radius even when workflow chips are removed.
 pub const ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS: f32 = 4.0;
-pub const SUCCESS: Color32 = Color32::from_rgb(169, 218, 181);
-pub const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
-pub const REQUIRED_INPUT_BORDER:Color32=ERROR_BORDER;
-pub const REQUIRED_INPUT_TINT:Color32=Color32::from_rgba_unmultiplied_const(199,107,107,18);
+const SUCCESS: Color32 = Color32::from_rgb(169, 218, 181);
+const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
+const REQUIRED_INPUT_BORDER:Color32=ERROR_BORDER;
+const REQUIRED_INPUT_TINT:Color32=Color32::from_rgba_unmultiplied_const(199,107,107,18);
 // Product sales status: one palette for dropdown captions, options and table cells.
 const SALE_STATUS_SELLING: Color32 = Color32::from_rgb(123, 207, 148);
 const SALE_STATUS_SOLD_OUT: Color32 = Color32::from_rgb(231, 122, 120);
 const SALE_STATUS_PREPARING: Color32 = Color32::from_rgb(228, 195, 104);
 const SALE_STATUS_STOPPED: Color32 = Color32::from_rgb(145, 145, 145);
-pub const BRIGHT: Color32 = Color32::WHITE;
-pub const BRIGHT_TEXT: Color32 = Color32::from_rgb(23, 23, 23);
+const BRIGHT: Color32 = Color32::WHITE;
+const BRIGHT_TEXT: Color32 = Color32::from_rgb(23, 23, 23);
 /// Resting white primary-action palette. Manual unassigned source tokens use 90% of this gray channel.
 const LEGACY_SOURCE_REFERENCE_GRAY: u8 = 238;
-pub const PRIMARY_ACTION_FILL: Color32 = BRIGHT;
+const PRIMARY_ACTION_FILL: Color32 = BRIGHT;
 // Compact inline-cell edit inset; shared with the 4pt and 8pt layout tokens.
 pub use crate::ui_tokens::{SPACE_2,SPACE_4,SPACE_6,SPACE_8,SPACE_12,SPACE_16,SPACE_24};
 pub const SETTINGS_HELP_ICON_SIZE: f32 = 22.0;
@@ -300,8 +300,8 @@ pub const RECEPTION_PANE_PADDING_Y: f32 = SPACE_8;
 pub const SOURCE_DOCUMENT_TEXT_MARGIN: i8 = 4;
 // Source's current-client summary is supporting information beside a
 // primary INPUT editor. Use master row/subsection roles, not a second editor.
-pub const RECEPTION_CLIENT_SUMMARY_BG: Color32 = TABLE_ROW_ALT_BG;
-pub const RECEPTION_CLIENT_SUMMARY_BORDER: Color32 = DIVIDER;
+const RECEPTION_CLIENT_SUMMARY_BG: Color32 = TABLE_ROW_ALT_BG;
+const RECEPTION_CLIENT_SUMMARY_BORDER: Color32 = DIVIDER;
 // The 34pt title row still fully accommodates the standard "+ 새 주문"
 // button and other header controls without shortening their labels.
 pub const SECTION_HEADER_HEIGHT: f32 = 34.0;
@@ -313,7 +313,7 @@ const RECEPTION_RECIPIENT_NAV_NAME_WIDTH:f32 = 116.0;
 pub const RECEPTION_RECIPIENT_NAV_COUNT_WIDTH:f32 = 38.0;
 // Clear non-interactive end stops. Their darker face and near-background
 // vector chevrons are deliberately lower contrast than active arrows.
-pub const RECEPTION_RECIPIENT_NAV_DISABLED_BG:Color32 =
+const RECEPTION_RECIPIENT_NAV_DISABLED_BG:Color32 =
     Color32::from_rgb(27,27,27);
 const RECEPTION_RECIPIENT_NAV_DISABLED_ICON:Color32 =
     Color32::from_rgb(72,72,72);
@@ -850,6 +850,7 @@ pub(crate) const fn scroll_rail_geometry(role:ScrollRailRole)->ScrollRailGeometr
 pub(crate) enum SurfaceRole{
     Workspace,Header,Panel,Section,Summary,Input,Inset,Modal,ModalSection,
     AlternateRow,Button,WorkflowCard,FieldAction,NavigationSegment,TableHeader,RaisedInset,Notice,
+    WorkflowSignalBlock,WorkflowDetailRow,ReceptionClientSummary,
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -859,7 +860,7 @@ pub(crate) const fn surface_palette(role:SurfaceRole,state:VisualState)->Surface
     use SurfaceRole::{
         Workspace, Header, Panel, Section, Summary, Modal, Input, FieldAction, Inset,
         ModalSection, AlternateRow, Button, TableHeader, RaisedInset, Notice, WorkflowCard,
-        NavigationSegment,
+        NavigationSegment, WorkflowSignalBlock, WorkflowDetailRow, ReceptionClientSummary,
     };
     let (fill,border)=match role{
         Workspace=>(CANVAS,Color32::TRANSPARENT),
@@ -875,21 +876,25 @@ pub(crate) const fn surface_palette(role:SurfaceRole,state:VisualState)->Surface
         RaisedInset=>(RAISED,DIVIDER),
         Notice=>(FLOATING_NOTICE_BG,BORDER),
         WorkflowCard=>(WORKFLOW_CARD_BG,WORKFLOW_CARD_BORDER),
+        WorkflowSignalBlock=>(WORKFLOW_SIGNAL_BLOCK_BG,WORKFLOW_SIGNAL_BLOCK_BORDER),
+        WorkflowDetailRow=>(WORKFLOW_DETAIL_ROW_BG,WORKFLOW_DETAIL_ROW_BORDER),
+        ReceptionClientSummary=>(RECEPTION_CLIENT_SUMMARY_BG,RECEPTION_CLIENT_SUMMARY_BORDER),
         NavigationSegment=>(INPUT,Color32::TRANSPARENT),
     };
     let (fill,border)=match (role,state){
         (FieldAction|Button,VisualState::Disabled)=>(DISABLED_ACTION_BG,DISABLED_ACTION_BORDER),
         (NavigationSegment,VisualState::Disabled)=>(RECEPTION_RECIPIENT_NAV_DISABLED_BG,Color32::TRANSPARENT),
         (WorkflowCard,VisualState::Selected)=>(WORKFLOW_SELECTED_BG,WORKFLOW_CARD_BORDER),
+        (WorkflowDetailRow,VisualState::Selected)=>(WORKFLOW_SELECTED_ROW_BG,WORKFLOW_SELECTED_ROW_BORDER),
         _=>(fill,border),
     };
     SurfacePalette{fill,border}
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub(crate) enum BorderRole{Standard,Divider,Focus}
+pub(crate) enum BorderRole{Standard,Divider,Focus,TableHeader,TreeGuide}
 pub(crate) const fn border_ink(role:BorderRole)->Color32{
-    match role{BorderRole::Standard=>BORDER,BorderRole::Divider=>DIVIDER,BorderRole::Focus=>SELECTION}
+    match role{BorderRole::Standard=>BORDER,BorderRole::Divider=>DIVIDER,BorderRole::Focus=>SELECTION,BorderRole::TableHeader=>TABLE_HEADER_OUTLINE,BorderRole::TreeGuide=>Color32::from_rgb(74,74,74)}
 }
 
 /// Opaque white is the identity tint, not a UI foreground color.
@@ -1430,5 +1435,144 @@ mod icon_role_color_tests {
         }
         assert_eq!(kakao_icon_ink(KakaoIconPart::Background),Color32::from_rgb(254,229,0));
         assert_eq!(kakao_icon_ink(KakaoIconPart::Bubble),Color32::from_rgb(40,35,36));
+    }
+}
+
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum WorkflowTextRole { SelectedRow, Vat }
+
+pub(crate) const fn workflow_text_ink(role:WorkflowTextRole)->Color32 {
+    match role {
+        WorkflowTextRole::SelectedRow=>WORKFLOW_SELECTED_ROW_TEXT,
+        WorkflowTextRole::Vat=>WORKFLOW_VAT_TEXT,
+    }
+}
+
+#[cfg(test)]
+mod workflow_role_color_tests {
+    use super::*;
+    #[test]
+    fn workflow_and_reception_surface_roles_preserve_existing_colors() {
+        let normal=VisualState::Normal;
+        let selected=VisualState::Selected;
+        let card=surface_palette(SurfaceRole::WorkflowCard,normal);
+        assert_eq!((card.fill,card.border),(Color32::from_gray(34),Color32::from_gray(63)));
+        assert_eq!(surface_palette(SurfaceRole::WorkflowCard,selected),card);
+        assert_eq!(surface_palette(SurfaceRole::WorkflowSignalBlock,normal),card);
+        let detail=surface_palette(SurfaceRole::WorkflowDetailRow,normal);
+        assert_eq!((detail.fill,detail.border),(Color32::from_gray(24),Color32::from_gray(63)));
+        assert_eq!(surface_palette(SurfaceRole::WorkflowDetailRow,selected).border,Color32::TRANSPARENT);
+        let summary=surface_palette(SurfaceRole::ReceptionClientSummary,normal);
+        assert_eq!((summary.fill,summary.border),(TABLE_ROW_ALT_BG,Color32::from_gray(63)));
+        assert_eq!(surface_palette(SurfaceRole::NavigationSegment,VisualState::Disabled).fill,
+            Color32::from_gray(27));
+        assert_eq!(workflow_text_ink(WorkflowTextRole::SelectedRow),Color32::from_rgb(244,214,162));
+        assert_eq!(workflow_text_ink(WorkflowTextRole::Vat),Color32::from_rgb(185,215,246));
+    }
+}
+
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) struct OneTouchPalette {
+    pub fill:Color32,
+    pub text:Color32,
+    pub border:Color32,
+    pub tint:Color32,
+}
+
+pub(crate) const fn one_touch_palette()->OneTouchPalette {
+    OneTouchPalette{fill:ONE_TOUCH_BG,text:ONE_TOUCH_TEXT,border:ONE_TOUCH_BORDER,tint:ONE_TOUCH_TINT}
+}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum ManagementOptionState { Selected, Hovered }
+
+pub(crate) const fn management_option_fill(state:ManagementOptionState)->Color32 {
+    match state {
+        ManagementOptionState::Selected=>MANAGEMENT_DROPDOWN_SELECTED_BG,
+        ManagementOptionState::Hovered=>MANAGEMENT_DROPDOWN_HOVER_BG,
+    }
+}
+
+#[cfg(test)]
+mod action_role_color_tests {
+    use super::*;
+    #[test]
+    fn one_touch_and_management_options_keep_approved_colors() {
+        let action=one_touch_palette();
+        assert_eq!((action.fill,action.text,action.border),(
+            Color32::from_rgb(59,43,27),Color32::from_rgb(255,228,188),Color32::from_rgb(245,158,11)));
+        assert_eq!(action.tint,Color32::from_rgba_unmultiplied_const(245,158,11,18));
+        assert_eq!(management_option_fill(ManagementOptionState::Selected),Color32::from_rgb(59,43,27));
+        assert_eq!(management_option_fill(ManagementOptionState::Hovered),Color32::from_rgb(57,91,118));
+    }
+}
+
+
+// Shared interaction colors. The highlight owner retains stroke widths,
+// geometry and precedence; the theme owns only the approved color values.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) struct HoverPalette {
+    pub overlay:Color32,
+    pub row_fill:Color32,
+    pub light_fill:Color32,
+    pub light_border:Color32,
+}
+
+pub(crate) const fn hover_palette()->HoverPalette {
+    HoverPalette{overlay:BUTTON_HOVER_TINT,row_fill:BUTTON_HOVER_BG,
+        light_fill:BUTTON_HOVER_LIGHT_BG,light_border:BUTTON_HOVER_LIGHT_BORDER}
+}
+
+pub(crate) const fn selected_palette()->TextSurfacePalette {
+    TextSurfacePalette{fill:ORANGE_EMPHASIS_BG,text:ORANGE_EMPHASIS_TEXT,border:SELECTED_ORDER}
+}
+
+pub(crate) const fn required_input_palette()->SurfacePalette {
+    SurfacePalette{fill:REQUIRED_INPUT_TINT,border:REQUIRED_INPUT_BORDER}
+}
+
+pub(crate) const fn drop_target_tint()->Color32 { MANUAL_ASSIGNMENT_TINT }
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum MessageInkRole { Success, Danger, Error }
+
+pub(crate) const fn message_ink(role:MessageInkRole)->Color32 {
+    match role {
+        MessageInkRole::Success=>SUCCESS,
+        MessageInkRole::Danger=>DANGER,
+        MessageInkRole::Error=>ERROR_TEXT,
+    }
+}
+
+/// The primary light action's surface and foreground. This is not image tint.
+pub(crate) const fn primary_action_colors()->(Color32,Color32) {
+    (PRIMARY_ACTION_FILL,BRIGHT_TEXT)
+}
+
+#[cfg(test)]
+mod final_color_role_tests {
+    use super::*;
+    #[test]
+    fn interaction_and_message_roles_preserve_the_existing_palette() {
+        let hover=hover_palette();
+        assert_eq!(hover.row_fill,Color32::from_rgb(47,62,74));
+        assert_eq!(hover.overlay,Color32::from_rgba_unmultiplied_const(112,180,255,66));
+        assert_eq!(hover.light_fill,Color32::from_rgb(143,197,255));
+        assert_eq!(hover.light_border,Color32::from_rgb(35,103,174));
+        let selected=selected_palette();
+        assert_eq!((selected.fill,selected.text,selected.border),(Color32::from_rgb(59,43,27),
+            Color32::from_rgb(255,228,188),Color32::from_rgb(245,158,11)));
+        let required=required_input_palette();
+        assert_eq!(required.fill,Color32::from_rgba_unmultiplied_const(199,107,107,18));
+        assert_eq!(required.border,Color32::from_rgb(199,107,107));
+        assert_eq!(drop_target_tint(),Color32::from_rgba_unmultiplied_const(112,180,255,20));
+        assert_eq!(message_ink(MessageInkRole::Success),Color32::from_rgb(169,218,181));
+        assert_eq!(message_ink(MessageInkRole::Danger),Color32::from_rgb(255,180,180));
+        assert_eq!(message_ink(MessageInkRole::Error),Color32::from_rgb(240,160,160));
+        assert_eq!(primary_action_colors(),(Color32::WHITE,Color32::from_gray(23)));
+        assert_eq!(border_ink(BorderRole::TableHeader),Color32::from_gray(106));
+        assert_eq!(border_ink(BorderRole::TreeGuide),Color32::from_rgb(74,74,74));
     }
 }

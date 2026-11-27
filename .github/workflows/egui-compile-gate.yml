@@ -6,6 +6,8 @@ on:
       - .github/workflows/egui-compile-gate.yml
       - scripts/check-egui-layout-placement.py
       - scripts/check-egui-drag-drop.py
+      - scripts/check-category-assignment-gate.py
+      - '**/*.rs'
       - scripts/audit-egui-design-api.py
       - 'scripts/egui-design-api-contract*.json'
       - scripts/egui-design-constant-access.json
@@ -27,17 +29,21 @@ on:
       - src-tauri/src/sale_unit_migration.rs
       - src-tauri/src/business_core/rules/reception_merge.rs
       - src-tauri/resources/legacy-state-seed-303.json
-      - src-tauri/src/business_core/**
+      - src-tauri/src/**
   pull_request:
     branches: [main]
     paths:
       - .github/workflows/egui-compile-gate.yml
       - scripts/check-egui-layout-placement.py
       - scripts/check-egui-drag-drop.py
+      - scripts/check-category-assignment-gate.py
+      - '**/*.rs'
       - scripts/audit-egui-design-api.py
       - 'scripts/egui-design-api-contract*.json'
       - scripts/egui-design-constant-access.json
       - egui-app/**
+      - crates/bando-data-access/**
+      - src-tauri/src/**
   workflow_dispatch:
 permissions:
   contents: read
@@ -46,6 +52,36 @@ concurrency:
   group: egui-compile-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  category-assignment-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require category assignment validation on save paths
+        run: python3 scripts/check-category-assignment-gate.py
+  design-ownership:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Audit public design API references
+        run: python scripts/audit-egui-design-api.py --output design-api-reference-audit.json
+      - name: Upload public design API reference inventory
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: egui-design-api-reference-audit
+          path: design-api-reference-audit.json
+          retention-days: 7
+      - name: Require shared egui explicit placement ownership
+        if: ${{ !cancelled() }}
+        run: python scripts/check-egui-layout-placement.py
+      - name: Require shared business drag-and-drop ownership
+        if: ${{ !cancelled() }}
+        run: python scripts/check-egui-drag-drop.py
   compile:
     runs-on: windows-latest
     timeout-minutes: 45
@@ -56,18 +92,6 @@ jobs:
         with:
           workspaces: egui-app -> target
           key: egui-compile
-      - name: Audit public design API references
-        run: python scripts/audit-egui-design-api.py --output design-api-reference-audit.json
-      - name: Upload public design API reference inventory
-        uses: actions/upload-artifact@v4
-        with:
-          name: egui-design-api-reference-audit
-          path: design-api-reference-audit.json
-          retention-days: 7
-      - name: Require shared egui explicit placement ownership
-        run: python scripts/check-egui-layout-placement.py
-      - name: Require shared business drag-and-drop ownership
-        run: python scripts/check-egui-drag-drop.py
       - name: Compile current Windows egui source
         id: compile_source
         run: cargo check --manifest-path egui-app/Cargo.toml
@@ -96,7 +120,6 @@ jobs:
             'product_manager::tests::rendered_detail_price_fields_match_half_width_sale_status',
             'item_editor::tests::actual_item_detail_keeps_rects_during_error_and_busy_changes',
             'notification_center::shared_notification_center_screen_geometry_tests::actual_notification_popup_keeps_rects_during_read_and_error_changes',
-            'ui_regressions::general_screen_geometry_tests::actual_product_chooser_uses_modal_body_not_management_page_anchor',
             'popup::regression_tests::modal_editor_workspace_geometry_tests::actual_flow_modal_keeps_chrome_and_action_rects_when_permission_changes',
             'popup::regression_tests::round87_modal_flow_contract_tests::flow_regions_measure_master_vertical_gaps_at_normal_and_compact_widths',
             'popup::regression_tests::round87_phase5_modal_contract_tests::production_screens_do_not_bypass_shared_modal_chrome_or_decision_entry',
@@ -105,12 +128,12 @@ jobs:
             'ui_regressions::shared_placeholder_color_contract_tests::actual_dropdown_caption_ink_distinguishes_selection_and_valid_empty_filters',
             'ui_regressions::shared_placeholder_color_contract_tests::production_input_hints_must_use_shared_placeholder_builder'
           )
+          $listed = cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui -- --list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $failed = @()
           foreach ($name in $names) {
-            $listed = cargo test --manifest-path egui-app/Cargo.toml $name -- --exact --list
-            if ($LASTEXITCODE -ne 0) { $failed += "$name (list/build)"; continue }
             if (-not ($listed | Where-Object { $_ -eq "${name}: test" })) { $failed += "$name (missing)"; continue }
-            cargo test --manifest-path egui-app/Cargo.toml $name -- --exact --nocapture
+            cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui $name -- --exact --nocapture
             if ($LASTEXITCODE -ne 0) { $failed += $name }
           }
           if ($failed.Count -gt 0) { throw "Mandatory UI regression failures: $($failed -join '; ')" }
@@ -137,29 +160,95 @@ jobs:
             'dropdown::regression_tests::shared_dropdown_rendered_geometry_tests::',
             'typography::management_table_type_roles_tests::',
             'typography::shared_text_hierarchy_contract_tests::',
-            'theme::shared_visual_role_contract_tests::',
+            'theme::',
             'highlight::rendered_geometry_tests::',
+            'highlight::tests::',
             'drag_drop::tests::',
             'category_tree::category_tree_geometry_tests::',
             'ui_test_support::unaligned_detector_tests::',
             'ui_layout::logical_alignment_tests::',
             'ui_layout::pixel_paint::tests::',
             'popup::regression_tests::modal_editor_workspace_geometry_tests::fractional_modal_geometry_uses_logical_anchors_not_device_pixels',
-            'ui_regressions::general_screen_geometry_tests::unaligned_',
+            # Run the entire screen suite, including newly added tests, not a brittle subset.
+            'ui_regressions::general_screen_geometry_tests::',
+            'ui_regressions::reception_state_layout_invariance_tests::',
+            'ui_regressions::result_viewport_invariance_tests::',
             'ui_test_support::highlight_invariance_detector_tests::',
-            'ui_regressions::general_screen_geometry_tests::highlight_invariance_'
+            'ui_test_support::shared_component_screen_trace_tests::',
+            'popup::regression_tests::modal_input_routing_tests::',
+            'popup::regression_tests::shared_popup_rendered_geometry_tests::',
+            'ui_regressions::management_async_layout_contract_tests::',
+            'ui_regressions::management_async_behavior_regression_tests::',
+            'ui_regressions::shared_screen_component_contract_tests::',
+            'ui_regressions::shared_detail_divider_contract_tests::',
+            'ui_regressions::shared_composite_control_contract_tests::',
+            'ui_regressions::shared_composite_layout_contract_tests::'
           )
+          $listed = cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui -- --list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $failed = @()
           foreach ($group in $groups) {
-            $listed = cargo test --manifest-path egui-app/Cargo.toml $group -- --list
-            if ($LASTEXITCODE -ne 0) { $failed += "$group (list/build)"; continue }
             $matching = @($listed | Where-Object { $_ -like "$group*" -and $_ -like "*: test" })
             if ($matching.Count -eq 0) { $failed += "$group (missing)"; continue }
-            cargo test --manifest-path egui-app/Cargo.toml $group -- --nocapture
+            cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui $group -- --nocapture
             if ($LASTEXITCODE -ne 0) { $failed += $group }
           }
           if ($failed.Count -gt 0) { throw "Mandatory design contract failures: $($failed -join '; ')" }
 
+      - name: Mandatory business transition validators
+        shell: pwsh
+        run: |
+          $filter = 'validation_transitions::tests::'
+          $listed = cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($listed | Where-Object { $_ -like "*validation_transitions::tests::*: test" })) { throw "Missing business transition regression" }
+          cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Mandatory legacy defect comparison
+        shell: pwsh
+        run: |
+          $filter = 'validation_policy::tests::'
+          $listed = cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($listed | Where-Object { $_ -like "*validation_policy::tests::*: test" })) { throw "Missing legacy defect comparison regression" }
+          cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Mandatory validation gate execution contract
+        shell: pwsh
+        run: |
+          $filter = 'validation_gate::tests::'
+          $listed = cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($listed | Where-Object { $_ -like "*validation_gate::tests::*: test" })) { throw "Missing validation gate regression" }
+          cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Mandatory validation dependency coverage
+        shell: pwsh
+        run: |
+          $filter = 'validation_dependencies::tests::'
+          $listed = cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($listed | Where-Object { $_ -like "*validation_dependencies::tests::*: test" })) { throw "Missing validation dependency regression" }
+          cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Mandatory field-level change analysis
+        shell: pwsh
+        run: |
+          $filter = 'change_set::tests::'
+          $listed = cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($listed | Where-Object { $_ -like "*change_set::tests::*: test" })) { throw "Missing change set regression" }
+          cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Mandatory category assignment integrity
+        shell: pwsh
+        run: |
+          $filter = 'category_assignment::tests::'
+          $listed = cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($listed | Where-Object { $_ -like "*category_assignment::tests::*: test" })) { throw "Missing category assignment regression" }
+          cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Mandatory native brand deletion safety
         if: ${{ !cancelled() && steps.compile_source.outcome == 'success' }}
         shell: pwsh

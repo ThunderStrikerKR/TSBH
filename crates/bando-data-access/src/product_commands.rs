@@ -7,11 +7,17 @@ use serde_json::{json,Value};
 use std::time::{SystemTime,UNIX_EPOCH};
 
 #[path = "../../../src-tauri/src/business_core/catalog_clients.rs"]
-mod catalog_clients;
+pub(super) mod catalog_clients;
 
 pub(crate) fn validate_native_model_groups(state:&Value)->Result<(),String>{
-    catalog_clients::execute("validate_model_groups",json!({"state":state}))?;
-    Ok(())
+    catalog_clients::validate_model_groups(state)
+}
+pub(crate) fn native_model_group_diagnostics(state:&Value)->Vec<(Vec<String>,Value,String)>{
+    catalog_clients::model_group_diagnostics(state)
+}
+
+pub(crate) fn validate_native_category_topology(state:&Value)->Result<(),String>{
+    catalog_clients::validate_category_topology(state)
 }
 
 /// Derive committed history from the authoritative before/after product, not
@@ -106,9 +112,7 @@ pub fn patch_model_groups_v2(
         return Err("colorGuidanceGroups 설정이 다른 화면에서 수정됐습니다. 다시 불러온 뒤 저장하세요.".into());
     }
     settings.insert("colorGuidanceGroups".into(),groups.clone());
-    catalog_clients::execute(
-        "validate_model_groups",json!({"state":&state})
-    )?;
+    validate_native_model_groups(&state)?;
     Ok((state!=*before).then_some(state))
     })
 }
@@ -179,7 +183,7 @@ pub fn management_scope_token(state:&Value,domain:&str)->String{
 fn check_catalog_write_scope(before:&Value,action:&str,data:&Value,
     expected:u64,current:u64)->Result<(),String>{
     if action=="set_price"{return Ok(());}
-    if matches!(action,"change_category"|"delete_category"){
+    if matches!(action,"change_category"|"delete_category"|"move_products_to_category"){
         if let Some(token)=data["expectedScope"].as_str(){
             if token!=management_scope_token(before,"categories"){
                 return Err("분류 또는 연결 상품이 변경되었습니다. 입력 내용을 유지합니다.".into());
@@ -230,8 +234,91 @@ fn validate_product_brand_selection(before:&Value,product:&Value)->Result<(),Str
     Ok(())
 }
 
-/// Validate every before-image and destination before producing a single
-/// snapshot. A failure in any reducer leaves the transaction untouched.
+/// Resolve complete ancestry from authoritative category records. Virtual
+/// roots are available even before their first persisted category operation.
+fn move_category_path(state:&Value,id:&str)->Result<Vec<(String,String)>,String>{
+    let mut path=Vec::new();
+    let mut visited=std::collections::HashSet::new();
+    let mut cursor=id;
+    while !cursor.is_empty(){
+        if !visited.insert(cursor){return Err("카테고리 경로 오류".into());}
+        if let Some(cat)=state["categories"].as_array().into_iter().flatten()
+            .find(|c|c["id"].as_str()==Some(cursor)){
+            if cat["active"]==false||cat["deletedAt"].as_str().is_some_and(|v|!v.is_empty()){
+                return Err("이동할 카테고리를 사용할 수 없습니다.".into());
+            }
+            path.push((cursor.to_owned(),required(cat,"name")?.to_owned()));
+            cursor=cat["parentId"].as_str().unwrap_or("");
+        }else{
+            let name=match cursor{
+                "catalog-root:BANDOSTAND"=>"반도스탠드",
+                "catalog-root:BANDOMALL"=>"반도몰",
+                _=>return Err("카테고리가 존재하지 않습니다.".into()),
+            };
+            path.push((cursor.to_owned(),name.to_owned()));
+            break;
+        }
+    }
+    path.reverse();
+    if path.is_empty(){return Err("카테고리 경로가 없습니다.".into());}
+    Ok(path)
+}
+
+/// Derive logical leaf memberships before replacing the dragged membership.
+/// Redundant ancestor IDs are not separate placements. Reject inconsistent
+/// or cross-catalog moves rather than silently changing product identity.
+fn moved_product(before:&Value,actual:&Value,source:&str,target:&str,at:&str)->Result<Value,String>{
+    let target_path=move_category_path(before,target)?;
+    let source_path=move_category_path(before,source)?;
+    if source_path.first().map(|p|&p.0)!=target_path.first().map(|p|&p.0)
+        && [source_path.first(),target_path.first()].into_iter().flatten()
+            .any(|p|p.0.starts_with("catalog-root:")){
+        return Err("최상위 상품 구분이 다른 카테고리로 이동할 수 없습니다.".into());
+    }
+    if let Some((root,_))=target_path.first(){
+        let expected=match root.as_str(){
+            "catalog-root:BANDOSTAND"=>Some("BANDOSTAND"),
+            "catalog-root:BANDOMALL"=>Some("BANDOMALL"),
+            _=>None,
+        };
+        if let Some(expected)=expected{
+            if actual["catalog"].as_str().is_some_and(|v|!v.is_empty()&&v!="DEMO"&&v!=expected){
+                return Err("상품의 최상위 구분과 이동 대상이 일치하지 않습니다.".into());
+            }
+        }
+    }
+    if before["categories"].as_array().into_iter().flatten()
+        .any(|c|c["parentId"].as_str()==Some(target)){
+        return Err("활성 최하위 카테고리에 배정하세요.".into());
+    }
+    let ids=actual["categories"].as_array().ok_or("상품 카테고리 목록 오류")?;
+    let mut paths=Vec::new();
+    for id in ids{
+        let id=id.as_str().filter(|s|!s.is_empty()).ok_or("상품 카테고리 ID 오류")?;
+        if !paths.iter().any(|(key,_):&(String,Vec<(String,String)>)|key==id){
+            paths.push((id.to_owned(),move_category_path(before,id)?));
+        }
+    }
+    let mut leaves=paths.iter().filter(|(id,_)|!paths.iter().any(|(other,path)|
+        other!=id&&path.iter().any(|(key,_)|key==id)))
+        .map(|(id,_)|id.clone()).collect::<Vec<_>>();
+    let slot=leaves.iter().position(|id|id==source).ok_or("이동할 상품 소속이 변경되었습니다.")?;
+    if leaves.iter().any(|id|id==target){
+        leaves.remove(slot);
+    }else{
+        leaves[slot]=target.to_owned();
+    }
+    let primary=leaves.last().ok_or("상품 카테고리 목록 오류")?;
+    let primary_path=move_category_path(before,primary)?;
+    let mut product=actual.clone();
+    product["categories"]=json!(leaves);
+    product["category"]=json!(primary_path.iter().map(|(_,name)|name.as_str()).collect::<Vec<_>>().join(" > "));
+    product["updatedAt"]=json!(at);
+    Ok(product)
+}
+
+/// All before-images are checked inside the same IMMEDIATE SQLite write
+/// transaction. Category moves are narrow edits, not product editor saves.
 fn apply_category_moves(before:&Value,data:&Value)->Result<Value,String>{
     let changes=data["changes"].as_array().filter(|v|!v.is_empty())
         .ok_or("이동할 상품이 없습니다.")?;
@@ -244,44 +331,13 @@ fn apply_category_moves(before:&Value,data:&Value)->Result<Value,String>{
         let source=required(change,"source")?;
         let target=required(change,"target")?;
         if !seen.insert(id.to_owned())||source==target{return Err("중복 또는 동일 카테고리 이동입니다.".into());}
-        let actual=before["products"].as_array().into_iter().flatten()
-            .find(|p|p["id"].as_str()==Some(id)).ok_or("이동할 상품이 삭제되었습니다.")?;
+        let (position,actual)=before["products"].as_array().into_iter().flatten().enumerate()
+            .find(|(_,p)|p["id"].as_str()==Some(id)).ok_or("이동할 상품이 삭제되었습니다.")?;
         if actual!=original||actual["deletedAt"].as_str().is_some_and(|v|!v.is_empty())
-            ||actual["supersededBy"].as_str().is_some_and(|v|!v.is_empty())
-            ||!actual["categories"].as_array().into_iter().flatten().any(|v|v.as_str()==Some(source)){
+            ||actual["supersededBy"].as_str().is_some_and(|v|!v.is_empty()){
             return Err("선택 상품이 변경되었습니다. 전체 이동을 취소합니다.".into());
         }
-        // Derive the target label from authoritative category ancestry, not
-        // the submitted editor draft. Virtual roots match the existing UI.
-        let mut names=Vec::new();
-        let mut cursor=target;
-        let mut visited=std::collections::HashSet::new();
-        while !cursor.is_empty(){
-            if !visited.insert(cursor){return Err("카테고리 경로 오류".into());}
-            if let Some(cat)=before["categories"].as_array().into_iter().flatten()
-                .find(|c|c["id"].as_str()==Some(cursor)){
-                if cat["active"]==false||cat["deletedAt"].as_str().is_some_and(|v|!v.is_empty()){
-                    return Err("이동할 카테고리를 사용할 수 없습니다.".into());
-                }
-                names.push(required(cat,"name")?);
-                cursor=cat["parentId"].as_str().unwrap_or("");
-            }else{
-                match cursor{
-                    "catalog-root:BANDOSTAND"=>names.push("반도스탠드"),
-                    "catalog-root:BANDOMALL"=>names.push("반도몰"),
-                    _=>return Err("이동할 카테고리가 존재하지 않습니다.".into()),
-                }
-                break;
-            }
-        }
-        names.reverse();
-        let mut product=actual.clone();
-        product["categories"]=json!([target]);
-        product["category"]=json!(names.join(" > "));
-        let result=catalog_clients::execute("upsert_product_from_editor",
-            json!({"state":&next,"product":product,"updatedAt":at}))?;
-        next=result.get("state").filter(|v|v.is_object()).cloned()
-            .ok_or("Rust 상품 이동 결과 형식 오류")?;
+        next["products"][position]=moved_product(before,actual,source,target,&at)?;
     }
     Ok(next)
 }
@@ -451,9 +507,13 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
                 let id=if category_id.is_empty(){
                     unique_id("category")?
                 }else{category_id.to_owned()};
+                let new_name=data["newProductCategoryName"].as_str().unwrap_or("").trim();
+                let new_id=if new_name.is_empty(){String::new()}else{unique_id("category")?};
                 json!({
                     "state":state,
                     "categoryId":id,
+                    "newProductCategoryId":new_id,
+                    "newProductCategoryName":new_name,
                     "name":required(data,"name")?,
                     "parentId":data.get("parentId").unwrap_or(&Value::Null),
                     "transfer":data.get("transfer")==Some(&Value::Bool(true)),
@@ -489,6 +549,8 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
         crate::storage::update_v2_reviewed_workbook(conn,mutate)
     }else if action=="delete_brand"{
         crate::storage::update_v2_brand_delete(conn,mutate)
+    }else if matches!(action,"move_products_to_category"|"change_category"|"delete_category"){
+        crate::storage::update_v2_category_change(conn,mutate)
     }else{
         crate::storage::update_v2_entity_if_changed(conn,true,mutate)
     }
@@ -498,6 +560,19 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
 #[cfg(test)]
 mod management_scope_cas_tests{
     use super::*;
+    #[test]
+    fn borrowed_model_group_validation_matches_existing_dispatch(){
+        for state in [
+            json!({"products":[],"settings":{"colorGuidanceGroups":{}}}),
+            json!({"products":[],"settings":{"colorGuidanceGroups":{"g":{"name":"","productIds":[]}}}}),
+            json!({"products":[],"settings":{"colorGuidanceGroups":{"g":{"name":"그룹","productIds":["a","b"],"representativeProductId":"a"}}}}),
+        ]{
+            let native=validate_native_model_groups(&state);
+            let dispatched=catalog_clients::execute("validate_model_groups",json!({"state":&state})).map(|_|());
+            assert_eq!(native,dispatched);
+        }
+    }
+
     #[test]
     fn category_batch_move_is_all_or_nothing_and_keeps_prices(){
         let product=|id:&str|json!({"id":id,"code":id,"name":id,
@@ -530,6 +605,31 @@ mod management_scope_cas_tests{
         assert!(apply_category_moves(&before,&bad).is_err());
     }
 
+    #[test]
+    fn category_move_preserves_independent_memberships_and_all_non_category_fields(){
+        let before=json!({"revision":1,"categories":[
+            {"id":"a","name":"A","parentId":"catalog-root:BANDOSTAND"},
+            {"id":"a1","name":"A1","parentId":"a"},
+            {"id":"b","name":"B","parentId":"catalog-root:BANDOSTAND"},
+            {"id":"c","name":"C","parentId":"catalog-root:BANDOSTAND"},
+            {"id":"x","name":"X","parentId":"catalog-root:BANDOMALL"}
+        ],"products":[{"id":"p","catalog":"BANDOSTAND","modelKey":"unchanged","name":"상품",
+            "categories":["a","a1","c"],"category":"C","defaultColor":"검정",
+            "variants":[{"id":"v","color":"검정","retail":2000}],"priceHistory":[{"at":"old"}]},
+            {"id":"other","defaultColor":"검정"}],"orders":[{"id":"o","price":5000}]});
+        let original=&before["products"][0];
+        let request=|target:&str|json!({"changes":[{"expectedEntity":original,"source":"a1","target":target}]});
+        let after=apply_category_moves(&before,&request("b")).unwrap();
+        let mut expected=before.clone();
+        expected["products"][0]["categories"]=json!(["b","c"]);
+        expected["products"][0]["category"]=json!("반도스탠드 > C");
+        expected["products"][0]["updatedAt"]=after["products"][0]["updatedAt"].clone();
+        assert_eq!(after,expected);
+        assert!(apply_category_moves(&before,&request("x")).is_err());
+        assert!(apply_category_moves(&before,&request("a")).is_err());
+        let dedup=apply_category_moves(&before,&request("c")).unwrap();
+        assert_eq!(dedup["products"][0]["categories"],json!(["c"]));
+    }
     #[test]
     fn management_scopes_ignore_unrelated_order_revision_and_prices(){
         let old=json!({"revision":1,"orders":[],"clients":[],

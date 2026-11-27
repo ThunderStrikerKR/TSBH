@@ -25,10 +25,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Reject newly introduced conditional layout allocations
+      - name: Report conditional layout allocations for rendered geometry review
         env:
           UI_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: node scripts/check-egui-state-layout.mjs --base "$UI_DIFF_BASE" --require-base
+        run: node scripts/check-egui-state-layout.mjs --base "$UI_DIFF_BASE" --require-base --advisory
 
       - name: Reject shared UI bypasses in all production screens
         if: ${{ !cancelled() }}

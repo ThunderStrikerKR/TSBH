@@ -122,7 +122,7 @@ fn management_dropdown_trigger_inner(
     }).inner;
     let rect=trigger.rect;
     #[cfg(test)]
-    crate::ui_test_support::record_component_geometry("dropdown",rect,ui.clip_rect(),Some(height));
+    crate::ui_test_support::record_control_response("dropdown",&trigger,ui.clip_rect(),Some(height));
     let painter=ui.painter().with_shared_clip(rect);
     let arrow_left=rect.right()-30.0;
     let caption_ink=if placeholder{text_ink(TextRole::Value,TextState::Placeholder)}
@@ -325,10 +325,13 @@ fn management_dropdown_option_inner<T:PartialEq>(
     let row=response.rect;
     let painter=ui.painter().with_shared_clip(row.shrink(2.0));
     #[cfg(test)]
-    crate::ui_test_support::record_highlight_target("dropdown option",row,ui.clip_rect());
+    {
+        crate::ui_test_support::record_highlight_target("dropdown option",row,ui.clip_rect());
+        crate::ui_test_support::record_control_response("dropdown option",&response,ui.clip_rect(),None);
+    }
     let caption_ink=match style{
         ManagementDropdownOptionStyle::Status(color)=>color,
-        _ if selected=>theme::ORANGE_EMPHASIS_TEXT,
+        _ if selected=>theme::selected_palette().text,
         _=>theme::text_ink(theme::TextRole::Value,theme::TextState::Normal),
     };
     let galley=if let Some(values)=values{

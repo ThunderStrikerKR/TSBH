@@ -24,6 +24,8 @@ pub fn management_chooser_row(
     );
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("chooser row",rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("chooser row",&response,ui.clip_rect(),None);
     let painter=ui.painter().clone();
     if selected{
         crate::highlight::paint(ui,rect,crate::highlight::Geometry::Control,crate::highlight::Role::ChooserSelected);
@@ -285,6 +287,8 @@ pub fn management_row_with_tags(
     );
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("client row",rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("client row",&response,ui.clip_rect(),None);
     let state=crate::highlight::States{selected,focused:response.has_focus(),hovered:response.hovered(),..Default::default()};
     let role=state.resolve();
     if selected{

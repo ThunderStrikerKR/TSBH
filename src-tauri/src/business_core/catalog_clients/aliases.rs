@@ -22,26 +22,45 @@ fn model_names(product:&Value)->Vec<String>{
 fn visible(product:&Value)->bool{
     field(product,"deletedAt").is_empty()&&field(product,"supersededBy").is_empty()
 }
-fn alias_problem(record:&Value,aliases:&[Value],products:&[Value])->Vec<String>{
+pub(super) fn alias_problem(record:&Value,aliases:&[Value],products:&[Value])->Vec<String>{
+    let mut messages=Vec::new();
+    for (_,_,message) in alias_findings(record,aliases,products){
+        if !messages.contains(&message){messages.push(message);}
+    }
+    messages
+}
+pub(super) fn alias_findings(record:&Value,aliases:&[Value],products:&[Value])->Vec<(Vec<String>,Value,String)>{
     let target=products.iter().find(|p|field(p,"id")==field(record,"productId"));
     let key=model_key(field(record,"text"));
     let mut out=vec![];
+    let id=field(record,"id");
+    let basis=json!([record.get("text"),record.get("clientId"),record.get("productId"),record.get("variantId")]);
+    let identity=|rule:&str,other:Option<&str>|{
+        if id.trim().is_empty()||other.is_some_and(|s|s.trim().is_empty()){return vec![];}
+        let mut path=vec![rule.to_owned(),id.to_owned()];
+        if let Some(other)=other{path.push(other.to_owned());}
+        path
+    };
     if field(record,"text").trim().is_empty() ||
         target.is_none_or(|p|!field(p,"deletedAt").is_empty()){
-        out.push("별칭과 연결할 상품을 입력하세요.".to_owned());
+        out.push((identity("target",None),json!([basis,target.map(|p|&p["deletedAt"])]),"별칭과 연결할 상품을 입력하세요.".to_owned()));
     }
-    if aliases.iter().any(|a|field(a,"id")!=field(record,"id")&&
+    for peer in aliases.iter().filter(|a|field(a,"id")!=field(record,"id")&&
         a.get("clientId")==record.get("clientId")&&
         model_key(field(a,"text"))==key&&
         (a.get("productId")!=record.get("productId")||
          a.get("variantId")!=record.get("variantId"))){
-        out.push("같은 적용 범위의 별칭이 충돌합니다.".to_owned());
+        out.push((identity("alias-conflict",Some(field(peer,"id"))),
+            json!([basis,peer.get("text"),peer.get("clientId"),peer.get("productId"),peer.get("variantId")]),
+            "같은 적용 범위의 별칭이 충돌합니다.".to_owned()));
     }
     if let Some(target)=target{
-        if products.iter().any(|p|visible(p)&&
+        for peer in products.iter().filter(|p|visible(p)&&
             model_names(p).iter().chain(std::iter::once(&field(p,"name").to_owned()))
                 .any(|name|model_key(name)==key) &&field(p,"id")!=field(target,"id")){
-            out.push("다른 등록 상품명 또는 모델 표기와 충돌하는 별칭입니다.".to_owned());
+            out.push((identity("product-conflict",Some(field(peer,"id"))),
+                json!([basis,peer.get("name"),peer.get("deletedAt"),peer.get("supersededBy")]),
+                "다른 등록 상품명 또는 모델 표기와 충돌하는 별칭입니다.".to_owned()));
         }
     }
     static SUFFIX:LazyLock<Regex>=LazyLock::new(||
@@ -67,14 +86,18 @@ fn alias_problem(record:&Value,aliases:&[Value],products:&[Value])->Vec<String>{
             if !bases.is_empty() && (target.is_none()||
                 !bases.iter().any(|p|field(p,"id")==field(record,"productId"))||
                 actual.is_some_and(|color|!color.eq_ignore_ascii_case(desired))){
-                out.push("상품명의 색상 또는 구성 표기와 충돌하는 별칭입니다.".to_owned());
+                let mut base_ids=bases.iter().map(|p|field(p,"id")).collect::<Vec<_>>();
+                base_ids.sort_unstable();
+                out.push((identity("suffix",None),json!([basis,base_ids,desired,actual]),
+                    "상품명의 색상 또는 구성 표기와 충돌하는 별칭입니다.".to_owned()));
             }
         }
     }
     if !field(record,"variantId").is_empty() &&
        !target.is_some_and(|p|items(p,"variants").iter()
             .any(|v|field(v,"id")==field(record,"variantId"))){
-        out.push("별칭 색상 / 옵션 연결을 확인하세요.".to_owned())
+        out.push((identity("variant",None),json!([basis,target.map(|p|items(p,"variants").iter().map(|v|field(v,"id")).collect::<Vec<_>>())]),
+            "별칭 색상 / 옵션 연결을 확인하세요.".to_owned()))
     }
     out
 }

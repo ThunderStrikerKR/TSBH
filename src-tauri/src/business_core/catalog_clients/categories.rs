@@ -34,7 +34,7 @@ fn category_ids(product:&Value)->Vec<String>{
 fn parent_id(value:&Value)->Option<&str>{
     value.get("parentId").and_then(Value::as_str).filter(|s|!s.is_empty())
 }
-pub(super) fn validate(before:Option<&Value>,next:&Value)->Result<(),String>{
+pub(super) fn validate_topology(next:&Value)->Result<(),String>{
     let cats=items(next,"categories");
     let mut known=HashSet::new();
     for cat in cats{
@@ -47,25 +47,58 @@ pub(super) fn validate(before:Option<&Value>,next:&Value)->Result<(),String>{
         }
         category_path(cats,field(cat,"id"))?;
     }
-    for product in items(next,"products"){
-        let before_product=before.and_then(|s|items(s,"products").iter()
-            .find(|p|field(p,"id")==field(product,"id")));
-        let Some(old)=before_product else {continue};
-        if old.get("categories")==product.get("categories"){continue}
-        let ids=category_ids(product);
-        for id in &ids{
-            if !cats.iter().any(|c|field(c,"id")==id){continue}
-            let inactive=category_path(cats,id)?.iter()
-                .any(|c|c.get("active")==Some(&Value::Bool(false)));
-            let unchosen_child=cats.iter().any(|c|parent_id(c)==Some(id.as_str())
-                && !ids.iter().any(|part|part==field(c,"id")));
-            if inactive||unchosen_child{
-                return Err("활성 최하위 카테고리에 배정하세요.".into())
-            }
-        }
+    Ok(())
+}
+pub(super) fn validate(before:Option<&Value>,next:&Value)->Result<(),String>{
+    validate_topology(next)?;
+    if let Some(before)=before{
+        bando_data_access::validate_category_transition(before,next)?;
+    }else{
+        bando_data_access::validate_category_transition(&json!({"products":[],"categories":[]}),next)?;
     }
     Ok(())
 }
+/// An explicit ancestor in a legacy stored path is not a direct placement.
+fn direct_product_ids(input:&Value,target:&str)->Result<HashSet<String>,String>{
+    let cats=items(input,"categories");
+    let mut ids=HashSet::new();
+    for product in items(input,"products"){
+        if !field(product,"deletedAt").is_empty()||!field(product,"supersededBy").is_empty(){continue;}
+        let memberships=category_ids(product);
+        if !memberships.iter().any(|id|id==target){continue;}
+        let mut has_deeper=false;
+        for id in memberships.iter().filter(|id|id.as_str()!=target){
+            if category_path(cats,id)?.iter().any(|node|field(node,"id")==target){
+                has_deeper=true;break;
+            }
+        }
+        if !has_deeper{ids.insert(field(product,"id").to_owned());}
+    }
+    Ok(ids)
+}
+
+fn transfer_direct_products(state:&mut Value,affected:&HashSet<String>,source:&str,destination:&str)->Result<(),String>{
+    let cats=items(state,"categories").to_vec();
+    let products=state["products"].as_array_mut().ok_or("상품 목록 오류")?;
+    for product in products.iter_mut().filter(|p|affected.contains(field(p,"id"))){
+        let ids=category_ids(product).into_iter().map(|id|
+            if id==source{destination.to_owned()}else{id}).collect::<Vec<_>>();
+        // Preserve all independent placements, discard redundant path IDs.
+        let mut ancestor_ids=HashSet::new();
+        for id in &ids{
+            for part in category_path(&cats,id)?.iter().filter(|node|field(node,"id")!=id){
+                ancestor_ids.insert(field(part,"id").to_owned());
+            }
+        }
+        let mut seen=HashSet::new();
+        let leaves=ids.into_iter().filter(|id|!ancestor_ids.contains(id)&&seen.insert(id.clone()))
+            .collect::<Vec<_>>();
+        product["categories"]=json!(leaves);
+        set_product_path(product,&cats)?;
+    }
+    Ok(())
+}
+
 fn set_product_path(product:&mut Value,cats:&[Value])->Result<(),String>{
     let ids=category_ids(product);
     if let Some(last)=ids.last(){
@@ -76,10 +109,27 @@ fn set_product_path(product:&mut Value,cats:&[Value])->Result<(),String>{
 }
 fn change(input:&Value,id:&str,name:&str,parent:Option<&str>,transfer:bool,
     guard_catalog_move:bool,guard_message:&str)->Result<Value,String>{
+    let original_cats=items(input,"categories");
+    let original=original_cats.iter().find(|cat|field(cat,"id")==id);
+    let moving=original.is_some_and(|cat|parent_id(cat)!=parent);
+    if moving{
+        let target=parent.ok_or("이동할 상위 분류가 없습니다.")?;
+        if !direct_product_ids(input,target)?.is_empty(){
+            return Err("이동할 분류에 기존 상품이 있습니다. 상품을 배정할 새 하위 분류를 먼저 지정하세요.".into());
+        }
+        if matches!(id,"catalog-root:BANDOSTAND"|"catalog-root:BANDOMALL")||
+            original.is_some_and(|cat|cat["active"]==false)||
+            !original_cats.iter().any(|cat|field(cat,"id")==target)||
+            descendants(original_cats,id)?.contains(target)||
+            category_path(original_cats,target)?.iter().any(|cat|cat["active"]==false||
+                !field(cat,"deletedAt").is_empty()){
+            return Err("이동할 수 없는 분류입니다.".into());
+        }
+    }
     // This is the original CategoryManager move check, previously in React.
     // Empty/unknown catalog roots impose no additional restriction, matching
     // catalogFromCategory() + categoryProducts() in the original UI.
-    if guard_catalog_move {
+    if guard_catalog_move||moving {
         let cats=items(input,"categories");
         let target_path=category_path(cats,parent.unwrap_or(""))?;
         let destination_catalog=target_path.first().and_then(|root|
@@ -97,7 +147,7 @@ fn change(input:&Value,id:&str,name:&str,parent:Option<&str>,transfer:bool,
                 !field(p,"catalog").is_empty() && field(p,"catalog")!="DEMO" &&
                 field(p,"catalog")!=catalog
             });
-            if mismatch {return Err(guard_message.to_owned())}
+            if mismatch {return Err(if guard_message.is_empty(){"상품 소속 충돌".into()}else{guard_message.to_owned()})}
         }
     }
     let mut next=input.clone();
@@ -108,11 +158,8 @@ fn change(input:&Value,id:&str,name:&str,parent:Option<&str>,transfer:bool,
         return Err("분류 이름을 확인하세요.".into())
     }
     let existing=cats.iter().any(|c|field(c,"id")==id);
-    let affected=if !existing && parent.is_some_and(|p|
-        !cats.iter().any(|cat|parent_id(cat)==Some(p))){
-        items(input,"products").iter().filter(|p|
-            category_ids(p).iter().any(|category|Some(category.as_str())==parent))
-            .map(|p|field(p,"id").to_owned()).collect::<HashSet<_>>()
+    let affected=if !existing{
+        if let Some(parent)=parent{direct_product_ids(input,parent)?}else{HashSet::new()}
     }else{HashSet::new()};
     if !affected.is_empty()&&!transfer{
         return Err(format!("기존 상품 {}개 이전 확인이 필요합니다.",affected.len()))
@@ -129,30 +176,57 @@ fn change(input:&Value,id:&str,name:&str,parent:Option<&str>,transfer:bool,
     let moved=descendants(items(input,"categories"),id)?;
     let mut products=items(input,"products").to_vec();
     for product in &mut products{
-        if affected.contains(field(product,"id")) {
-            if let Some(old_ids)=product.get_mut("categories").and_then(Value::as_array_mut){
-                for category in old_ids.iter_mut(){
-                    if category.as_str()==parent {*category=json!(id);}
+        let linked=existing&&category_ids(product).iter().any(|part|moved.contains(part));
+        if moving&&linked{
+            // Only remove redundant old path IDs when they no longer belong
+            // to any retained branch. Independent memberships survive.
+            let ids=category_ids(product);
+            let mut kept=Vec::new();
+            for part in &ids{
+                if old_ancestors.contains(part){
+                    let mut still_needed=false;
+                    for leaf in ids.iter().filter(|leaf|!old_ancestors.contains(*leaf)){
+                        if category_path(&cats,leaf)?.iter().any(|node|field(node,"id")==part){
+                            still_needed=true;break;
+                        }
+                    }
+                    if !still_needed{continue;}
                 }
+                kept.push(part.clone());
             }
+            product["categories"]=json!(kept);
         }
-        if !existing&&affected.contains(field(product,"id")){
-            let ids=category_ids(product).into_iter().filter(|category|
-                !cats.iter().any(|c|parent_id(c)==Some(category.as_str())))
-                .collect::<Vec<_>>();
-            product["categories"]=json!(ids);
+        if linked{
+            set_product_path(product,&cats)?;
         }
-        if existing&&category_ids(product).iter().any(|part|moved.contains(part)){
-            let ids=category_ids(product).into_iter()
-                .filter(|part|!old_ancestors.contains(part)).collect::<Vec<_>>();
-            product["categories"]=json!(ids);
-        }
-        set_product_path(product,&cats)?;
     }
     next["categories"]=json!(cats);
     next["products"]=json!(products);
+    if !affected.is_empty(){
+        transfer_direct_products(&mut next,&affected,parent.ok_or("상위 분류 누락")?,id)?;
+    }
     validate(Some(input),&next)?;
     Ok(json!({"state":next}))
+}
+
+/// One candidate, no intermediate persistence. Reuse the normal category
+/// creation reducer (including its product transfer) before the normal move.
+fn change_with_product_category(input:&Value,id:&str,name:&str,parent:Option<&str>,
+    transfer:bool,guard:bool,message:&str,new_id:&str,new_name:&str)->Result<Value,String>{
+    if new_id.is_empty()&&new_name.is_empty(){
+        return change(input,id,name,parent,transfer,guard,message);
+    }
+    let target=parent.ok_or("이동할 상위 분류가 없습니다.")?;
+    let cats=items(input,"categories");
+    let source=cats.iter().find(|cat|field(cat,"id")==id).ok_or("이동할 분류가 없습니다.")?;
+    if parent_id(source)==parent||id==target||new_id.is_empty()||new_name.trim().is_empty()
+        ||new_name.trim()==name.trim()||cats.iter().any(|cat|field(cat,"id")==new_id)
+        ||direct_product_ids(input,target)?.is_empty(){
+        return Err("새 하위 분류 이름 또는 이동 대상을 확인하세요.".into());
+    }
+    let created=change(input,new_id,new_name,Some(target),true,false,"")?;
+    let staged=created.get("state").ok_or("새 하위 분류 생성 결과 누락")?;
+    change(staged,id,name,parent,false,guard,message)
 }
 fn delete(input:&Value,id:&str,destination:&str)->Result<Value,String>{
     let mut next=input.clone();
@@ -216,6 +290,7 @@ fn legacy_add(input:&Value,id:&str,name:&str,parent:Option<&str>)->Result<Value,
     let mut updated=cats.to_vec();
     updated.push(json!({"id":id,"name":trimmed,"parentId":parent}));
     next["categories"]=json!(updated);
+    validate(Some(input),&next)?;
     Ok(json!({"state":next}))
 }
 fn legacy_rename(input:&Value,id:&str,name:&str)->Result<Value,String>{
@@ -244,11 +319,12 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
     let state=payload.get("state").ok_or("현재 상태가 없습니다.")?;
     let id=field(payload,"categoryId");
     match operation{
-        "change_category"=>change(state,id,field(payload,"name"),
+        "change_category"=>change_with_product_category(state,id,field(payload,"name"),
             payload.get("parentId").and_then(Value::as_str),
             payload.get("transfer")==Some(&Value::Bool(true)),
             payload.get("guardCatalogMove")==Some(&Value::Bool(true)),
-            field(payload,"guardError")),
+            field(payload,"guardError"),
+            field(payload,"newProductCategoryId"),field(payload,"newProductCategoryName")),
         "delete_category"=>delete(state,id,field(payload,"destination")),
         "legacy_add_category"=>legacy_add(state,id,field(payload,"name"),
             payload.get("parentId").and_then(Value::as_str)),
@@ -300,6 +376,51 @@ mod tests{
         assert_eq!(state["products"][0]["categories"],json!(["stand"]));
     }
 
+    #[test]
+    fn category_move_preserves_unrelated_products_and_rejects_invalid_destinations(){
+        let before=json!({"categories":[
+            {"id":"catalog-root:BANDOSTAND","name":"반도스탠드","parentId":null},
+            {"id":"a","name":"A","parentId":"catalog-root:BANDOSTAND"},
+            {"id":"leaf","name":"L","parentId":"a"},
+            {"id":"b","name":"B","parentId":"catalog-root:BANDOSTAND"},
+            {"id":"c","name":"C","parentId":"catalog-root:BANDOSTAND","active":false}
+        ],"products":[
+            {"id":"p","categories":["a","leaf"],"category":"반도스탠드 > A > L"},
+            {"id":"other","categories":["b"],"category":"legacy label","defaultColor":"검정"}
+        ],"orders":[{"id":"o","price":9000}]});
+        assert!(change(&before,"leaf","L",Some("b"),false,false,"").is_err());
+        let after=change_with_product_category(&before,"leaf","L",Some("b"),false,false,"","new","기존 상품").unwrap();
+        assert_eq!(after["state"]["products"][0]["categories"],json!(["leaf"]));
+        assert_eq!(after["state"]["products"][0]["category"],"반도스탠드 > B > L");
+        assert_eq!(after["state"]["products"][1]["categories"],json!(["new"]));
+        assert_eq!(after["state"]["products"][1]["defaultColor"],before["products"][1]["defaultColor"]);
+        assert_eq!(after["state"]["orders"],before["orders"]);
+        assert!(change(&before,"a","A",Some("leaf"),false,false,"").is_err());
+        assert!(change(&before,"leaf","L",Some("c"),false,false,"").is_err());
+        assert!(change(&before,"catalog-root:BANDOSTAND","반도스탠드",Some("b"),false,false,"").is_err());
+    }
+    #[test]
+    fn occupied_destination_requires_named_child_and_preserves_other_memberships(){
+        let before=json!({"categories":[
+            {"id":"a","name":"이동","parentId":null},
+            {"id":"b","name":"목적지","parentId":null},
+            {"id":"c","name":"다른 소속","parentId":null}
+        ],"products":[
+            {"id":"p","categories":["b","c"],"category":"다른 소속","price":3000},
+            {"id":"q","categories":["a"],"category":"이동"},
+            {"id":"r","categories":["c"],"category":"다른 소속"}
+        ],"orders":[{"id":"o"}]});
+        assert!(change(&before,"a","이동",Some("b"),false,false,"").is_err());
+        assert!(change_with_product_category(&before,"a","이동",Some("b"),false,false,"","new","이동").is_err());
+        let next=change_with_product_category(&before,"a","이동",Some("b"),false,false,"","new","기존 상품").unwrap();
+        assert_eq!(next["state"]["products"][0]["categories"],json!(["new","c"]));
+        assert_eq!(next["state"]["products"][0]["price"],3000);
+        assert_eq!(next["state"]["products"][1]["categories"],json!(["a"]));
+        assert_eq!(next["state"]["products"][2],before["products"][2]);
+        assert_eq!(next["state"]["orders"],before["orders"]);
+        assert!(direct_product_ids(&next["state"],"b").unwrap().is_empty());
+        assert_eq!(before["products"][0]["categories"],json!(["b","c"]));
+    }
     #[test]
     fn category_cross_catalog_move_rejects_existing_product_mismatch(){
         let state=json!({

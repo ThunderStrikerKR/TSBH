@@ -130,6 +130,8 @@ pub fn reception_recipient_navigator(
                     .halign(Align::Center)
                     .sense(if clipped{Sense::click()}else{Sense::hover()})
             );
+            #[cfg(test)]
+            crate::ui_test_support::record_control_response("recipient navigation label",&label,segments.clip_rect(),None);
             let label=overflow_tooltip(label,clipped,display);
             if clipped{
                 crate::overlay::show_menu(&label,None,|popup|{
@@ -403,6 +405,7 @@ pub fn date_calendar(
 #[cfg(test)]
 mod date_navigation_segmented_control_tests{
     use super::*;
+    use crate::ui_layout::geometry::SharedUiClipExt as _;
 
     #[test]
     fn shared_navigation_child_retains_id_rect_clip_and_parent_cursor(){
@@ -530,7 +533,7 @@ mod date_navigation_segmented_control_tests{
             assert!(output.shapes.iter().any(|paint|
                 matches!(&paint.shape,egui::Shape::LineSegment{points,stroke}
                     if *points==endpoints && (stroke.width-1.8).abs()<0.01
-                        && stroke.color==theme::TEXT)
+                        && stroke.color==theme::text_ink(theme::TextRole::Value,theme::TextState::Normal))
             ),"missing centered count symbol stroke: {endpoints:?}");
         }
         let source=include_str!("navigation.rs");
@@ -544,12 +547,12 @@ mod date_navigation_segmented_control_tests{
     #[test]
     fn count_stepper_palette_distinguishes_actions_from_editor_and_disabled_end_stops(){
         let (_,fill,ink,_)=crate::button::action_style(theme::ButtonRole::Standard,true,false);
-        assert_eq!((fill,ink),(theme::RAISED,theme::TEXT));
+        assert_eq!((fill,ink),(theme::surface_palette(theme::SurfaceRole::Button,theme::VisualState::Normal).fill,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)));
         let (_,fill,ink,_)=crate::button::action_style(theme::ButtonRole::Standard,false,false);
-        assert_eq!((fill,ink),(theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_TEXT));
-        assert!(theme::RAISED.r()>theme::INPUT.r());
-        assert!(theme::INPUT.r()>theme::DISABLED_ACTION_BG.r());
-        assert!(theme::TEXT.r()>theme::DISABLED_ACTION_TEXT.r());
+        assert_eq!((fill,ink),(theme::surface_palette(theme::SurfaceRole::Button,theme::VisualState::Disabled).fill,theme::text_ink(theme::TextRole::Value,theme::TextState::Disabled)));
+        assert!(theme::surface_palette(theme::SurfaceRole::Button,theme::VisualState::Normal).fill.r()>theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill.r());
+        assert!(theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill.r()>theme::surface_palette(theme::SurfaceRole::Button,theme::VisualState::Disabled).fill.r());
+        assert!(theme::text_ink(theme::TextRole::Value,theme::TextState::Normal).r()>theme::text_ink(theme::TextRole::Value,theme::TextState::Disabled).r());
     }
 
     #[test]

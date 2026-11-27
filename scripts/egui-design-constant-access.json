@@ -17,17 +17,13 @@
       ]
     },
     "BORDER": {
-      "decision": "foundation",
+      "decision": "internalized",
       "owner": "theme.rs",
       "note": "General shared composition / role token; not component-exclusive"
     },
     "BUTTON_HOVER_BG": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "button/mod.rs",
-        "highlight/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "BUTTON_HOVER_BORDER_WIDTH": {
       "decision": "restricted",
@@ -38,27 +34,16 @@
       ]
     },
     "BUTTON_HOVER_LIGHT_BG": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "button/mod.rs",
-        "highlight/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "BUTTON_HOVER_LIGHT_BORDER": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "highlight/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "BUTTON_HOVER_TINT": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "button/mod.rs",
-        "highlight/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "CALENDAR_DAY_SIZE": {
       "decision": "internalized",
@@ -139,27 +124,16 @@
       "note": "private component token"
     },
     "DISABLED_ACTION_BG": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "button/mod.rs",
-        "navigation.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "DISABLED_ACTION_BORDER": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "button/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "DISABLED_ACTION_TEXT": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "button/mod.rs",
-        "navigation.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "DOCK_SPLITTER_HOVER_LINE": {
       "decision": "restricted",
@@ -176,12 +150,12 @@
       ]
     },
     "ERROR_BORDER": {
-      "decision": "foundation",
+      "decision": "internalized",
       "owner": "theme.rs",
       "note": "General shared composition / role token; not component-exclusive"
     },
     "ERROR_TEXT": {
-      "decision": "foundation",
+      "decision": "internalized",
       "owner": "theme.rs",
       "note": "General shared composition / role token; not component-exclusive"
     },
@@ -375,11 +349,8 @@
       ]
     },
     "MANAGEMENT_DROPDOWN_HOVER_BG": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "highlight/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT": {
       "decision": "internalized",
@@ -394,11 +365,8 @@
       "note": "private component token"
     },
     "MANAGEMENT_DROPDOWN_SELECTED_BG": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "highlight/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "MANAGEMENT_SEARCHABLE_POPUP_MIN_WIDTH": {
       "decision": "internalized",
@@ -443,11 +411,8 @@
       ]
     },
     "MANUAL_ASSIGNMENT_TINT": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "highlight/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "MODAL_BACKDROP_ALPHA": {
       "decision": "internalized",
@@ -480,36 +445,20 @@
       "note": "private component token"
     },
     "ONE_TOUCH_BG": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "highlight/mod.rs",
-        "one_touch.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "ONE_TOUCH_TEXT": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "highlight/mod.rs",
-        "one_touch.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "ONE_TOUCH_TINT": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "highlight/mod.rs",
-        "one_touch.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "ORANGE_EMPHASIS_TEXT": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "dropdown/mod.rs",
-        "highlight/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS": {
       "decision": "restricted",
@@ -525,18 +474,12 @@
       "note": "General shared composition / role token; not component-exclusive"
     },
     "RECEPTION_CLIENT_SUMMARY_BG": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "card/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "RECEPTION_CLIENT_SUMMARY_BORDER": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "card/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "RECEPTION_ITEMS_AMOUNT_MAX_WIDTH": {
       "decision": "restricted",
@@ -580,11 +523,8 @@
       ]
     },
     "RECEPTION_RECIPIENT_NAV_DISABLED_BG": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "button/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "RECEPTION_RECIPIENT_NAV_WIDTH": {
       "decision": "restricted",
@@ -594,11 +534,8 @@
       ]
     },
     "REQUIRED_INPUT_BORDER": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "highlight/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "REQUIRED_INPUT_STROKE_WIDTH": {
       "decision": "restricted",
@@ -608,14 +545,11 @@
       ]
     },
     "REQUIRED_INPUT_TINT": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "highlight/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "SECONDARY": {
-      "decision": "foundation",
+      "decision": "internalized",
       "owner": "theme.rs",
       "note": "General shared composition / role token; not component-exclusive"
     },
@@ -630,7 +564,7 @@
       "note": "General shared composition / role token; not component-exclusive"
     },
     "SELECTION": {
-      "decision": "foundation",
+      "decision": "internalized",
       "owner": "theme.rs",
       "note": "General shared composition / role token; not component-exclusive"
     },
@@ -647,23 +581,17 @@
       ]
     },
     "SUCCESS": {
-      "decision": "foundation",
+      "decision": "internalized",
       "owner": "theme.rs",
       "note": "General shared composition / role token; not component-exclusive"
     },
     "TABLE_HEADER_OUTLINE": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "table/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "WORKFLOW_CARD_BORDER": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "card/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "WORKFLOW_CARD_RADIUS": {
       "decision": "restricted",
@@ -674,11 +602,8 @@
       ]
     },
     "WORKFLOW_DETAIL_ROW_BORDER": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "card/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "WORKFLOW_DETAIL_ROW_PADDING_X": {
       "decision": "restricted",
@@ -688,11 +613,8 @@
       ]
     },
     "WORKFLOW_SELECTED_ROW_BORDER": {
-      "decision": "restricted",
-      "owner": "theme.rs",
-      "consumers": [
-        "card/mod.rs"
-      ]
+      "decision": "internalized",
+      "owner": "theme.rs"
     },
     "FONT_BODY": {
       "decision": "foundation",
