@@ -917,7 +917,7 @@ impl PreviewStore {
         tx.commit().map_err(|e|e.to_string())
     }
 
-    pub(crate) fn capture_recognition_learning(target:&str,projection:&Value)->Result<Value,String>{
+    pub(crate) fn capture_recognition_learning(target:&str,projection:&Value)->Result<(Value,Result<Option<Value>,String>),String>{
         use sha2::{Digest,Sha256};
         use std::collections::{BTreeMap,BTreeSet};
         // Diagnostic ratio only; not an automatic classification policy.
@@ -957,8 +957,8 @@ impl PreviewStore {
                 "candidates":candidates,"candidateCoverage":coverage,
                 "traceReferences":entry["traceReferences"],"traceIsTrainingEvidence":false}));
         }
-        if keys.is_empty(){return Ok(json!({"status":"no_eligible_context","skippedMissingCandidates":skipped,
-            "decisionChanged":false,"calibratedProbability":null}));}
+        if keys.is_empty(){return Ok((json!({"status":"no_eligible_context","skippedMissingCandidates":skipped,
+            "decisionChanged":false,"calibratedProbability":null}),Ok(None)));}
         if queries.len()>32{return Err("실시간 학습 조회 한도 초과".into());}
         let (mut conn,business,scope)=Self::learning_connection()?;
         let tx=conn.transaction().map_err(|e|e.to_string())?;
@@ -968,12 +968,13 @@ impl PreviewStore {
             let (frozen,_,(digests,verified))=crate::business_state::read_learning_inputs(&ids,|sources|{
                 let digests=learning_source_digests(&tx,sources)?;
                 if digests.len()!=ids.len(){return Err("실시간 학습 원본 동기화 필요".into());}
-                let mut verified=BTreeMap::new();let mut fact_count=0usize;
+                let mut verified=BTreeMap::new();let mut fact_count=0usize;let mut memory_bytes=0usize;
                 for (id,digest) in &digests{
                     let facts=recognition_learning_store::verified_facts(&tx,&scope,id,digest)?
                         .filter(|f|f.len()>0).ok_or("실시간 학습 원본 동기화 필요")?;
                     fact_count=fact_count.saturating_add(facts.len());
-                    if fact_count>2_000_000{return Err("실시간 검증 기여량 한도 초과".into());}
+                    memory_bytes=memory_bytes.saturating_add(facts.memory_bytes());
+                    if fact_count>2_000_000||memory_bytes>64*1024*1024{return Err("실시간 검증 기여량 한도 초과".into());}
                     verified.insert(id.clone(),facts);
                 }
                 Ok((Vec::new(),(digests,verified)))
@@ -997,6 +998,28 @@ impl PreviewStore {
                 "candidates":report["candidates"],"contextQuality":report["contextQuality"],
                 "calibratedProbability":null}));
         }
+        // Both the support and selected model use the same audit snapshot.
+        // Reuse verified overlap; independently check only model-only sources.
+        let selected_model=(||->Result<Option<Value>,String>{
+            if !blend_registry_exists(&tx)?{return Ok(None);}
+            let Some(id)=selected_blend_model(&tx,&scope)?else{return Ok(None);};
+            let model=read_registered_blend_model(&tx,&scope,&id)?;
+            let expected=model["sourceDigests"].as_object().ok_or("모델 원본 지문 누락")?;
+            if expected.contains_key(target){return Err("결합 모델 자기 주문 포함".into());}
+            let extra=remaining_model_sources(expected,&digests)?;
+            if !extra.is_empty(){
+                let (source,_,actual)=crate::business_state::read_learning_inputs(&extra,|sources|{
+                    let (misses,actual)=select_learning_changes(&tx,&scope,sources)?;
+                    if !misses.is_empty(){return Err("결합 모델 원본 동기화 필요".into());}
+                    Ok((Vec::new(),actual))
+                })?;
+                if actual.len()!=extra.len()||actual.iter().any(|(id,d)|expected.get(id).and_then(Value::as_str)!=Some(d.as_str()))||
+                    crate::business_state::read_learning_sources(&extra)?!=source{
+                    return Err("결합 모델 원본 변경".into());
+                }
+            }
+            Ok(Some(model))
+        })();
         if (!ids.is_empty()&&crate::business_state::read_learning_sources(&ids)?!=frozen) ||
             crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
             return Err("실시간 학습 조회 중 원본 변경".into());
@@ -1012,20 +1035,7 @@ impl PreviewStore {
             "contexts":results,"contextSelection":selection,"sourceDigestsMatched":true,"fullHistoryReconciled":false,
             "calibratedProbability":null,"eligibleForAutomaticDecision":false,"decisionChanged":false});
         tx.commit().map_err(|e|e.to_string())?;
-        Ok(result)
-    }
-
-    // Read only the explicitly selected local registry model. No file fallback,
-    // no automatic selection of newer revisions, and no writes on this path.
-    pub(crate) fn read_blend_shadow_model(target:&str)->Result<Option<Value>,String>{
-        let (mut conn,business,scope)=Self::learning_connection()?;
-        let tx=conn.transaction().map_err(|e|e.to_string())?;
-        if !blend_registry_exists(&tx)?{return Ok(None);}
-        let Some(id)=selected_blend_model(&tx,&scope)?else{return Ok(None);};
-        let model=read_registered_blend_model(&tx,&scope,&id)?;
-        verify_blend_model_sources(&tx,&scope,&business,&model,Some(target))?;
-        tx.commit().map_err(|e|e.to_string())?;
-        Ok(Some(model))
+        Ok((result,selected_model))
     }
 
     fn blend_model_registry(input:&Value)->Result<Value,String>{
@@ -1524,6 +1534,15 @@ impl PreviewStore {
 /// Read exact stored audit bytes through the existing order/time index.
  /// No serde parse, string copies, or event JSON construction on cache hits.
 type LearningDigests=std::collections::BTreeMap<String,String>;
+fn remaining_model_sources(expected:&serde_json::Map<String,Value>,verified:&LearningDigests)->Result<Vec<String>,String>{
+    let mut extra=Vec::new();
+    for (id,digest) in expected{
+        if let Some(actual)=verified.get(id){
+            if digest.as_str()!=Some(actual.as_str()){return Err("결합 모델 원본 변경".into());}
+        }else{extra.push(id.clone());}
+    }
+    Ok(extra)
+}
 const AUTO_RETRAIN_MIN_ORDERS:usize=60;
 const AUTO_RETRAIN_NEW_ORDERS:usize=20;
 fn auto_retrain_status(status:&str,n:usize)->Value{
@@ -2215,6 +2234,17 @@ mod ocr_layout_tests {
 #[cfg(test)]
 mod reception_edit_audit_tests {
     use super::*;
+    #[test]
+    fn runtime_model_verification_reuses_only_matching_shared_sources(){
+        let expected=json!({"shared":"a","model-only":"b"});
+        let expected=expected.as_object().unwrap();
+        let mut verified=LearningDigests::from([("shared".into(),"a".into()),("support-only".into(),"c".into())]);
+        assert_eq!(remaining_model_sources(expected,&verified).unwrap(),vec!["model-only".to_owned()]);
+        verified.insert("model-only".into(),"b".into());
+        assert!(remaining_model_sources(expected,&verified).unwrap().is_empty());
+        verified.insert("shared".into(),"changed".into());
+        assert!(remaining_model_sources(expected,&verified).is_err());
+    }
     #[test]
     fn governance_never_promotes_on_missing_coverage_or_normal_case_regression(){
         let alpha=0.0125;

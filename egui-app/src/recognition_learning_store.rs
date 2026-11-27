@@ -23,6 +23,10 @@ pub(super) type Fact=(String,String,String,String,i64);
 pub(super) struct VerifiedFacts(Vec<Fact>);
 impl VerifiedFacts{
     pub(super) fn len(&self)->usize{self.0.len()}
+    pub(super) fn memory_bytes(&self)->usize{
+        self.0.iter().fold(self.0.capacity().saturating_mul(std::mem::size_of::<Fact>()),|n,(f,k,m,c,_)|
+            n.saturating_add(f.capacity()).saturating_add(k.capacity()).saturating_add(m.capacity()).saturating_add(c.capacity()))
+    }
     fn as_slice(&self)->&[Fact]{&self.0}
 }
 
@@ -990,6 +994,20 @@ mod recognition_learning_store_tests{
             "candidates":["address","name"],"explicitToWeakRatio":3.0});
         let tx=c.transaction().unwrap();
         let result=assess_support(&tx,"db",&input).unwrap();
+        let keys=BTreeSet::from([input["contextKey"].as_str().unwrap().to_owned()]);
+        let members=shadow_capture_contexts(&tx,"db","target",&keys).unwrap();
+        let mut verified=BTreeMap::new();
+        for id in members.values().flatten(){
+            let digest:String=tx.query_row("SELECT fingerprint FROM recognition_learning_fingerprints WHERE scope='db' AND order_id=?1",
+                [id],|r|r.get(0)).unwrap();
+            verified.insert(id.clone(),verified_facts(&tx,"db",id,&digest).unwrap().unwrap());
+        }
+        assert_eq!(verified.len(),2);
+        assert_eq!(assess_verified_support(&input,&members,&verified).unwrap(),result);
+        let mut narrowed=input.clone();narrowed["candidates"]=json!(["address"]);
+        assert_eq!(assess_verified_support(&narrowed,&members,&verified).unwrap(),assess_support(&tx,"db",&narrowed).unwrap());
+        let mut missing=verified;let first=missing.keys().next().unwrap().clone();missing.remove(&first);
+        assert!(assess_verified_support(&input,&members,&missing).is_err());
         assert_eq!(result["contextOrders"],2);
         assert_eq!(result["supportedOrders"],2);
         assert_eq!(result["explicitOnlyOrders"],1);

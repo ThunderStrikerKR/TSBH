@@ -328,11 +328,11 @@ impl BandoGateway for LocalGateway {
         let result=(||->Result<Value,String>{
             let contexts=recognition::execute("project_owner_contexts",
                 serde_json::json!({"raw":raw,"initialAnalysis":first}))?;
-            let mut shadow=PreviewStore::capture_recognition_learning(order,&contexts)?;
+            let (mut shadow,selected_model)=PreviewStore::capture_recognition_learning(order,&contexts)?;
             // Always preserve the original recognition. An absent or rejected
             // developer model is a recorded abstention, never a parser error.
             let combined=(||->Result<Value,String>{
-                let Some(model)=PreviewStore::read_blend_shadow_model(order)?else{
+                let Some(model)=selected_model?else{
                     return Ok(serde_json::json!({"status":"no_configured_model","decisionChanged":false,
                         "eligibleForAutomaticDecision":false}));
                 };
