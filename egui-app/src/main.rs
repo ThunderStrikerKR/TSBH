@@ -970,11 +970,34 @@ fn kakao_safe_modal_work_area(
     Rect::from_min_max(egui::pos2(left,top),egui::pos2(right,bottom))
 }
 
+// Only exact saved analysis inputs may reuse the hovered review projection.
+// Do not store a second WorkingReception or its edit/audit history.
+struct PendingReviewBasis {
+    analysis_raw:Option<String>,evidence:Option<serde_json::Value>,view:Option<serde_json::Value>,
+    manual:Option<serde_json::Value>,client_match:Option<serde_json::Value>,
+    client_id:Option<String>,order_type:String,client_selection:Option<String>,
+}
+impl PendingReviewBasis {
+    fn new(draft:&WorkingReception)->Self{
+        Self{analysis_raw:draft.analysis_raw.clone(),evidence:draft.analysis_evidence.clone(),
+            view:draft.analysis_view.clone(),manual:draft.manual_model.clone(),
+            client_match:draft.client_match.clone(),client_id:draft.client_id.clone(),
+            order_type:draft.order_type.clone(),client_selection:draft.client_selection.clone()}
+    }
+    fn matches(&self,draft:&WorkingReception)->bool{
+        self.analysis_raw==draft.analysis_raw&&self.evidence==draft.analysis_evidence&&
+        self.view==draft.analysis_view&&self.manual==draft.manual_model&&
+        self.client_match==draft.client_match&&self.client_id==draft.client_id&&
+        self.order_type==draft.order_type&&self.client_selection==draft.client_selection
+    }
+}
 // Read-only render projection; do not duplicate receipt audit history.
 struct PendingDisplay {
     id:String,raw:String,recognition:serde_json::Value,
     pricing_preview:Option<serde_json::Value>,spans:Vec<source_highlight::LinkedSpan>,
     identity_input:Option<serde_json::Value>,
+    review_basis:PendingReviewBasis,
+    review_analysis:Option<reception_service::ReceptionAnalysis>,
 }
 struct WorkflowSourceDisplay{
     board:Arc<workflow_board::BoardSnapshot>,order_id:String,raw:String,
@@ -1065,6 +1088,7 @@ struct BandoEgui {
     working_sync_error: Option<String>,
     analysis: Option<reception_service::ReceptionAnalysis>,
     review_panel: review_panel::ReviewPanel,
+    pending_review_panel:review_panel::ReviewPanel,
     analysis_error: Option<String>,
     selected_recipient: usize,
     requested_recipient_focus:Option<(String,String)>,
@@ -1203,6 +1227,7 @@ impl BandoEgui {
             working_sync_error: None,
             analysis: None,
             review_panel: review_panel::ReviewPanel::default(),
+            pending_review_panel:review_panel::ReviewPanel::default(),
             analysis_error: None,
             selected_recipient: 0,
             requested_recipient_focus:None,
@@ -1593,26 +1618,8 @@ impl BandoEgui {
            row.analysis_raw.as_deref()!=Some(self.raw_source.as_str()) {
             return false;
         }
-        let (Some(evidence),Some(matched),Some(view))=(
-            row.analysis_evidence.as_ref(),
-            row.client_match.as_ref(),
-            row.analysis_view.as_ref(),
-        )else{return false};
-        let mut recognition=view.get("recognition")
-            .filter(|value|value.get("recipients")
-                .is_some_and(serde_json::Value::is_array))
-            .cloned().unwrap_or_else(||evidence.clone());
-        if let Some(rows)=row.manual_model.as_ref()
-            .and_then(|model|model.pointer("/model/rows"))
-            .filter(|rows|rows.is_array()) {
-            recognition["recipients"]=rows.clone();
-        }
-        if reception_service::scope_display_recognition(&row.id,&mut recognition).is_err(){
-            return false;
-        }
-        let Some(restored)=reception_service::ReceptionAnalysis::from_cached_view(
-            &self.raw_source,recognition,matched.clone(),view
-        )else{return false};
+        let Some(restored)=reception_service::ReceptionAnalysis::from_working_source(row)
+            else{return false;};
         self.analysis=Some(restored);
         self.analysis_pending=false;
         self.analysis_error=None;
@@ -1757,6 +1764,7 @@ impl BandoEgui {
         self.committed_draft_handoff=None;
         self.pending_stage_display=None;
         self.pending_display=None;
+        self.pending_review_panel.clear();
         if was_active{
             self.active_id=None;
             self.raw_source.clear();
@@ -1967,6 +1975,7 @@ impl BandoEgui {
             .or(draft.analysis_evidence.as_ref());
         let matches=cache.as_ref().is_some_and(|cached|
             cached.id==draft.id && cached.raw==draft.raw &&
+            cached.review_basis.matches(draft) &&
             cached.pricing_preview.as_ref()==draft.pricing_preview.as_ref() &&
             {
                 let input=cached.identity_input.as_ref().unwrap_or(&cached.recognition);
@@ -1991,6 +2000,8 @@ impl BandoEgui {
             *cache=Some(Arc::new(PendingDisplay{
                 id:draft.id.clone(),raw:draft.raw.clone(),recognition,
                 pricing_preview:draft.pricing_preview.clone(),spans,identity_input,
+                review_basis:PendingReviewBasis::new(draft),
+                review_analysis:reception_service::ReceptionAnalysis::from_working_source(draft),
             }));
         }
         cache.as_ref().cloned()
@@ -8062,6 +8073,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 .filter(|quote|quote["sourceRaw"].as_str()==Some(draft.raw.as_str()));
             let quote_index=preview.map(indexed_quote);
             let mut next_target=None;
+            let preview_source=self.drafts.iter().find(|row|row.id==draft.id);
+            self.pending_review_panel.refresh_preview(ui.ctx(),Arc::clone(&self.gateway),
+                preview_source,draft.review_analysis.as_ref());
             ui.scope_builder(
                 UiBuilder::new().id_salt("pending-hover-review")
                     .max_rect(review_rect).layout(Layout::top_down(Align::Min)),
@@ -8072,20 +8086,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Self::section(pane,"확인할 내용",review_height,|ui|{
                         crate::ui_layout::reception_section_scroll(ui,review_height,
                             ("pending-hover-review-issues",draft.id.as_str()),|issues|{
-                                let mut has_notice=false;
-                                if let Some(rows)=recognition.get("issues")
-                                    .and_then(serde_json::Value::as_array){
-                                    for item in rows{
-                                        if let Some(message)=item.as_str().filter(|s|!s.trim().is_empty()){
-                                            has_notice=true;
-                                            crate::status_notice::reception_preview_status(issues,message);
-                                        }
-                                    }
-                                }
-                                if !has_notice{
+                                if let (Some(source),Some(analysis))=(preview_source,draft.review_analysis.as_ref()){
+                                    self.pending_review_panel.show_preview(issues,source,analysis,index);
+                                }else{
                                     crate::status_notice::management_body_state_overlay(
                                         issues,issues.available_rect_before_wrap(),
-                                        Some("미리보기 · 주문을 선택해 확인하세요.")
+                                        Some("분석 결과가 준비되면 확인할 내용을 표시합니다.")
                                     );
                                 }
                             });
@@ -9493,6 +9499,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let was_active=self.active_id.as_deref()==Some(id);
         self.drafts.retain(|row|row.id!=id);
         self.pending_display=None;
+        self.pending_review_panel.clear();
         if was_active{
             self.client_change=None;
             self.inline_editor=None;
@@ -10385,6 +10392,7 @@ impl eframe::App for BandoEgui {
             self.client_summaries.clear();
             self.workflow_snapshot=None;
             self.pending_display=None;
+        self.pending_review_panel.clear();
             self.workflow_source_display=None;
             source_highlight::clear_visual_cache();
             clear_quote_display_cache();
