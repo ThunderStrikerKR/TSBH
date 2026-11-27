@@ -98,6 +98,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "calibrate_shadow_candidates" => observations::calibrate_shadow_candidates(&payload),
         "learn_blend_weights" => observations::learn_blend_weights(&payload),
         "learn_field_blend_weights" => observations::learn_field_blend_weights(&payload),
+        "run_field_blend_shadow" => observations::run_field_blend_shadow(&payload),
         "run_blend_shadow" => observations::run_blend_shadow(&payload),
         "evaluate_combined_confirmation" => observations::evaluate_combined_confirmation(&payload),
         "compare_registered_models" => observations::compare_registered_models(&payload),
