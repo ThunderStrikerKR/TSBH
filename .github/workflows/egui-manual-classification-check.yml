@@ -161,6 +161,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml learning_raw_ -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml learning_two_database_disk_replay -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml learning_lifecycle_excludes_cancelled_deleted_and_partial_orders -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml recognition_learning_lifecycle_tests -- --nocapture

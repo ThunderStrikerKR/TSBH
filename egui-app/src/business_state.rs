@@ -468,15 +468,23 @@ pub(crate) fn read_learning_inputs<T>(ids:&[String],
     choose:impl FnOnce(&LearningSources)->Result<(Vec<String>,T),String>
 )->Result<(LearningSources,Vec<Value>,T),String>{
     let conn=open_business_read_snapshot()?;
-    let sources=learning_sources(&conn,ids)?;
+    let result=learning_inputs_from_snapshot(&conn,ids,choose)?;
+    conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+    Ok(result)
+}
+
+// The caller owns the read transaction. Shared with isolated integration tests.
+pub(crate) fn learning_inputs_from_snapshot<T>(conn:&Connection,ids:&[String],
+    choose:impl FnOnce(&LearningSources)->Result<(Vec<String>,T),String>
+)->Result<(LearningSources,Vec<Value>,T),String>{
+    let sources=learning_sources(conn,ids)?;
     let (misses,extra)=choose(&sources)?;
     if misses.iter().any(|id|!sources.get(id).is_some_and(|s|s.active)){
         return Err("학습 캐시 미스 범위 오류".into());
     }
-    let mut orders=if misses.is_empty(){Vec::new()}else{owner_snapshot_batch(&conn,&misses)?};
+    let mut orders=if misses.is_empty(){Vec::new()}else{owner_snapshot_batch(conn,&misses)?};
     for order in &mut orders{order["learningActive"]=Value::Bool(true);}
     if orders.len()!=misses.len(){return Err("학습 캐시 미스 주문 누락".into());}
-    conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
     Ok((sources,orders,extra))
 }
 
