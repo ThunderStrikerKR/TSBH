@@ -872,26 +872,38 @@ impl PreviewStore {
         let (mut conn,business,scope)=Self::learning_connection()?;
         let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
         recognition_learning_store::prepare(&tx)?;
-        let frozen=crate::business_state::read_owner_snapshots(ids)?;
+        let frozen=crate::business_state::read_learning_snapshots(ids)?;
         let audit_ids=frozen.iter().filter(|order|
+            order["learningActive"]==true &&
             order["confirmationSnapshot"]["recognitionBaseline"]["schemaVersion"]==1 &&
             !order["deletedAt"].as_str().is_some_and(|v|!v.trim().is_empty()))
             .map(|order|order["id"].as_str().map(str::to_owned).ok_or("확정 주문 ID 누락"))
             .collect::<Result<Vec<_>,_>>()?;
         let mut audit=if audit_ids.is_empty(){std::collections::BTreeMap::new()}
             else{query_reception_audit_batch(&tx,&audit_ids)?};
-        let mut orders=frozen.clone();
+        let mut orders=frozen.iter().filter(|o|o["learningActive"]==true).cloned().collect::<Vec<_>>();
         for order in &mut orders{
             let id=order["id"].as_str().ok_or("확정 주문 ID 누락")?;
             if let Some(events)=audit.remove(id){order["recognitionAuditEvents"]=json!(events);}
         }
         let report=recognition_learning_store::synchronize(&tx,&scope,ids,&orders,summarize)?;
-        if crate::business_state::read_owner_snapshots(ids)?!=frozen ||
+        if crate::business_state::read_learning_snapshots(ids)?!=frozen ||
             crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
             return Err("학습 갱신 중 확정 주문 또는 업무 DB가 변경되었습니다.".into());
         }
         tx.commit().map_err(|e|e.to_string())?;
         Ok(report)
+    }
+
+    /// Recovery includes ledger-only IDs, so physically removed orders are
+    /// reconciled as well as new or changed frozen confirmations.
+    pub(crate) fn recognition_learning_page(after:&str,limit:usize)->Result<Vec<String>,String>{
+        let (conn,_,scope)=Self::learning_connection()?;
+        recognition_learning_store::prepare(&conn)?;
+        let stored=recognition_learning_store::order_page(&conn,&scope,after,limit)?;
+        let business=crate::business_state::learning_order_page(after,limit)?;
+        let combined=stored.into_iter().chain(business).collect::<std::collections::BTreeSet<_>>();
+        Ok(combined.into_iter().take(limit).collect())
     }
 
     pub(crate) fn rebuild_recognition_learning()->Result<Value,String>{

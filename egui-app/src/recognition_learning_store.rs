@@ -141,6 +141,16 @@ pub(super) fn synchronize(tx:&Transaction<'_>,scope:&str,ids:&[String],orders:&[
         "automaticDecisionEnabled":false,"fullHistoryReconciled":false}))
 }
 
+pub(super) fn order_page(conn:&Connection,scope:&str,after:&str,limit:usize)->Result<Vec<String>,String>{
+    if !(1..=25).contains(&limit){return Err("학습 원장 페이지 범위 오류".into());}
+    let mut stmt=conn.prepare("SELECT order_id FROM recognition_learning_orders
+        WHERE scope=?1 AND feature_version=?2 AND order_id>?3 ORDER BY order_id LIMIT ?4")
+        .map_err(|e|e.to_string())?;
+    let rows=stmt.query_map(params![scope,FEATURE_VERSION,after,limit as i64],|r|r.get::<_,String>(0))
+        .map_err(|e|e.to_string())?;
+    rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+}
+
 /// Rebuild only this scope/version from its persisted per-order ledger.
 /// This repairs materialized totals, but cannot discover unsynchronized
 /// business orders. The entire replacement is transactional.

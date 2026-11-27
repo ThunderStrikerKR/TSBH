@@ -11058,6 +11058,9 @@ fn main() -> eframe::Result<()> {
             std::process::exit(2);
         }
     };
+    // Start only for a validated local business connection. The worker has
+    // no UI state and never changes recognition decisions or business rows.
+    gateway::start_recognition_learning_worker();
     // Both the taskbar icon and the static left wordmark derive from the
     // original Tauri icon, not a re-created/re-designed logo.
     let existing_icon = match eframe::icon_data::from_png_bytes(

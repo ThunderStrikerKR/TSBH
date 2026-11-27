@@ -916,6 +916,12 @@ impl BandoGateway for LocalGateway {
         // projection verification. A concurrent update cannot be mistaken
         // for a failed commit after the employee's own write succeeded.
         checkpoint("write_verify_commit");
+        if matches!(action,"advance_group"|"undo_group"|"delete_group"|"restore_group"){
+            let ids=learning_lifecycle_order_ids(&verified,&args);
+            if !ids.is_empty(){
+                if let Some(sender)=LEARNING_WORKER.get(){let _=sender.try_send(ids);}
+            }
+        }
         Ok(verified)
     }
     // The egui intake is a local autosaved draft, NOT a separate
@@ -1070,6 +1076,74 @@ pub(crate) fn read_recognition_owner_statistics(ids:&[String])->Result<Value,Str
     summary["requestedUniqueOrders"]=serde_json::json!(requested);
     summary["notFoundOrders"]=serde_json::json!(missing);
     Ok(summary)
+}
+
+// In-process wakeups are advisory. A bounded, repeated reconciliation scan
+// repairs lost wakeups, crashes after the business commit and other writers.
+static LEARNING_WORKER:std::sync::OnceLock<std::sync::mpsc::SyncSender<Vec<String>>>=std::sync::OnceLock::new();
+
+fn learning_lifecycle_order_ids(state:&Value,args:&Value)->Vec<String>{
+    let group=args["groupId"].as_str();
+    let mut ids=std::collections::BTreeSet::new();
+    if let Some(id)=args["draft"]["id"].as_str().filter(|id|!id.is_empty()){ids.insert(id.to_owned());}
+    if let Some(shipments)=state["workflow"]["shipments"].as_array(){
+        for ship in shipments{
+            if group.is_some()&&ship["groupId"].as_str()==group{
+                if let Some(id)=ship["orderId"].as_str().filter(|id|!id.is_empty()){ids.insert(id.to_owned());}
+            }
+        }
+    }
+    ids.into_iter().collect()
+}
+
+pub(crate) fn start_recognition_learning_worker(){
+    if LEARNING_WORKER.get().is_some() ||
+        !std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into()).trim().eq_ignore_ascii_case("local") ||
+        crate::business_state::authorized_business_write_path().is_err(){return;}
+    let (sender,receiver)=std::sync::mpsc::sync_channel::<Vec<String>>(64);
+    if LEARNING_WORKER.set(sender).is_err(){return;}
+    std::thread::spawn(move||{
+        use std::time::{Duration,Instant};
+        let mut cursor=String::new();
+        let mut next_scan=Instant::now();
+        loop{
+            match receiver.recv_timeout(Duration::from_secs(2)){
+                Ok(ids)=>{
+                    for chunk in ids.chunks(16){
+                        if sync_recognition_learning(chunk).is_err(){
+                            eprintln!("[BANDO HUB] 학습 통계 갱신 지연: 정기 재동기화 대상입니다.");
+                        }
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)=>{},
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected)=>break,
+            }
+            if Instant::now()<next_scan{continue;}
+            match PreviewStore::recognition_learning_page(&cursor,16){
+                Ok(ids) if ids.is_empty()=>{
+                    cursor.clear();
+                    next_scan=Instant::now()+Duration::from_secs(60);
+                }
+                Ok(ids)=>{
+                    // One oversized or damaged order must not prevent other
+                    // independent samples from being reconciled.
+                    if sync_recognition_learning(&ids).is_err(){
+                        for id in &ids{
+                            if sync_recognition_learning(std::slice::from_ref(id)).is_err(){
+                                eprintln!("[BANDO HUB] 학습 근거 재동기화 실패: 이후 순회에서 재검증합니다.");
+                            }
+                        }
+                    }
+                    cursor=ids.last().cloned().unwrap_or_default();
+                    next_scan=Instant::now()+Duration::from_secs(2);
+                }
+                Err(_)=>{
+                    eprintln!("[BANDO HUB] 학습 원장 조회 지연: 다시 검증합니다.");
+                    next_scan=Instant::now()+Duration::from_secs(60);
+                }
+            }
+        }
+    });
 }
 
 /// Explicit developer maintenance, never called during analysis or UI rendering.

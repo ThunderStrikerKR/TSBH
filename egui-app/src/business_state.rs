@@ -358,6 +358,72 @@ fn owner_snapshot_batch(conn:&Connection,ids:&[String])->Result<Vec<Value>,Strin
     }
     Ok(orders)
 }
+// The original frozen confirmation is retained even after stage-one undo.
+ // Only currently active, fully stage-one-approved, non-archived shipments
+ // contribute a whole-order sample. A partly deleted/undone split order is
+ // excluded until all its live shipments are eligible again.
+fn attach_learning_lifecycle(conn:&Connection,orders:&mut [Value])->Result<(),String>{
+    // v2 keeps workflow groups and shipments in the physical app_state
+    // envelope. open_business_read_snapshot rejects other schema versions.
+    let valid:i64=conn.query_row("SELECT count(*) FROM app_state WHERE id=1
+        AND json_type(payload,'$.workflow.groups')='array'
+        AND json_type(payload,'$.workflow.shipments')='array'",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+    if valid!=1{return Err("학습 주문 업무 단계 자료 누락".into());}
+    let ids=orders.iter().map(|o|o["id"].as_str().ok_or("학습 주문 ID 누락"))
+        .collect::<Result<std::collections::BTreeSet<_>,_>>()?;
+    let mut eligibility=std::collections::BTreeMap::<String,bool>::new();
+    if !ids.is_empty(){
+        let placeholders=vec!["?";ids.len()].join(",");
+        let sql=format!("WITH groups AS (
+            SELECT json_extract(g.value,'$.id') AS id,
+              coalesce(json_extract(g.value,'$.deletedAt'),'') AS deleted
+            FROM app_state a,json_each(a.payload,'$.workflow.groups') g WHERE a.id=1),
+            shipments AS (
+            SELECT json_extract(s.value,'$.orderId') AS order_id,
+              json_extract(s.value,'$.groupId') AS group_id,
+              json_extract(s.value,'$.step') AS step
+            FROM app_state a,json_each(a.payload,'$.workflow.shipments') s
+            WHERE a.id=1 AND coalesce(json_extract(s.value,'$.legacyArchived'),0)=0)
+            SELECT s.order_id,MIN(CASE WHEN g.id IS NOT NULL AND g.deleted=''
+              AND typeof(s.step)='integer' AND s.step BETWEEN 1 AND 4 THEN 1 ELSE 0 END)
+            FROM shipments s LEFT JOIN groups g ON g.id=s.group_id
+            WHERE s.order_id IN ({placeholders}) GROUP BY s.order_id");
+        let mut stmt=conn.prepare(&sql).map_err(|e|e.to_string())?;
+        let rows=stmt.query_map(rusqlite::params_from_iter(ids.iter().copied()),|r|
+            Ok((r.get::<_,String>(0)?,r.get::<_,i64>(1)?))).map_err(|e|e.to_string())?;
+        for row in rows{let (id,active)=row.map_err(|e|e.to_string())?;eligibility.insert(id,active==1);}
+    }
+    drop(ids);
+    for order in orders{
+        let active=order["id"].as_str().and_then(|id|eligibility.get(id)).copied().unwrap_or(false);
+        order["learningActive"]=Value::Bool(active);
+    }
+    Ok(())
+}
+
+pub(crate) fn read_learning_snapshots(ids:&[String])->Result<Vec<Value>,String>{
+    let conn=open_business_read_snapshot()?;
+    let mut orders=owner_snapshot_batch(&conn,ids)?;
+    attach_learning_lifecycle(&conn,&mut orders)?;
+    conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+    Ok(orders)
+}
+
+pub(crate) fn learning_order_page(after:&str,limit:usize)->Result<Vec<String>,String>{
+    if !(1..=25).contains(&limit){return Err("학습 주문 페이지 범위 오류".into());}
+    let conn=open_business_read_snapshot()?;
+    let result={
+        let mut stmt=conn.prepare("SELECT id FROM core_orders WHERE id>?1
+            AND json_extract(payload,'$.confirmationSnapshot.recognitionBaseline.schemaVersion')=1
+            ORDER BY id LIMIT ?2").map_err(|e|e.to_string())?;
+        let rows=stmt.query_map(rusqlite::params![after,limit as i64],|r|r.get::<_,String>(0))
+            .map_err(|e|e.to_string())?;
+        rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?
+    };
+    conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+    Ok(result)
+}
+
 pub(crate) fn read_owner_snapshots(ids:&[String])->Result<Vec<Value>,String>{
     let conn=open_business_read_snapshot()?;
     let orders=owner_snapshot_batch(&conn,ids)?;
@@ -370,6 +436,36 @@ pub(crate) fn read_owner_snapshots(ids:&[String])->Result<Vec<Value>,String>{
 #[cfg(test)]
 mod auto_database_location_tests {
     use super::*;
+    #[test]
+    fn learning_lifecycle_excludes_cancelled_deleted_and_partial_orders(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT NOT NULL)").unwrap();
+        let mut state=serde_json::json!({"workflow":{"groups":[{"id":"g"},{"id":"h"}],
+            "shipments":[{"orderId":"a","groupId":"g","step":1},
+                {"orderId":"a","groupId":"h","step":2},
+                {"orderId":"b","groupId":"g","step":0},
+                {"orderId":"c","groupId":"missing","step":2},
+                {"orderId":"d","groupId":"g","step":0,"legacyArchived":true}]}});
+        conn.execute("INSERT INTO app_state VALUES(1,?1)",[state.to_string()]).unwrap();
+        let mut orders=vec![serde_json::json!({"id":"a"}),serde_json::json!({"id":"b"}),
+            serde_json::json!({"id":"c"}),serde_json::json!({"id":"d"})];
+        attach_learning_lifecycle(&conn,&mut orders).unwrap();
+        assert_eq!(orders.iter().map(|o|o["learningActive"].as_bool().unwrap()).collect::<Vec<_>>(),
+            vec![true,false,false,false]);
+        state["workflow"]["groups"][1]["deletedAt"]=serde_json::json!("t");
+        conn.execute("UPDATE app_state SET payload=?1",[state.to_string()]).unwrap();
+        attach_learning_lifecycle(&conn,&mut orders).unwrap();
+        assert_eq!(orders[0]["learningActive"],false);
+        state["workflow"]["groups"][1]["deletedAt"]=Value::Null;
+        state["workflow"]["shipments"][1]["step"]=serde_json::json!(0);
+        conn.execute("UPDATE app_state SET payload=?1",[state.to_string()]).unwrap();
+        attach_learning_lifecycle(&conn,&mut orders).unwrap();
+        assert_eq!(orders[0]["learningActive"],false);
+        state["workflow"]["shipments"][1]["step"]=serde_json::json!(1);
+        conn.execute("UPDATE app_state SET payload=?1",[state.to_string()]).unwrap();
+        attach_learning_lifecycle(&conn,&mut orders).unwrap();
+        assert_eq!(orders[0]["learningActive"],true);
+    }
     #[test]
     fn owner_snapshot_batch_reads_only_requested_frozen_snapshots(){
         let conn=Connection::open_in_memory().unwrap();
