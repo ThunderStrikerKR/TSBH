@@ -235,6 +235,20 @@ fn code_color_hint(text: &str, ps: &[&Value]) -> Option<(String,String,String)> 
     }
     None
 }
+/// Read-only learning proof for the existing model-attached abbreviation
+/// grammar. Verify the matching registered model and exact source overlap.
+pub(super) fn audit_attached_color(text:&str,item:&Value,source:(usize,usize))->Option<(String,(usize,usize))>{
+    let (model,color,matched)=code_color_hint(text,&[item])?;
+    if !model_names(item).iter().any(|name|model_key(name)==model_key(&model)){
+        return None;
+    }
+    let mut hits=text.match_indices(&matched);
+    let (start,part)=hits.next()?;
+    if hits.next().is_some(){return None;}
+    let end=start+part.len();
+    if start>=source.1||end<=source.0{return None;}
+    Some((color,(start,end)))
+}
 fn written_color(text: &str) -> Option<String> {
     for word in ["rose gold","로즈골드","cosmo black","cosmoblack","코스모블랙",
         "gold","골드","black","블랙","검정","gray","grey","그레이",
