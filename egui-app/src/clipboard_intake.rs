@@ -3,11 +3,9 @@
 //! PP-OCRv5 Python script/model contract as src-tauri/src/ocr.rs.
 //! No business decisions, DB writes or Tauri dependency live here.
 
-use std::{
-    fs, path::PathBuf, process::{Command, Stdio},
-    sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
-};
+use std::{sync::atomic::AtomicBool,time::{Duration,Instant}};
+#[cfg(windows)]
+use std::{fs,path::PathBuf,process::{Command,Stdio},sync::atomic::Ordering,time::{SystemTime,UNIX_EPOCH}};
 use arboard::Clipboard;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -148,6 +146,7 @@ impl ClipboardMonitor {
     }
 }
 
+#[cfg(any(windows,test))]
 fn classify_available(text_nonempty:bool,image_available:bool)->ClipboardKind{
     if text_nonempty{ClipboardKind::Text}
     else if image_available{ClipboardKind::Image}

@@ -753,7 +753,6 @@ pub struct ManualSourceBlockStyle {
     pub text:Color32,
     pub border:Color32,
     pub border_width:f32,
-    pub radius:f32,
 }
 
 #[derive(Clone, Debug)]
@@ -774,7 +773,6 @@ pub fn manual_source_block_style(
             text:SOURCE_ACTIVE_TEXT,
             border:SOURCE_ACTIVE_BORDER,
             border_width:ACTIVE_BORDER_WIDTH,
-            radius:theme::SOURCE_BLOCK_RADIUS,
         }
     } else if span.source_id.as_ref().is_some_and(|id|assigned_ids.contains(id)) {
         ManualSourceBlockStyle {
@@ -782,7 +780,6 @@ pub fn manual_source_block_style(
             text:theme::MANUAL_SOURCE_CLASSIFIED_TEXT,
             border:theme::MANUAL_SOURCE_CLASSIFIED_BORDER,
             border_width:theme::MANUAL_SOURCE_BLOCK_BORDER_WIDTH,
-            radius:theme::SOURCE_BLOCK_RADIUS,
         }
     } else {
         ManualSourceBlockStyle {
@@ -790,7 +787,6 @@ pub fn manual_source_block_style(
             text:theme::MANUAL_SOURCE_UNASSIGNED_TEXT,
             border:theme::MANUAL_SOURCE_UNASSIGNED_BORDER,
             border_width:theme::MANUAL_SOURCE_BLOCK_BORDER_WIDTH,
-            radius:theme::SOURCE_BLOCK_RADIUS,
         }
     }
 }

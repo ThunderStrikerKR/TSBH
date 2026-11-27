@@ -72,8 +72,6 @@ pub fn positioned_text_overflow(text:Rect,visible:Rect,elided:bool)->bool{
 
 #[derive(Clone, Copy)]
 pub enum WorkflowIcon {
-    Collapsed,
-    Expanded,
     PreviousStage,
     Trash,
 }
@@ -89,14 +87,6 @@ pub fn paint_workflow_icon(
     let stroke = Stroke::new(1.55_f32, ink);
     let p = |x: f32, y: f32| egui::pos2(center.x + x, center.y + y);
     match icon {
-        WorkflowIcon::Collapsed => {
-            paint_chevron_at_angle(painter,center,0.0,0.0,ink);
-        }
-        WorkflowIcon::Expanded => {
-            paint_chevron_at_angle(
-                painter,center,std::f32::consts::FRAC_PI_2,1.0,ink
-            );
-        }
         WorkflowIcon::PreviousStage => {
             painter.line_segment([p(-5.3, -1.6), p(-1.5, -5.2)], stroke);
             painter.line_segment([p(-5.3, -1.6), p(-1.0, 1.8)], stroke);

@@ -1,6 +1,8 @@
 //! Excel 관리 UI for ProductManager. File I/O stays on native worker threads;
 //! authoritative price/catalog changes belong to the existing Rust reducer.
-use crate::{gateway::BandoGateway,product_excel,theme,typography};
+use crate::{gateway::BandoGateway,theme,typography};
+#[cfg(windows)]
+use crate::product_excel;
 use crate::ui_primitives::UiWidthPolicyExt;
 use eframe::egui::{self,Context,Ui};
 use serde_json::Value;
@@ -22,8 +24,10 @@ impl ReviewFilter {
     }
 }
 enum JobResult{
+    #[cfg(any(windows,test))]
     Cancelled,
     Exported { path:PathBuf, folder:Option<Result<(),String>> },
+    #[cfg(any(windows,test))]
     Previewed { name:String,preview:Value },
     Applied(Value),
 }
@@ -146,6 +150,7 @@ impl ProductExcelUi {
             Some(Ok(Ok(event)))=>{
                 self.job=None;
                 match event{
+                    #[cfg(any(windows,test))]
                     JobResult::Cancelled=>{},
                     JobResult::Exported{path,folder}=>{
                         self.notice=Some(if self.client{
@@ -159,6 +164,7 @@ impl ProductExcelUi {
                             None=>{}
                         }
                     }
+                    #[cfg(any(windows,test))]
                     JobResult::Previewed{name,preview}=>{
                         self.review=Some(Arc::new(preview));
                         self.filename=name;

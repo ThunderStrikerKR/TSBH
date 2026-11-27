@@ -156,6 +156,7 @@ pub trait BandoGateway: Send + Sync {
         Err("이 연결은 거래처 변경 저장을 지원하지 않습니다.".into())
     }
     fn archive_client_workbook(&self)->Result<String,String>{Err("거래처 Excel 미지원 연결".into())}
+    #[cfg(windows)]
     fn preview_client_workbook(&self,_source:Value)->Result<Value,String>{Err("거래처 Excel 미지원 연결".into())}
     fn apply_client_workbook(&self,_review:Value)->Result<Value,String>{Err("거래처 Excel 미지원 연결".into())}
     /// Native settings are separate from the order editor. The local adapter
@@ -213,6 +214,7 @@ pub trait BandoGateway: Send + Sync {
         Err("이 연결에서는 상품 Excel 폴더 열기를 지원하지 않습니다.".into())
     }
     /// Preview the parsed product workbook using the original native catalog engine.
+    #[cfg(windows)]
     fn preview_product_workbook(&self,_source:Value)->Result<Value,String>{
         Err("상품 Excel 변경 검토를 지원하지 않는 연결입니다.".into())
     }
@@ -232,7 +234,9 @@ pub trait BandoGateway: Send + Sync {
     /// An operating working reception requires an existing, authorized v2
     /// business SQLite file and explicit write opt-in. The native Rust
     /// transaction never confirms an order or writes to a preview fallback.
+    #[cfg(test)]
     fn working_commit_enabled(&self) -> bool { false }
+    #[cfg(test)]
     fn commit_working_reception(&self, _request: Value) -> Result<Value,String> {
         Err("운영 미확정 접수 저장 연결이 설정되지 않았습니다.".into())
     }
@@ -391,6 +395,7 @@ impl BandoGateway for LocalGateway {
         crate::client_master::mutate(expected,action,client)
     }
     fn archive_client_workbook(&self)->Result<String,String>{crate::client_master::archive_workbook()}
+    #[cfg(windows)]
     fn preview_client_workbook(&self,source:Value)->Result<Value,String>{crate::client_master::preview_workbook(source)}
     fn apply_client_workbook(&self,review:Value)->Result<Value,String>{crate::client_master::apply_workbook(review)}
     fn load_settings(&self)->Result<Value,String>{
@@ -519,6 +524,7 @@ impl BandoGateway for LocalGateway {
         let folder=path.parent().ok_or("상품 Excel 저장 폴더를 찾지 못했습니다.")?;
         open::that(folder).map_err(|e|format!("상품 Excel 폴더 열기 실패: {e}"))
     }
+    #[cfg(windows)]
     fn preview_product_workbook(&self,source:Value)->Result<Value,String>{
         if source.to_string().len()>40_000_000{
             return Err("상품 Excel 검토 요청이 허용 크기를 초과했습니다.".into());
@@ -935,7 +941,9 @@ impl BandoGateway for LocalGateway {
     // operational working-order write. The old opt-in bridge was not part
     // of the approved intake workflow; keep it disabled even if an older
     // launcher still sets BANDO_EGUI_ENABLE_WORKING_COMMIT=1.
+    #[cfg(test)]
     fn working_commit_enabled(&self) -> bool { false }
+    #[cfg(test)]
     fn commit_working_reception(&self, _request: Value) -> Result<Value,String> {
         Err("egui에서 별도 운영 작업본 저장은 지원하지 않습니다.".into())
     }

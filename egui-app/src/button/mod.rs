@@ -58,15 +58,6 @@ pub(crate) fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) 
     action_with_min_width(ui, label, role, enabled, 0.0)
 }
 
-/// Reuse the exact same action design, filling only the column assigned by a
-/// shared button-group component. The surrounding pane geometry is untouched.
-pub(crate) fn action_full_width(
-    ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool,
-) -> Response {
-    let width = ui.available_width();
-    action_with_min_width(ui, label, role, enabled, width)
-}
-
 /// Shared fixed-minimum-width action, for select triggers that must match
 /// the 34pt management controls rather than egui's shorter default ComboBox.
 pub(crate) fn action_with_min_width(
@@ -122,7 +113,6 @@ fn action_with_palette(
     let padding_x = match role {
         ButtonRole::Primary => 14.0,
         ButtonRole::Quiet => 8.0,
-        ButtonRole::Ghost => 12.0,
         ButtonRole::Navigation | ButtonRole::ActiveNavigation => 12.0,
         ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => 12.0,
         ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl => 7.0,

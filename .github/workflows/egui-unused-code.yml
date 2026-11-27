@@ -1,0 +1,46 @@
+name: egui unused code gate
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'egui-app/**'
+      - 'crates/bando-data-access/**'
+      - 'src-tauri/src/**'
+      - 'scripts/check-egui-unused.py'
+      - '.github/workflows/egui-unused-code.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'egui-app/**'
+      - 'crates/bando-data-access/**'
+      - 'src-tauri/src/**'
+      - 'scripts/check-egui-unused.py'
+      - '.github/workflows/egui-unused-code.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: egui-unused-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  unused-code:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: egui-app -> target
+          key: egui-unused-code
+      - name: Verify diagnostic filter
+        run: python scripts/check-egui-unused.py --self-test
+      - name: Reject unused egui code in production and test builds
+        run: python scripts/check-egui-unused.py

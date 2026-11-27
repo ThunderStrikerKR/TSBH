@@ -1,14 +1,17 @@
 //! Native XLSX boundary for the existing React "unified product workbook" V2.
 //! The file format (not the mutation rules) lives here. Preview and commit
 //! always pass through the existing Rust catalog_clients business engine.
+#[cfg(any(windows,test))]
 use calamine::{open_workbook,Data,Reader,Xlsx};
 use rust_xlsxwriter::{Color,Format,Workbook};
 use serde_json::{json,Value};
+#[cfg(any(windows,test))]
 use std::path::Path;
 
 pub const MAX_BYTES:u64=20*1024*1024;
 const MAX_ROWS:u32=20_000;
 const FORMAT:&str="BANDO-HUB-PRODUCTS-UNIFIED-V2";
+#[cfg(any(windows,test))]
 const OLD_FORMAT:&str="BANDO-HUB-PRODUCTS-UNIFIED-V1";
 const HEADERS:[&str;20]=[
     "__상품ID","신규등록키","상품명","상품설명","색상",
@@ -158,6 +161,7 @@ pub fn export(state:&Value)->Result<Vec<u8>,String>{
     book.save_to_buffer().map_err(|e|e.to_string())
 }
 
+#[cfg(any(windows,test))]
 fn cell_value(value:&Data)->Result<String,String>{
     let text=match value {
         Data::Empty=>String::new(),
@@ -172,6 +176,7 @@ fn cell_value(value:&Data)->Result<String,String>{
     };
     Ok(text)
 }
+#[cfg(any(windows,test))]
 pub fn read(path:&Path)->Result<Value,String>{
     if !path.is_file() || path.extension().is_none_or(|ext|!ext.eq_ignore_ascii_case("xlsx")){
         return Err("20MB 이하의 .xlsx 상품 전체 목록을 선택하세요.".into());

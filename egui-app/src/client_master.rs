@@ -123,6 +123,7 @@ pub fn archive_workbook()->Result<String,String>{
     crate::excel_service::archive_client_workbook(&state,&bytes)
         .map(|p|p.to_string_lossy().into_owned())
 }
+#[cfg(windows)]
 pub fn preview_workbook(mut source:Value)->Result<Value,String>{
     if !editable(){return Err("거래처 Excel 권한이 없습니다.".into());}
     let count=source["input"].as_array().ok_or("거래처 Excel 행 누락")?.len();

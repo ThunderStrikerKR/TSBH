@@ -882,20 +882,9 @@ pub(crate) fn modal_named_text_field(
 /// A management menu exposes content roles, not its raw UI or style.
 /// Native popup ownership and outside-click behavior stay in overlay.
 #[derive(Clone,Copy)]
-pub(crate) enum ManagementMenuRole{Actions,Details,Workbook}
+pub(crate) enum ManagementMenuRole{Workbook}
 pub(crate) struct ManagementMenu<'a>{ui:&'a mut Ui}
 impl ManagementMenu<'_>{
-    fn action_with_role(&mut self,label:&str,role:theme::ButtonRole,enabled:bool)->bool{
-        let clicked=crate::button::action_full_width(self.ui,label,role,enabled).clicked();
-        if clicked{self.ui.close();}
-        clicked
-    }
-    pub(crate) fn action(&mut self,label:&str,enabled:bool)->bool{
-        self.action_with_role(label,theme::ButtonRole::TableSecondary,enabled)
-    }
-    pub(crate) fn danger_action(&mut self,label:&str,enabled:bool)->bool{
-        self.action_with_role(label,theme::ButtonRole::Danger,enabled)
-    }
     /// Workbook actions keep the option-origin notification and native job
     /// callback before closing the menu, without exposing its raw UI.
     pub(crate) fn workbook_action(
@@ -906,15 +895,6 @@ impl ManagementMenu<'_>{
             self.ui.close();
         }
     }
-    pub(crate) fn detail(&mut self,label:&str,value:&str){
-        self.ui.label(typography::field_label(label));
-        self.ui.label(typography::body(value));
-        self.ui.add_space(theme::SPACE_8);
-    }
-    pub(crate) fn detail_divider(&mut self){
-        crate::ui_primitives::soft_divider(self.ui);
-        self.ui.add_space(theme::SPACE_8);
-    }
 }
 pub(crate) fn show_management_menu<R>(
     owner:&Response,align:Option<egui::RectAlign>,role:ManagementMenuRole,
@@ -922,18 +902,11 @@ pub(crate) fn show_management_menu<R>(
 )->Option<egui::InnerResponse<R>>{
     crate::overlay::show_menu(owner,align,|menu|{
         let (width,gap)=match role{
-            ManagementMenuRole::Actions=>(148.0,theme::SPACE_4),
-            ManagementMenuRole::Details=>(280.0,theme::SPACING),
             ManagementMenuRole::Workbook=>(300.0_f32.min(
                 (menu.ctx().content_rect().width()-theme::SPACE_24).max(1.0)
             ),theme::SPACE_4),
         };
-        let policy=if matches!(role,ManagementMenuRole::Workbook){
-            crate::ui_primitives::CardWidthPolicy::Bounded
-        }else{
-            crate::ui_primitives::CardWidthPolicy::FillAvailable
-        };
-        crate::ui_primitives::apply_width_policy(menu,policy,width);
+        crate::ui_primitives::apply_width_policy(menu,crate::ui_primitives::CardWidthPolicy::Bounded,width);
         menu.spacing_mut().item_spacing.y=gap;
         content(&mut ManagementMenu{ui:menu})
     })

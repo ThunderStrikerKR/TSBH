@@ -7,6 +7,7 @@ use sha2::{Digest,Sha256};
 use std::io::Cursor;
 
 const CLIENT_FORMAT:&str="BANDO-HUB-CLIENTS-V2";
+#[cfg(any(windows,test))]
 const CLIENT_LEGACY:&str="BANDO-HUB-CLIENTS-V1";
 const CLIENT_SHEET:&str="거래처 목록";
 const META:&str="__반도허브_관리정보";
@@ -33,6 +34,7 @@ fn open_book(bytes:&[u8],limit:usize)->Result<Xlsx<Cursor<&[u8]>>,String>{
     }
     Xlsx::new(Cursor::new(bytes)).map_err(|e|format!("XLSX 파일을 읽지 못했습니다: {e}"))
 }
+#[cfg(any(windows,test))]
 fn safe_sheet(book:&mut Xlsx<Cursor<&[u8]>>,name:&str)->Result<(),String>{
     if !book.merge_cells_by_sheet_name(name).map_err(|e|e.to_string())?.is_empty(){
         return Err("병합된 셀은 허용되지 않습니다.".into());
@@ -138,6 +140,7 @@ pub fn export_clients(state:&Value)->Result<Vec<u8>,String>{
     }
     book.save_to_buffer().map_err(|e|e.to_string())
 }
+#[cfg(any(windows,test))]
 pub fn read_clients(bytes:&[u8])->Result<Value,String>{
     let mut book=open_book(bytes,20*1024*1024)?;
     safe_sheet(&mut book,META)?;

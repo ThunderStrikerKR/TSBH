@@ -69,10 +69,8 @@ pub enum TextState {
     Unconfirmed,
     Disabled,
     Placeholder,
-    Info,
     ActionRequired,
     Error,
-    Complete,
 }
 
 impl TextState{
@@ -97,10 +95,8 @@ pub const fn text_ink(role:TextRole,state:TextState)->Color32{
         TextState::Missing|TextState::Pending|TextState::Unconfirmed=>MUTED,
         TextState::Disabled=>DISABLED_ACTION_TEXT,
         TextState::Placeholder=>PLACEHOLDER_TEXT,
-        TextState::Info=>ReviewTone::Info.text_color(),
         TextState::ActionRequired=>ReviewTone::Action.text_color(),
         TextState::Error=>ReviewTone::Error.text_color(),
-        TextState::Complete=>ReviewTone::Complete.text_color(),
     }
 }
 pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
@@ -828,7 +824,8 @@ pub enum ButtonRole {
     TableSecondary,
     Emphasized,
     Quiet,
-    /// Transparent 36pt action for secondary navigation inside popups.
+    /// Historical transparent action palette, retained only for its regression fixture.
+    #[cfg(test)]
     Ghost,
     Danger,
     Navigation,
@@ -967,7 +964,8 @@ pub(crate) fn button_visual(
         ),
         ButtonRole::Emphasized => (ACTION_EMPHASIZED_HEIGHT, BRIGHT, BRIGHT_TEXT, Stroke::NONE),
         ButtonRole::Quiet => (ACTION_QUIET_HEIGHT, PANEL, SECONDARY, Stroke::new(FRAME_STROKE_WIDTH,DIVIDER)),
-        ButtonRole::Ghost => (ACTION_PRIMARY_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
+        #[cfg(test)]
+        ButtonRole::Ghost => (ACTION_PRIMARY_HEIGHT, Color32::TRANSPARENT, if enabled {SECONDARY} else {DISABLED_ACTION_TEXT}, Stroke::NONE),
         ButtonRole::Danger => (ACTION_STANDARD_HEIGHT, DANGER_ACTION_BG, ERROR_TEXT, Stroke::new(FRAME_STROKE_WIDTH,DANGER_ACTION_BORDER)),
         ButtonRole::Navigation => (NAV_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::ActiveNavigation => (NAV_HEIGHT, ACTIVE_NAVIGATION_BG, TEXT, Stroke::NONE),
@@ -985,8 +983,6 @@ pub(crate) fn button_visual(
         } else {
             (DISABLED_ACTION_BG, DISABLED_ACTION_TEXT, stroke)
         }
-    }else if !enabled && matches!(role,ButtonRole::Ghost) {
-        (Color32::TRANSPARENT,DISABLED_ACTION_TEXT,Stroke::NONE)
     }else if !enabled
         && matches!(role,
             ButtonRole::Primary | ButtonRole::Standard | ButtonRole::TableSecondary | ButtonRole::Emphasized | ButtonRole::Quiet | ButtonRole::Danger
