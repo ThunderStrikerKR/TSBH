@@ -465,6 +465,53 @@ impl RateEditor {
 
 #[cfg(test)]
 #[test]
+fn freight_group_and_combination_cell_click_opens_existing_record(){
+    use crate::ui_test_support::{test_context,TRACE};
+    let groups=vec![json!({"id":"g","name":"검증 그룹","current":{"maxBundle":2,"maxConfirmed":true}})];
+    let projection=json!({"editableRules":{"g":{"maxBundle":2,"fees":{"1":3000,"2":4000},"notes":""}},
+        "currentCombinations":{"c":true}});
+    let shipping=json!({"combinations":[{"id":"c","description":"검증 조합","charge":3000,"actual":2800}]});
+    for history in [false,true]{
+        let ctx=test_context();
+        let screen=egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1500.0,900.0));
+        let mut editor=None;
+        let mut exception=None;
+        let mut create=false;
+        let mut rate_sort=None;
+        let mut history_sort=None;
+        let mut search=String::new();
+        let mut error=None;
+        let mut render=|events:Vec<egui::Event>|{
+            TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
+            let _=ctx.run(egui::RawInput{screen_rect:Some(screen),events,..Default::default()},|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    if history{
+                        FreightManager::show_history(ui,&shipping,&projection,&mut exception,&mut history_sort,true);
+                    }else{
+                        FreightManager::show_rates(ui,&groups,&[],&projection,&mut create,&mut editor,
+                            &mut rate_sort,&mut search,&mut error,true);
+                    }
+                });
+            });
+            TRACE.with(|trace|trace.borrow_mut().take()).unwrap().into_iter()
+                .find(|(name,_)|*name=="data row").map(|(_,rect)|rect)
+        };
+        let mut rect=egui::Rect::NOTHING;
+        for _ in 0..4{rect=render(vec![]).expect("existing freight row");}
+        let point=egui::pos2(rect.left()+40.0,rect.center().y);
+        render(vec![egui::Event::PointerMoved(point)]);
+        for pressed in [true,false]{
+            render(vec![egui::Event::PointerMoved(point),egui::Event::PointerButton{
+                pos:point,button:egui::PointerButton::Primary,pressed,modifiers:egui::Modifiers::NONE
+            }]);
+        }
+        drop(render);
+        if history{assert_eq!(exception,Some(("c".into(),"3000".into())));}
+        else{assert_eq!(editor.as_ref().map(|e|e.id.as_str()),Some("g"));}
+    }
+}
+#[cfg(test)]
+#[test]
 fn group_and_combination_tables_open_details_without_action_columns(){
     let source=include_str!("freight_manager.rs");
     let rate=source.split("\n    fn show_rates(").nth(1).unwrap().split("\n    fn rate_dialog(").next().unwrap();
