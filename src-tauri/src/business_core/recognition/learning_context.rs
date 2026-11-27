@@ -211,7 +211,7 @@ pub(super) fn statistics(payload:&Value)->Result<Value,String>{
     let mut filter=BTreeSet::new();
     if let Some(keys)=keys{
         let list=keys.as_array().ok_or("문맥 키 목록 형식 오류")?;
-        if list.len()>750{return Err("문맥 키 조회 범위를 초과했습니다.".into());}
+        if list.is_empty()||list.len()>750{return Err("문맥 키 조회는 1~750개만 허용합니다.".into());}
         for k in list{
             filter.insert(k.as_str().filter(|s|!s.is_empty()).ok_or("문맥 키 형식 오류")?);
         }
@@ -243,4 +243,33 @@ pub(super) fn statistics(payload:&Value)->Result<Value,String>{
         "uniqueOrders":seen.len(),"unavailableOrders":unavailable,
         "ordersWithoutMatchingContext":without_context,"statistics":records
     }))
+}
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    #[test]
+    fn independent_context_orders_are_not_the_sum_of_candidate_counts(){
+        let weak=|candidate:&str|json!({
+            "outcome":"unchanged_observed","eligibleForCandidateLearning":true,
+            "finalCandidates":[candidate]
+        });
+        let mut local=Counts::default();
+        local.add_observation(&weak("previous"));
+        local.add_observation(&weak("previous"));
+        local.add_observation(&weak("next"));
+        let mut total=Counts::default();
+        total.add_order(local);
+        let c=total.wire();
+        assert_eq!(c["observationCount"],3);
+        assert_eq!(c["weakUnchangedCount"],3);
+        assert_eq!(c["independentOrders"],1);
+        assert_eq!(c["weakIndependentOrders"],1);
+        assert_eq!(c["weakCandidateOrders"]["previous"],1);
+        assert_eq!(c["weakCandidateOrders"]["next"],1);
+    }
+    #[test]
+    fn explicitly_empty_lookup_does_not_expand_to_all_contexts(){
+        assert!(statistics(&json!({"orders":[],"contextKeys":[]})).is_err());
+    }
 }
