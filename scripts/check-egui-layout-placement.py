@@ -9,7 +9,12 @@ import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1] / "egui-app" / "src"
-OWNER = "ui_layout.rs"
+OWNER = "ui_layout/geometry.rs"
+CORE_COMPONENTS = {
+    "theme.rs", "ui_primitives.rs", "card/mod.rs", "table/mod.rs",
+    "popup/mod.rs", "popup/tag.rs", "input/mod.rs", "button/mod.rs",
+    "checkbox/mod.rs", "dropdown/mod.rs", "status_notice/mod.rs",
+}
 
 # Preserve line numbers while removing comments and string/character literals.
 # Rust block comments can nest; consume them explicitly.
@@ -74,6 +79,14 @@ def violations(name, source):
     code = production(source)
     findings = []
     owner_calls = 0
+    if name == OWNER:
+        for match in re.finditer(r"\b(?:crate|super)\s*::", code):
+            findings.append((code.count("\n", 0, match.start()) + 1,
+                             "geometry must not depend on application modules"))
+    if name in CORE_COMPONENTS:
+        for match in re.finditer(r"\bcrate\s*::\s*ui_layout\s*::\s*(?!geometry\b)\w+", code):
+            findings.append((code.count("\n", 0, match.start()) + 1,
+                             "component must use geometry, not layout composition"))
     for rule, regex in RULES:
         for match in regex.finditer(code):
             if name == OWNER and rule == "raw UiBuilder.max_rect":
@@ -130,6 +143,10 @@ def self_test():
     assert not violations(OWNER, "self.max_rect(aligned_rect(rect)); self.allocate_exact_size(aligned_allocation_size(size),sense);")
     assert violations(OWNER, "self.max_rect(aligned_rect(rect)); self.allocate_exact_size(size,sense);")
     assert not violations(OWNER, "self.max_rect(aligned_rect(rect))")
+    assert violations(OWNER, "self.max_rect(aligned_rect(rect)); use crate::card::CardHeightPolicy;")
+    assert violations("card/mod.rs", "use crate::ui_layout::SharedAllocationExt;")
+    assert not violations("card/mod.rs", "use crate::ui_layout::geometry::SharedAllocationExt;")
+    assert not violations("screen.rs", "use crate::ui_layout::SharedAllocationExt;")
     assert violations(OWNER, "self.max_rect(aligned_rect(rect)); builder.max_rect(rect);")
 
 def main():
