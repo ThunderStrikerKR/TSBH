@@ -2491,6 +2491,20 @@ mod reception_edit_audit_tests {
         assert!(set_selected_blend_model(&conn,"other",Some(&a)).is_err());
         set_selected_blend_model(&conn,"scope",Some(&b)).unwrap();
         set_selected_blend_model(&conn,"scope",Some(&a)).unwrap();
+        // A paired replay must bind the registry timestamp as well as the
+        // immutable model content; an edited creation time changes eligibility.
+        let prepared=read_paired_model(&conn,"scope",&b).unwrap();
+        conn.execute("UPDATE recognition_blend_models SET created_at='2020-01-02T00:00:00Z' WHERE scope='scope' AND model_id=?1",[&b]).unwrap();
+        let changed=read_paired_model(&conn,"scope",&b).unwrap();
+        assert_eq!(prepared["model"],changed["model"]);
+        assert_ne!(prepared,changed);
+        prepare_blend_governance(&conn).unwrap();
+        let state=blend_governance_state(&conn,"scope").unwrap();
+        let tx=conn.unchecked_transaction().unwrap();
+        assert!(revalidate_governance_state(&tx,"scope",&state).is_ok());
+        set_selected_blend_model(&tx,"scope",Some(&b)).unwrap();
+        assert!(revalidate_governance_state(&tx,"scope",&state).is_err());
+        tx.rollback().unwrap();
         conn.execute("UPDATE recognition_blend_models SET payload='{}' WHERE scope='scope' AND model_id=?1",[&a]).unwrap();
         assert!(read_registered_blend_model(&conn,"scope",&a).is_err());
         set_selected_blend_model(&conn,"scope",None).unwrap();
