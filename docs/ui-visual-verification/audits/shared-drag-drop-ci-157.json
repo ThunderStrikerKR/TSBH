@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "shared-drag-drop-ci-157",
+  "screen": "카테고리/수동 분류 공통 드래그 API",
+  "files": [
+    "egui-app/src/drag_drop.rs",
+    "egui-app/src/category_tree/mod.rs",
+    "egui-app/src/manual_source_view.rs",
+    "egui-app/src/manual_workspace.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "기존 동작 유지하면서 native payload 조회 및 primary drag threshold를 공통 API로 이전. CI 정적 검사 및 테스트 그룹 추가. 실컴파일·Windows 동작 미검증.",
+  "defects": [],
+  "releaseDecision": "NOT_APPROVED",
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "noClipping",
+      "footerVisible",
+      "scrollReachable",
+      "inputReadable",
+      "alignment",
+      "interaction",
+      "hoverAndFocus"
+    ]
+  }
+}

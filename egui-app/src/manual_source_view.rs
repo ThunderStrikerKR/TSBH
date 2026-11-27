@@ -107,7 +107,7 @@ pub fn source_document(
         }
     }
     // Keep click-vs-drag semantics aligned with egui's own movement threshold.
-    result.drag_moved=enabled && response.dragged_by(egui::PointerButton::Primary);
+    result.drag_moved=enabled && crate::drag_drop::primary_dragged(&response);
     if enabled {
         if let Some(index)=hovered_index.and_then(|index|spans.get(index)){
             result.hovered=Some(index.key.clone());

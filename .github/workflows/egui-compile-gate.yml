@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/egui-compile-gate.yml
       - scripts/check-egui-layout-placement.py
+      - scripts/check-egui-drag-drop.py
       - scripts/audit-egui-design-api.py
       - 'scripts/egui-design-api-contract*.json'
       - scripts/egui-design-constant-access.json
@@ -32,6 +33,7 @@ on:
     paths:
       - .github/workflows/egui-compile-gate.yml
       - scripts/check-egui-layout-placement.py
+      - scripts/check-egui-drag-drop.py
       - scripts/audit-egui-design-api.py
       - 'scripts/egui-design-api-contract*.json'
       - scripts/egui-design-constant-access.json
@@ -64,6 +66,8 @@ jobs:
           retention-days: 7
       - name: Require shared egui explicit placement ownership
         run: python scripts/check-egui-layout-placement.py
+      - name: Require shared business drag-and-drop ownership
+        run: python scripts/check-egui-drag-drop.py
       - name: Compile current Windows egui source
         id: compile_source
         run: cargo check --manifest-path egui-app/Cargo.toml
@@ -135,6 +139,8 @@ jobs:
             'typography::shared_text_hierarchy_contract_tests::',
             'theme::shared_visual_role_contract_tests::',
             'highlight::rendered_geometry_tests::',
+            'drag_drop::tests::',
+            'category_tree::category_tree_geometry_tests::',
             'ui_test_support::unaligned_detector_tests::',
             'ui_layout::logical_alignment_tests::',
             'ui_layout::pixel_paint::tests::',

@@ -27,6 +27,12 @@ pub(crate) fn start_native<T:Any+Send+Sync>(ui:&Ui,response:&Response,enabled:bo
     }
     if enabled&&response.dragged(){cursor(ui.ctx(),true);}
 }
+pub(crate) fn primary_dragged(response:&Response)->bool{
+    response.dragged_by(egui::PointerButton::Primary)
+}
+pub(crate) fn native_payload<T:Any+Send+Sync>(ctx:&Context)->Option<Arc<T>>{
+    egui::DragAndDrop::payload::<T>(ctx)
+}
 pub(crate) fn hover_payload<T:Any+Send+Sync>(response:&Response)->Option<Arc<T>>{
     response.dnd_hover_payload::<T>()
 }

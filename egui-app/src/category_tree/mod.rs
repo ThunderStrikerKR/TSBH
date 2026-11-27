@@ -236,9 +236,9 @@ pub(crate) fn start_product_drag(ui:&Ui,response:&Response,id:&str,name:&str,sou
 /// Read the native payload, not the source row: focused navigation may
 /// remove that row while the mouse remains pressed.
 pub(crate) fn paint_drag_preview(ui:&Ui){
-    if let Some(drag)=egui::DragAndDrop::payload::<ProductDrag>(ui.ctx()){
+    if let Some(drag)=crate::drag_drop::native_payload::<ProductDrag>(ui.ctx()){
         crate::drag_drop::paint_pointer_label(ui,&drag.name,&format!("상품 {}개",drag.members.len()));
-    }else if let Some(drag)=egui::DragAndDrop::payload::<FolderDrag>(ui.ctx()){
+    }else if let Some(drag)=crate::drag_drop::native_payload::<FolderDrag>(ui.ctx()){
         crate::drag_drop::paint_pointer_label(ui,&drag.name,"폴더 1개");
     }
 }

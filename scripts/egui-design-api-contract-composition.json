@@ -21,13 +21,28 @@
     "struct DateNavigationCountControlResponse | pub input : Response"
   ],
   "category_tree/mod.rs": [
+    "impl CategoryDragHover | pub ( crate ) fn begin_frame ( & mut self ) {",
+    "impl CategoryDragHover | pub ( crate ) fn end_frame ( & mut self ) {",
+    "impl CategoryDragHover | pub ( crate ) fn observe ( & mut self , ui : & Ui , response : & Response , target : & str , enabled : bool , folder_enabled : bool , contains_source : impl Fn ( & str ) -> bool ) -> bool {",
+    "impl ProductSelection | pub ( crate ) fn clear ( & mut self ) {",
+    "impl ProductSelection | pub ( crate ) fn contains ( & self , id : & str ) -> bool {",
+    "impl ProductSelection | pub ( crate ) fn toggle ( & mut self , id : & str , source : & str ) {",
+    "module | # [ derive ( Clone , Debug ) ] pub ( crate ) struct FolderMove {",
+    "module | # [ derive ( Clone , Debug , Default ) ] pub ( crate ) struct CategoryDragHover {",
+    "module | # [ derive ( Default ) ] pub ( crate ) struct ProductSelection ( std :: collections :: BTreeMap < String , String > ) ;",
     "module | pub ( crate ) fn category_tree_row ( ui : & mut Ui , item : CategoryTreeRow < ' _ > ) -> Response {",
     "module | pub ( crate ) fn configure_breadcrumb_row ( ui : & mut Ui ) {",
     "module | pub ( crate ) fn configure_explorer_popup ( ui : & mut Ui , width : f32 ) {",
     "module | pub ( crate ) fn configure_tree_rows ( ui : & mut Ui ) {",
+    "module | pub ( crate ) fn draggable_folder_row ( ui : & mut Ui , item : CategoryTreeRow < ' _ > , id : & str , parent : & str , enabled : bool , draggable : bool ) -> Response {",
     "module | pub ( crate ) fn empty_search_row ( ui : & mut Ui , message : & str ) {",
-    "module | pub ( crate ) fn product_tree_row ( ui : & mut Ui , name : & str , depth : usize , ancestor_guides : & [ bool ] , is_last : bool ) {",
+    "module | pub ( crate ) fn folder_drop_target ( ui : & Ui , response : & Response , target : & str , enabled : bool , contains_source : impl Fn ( & str ) -> bool ) -> Option < FolderMove > {",
+    "module | pub ( crate ) fn paint_drag_preview ( ui : & Ui ) {",
+    "module | pub ( crate ) fn product_drop_target ( ui : & Ui , response : & Response , target : & str , enabled : bool ) -> Option < Vec < ProductMove > > {",
+    "module | pub ( crate ) fn product_tree_row ( ui : & mut Ui , name : & str , depth : usize , ancestor_guides : & [ bool ] , is_last : bool , enabled : bool , draggable : bool , selected : bool ) -> Response {",
+    "module | pub ( crate ) fn start_product_drag ( ui : & Ui , response : & Response , id : & str , name : & str , source : & str , enabled : bool , selection : & ProductSelection ) {",
     "module | pub ( crate ) struct CategoryTreeRow < ' a > {",
+    "module | pub ( crate ) struct ProductMove {",
     "struct CategoryTreeRow < ' a > | pub ( crate ) ancestor_guides : & ' a [ bool ]",
     "struct CategoryTreeRow < ' a > | pub ( crate ) depth : usize",
     "struct CategoryTreeRow < ' a > | pub ( crate ) has_children : bool",
@@ -36,7 +51,13 @@
     "struct CategoryTreeRow < ' a > | pub ( crate ) open : bool",
     "struct CategoryTreeRow < ' a > | pub ( crate ) root : bool",
     "struct CategoryTreeRow < ' a > | pub ( crate ) selected : bool",
-    "struct CategoryTreeRow < ' a > | pub ( crate ) summary : & ' a str"
+    "struct CategoryTreeRow < ' a > | pub ( crate ) summary : & ' a str",
+    "struct FolderMove | pub ( crate ) id : String",
+    "struct FolderMove | pub ( crate ) parent : String",
+    "struct FolderMove | pub ( crate ) target : String",
+    "struct ProductMove | pub ( crate ) id : String",
+    "struct ProductMove | pub ( crate ) source : String",
+    "struct ProductMove | pub ( crate ) target : String"
   ],
   "one_touch.rs": [
     "impl Stage | pub fn freight ( self ) -> bool {",
@@ -102,6 +123,7 @@
   "overlay.rs": [
     "module | # [ cfg ( test ) ] pub ( crate ) fn set_popup_trigger_for_test ( ctx : & Context , rect : egui :: Rect ) {",
     "module | pub ( crate ) fn clear_popup_trigger ( ctx : & Context ) {",
+    "module | pub ( crate ) fn page_drag_painter ( ctx : & Context , owner : LayerId , id : Id ) -> Option < egui :: Painter > {",
     "module | pub ( crate ) fn popup_trigger_origin ( ctx : & Context ) -> Option < ( egui :: Rect , Option < LayerId > ) > {",
     "module | pub enum AreaRole { Backdrop { nested : bool } , Preview , Notice , Help }",
     "module | pub fn activate_modal ( ctx : & Context , layer : LayerId , raise : bool ) {",
@@ -170,5 +192,18 @@
     "module | pub ( crate ) fn display_freight ( amount : Option < i64 > , exempt : bool , collect : bool ) -> String {",
     "module | pub ( crate ) fn display_money_number ( amount : i64 ) -> String {",
     "module | pub fn display_won ( amount : i64 ) -> String {"
+  ],
+  "drag_drop.rs": [
+    "module | pub ( crate ) fn cursor ( ctx : & Context , allowed : bool ) {",
+    "module | pub ( crate ) fn drop_native < T : Any + Send + Sync > ( ui : & Ui , response : & Response , enabled : bool , valid : impl Fn ( & T ) -> bool ) -> Option < Arc < T > > {",
+    "module | pub ( crate ) fn hover_payload < T : Any + Send + Sync > ( response : & Response ) -> Option < Arc < T > > {",
+    "module | pub ( crate ) fn native_payload < T : Any + Send + Sync > ( ctx : & Context ) -> Option < Arc < T > > {",
+    "module | pub ( crate ) fn paint_pointer_label ( ui : & Ui , name : & str , count : & str ) {",
+    "module | pub ( crate ) fn paint_target ( ui : & Ui , rect : Rect , hovered : bool ) {",
+    "module | pub ( crate ) fn pointer_hits ( ui : & Ui , rect : Rect , pointer : Option < Pos2 > ) -> bool {",
+    "module | pub ( crate ) fn preview_painter ( ctx : & Context , owner : LayerId , modal : bool , id : Id ) -> Option < egui :: Painter > {",
+    "module | pub ( crate ) fn primary_dragged ( response : & Response ) -> bool {",
+    "module | pub ( crate ) fn sense ( enabled : bool , draggable : bool ) -> Sense {",
+    "module | pub ( crate ) fn start_native < T : Any + Send + Sync > ( ui : & Ui , response : & Response , enabled : bool , payload : impl FnOnce ( ) -> T ) {"
   ]
 }

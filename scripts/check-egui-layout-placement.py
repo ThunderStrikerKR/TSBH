@@ -362,7 +362,7 @@ def api_contract_self_test():
 DESIGN_API_OWNERS = CORE_COMPONENTS | {
     "typography.rs", "ui_tokens.rs", "scrollbar/mod.rs", "highlight/mod.rs",
     "highlight/native.rs", "ui_layout.rs", "overlay.rs", "text_fit.rs",
-    "cell_navigation.rs", "display_format.rs",
+    "cell_navigation.rs", "display_format.rs", "drag_drop.rs",
 }
 DESIGN_API_FILES = (
     "egui-design-api-contract.json",

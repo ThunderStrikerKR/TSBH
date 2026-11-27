@@ -3806,7 +3806,7 @@ mod manual_workspace_modal_routing_tests {
         let workspace=include_str!("manual_workspace.rs");
         assert!(source_view.contains("pointer.button_pressed(egui::PointerButton::Primary)"),
             "drag feedback must start on primary press");
-        assert!(source_view.contains("response.dragged_by(egui::PointerButton::Primary)"),
+        assert!(source_view.contains("crate::drag_drop::primary_dragged(&response)"),
             "actual drag classification must retain egui's native threshold");
         assert!(workspace.contains("interaction.drag_moved"));
         assert!(workspace.contains("drag_anchor_offset"));
