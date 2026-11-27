@@ -80,11 +80,11 @@ fn factory_binary_q_g_columns_hash_and_native_application(){
     assert_eq!(applied["next"]["workflow"]["shipments"][0]["actualFreight"]["FACTORY"],4000);
 }
 #[test]
-fn factory_binary_duplicate_and_unverified_numeric_tracking_are_held(){
+fn factory_binary_duplicate_is_held_and_safe_numeric_tracking_is_accepted(){
     let duplicate=analyze(&factory_bytes(false,true));
     assert_eq!(duplicate["applied"],0);assert_eq!(duplicate["held"],2);
     let numeric=analyze(&factory_bytes(true,false));
-    assert_eq!(numeric["applied"],0);assert_eq!(numeric["held"],1);
+    assert_eq!(numeric["applied"],1);assert_eq!(numeric["held"],0);
     assert!(read_factory_reply("../bad.xlsx",&factory_bytes(false,false)).is_err());
     assert!(read_factory_reply("bad.xlsx",b"invalid").is_err());
 }
@@ -131,4 +131,43 @@ fn factory_reply_requires_actual_g_and_tracking_q_without_substituting_r(){
     missing_q["at"]=json!("2026-11-13T10:00:00Z");
     missing_q["actor"]=json!("합성");
     assert!(factory_reply::execute("analyze_factory_reply",&missing_q).unwrap_err().contains("Q열"));
+}
+
+#[test]
+fn factory_reply_accepts_cached_formula_values_without_executing_formulas(){
+    let mut book=Workbook::new();
+    let sheet=book.add_worksheet();
+    sheet.write_string(0,0,"수하인명").unwrap();
+    sheet.write_string(1,0,"김수취").unwrap();
+    sheet.write_formula(1,6,rust_xlsxwriter::Formula::new("=2000+2000").set_result("4000")).unwrap();
+    sheet.write_formula(1,16,rust_xlsxwriter::Formula::new("=1234567890").set_result("1234567890")).unwrap();
+    let bytes=book.save_to_buffer().unwrap();
+    let source=read_factory_reply("formula.xlsx",&bytes).unwrap();
+    assert_eq!(source["sourceRows"][0]["rawFreight"],"4000");
+    assert_eq!(source["sourceRows"][0]["tracking"],"1234567890");
+    let aggregate=&source["sourceRows"][0]["aggregateValues"];
+    assert_eq!(aggregate.as_array().unwrap().len(),17);
+    assert_eq!(aggregate[0],"김수취");
+    assert_eq!(aggregate[6],"4000");
+    assert_eq!(aggregate[16],"1234567890");
+    assert!(source["sourceRows"][0].get("sourceIssue").is_none());
+    let result=analyze(&bytes);
+    assert_eq!(result["applied"],1);
+    assert_eq!(result["held"],0);
+}
+#[test]
+fn factory_reply_numeric_waybill_precision_and_leading_zero_checks_remain(){
+    for (number,format) in [(1234567890123456.,"General"),(1234567890.,"000000000000")]{
+        let mut book=Workbook::new();
+        let sheet=book.add_worksheet();
+        sheet.write_string(0,0,"수하인명").unwrap();
+        sheet.write_string(1,0,"김수취").unwrap();
+        sheet.write_number(1,6,4000.).unwrap();
+        let style=rust_xlsxwriter::Format::new().set_num_format(format);
+        sheet.write_number_with_format(1,16,number,&style).unwrap();
+        let bytes=book.save_to_buffer().unwrap();
+        let result=analyze(&bytes);
+        assert_eq!(result["applied"],0);
+        assert_eq!(result["held"],1);
+    }
 }
