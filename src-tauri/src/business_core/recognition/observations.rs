@@ -2485,10 +2485,37 @@ mod tests{
     }
     #[test]
     fn performance_combined_confirmation_shares_exact_comparison(){
-        let p=owner_fixture();
-        let mut expected=super::super::learning_context::statistics(&json!({"orders":[&p]})).unwrap();
-        expected["combinedEvaluation"]=evaluate_combined_confirmation(&p).unwrap();
-        assert_eq!(super::super::learning_context::summarize_confirmation(&p).unwrap(),expected);
+        // The bare comparison fixture has no confirmed-order identity.
+        // Exercise both the ordinary and the full verified evaluation paths.
+        let mut p=patterned_order("performance-confirmed");
+        p["learningActive"]=json!(true);
+        p["confirmationSnapshot"]["recognitionBaseline"]["auditEventIds"]=json!([]);
+        let assert_equivalent=|p:&Value|{
+            let mut expected=super::super::learning_context::statistics(&json!({"orders":[p]})).unwrap();
+            expected["combinedEvaluation"]=evaluate_combined_confirmation(p).unwrap();
+            assert_eq!(expected["uniqueOrders"],1);
+            assert_eq!(expected["auditCoverage"]["verifiedManifestOrders"],1);
+            assert!(!expected["statistics"].as_array().unwrap().is_empty());
+            assert_eq!(super::super::learning_context::summarize_confirmation(p).unwrap(),expected);
+            expected
+        };
+        assert_eq!(assert_equivalent(&p)["combinedEvaluation"]["status"],"no_combined_prediction");
+        p["confirmationSnapshot"]["recognitionBaseline"]["initialAnalysis"]["initialPredictionCapture"]=json!({
+            "schemaVersion":1,"origin":"native_reception_worker","orderId":"performance-confirmed",
+            "analysisStartedAt":"2026-11-26T23:00:00Z","analysisCompletedAt":"2026-11-26T23:00:01Z",
+            "learningShadow":{"captureVersion":4,"sourceDigestsMatched":true,"capturedAt":"2026-11-26T23:00:02Z",
+                "combinedShadow":{"status":"runtime_shadow_only","schemaVersion":1,
+                    "modelId":format!("blend-{}","a".repeat(64)),"predictionAt":"2026-11-26T23:00:03Z",
+                    "currentModelSourceDigestsMatched":true,"automaticChangeAuthorized":false,"decisionChanged":false,
+                    "decisions":[{"start":6,"end":19,"legacyCandidate":"previous","sourceKind":"contact",
+                        "legacyRoute":"score","contextLevel":"base","learningWeight":0.5,
+                        "candidateOrder":["next","previous","outside"],"legacyProxy":[0.0,1.0,0.0],
+                        "learningProxy":[0.0,1.0,0.0],"combinedProxy":[0.0,1.0,0.0],
+                        "status":"legacy_retained","diagnosticCandidate":null,
+                        "decisionChanged":false,"eligibleForAutomaticDecision":false}]}}});
+        let evaluated=assert_equivalent(&p);
+        assert_eq!(evaluated["combinedEvaluation"]["status"],"compared_diagnostic_only");
+        assert_eq!(evaluated["combinedEvaluation"]["groups"][0]["evaluated"],1);
     }
     #[test]
     fn performance_shadow_grid_matches_reference_losses(){
