@@ -2,11 +2,11 @@
 //! Never use this for empty/loading/dirty states or decisions that require a modal.
 //! All coordinates are egui logical points, not OS/device pixels.
 
-use crate::ui_layout::SharedUiClipExt as _;
-use crate::ui_layout::SharedAllocationExt as _;
-use crate::ui_layout::AlignedUiBuilderExt as _;
+use crate::ui_layout::geometry::SharedUiClipExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
+use crate::ui_layout::geometry::AlignedUiBuilderExt as _;
 use std::{collections::HashMap, time::{Duration, Instant}};
-use crate::ui_primitives::UiWidthPolicyExt;
+use crate::ui_layout::geometry::UiWidthPolicyExt;
 use eframe::egui::{
     self, Context, Id, Pos2, Rect, Response, Sense, Stroke, Vec2,
 };
@@ -525,13 +525,13 @@ pub fn show(ctx: &Context) {
                         .aligned_max_rect(text_rect),
                     |inner| {
                         inner.restrict_shared_clip(text_rect);
-                        inner.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,text_rect.width());
+                        inner.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,text_rect.width());
                         crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                             .id_salt("floating-notice-scroll")
                             .auto_shrink([false,false])
                             .max_height(text_rect.height())
                             .show(inner,|content| {
-                                content.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,text_rect.width().max(1.0));
+                                content.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,text_rect.width().max(1.0));
                                 content.add(egui::Label::new(
                                     typography::floating_notice_text(display.as_ref())
                                 ).wrap());
