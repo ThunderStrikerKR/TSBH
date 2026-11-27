@@ -233,11 +233,16 @@ impl BrandManager {
                             crate::popup::modal_compact_text_field(body,"확인 근거 URL",&mut self.form.evidence,"확인 근거 URL");
                         });
                     });
-                    workspace.footer_single(|actions|{
-                        save=crate::button::action(actions,"브랜드 저장",theme::ButtonRole::Primary,
-                            editable&&!busy&&!nested&&self.alias_input.trim().is_empty()&&self.dirty()).clicked();
-                        if save{crate::floating_notice::dispatch_pointer(ctx,"brands.save");}
-                    });
+                    // Brand deletion is not a supported catalog operation.
+                    // Use the same split footer, leaving the leading action slot empty.
+                    workspace.footer(
+                        |_|{},
+                        |right|{
+                            save=crate::button::action(right,"브랜드 저장",theme::ButtonRole::Primary,
+                                editable&&!busy&&!nested&&self.alias_input.trim().is_empty()&&self.dirty()).clicked();
+                            if save{crate::floating_notice::dispatch_pointer(ctx,"brands.save");}
+                        }
+                    );
                     crate::floating_notice::sync(ctx,"brands.save.error","brands.save",
                         crate::floating_notice::Tone::Error,self.error.as_deref());
                 });
