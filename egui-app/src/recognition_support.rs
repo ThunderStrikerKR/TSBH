@@ -1,6 +1,6 @@
 //! P05 diagnostic evidence support. Order-normalized, not calibrated
 //! probabilities. No effect on parser decisions, no inferred candidate.
-use super::{cached_count,existing,verified_facts,VerifiedFacts,Fact,FEATURE_VERSION,CONTRIBUTION_VERSION};
+use super::{verified_facts,VerifiedFacts,Fact,FEATURE_VERSION,CONTRIBUTION_VERSION};
 use rusqlite::{params,Transaction};
 use serde_json::{json,Value};
 use std::collections::{BTreeMap,BTreeSet};
@@ -504,11 +504,12 @@ pub(super) fn local_replay(tx:&Transaction<'_>,scope:&str,input:&Value,
             excluded+=1;continue;
         }
         let digest=digests.get(id).ok_or("학습 원본 지문 누락")?;
-        let count=cached_count(tx,scope,id,digest)?.ok_or("학습 원장이 최신 원본과 불일치합니다.")?;
-        if count==0{no_context+=1;continue;}
-        let facts=existing(tx,scope,id)?;
-        if !facts.iter().any(|f|f.0==family&&f.1==key){no_context+=1;continue;}
-        let evidence=Evidence::from_facts(&facts,family,key)?;
+        let facts=verified_facts(tx,scope,id,digest)?.ok_or("학습 원장이 최신 원본과 불일치합니다.")?;
+        let slice=facts.as_slice();
+        let start_index=slice.partition_point(|(f,k,_,_,_)|(f.as_str(),k.as_str())<(family,key));
+        let end_index=slice.partition_point(|(f,k,_,_,_)|(f.as_str(),k.as_str())<=(family,key));
+        if start_index==end_index{no_context+=1;continue;}
+        let evidence=Evidence::from_facts(&slice[start_index..end_index],family,key)?;
         let snapshot=&order["confirmationSnapshot"];
         let capture=&snapshot["recognitionBaseline"]["initialAnalysis"]["initialPredictionCapture"];
         let times=(date(&capture["analysisStartedAt"]),date(&capture["analysisCompletedAt"]),date(&order["confirmedAt"]));
