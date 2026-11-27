@@ -465,6 +465,18 @@ impl RateEditor {
 
 #[cfg(test)]
 #[test]
+fn group_and_combination_tables_open_details_without_action_columns(){
+    let source=include_str!("freight_manager.rs");
+    let rate=source.split("fn show_rates(").nth(1).unwrap().split("fn rate_dialog(").next().unwrap();
+    let history=source.split("fn show_history(").nth(1).unwrap().split("fn group_history_fee_summary(").next().unwrap();
+    assert!(rate.contains("\"그룹명\",\"묶음 한도\",\"소속 상품\""));
+    assert!(rate.contains("freight-group-detail"));
+    assert!(history.contains("\"조합\",\"청구 운임\",\"실제 운임\",\"기준\""));
+    assert!(history.contains("freight-history-detail"));
+    for table in [rate,history]{assert!(!table.contains("show_management_menu("));}
+}
+#[cfg(test)]
+#[test]
 fn group_editor_renames_and_changes_rates_in_one_command(){
     let rule=json!({"maxBundle":1,"fees":{"1":2900},"notes":""});
     let mut editor=RateEditor::new("g","old",&rule);
@@ -1131,11 +1143,13 @@ impl FreightManager {
                                 }
                                 Self::rate_dialog(body,editor,enabled);
                             });
+                            let group_editor=!editor.product;
+                            let clean=!editor.dirty();
                             workspace.footer(
                                 |left|{
-                                    if !editor.product{
+                                    if group_editor{
                                         request_delete=crate::button::action(left,"그룹 삭제",theme::ButtonRole::Danger,
-                                            enabled&&!editor.dirty()).clicked();
+                                            enabled&&clean).clicked();
                                     }
                                 },
                                 |right|{
@@ -2070,7 +2084,6 @@ impl FreightManager {
                 });
                 let alignment=match index{
                     1=>crate::table::HeadingAlign::Right{inset:6.0,min_left:None},
-                    3=>crate::table::HeadingAlign::Center{min_left:None},
                     _=>crate::table::HeadingAlign::Left(6.0),
                 };
                 crate::table::heading(section,cell,header_text_rect,cell.intersect(header_text_rect),alignment,galley,indicator);
@@ -2213,7 +2226,7 @@ impl FreightManager {
     fn show_history(
         ui: &mut Ui, shipping: &Value, projection: &Value,
         exception: &mut Option<(String,String)>,
-        sort:&mut Option<HistorySort>,enabled:bool,
+        sort:&mut Option<HistorySort>,_enabled:bool,
     ) {
         // A single visible combination table must take the same full-height
         // primary card as the two freight master lists. When archived group
