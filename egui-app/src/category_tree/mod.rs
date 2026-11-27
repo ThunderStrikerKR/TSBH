@@ -1,6 +1,6 @@
 //! Shared category tree geometry, rendering and interaction surface.
-use crate::ui_layout::SharedPainterClipExt as _;
-use crate::ui_layout::SharedAllocationExt as _;
+use crate::ui_layout::geometry::SharedPainterClipExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
 use eframe::egui::{self,Color32,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::{theme,typography};
 use crate::ui_primitives::{overflow_tooltip,paint_management_chevron,ManagementChevronDirection};
@@ -190,7 +190,7 @@ mod category_tree_geometry_tests{
 
 /// Geometry of the shared category explorer; motion remains screen-owned.
 pub(crate) fn configure_explorer_popup(ui:&mut Ui,width:f32){
-    crate::ui_primitives::apply_width_policy(ui,crate::ui_primitives::CardWidthPolicy::Bounded,width);
+    crate::ui_layout::geometry::apply_width_policy(ui,crate::ui_layout::geometry::CardWidthPolicy::Bounded,width);
     ui.spacing_mut().item_spacing.y=theme::SPACE_8;
 }
 pub(crate) fn configure_tree_rows(ui:&mut Ui){
