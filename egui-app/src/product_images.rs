@@ -3,6 +3,7 @@
 //! Image media is presentation only; catalog mutation and validation stay in Rust.
 //! Never fetch arbitrary product URLs or infer an image from the model name.
 
+use crate::ui_layout::SharedAllocationExt as _;
 use std::{collections::HashMap,fs,path::{Path,PathBuf}};
 use base64::{Engine as _,engine::general_purpose::STANDARD};
 use eframe::egui::{self,Rect,TextureHandle,TextureOptions,Ui,Vec2};
@@ -189,7 +190,7 @@ impl ProductImageCache {
         theme::paint_surface_outline(ui.painter(),rect,theme::CONTROL_RADIUS,palette.border);
     }
     pub fn photo(&mut self,ui:&mut Ui,product:&Value,size:f32){
-        let (rect,_)=ui.allocate_exact_size(Vec2::splat(size),egui::Sense::hover());
+        let (rect,_)=ui.shared_allocate_exact_size(Vec2::splat(size),egui::Sense::hover());
         self.paint(ui,product,rect);
     }
 }
