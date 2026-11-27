@@ -865,13 +865,13 @@ impl PreviewStore {
         Ok((conn,business,scope))
     }
 
-    /// Explicit selected-order synchronization. Lock the existing audit DB
-    /// before reading either source; the business DB is still read-only.
+    /// Snapshot and project outside the audit write lock; revalidate both
+    /// authoritative sources before committing any derived contributions.
     pub(crate) fn sync_recognition_learning(ids:&[String],
         summarize:impl Fn(&Value)->Result<Value,String>)->Result<Value,String>{
         let (mut conn,business,scope)=Self::learning_connection()?;
-        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
-        recognition_learning_store::prepare(&tx)?;
+        recognition_learning_store::prepare(&conn)?;
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
         let (frozen,orders,digests)=crate::business_state::read_learning_inputs(ids,|sources|
             {
                 let (mut misses,digests)=select_learning_changes(&tx,&scope,sources)?;
@@ -882,7 +882,17 @@ impl PreviewStore {
                 }
                 Ok((misses,digests))
             })?;
-        let report=apply_learning_changes(&tx,&scope,ids,&frozen,orders,&digests,summarize)?;
+        let orders=attach_learning_audit(&tx,&frozen,orders)?;
+        tx.commit().map_err(|e|e.to_string())?;
+        // CPU-heavy comparison runs without either SQLite transaction.
+        let summaries=prepare_learning_summaries(&orders,summarize)?;
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        let current=crate::business_state::read_learning_sources(ids)?;
+        verify_learning_sync_sources(&tx,&frozen,&digests,&current)?;
+        if crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("학습 갱신 중 업무 DB가 변경되었습니다.".into());
+        }
+        let report=apply_prepared_learning_changes(&tx,&scope,ids,&frozen,&orders,&digests,&summaries)?;
         if crate::business_state::read_learning_sources(ids)?!=frozen ||
             crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
             return Err("학습 갱신 중 확정 주문 또는 업무 DB가 변경되었습니다.".into());
@@ -1907,9 +1917,8 @@ fn learning_source_digests(tx:&rusqlite::Transaction<'_>,
     Ok(digests)
 }
 
-fn apply_learning_changes(tx:&rusqlite::Transaction<'_>,scope:&str,ids:&[String],
-    frozen:&crate::business_state::LearningSources,mut orders:Vec<Value>,digests:&LearningDigests,
-    summarize:impl Fn(&Value)->Result<Value,String>)->Result<Value,String>{
+fn attach_learning_audit(tx:&rusqlite::Transaction<'_>,
+    frozen:&crate::business_state::LearningSources,mut orders:Vec<Value>)->Result<Vec<Value>,String>{
     let audit_ids=orders.iter().filter_map(|order|order["id"].as_str())
         .filter(|id|frozen.get(*id).is_some_and(|source|source.audit_needed))
         .map(str::to_owned).collect::<Vec<_>>();
@@ -1919,7 +1928,35 @@ fn apply_learning_changes(tx:&rusqlite::Transaction<'_>,scope:&str,ids:&[String]
         let id=order["id"].as_str().ok_or("확정 주문 ID 누락")?;
         if let Some(events)=audit.remove(id){order["recognitionAuditEvents"]=json!(events);}
     }
-    let mut report=recognition_learning_store::synchronize_with_digests(tx,scope,ids,digests,&orders,summarize)?;
+    Ok(orders)
+}
+
+fn prepare_learning_summaries(orders:&[Value],
+    summarize:impl Fn(&Value)->Result<Value,String>)->Result<std::collections::BTreeMap<String,Value>,String>{
+    let mut summaries=std::collections::BTreeMap::new();
+    for order in orders{
+        let id=order["id"].as_str().ok_or("확정 주문 ID 누락")?;
+        if summaries.insert(id.to_owned(),summarize(order)?).is_some(){return Err("학습 주문 중복".into());}
+    }
+    Ok(summaries)
+}
+
+fn verify_learning_sync_sources(tx:&rusqlite::Transaction<'_>,
+    frozen:&crate::business_state::LearningSources,digests:&LearningDigests,
+    current:&crate::business_state::LearningSources)->Result<(),String>{
+    if current!=frozen||learning_source_digests(tx,current)?!=*digests{
+        return Err("학습 연산 중 확정 주문 또는 정정 이력이 변경되었습니다.".into());
+    }
+    Ok(())
+}
+
+fn apply_prepared_learning_changes(tx:&rusqlite::Transaction<'_>,scope:&str,ids:&[String],
+    frozen:&crate::business_state::LearningSources,orders:&[Value],digests:&LearningDigests,
+    summaries:&std::collections::BTreeMap<String,Value>)->Result<Value,String>{
+    let mut report=recognition_learning_store::synchronize_with_digests(tx,scope,ids,digests,orders,|order|{
+        let id=order["id"].as_str().ok_or("확정 주문 ID 누락")?;
+        summaries.get(id).cloned().ok_or_else(||"준비된 학습 결과 누락: 재동기화 필요".to_owned())
+    })?;
     report["decodedOrders"]=json!(orders.len());
     let requested=ids.iter().collect::<std::collections::BTreeSet<_>>().len();
     report["missingSelectedOrders"]=json!(requested.saturating_sub(frozen.len()));
@@ -2479,7 +2516,14 @@ mod reception_edit_audit_tests {
             let ids=vec!["a".to_owned()];
             let (frozen,orders,digests)=crate::business_state::learning_inputs_from_snapshot(&business,&ids,|sources|
                 select_learning_changes(&tx,"fixture",sources)).unwrap();
-            let report=apply_learning_changes(&tx,"fixture",&ids,&frozen,orders,&digests,summarize).unwrap();
+            let orders=attach_learning_audit(&tx,&frozen,orders).unwrap();
+            business.execute_batch("COMMIT").unwrap();tx.commit().unwrap();
+            let summaries=prepare_learning_summaries(&orders,summarize).unwrap();
+            let tx=audit.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).unwrap();
+            business.execute_batch("BEGIN").unwrap();
+            let current=crate::business_state::learning_sources(&business,&ids).unwrap();
+            verify_learning_sync_sources(&tx,&frozen,&digests,&current).unwrap();
+            let report=apply_prepared_learning_changes(&tx,"fixture",&ids,&frozen,&orders,&digests,&summaries).unwrap();
             business.execute_batch("COMMIT").unwrap();tx.commit().unwrap();report
         };
         fn summarize(order:&Value)->Result<Value,String>{
