@@ -1,8 +1,8 @@
 //! Shared client summaries, tier badges and client rows.
-use crate::ui_layout::SharedUiClipExt as _;
-use crate::ui_layout::SharedPainterClipExt as _;
-use crate::ui_layout::SharedAllocationExt as _;
-use crate::ui_layout::AlignedUiBuilderExt as _;
+use crate::ui_layout::geometry::SharedUiClipExt as _;
+use crate::ui_layout::geometry::SharedPainterClipExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
+use crate::ui_layout::geometry::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Ui,Vec2};
 use crate::{theme,typography};
 use crate::ui_primitives::{text_exceeds_rect,overflow_region_tooltip};
