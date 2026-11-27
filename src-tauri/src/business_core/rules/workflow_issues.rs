@@ -228,11 +228,48 @@ fn copied_billing_changed(before:&Value,current:&Value)->bool{
 
 /// Only the most recent successful PAYMENT clipboard event counts. A request
 /// copy, old matching event, stage rollback or generic dirty bit is not proof.
-fn payment_renotice_required(state:&Value,group_id:&str)->Result<bool,String>{
-    let Some(event)=rows(field(field(state,"workflow"),"events")).iter().rev().find(|e|
+fn latest_payment_copy<'a>(state:&'a Value,group_id:&str)->Option<&'a Value>{
+    rows(field(field(state,"workflow"),"events")).iter().rev().find(|e|
         str_field(e,"groupId")==group_id&&str_field(e,"action")=="메시지 복사"&&
-        str_field(field(e,"after"),"type")=="PAYMENT") else{return Ok(false);};
+        str_field(field(e,"after"),"type")=="PAYMENT")
+}
+fn payment_copy_changed(state:&Value,group_id:&str)->Result<bool,String>{
+    let Some(event)=latest_payment_copy(state,group_id) else{return Ok(false);};
     Ok(copied_billing_changed(field(event,"after"),&payment_copy_basis(state,group_id)?))
+}
+pub(super) fn renotice_approval_basis(state:&Value,group_id:&str)->Result<Option<Value>,String>{
+    let Some(event)=latest_payment_copy(state,group_id) else{return Ok(None);};
+    if str_field(event,"id").is_empty() || !payment_copy_changed(state,group_id)?{return Ok(None);}
+    let (gi,ships)=active_shipments(state,group_id)?;
+    let group=&state["workflow"]["groups"][gi];
+    let current=payment_copy_basis(state,group_id)?;
+    let account=field(&current,"account");
+    if super::safe(field(&current,"total")).is_none() || account_identity(account).is_none(){
+        return Ok(None);
+    }
+    let mut amounts=serde_json::Map::new();
+    for ship in ships{
+        let sid=str_field(ship,"id");
+        let total=w::shipment_totals(state,sid)?;
+        let Some(amount)=super::safe(field(&total,"total"))else{return Ok(None);};
+        amounts.insert(sid.to_owned(),json!(amount));
+    }
+    Ok(Some(json!({"groupId":group_id,"dealerId":field(group,"dealerId"),
+        "copyEventId":field(event,"id"),"currentTotal":field(&current,"total"),
+        "account":{"id":field(account,"id"),"bank":field(account,"bank"),
+            "number":field(account,"number"),"holder":field(account,"holder")},
+        "amounts":amounts})))
+}
+pub(super) fn renotice_approved(state:&Value,group_id:&str)->Result<bool,String>{
+    let Some(basis)=renotice_approval_basis(state,group_id)? else{return Ok(false);};
+    let last=rows(field(field(state,"workflow"),"events")).iter().rev().find(|e|
+        str_field(e,"groupId")==group_id && ["재안내 사용자 승인","재안내 사용자 승인 취소"]
+            .contains(&str_field(e,"action")));
+    Ok(last.is_some_and(|e|str_field(e,"action")=="재안내 사용자 승인" &&
+        field(e,"after")==&basis))
+}
+fn payment_renotice_required(state:&Value,group_id:&str)->Result<bool,String>{
+    Ok(payment_copy_changed(state,group_id)? && !renotice_approved(state,group_id)?)
 }
 
 /// Formal stage completion remains separate from a clipboard copy. The
@@ -338,9 +375,21 @@ pub(super) fn workflow_issues(state:&Value,group_id:&str)->Result<Vec<Value>,Str
         issues.push(operational(order,None,group_id,"ACCOUNT",
             "입금 계좌를 등록 / 선택하세요".into(),3,"account"));
     }
-    if payment_renotice_required(state,group_id)?{
-        issues.push(operational(order,None,group_id,"NOTICE",
-            "변경된 금액 / 계좌 재안내 필요".into(),3,"account"));
+    if payment_copy_changed(state,group_id)?{
+        let mut issue=operational(order,None,group_id,"NOTICE",
+            "변경된 금액 / 계좌 재안내 필요".into(),3,"account");
+        if let Some(basis)=renotice_approval_basis(state,group_id)?{
+            let approved=renotice_approved(state,group_id)?;
+            issue["approvalBasis"]=basis;
+            issue["canApproveCurrent"]=json!(!approved);
+            issue["canCancelCurrent"]=json!(approved);
+            if approved{
+                issue["severity"]=json!("INFO");
+                issue["resolution"]=json!("USER_APPROVED");
+                issue["detail"]=json!("변경된 금액 / 계좌 재안내 사용자 승인");
+            }
+        }
+        issues.push(issue);
     }
     Ok(issues)
 }

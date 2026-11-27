@@ -223,9 +223,13 @@ pub(super) fn evaluate(payload:&Value)->Result<Value,String> {
     let needs_notice=super::workflow_issues::notice_pending(state,group_id)?;
     let next=if needs_notice && step>=2 {3} else {step+1};
     let issues=if next<=4 {stage_issues(state,group_id,next)?} else {Vec::new()};
-    Ok(json!({"step":step,"nextStep":next,"issues":issues,
+    let mut result=json!({"step":step,"nextStep":next,"issues":issues,
         "shipmentsCount":ids.len(),"needsNotice":needs_notice,
-        "transferred":ids.iter().any(|i|flag(&state["workflow"]["shipments"][*i],"transferred"))}))
+        "transferred":ids.iter().any(|i|flag(&state["workflow"]["shipments"][*i],"transferred"))});
+    if super::workflow_issues::renotice_approved(state,group_id)?{
+        result["renoticeApproved"]=json!(true);
+    }
+    Ok(result)
 }
 fn append_event(state:&mut Value,payload:&Value,action:&str,ids:&[String],
     before:Value,after:Value,group_id:&str)->Result<(),String> {
@@ -361,6 +365,27 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
         state=field(&reconciled,"state").clone();
     }
     match action {
+        "approve_renotice"|"cancel_renotice_approval"=>{
+            let group_id=required_str(payload,"groupId")?;
+            let (_,ships)=group_indices(&state,group_id)?;
+            if ships.iter().any(|i|flag(&state["workflow"]["shipments"][*i],"transferred")){
+                return Err("이미 엑셀 관리 목록으로 이관한 배송 건입니다.".into());
+            }
+            let basis=super::workflow_issues::renotice_approval_basis(&state,group_id)?
+                .ok_or("현재 확정된 재안내 대상이 없습니다.")?;
+            if field(payload,"approvalBasis")!=&basis{
+                return Err("청구 정보가 변경되었습니다. 최신 정보를 확인하세요.".into());
+            }
+            let approved=super::workflow_issues::renotice_approved(&state,group_id)?;
+            if approved!=(action=="cancel_renotice_approval"){
+                return Err("재안내 승인 상태가 변경되었습니다.".into());
+            }
+            let ids=ships.iter().map(|i|str_field(&state["workflow"]["shipments"][*i],"id").to_owned())
+                .collect::<Vec<_>>();
+            append_event(&mut state,payload,if approved{"재안내 사용자 승인 취소"}else{"재안내 사용자 승인"},
+                &ids,Value::Null,basis,group_id)?;
+            Ok(json!({"state":state}))
+        }
         "advance_group" => {
             let id=required_str(payload,"groupId")?;
             let (gi,ships)=group_indices(&state,id)?;

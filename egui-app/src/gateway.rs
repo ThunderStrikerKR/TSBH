@@ -645,6 +645,7 @@ impl BandoGateway for LocalGateway {
             "advance_group"|"undo_group"|"confirm_group_payment"|"process_group"
             |"detach_shipment"|"regroup_shipment"|"set_shipment_freight"|"record_message_copy"
             |"change_confirmed_dispatch_origin"|"edit_confirmed_recipient"
+            |"approve_renotice"|"cancel_renotice_approval"
         ){
             return Err("지원하지 않는 주문 묶음 작업입니다.".into());
         }
@@ -807,16 +808,18 @@ impl BandoGateway for LocalGateway {
             checkpoint("reconcile");
             let prepared=reconciled.get("state")
                 .ok_or("업무 재검증 결과에 상태가 없습니다.")?;
-            let next_step=if action=="advance_group"{
-                Some(rules::execute("evaluate_workflow",serde_json::json!({
+            let evaluation=if action=="advance_group"{
+                rules::execute("evaluate_workflow",serde_json::json!({
                     "state":prepared,"groupId":args["groupId"]
-                }))?.get("nextStep").and_then(Value::as_u64)
-                    .ok_or("다음 진행 단계를 확인하지 못했습니다.")?)
+                }))?
+            }else{Value::Null};
+            let next_step=if action=="advance_group"{
+                Some(evaluation["nextStep"].as_u64().ok_or("다음 진행 단계를 확인하지 못했습니다.")?)
             }else{None};
             let payment_message=if next_step==Some(3){
                 // A prior copy is only evidence for this exact financial
                 // signature. The alternative delivery path needs explicit staff approval.
-                if args["ack"]!=true{
+                if args["ack"]!=true && evaluation["renoticeApproved"]!=true{
                     let wire=message_account_wire(prepared)?;
                     let status=output::execute("payment_copy_status",serde_json::json!({
                         "state":prepared,"groupId":args["groupId"],
@@ -869,7 +872,7 @@ impl BandoGateway for LocalGateway {
             for (key,value) in extras{
                 if matches!(key.as_str(),
                     "groupId"|"shipmentId"|"targetGroupId"|"ack"|
-                    "origin"|"value"|"appliedCharge"|"freightCode"|"remoteChecked"
+                    "origin"|"value"|"appliedCharge"|"freightCode"|"remoteChecked"|"approvalBasis"
                 ){
                     object.insert(key.clone(),value.clone());
                 }

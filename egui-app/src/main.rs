@@ -7437,6 +7437,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let mut confirmed_cancel=false;
             let mut confirmed_navigation_request:Option<(InlineTarget,CellNavigationKey)>=None;
             let mut confirmed_validation_approval:Option<(String,serde_json::Value,bool)>=None;
+            let mut renotice_approval:Option<(serde_json::Value,bool)>=None;
             let mut confirmed_add=false;
             let mut confirmed_vat=false;
             let mut confirmed_item:Option<(serde_json::Value,bool)>=None;
@@ -7471,6 +7472,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     crate::card::review_issue_card(issues,tone,|content|{
                                         content.add(egui::Label::new(typography::body(&label)
                                             .color(tone.text_color())).wrap());
+                                        if issue["kind"]=="NOTICE"{
+                                            let enabled=confirmed_editable && confirmed_controls_idle
+                                                && !group.transferred && self.workflow_ui.active_preview().is_none();
+                                            if let Some(cancel)=review_panel::show_validation_approval_action(content,issue,enabled){
+                                                renotice_approval=Some((issue["approvalBasis"].clone(),cancel));
+                                            }
+                                        }
                                         if let Some(target)=group.shipments.iter().find(|s|
                                             issue["recipientId"].as_str()==Some(s.recipient_id.as_str()) &&
                                             issue["orderId"].as_str()==Some(s.order_id.as_str())){
@@ -7872,6 +7880,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
             }
             else if confirmed_commit{self.submit_confirmed_cell(ui.ctx());}
+            else if let Some((basis,cancel))=renotice_approval{
+                self.start_workflow_action_with_args(
+                    if cancel{"cancel_renotice_approval"}else{"approve_renotice"},
+                    &group.id,None,None,false,serde_json::json!({"approvalBasis":basis}),ui.ctx());
+            }
             else if let Some((id,request,cancel))=confirmed_validation_approval{
                 if let Some(target_ship)=group.shipments.iter().find(|s|s.id==id){
                     if let Some(bound)=self.confirmed_edit_target(&board,group,target_ship){
@@ -9734,7 +9747,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             .and_then(|board|board.groups.iter().find(|group|group.id==id))
         else{return;};
         if group.transferred{return;}
-        if (group.step==2 || (group.needs_notice && group.step>=2)) && !group.payment_copied{
+        let renotice_approved=group.issues.iter().any(|issue|
+            issue["kind"]=="NOTICE" && issue["resolution"]=="USER_APPROVED");
+        if (group.step==2 || (group.needs_notice && group.step>=2)) && !group.payment_copied && !renotice_approved{
             self.workflow_dialog=Some(WorkflowDialog::PaymentNotice(id.to_owned()));
         }else{
             let action=if group.step>=4 && !group.needs_notice{"process_group"}
