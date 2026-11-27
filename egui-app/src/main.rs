@@ -7505,8 +7505,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         group.shipments.iter().find(|s|
                                             issue["orderId"].as_str()==Some(s.order_id.as_str()) &&
                                             issue["recipientId"].as_str()==Some(s.recipient_id.as_str()))
-                                            .map(|s|json!({"recipients":[&s.recipient]})).unwrap_or(Value::Null)
-                                    }else{Value::Null};
+                                            .map(|s|serde_json::json!({"recipients":[&s.recipient]})).unwrap_or(serde_json::Value::Null)
+                                    }else{serde_json::Value::Null};
                                     let label=review_panel::workflow_review_text(issue,&label,&recognition);
                                     let tone=match issue["severity"].as_str(){
                                         Some("ACTION")=>theme::ReviewTone::Action,
