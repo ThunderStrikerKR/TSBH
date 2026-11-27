@@ -1,4 +1,5 @@
 //! Shared checkbox rendering and fixed list/table placement; callers own selection.
+use crate::ui_layout::SharedUiClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Layout,Rect,Response,Ui,Vec2};
@@ -45,7 +46,7 @@ pub(crate) fn management_table_checkbox(
         builder=builder.disabled();
     }
     ui.scope_builder(builder,|control|{
-        control.set_clip_rect(clip);
+        control.restrict_shared_clip(clip);
         checkbox(control,checked,"",true)
     }).inner
 }
