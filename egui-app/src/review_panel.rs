@@ -512,6 +512,17 @@ fn inherited_message_groups(issues:&[Value],indices:&[usize],recognition:&Value)
 pub(crate) fn review_caption<'a>(issue:&'a Value,recognition:&Value)->std::borrow::Cow<'a,str>{
     let kind=text(issue,"kind");
     let original=text(issue,"title");
+    if kind=="APPLIED" && matches!(original,"거래처 별칭 적용"|"공통 별칭 적용"){
+        if let Some((_,item))=review_item_context(issue,recognition){
+            let term=text(&item["match"],"term").trim();
+            let model=text(item,"name").split('/').next().unwrap_or("").trim();
+            if !term.is_empty()&&!model.is_empty(){
+                let object=if final_consonant(term).unwrap_or(0)==0{"를"}else{"을"};
+                let direction=if matches!(final_consonant(model),None|Some(0|8)){"로"}else{"으로"};
+                return std::borrow::Cow::Owned(format!("'{term}'{object} {model}{direction} 적용 ({original})"));
+            }
+        }
+    }
     let label=match kind{
         "CLIENT"=>"거래처 선택 필요",
         "CLIENT_MATCH_CONFLICT"=>"거래처 정보 불일치",
@@ -595,6 +606,16 @@ pub(crate) fn workflow_review_text(issue:&Value,label:&str,recognition:&Value)->
 pub(crate) fn issue_instruction(issue:&Value)->Option<&'static str>{
     if text(issue,"severity")=="INFO"{return None;}
     let kind=text(issue,"kind");
+    if kind=="STAGE_BLOCKER"{
+        let detail=text(issue,"detail").trim().trim_end_matches('.');
+        let problem=detail.rsplit_once(": ").map(|(_,problem)|problem).unwrap_or(detail);
+        return match problem{
+            "청구액 미확정"=>Some("품목 단가, 수량 및 운임을 확인하여 청구액을 확정하세요."),
+            "운임 적용 필요"=>Some("배송 운임을 확인하고 운임 적용 단계를 완료하세요."),
+            "계좌 안내 완료 필요"=>Some("입금 계좌와 청구액을 확인하고 계좌 안내 단계를 완료하세요."),
+            _=>None,
+        };
+    }
     if kind=="ADDRESS"&&issue["canApproveCurrent"]!=true{
         return Some("배송주소를 확인하고 입력 또는 수정하세요.");
     }
@@ -801,6 +822,10 @@ mod tests {
         assert_eq!(workflow_review_text(&approved,"변경된 금액 / 계좌 재안내 사용자 승인",&json!({})),"변경된 금액 / 계좌 재안내 사용자 승인");
         let unapproved=json!({"kind":"SALE_STATUS","severity":"ACTION"});
         assert!(!issue_instruction(&unapproved).unwrap().contains("현재 정보 승인"));
+        let stage=json!({"kind":"STAGE_BLOCKER","severity":"ACTION","detail":"수취인: 청구액 미확정"});
+        assert!(issue_instruction(&stage).unwrap().contains("청구액을 확정"));
+        let unknown=json!({"kind":"STAGE_BLOCKER","severity":"ACTION","detail":"다른 오류"});
+        assert!(issue_instruction(&unknown).is_none());
     }
     #[test]
     fn recovered_review_labels_keep_native_issue_identity_and_approval(){
