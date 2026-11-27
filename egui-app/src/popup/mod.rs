@@ -96,6 +96,7 @@ pub(crate) fn modal_master_content_from_ui(available:Rect,outer:Vec2)->Vec2{
 /// Using scope_builder directly on that parent caused the window to outgrow
 /// fixed_size and lose its lower rounded frame to viewport clipping.
 pub(crate) fn modal_master_overlay_ui(parent:&mut Ui,bounds:Rect,id:&'static str)->Ui{
+    let bounds=crate::ui_layout::aligned_rect(bounds);
     let inherited_clip=parent.clip_rect();
     let mut overlay=parent.new_child(
         egui::UiBuilder::new()
@@ -569,6 +570,8 @@ fn modal_master_header_content_in_rect(
         egui::pos2(content.left(),heading.bottom()+theme::SPACE_4),
         Vec2::new(content.width(),20.0)
     );
+    let heading=crate::ui_layout::aligned_rect(heading);
+    let subtitle=crate::ui_layout::aligned_rect(subtitle);
     let heading_clip=heading.intersect(ui.clip_rect());
     // Reserve the real close-button hitbox first; a long heading may
     // truncate, but must never push the only exit outside the modal.
@@ -582,7 +585,7 @@ fn modal_master_header_content_in_rect(
     let close=response.clicked();
     let title_right=(response.rect.left()-theme::SPACE_8).max(heading.left());
     if title_right>heading.left(){
-        let title_rect=Rect::from_min_max(heading.min,egui::pos2(title_right,heading.bottom()));
+        let title_rect=crate::ui_layout::aligned_rect(Rect::from_min_max(heading.min,egui::pos2(title_right,heading.bottom())));
         let mut title_ui=ui.new_child(
             egui::UiBuilder::new().id_salt("modal-master-heading-title")
                 .max_rect(title_rect)
@@ -678,7 +681,7 @@ pub(crate) fn modal_master_header_with_toolbar_in_rect<R>(
     let close=modal_master_header_content_in_rect(
         ui,title_rect,title,"",close_label,enabled
     );
-    let toolbar_rect=modal_master_header_toolbar_rect(rect,ppp);
+    let toolbar_rect=crate::ui_layout::aligned_rect(modal_master_header_toolbar_rect(rect,ppp));
     let mut toolbar_ui=ui.new_child(
         egui::UiBuilder::new().id_salt("modal-master-header-toolbar")
             .max_rect(toolbar_rect)
@@ -713,7 +716,7 @@ pub(crate) fn modal_master_footer_in_rect(
     // height; a 34pt clip sliced 2pt off the bottom of "적용".
     let action_height=theme::ACTION_PRIMARY_HEIGHT
         .max(theme::ACTION_STANDARD_HEIGHT);
-    let content=modal_master_action_area(rect,action_height);
+    let content=crate::ui_layout::aligned_rect(modal_master_action_area(rect,action_height));
     let clip=content.intersect(ui.clip_rect());
     ui.scope_builder(
         egui::UiBuilder::new().id_salt("modal-master-actions")
@@ -748,7 +751,7 @@ fn modal_action_row_measured<R>(
     paint_modal_master_footer_surface(ui,rect);
     let action_height=theme::ACTION_PRIMARY_HEIGHT
         .max(theme::ACTION_STANDARD_HEIGHT);
-    let area=modal_master_action_area(rect,action_height);
+    let area=crate::ui_layout::aligned_rect(modal_master_action_area(rect,action_height));
     let clip=area.intersect(ui.clip_rect());
     let response=ui.scope_builder(
         egui::UiBuilder::new().id_salt("modal-master-flow-actions")
