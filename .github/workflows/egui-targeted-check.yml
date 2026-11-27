@@ -283,3 +283,5 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib brands::tests -- --nocapture
       - name: Verify brand SQLite creation, correction, collisions, CAS and reopened state
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib native_brand_sqlite_save_correction_collision_and_reopen -- --nocapture
+      - name: Verify brand deletion against actual SQLite references and reopened state
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib native_brand_sqlite_delete_checks_links_stale_entity_and_reopen -- --nocapture
