@@ -1518,6 +1518,9 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
             row["addressParts"] = parts;
         }
     }
+    // Keep the legacy choice until a per-hit policy has been independently
+    // evaluated. Record the local alternatives, not merely the document flag.
+    let mut product_owner_trace=Vec::new();
     let has_leading = anchors.first().map_or(false, |a| product_hits.iter().any(|h|
         !h.common && events[h.evidence].start < events[*a].start));
     for hit in &product_hits {
@@ -1530,6 +1533,23 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
             (0..recipients.len()).filter(|idx| recipients[*idx]["items"]
                 .as_array().map_or(true,|xs|xs.is_empty())).collect()
         } else { vec![owner] };
+        if collect_candidate_trace&&product_owner_trace.len()<64{
+            let e=&events[hit.evidence];
+            let local=if hit.common{Vec::new()}else{
+                [Some(anchor_index),anchor_index.checked_add(1)].into_iter().flatten()
+                    .filter_map(|i|{
+                        let a=&events[*anchors.get(i)?];
+                        let relation=SourceRelation::between(e.line as u64,e.paragraph as u64,
+                            a.line as u64,a.paragraph as u64);
+                        Some(json!({"anchor":{"start":utf16(raw,a.start),"end":utf16(raw,a.end),"kind":a.kind},
+                            "lineDelta":relation.line_delta,"sameParagraph":relation.same_paragraph}))
+                    }).collect::<Vec<_>>()
+            };
+            product_owner_trace.push(json!({"source":{"start":utf16(raw,e.start),"end":utf16(raw,e.end)},
+                "mode":if hit.common{"common"}else if has_leading{"document_leading_product"}else{"preceding_anchor"},
+                "selectedRecipientIndices":attach_to,"localAlternatives":local,
+                "candidatePolicyApplied":false}));
+        }
         for idx in attach_to {
             let (display_raw,display_start)=ts_product_display(hit,&events);
             let id = format!("recognition:item:{}:{}", utf16(raw,events[hit.evidence].start),idx);
@@ -1787,10 +1807,18 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
         result["recipientOwnerTrace"]=json!({"schemaVersion":1,"scorePolicyVersion":"owner-margin-30-v1","decisions":trace});
     }
     if collect_candidate_trace{
+        let address_formats=result["recipients"].as_array().into_iter().flatten()
+            .filter(|r|r["address"].as_str().is_some_and(|a|!a.is_empty()))
+            .map(|r|json!({"recipientId":r["id"],"formatKind":r["addressKind"],
+                "formatStatus":r["addressStatus"],"deliverabilityVerified":false}))
+            .take(64).collect::<Vec<_>>();
         result["classificationCandidateTrace"]=json!({"schemaVersion":1,
             "coverage":"product_stages_variant_selection_and_quantity_post_extraction",
             "truncated":candidate_trace_truncated,"decisions":candidate_trace,
             "itemDecisions":item_candidate_trace,
+            "productOwnerDecisions":product_owner_trace,
+            "productOwnerTraceTruncated":product_hits.len()>64,
+            "addressFormatAssessments":address_formats,
             "typeGateRecords":type_trace,"typeGateRecordsTruncated":type_trace_truncated,
             "fullCandidateCoverage":false});
     }
