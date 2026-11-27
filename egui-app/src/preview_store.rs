@@ -387,6 +387,7 @@ impl PreviewStore {
             CREATE INDEX IF NOT EXISTS idx_reception_edit_audit_order
                 ON reception_edit_audit(order_id,recorded_at,id);"
         ).map_err(|e|format!("수취인/품목 수정 감사 테이블 준비 실패: {e}"))?;
+        ensure_reception_audit_context(&conn)?;
         // Non-destructive migration of corpus rows already collected by
         // earlier 65th-session builds; NEVER drop original/corrected text.
         let mut stmt=conn.prepare("PRAGMA table_info(ocr_feedback)")
@@ -630,8 +631,8 @@ impl PreviewStore {
                 tx.execute(
                     "INSERT OR IGNORE INTO reception_edit_audit
                      (id,order_id,source_raw,initial_analysis_json,
-                      before_rows_json,after_rows_json,recorded_at)
-                     VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                      before_rows_json,after_rows_json,recorded_at,context_json)
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
                     params![
                         event["id"].as_str().unwrap_or(""),
                         receipt.id.as_str(),
@@ -639,7 +640,8 @@ impl PreviewStore {
                         event["initialAnalysis"].to_string(),
                         event["beforeRows"].to_string(),
                         event["afterRows"].to_string(),
-                        event["at"].as_str().unwrap_or("")
+                        event["at"].as_str().unwrap_or(""),
+                        event.get("context").filter(|v|!v.is_null()).map(Value::to_string)
                     ],
                 ).map_err(|e|format!("수취인/품목 수정 감사 이력 저장 실패: {e}"))?;
             }
@@ -796,6 +798,29 @@ impl PreviewStore {
     pub fn path(&self) -> &std::path::Path { &self.path }
 }
 
+// Legacy events have unknown context. Never synthesize historical evidence.
+fn ensure_reception_audit_context(conn:&Connection)->Result<(),String>{
+    conn.execute_batch("BEGIN IMMEDIATE;").map_err(|e|e.to_string())?;
+    let result=(||->Result<(),String>{
+        let exists:i64=conn.query_row(
+            "SELECT count(*) FROM pragma_table_info('reception_edit_audit') WHERE name='context_json'",
+            [],|row|row.get(0)).map_err(|e|e.to_string())?;
+        if exists==0{
+            conn.execute_batch("ALTER TABLE reception_edit_audit ADD COLUMN context_json TEXT
+                CHECK(context_json IS NULL OR json_valid(context_json));")
+                .map_err(|e|e.to_string())?;
+        }
+        conn.execute_batch("COMMIT;").map_err(|e|e.to_string())
+    })();
+    if result.is_err(){let _=conn.execute_batch("ROLLBACK;");}
+    result.map_err(|e|format!("수정 감사 이력 확장 실패: {e}"))
+}
+
+fn valid_audit_classification(value:&Value)->bool{
+    value.is_object() && value["blocks"].is_array() &&
+        value["assignments"].is_object() && value["assignmentOrder"].is_array()
+}
+
 fn validate_source(source: &WorkingSource) -> Result<(), String> {
     if !matches!(source.order_type.as_str(), "AGENCY" | "DEALER") {
         return Err("접수 유형은 대리발송 또는 대리점 납품이어야 합니다.".into());
@@ -873,6 +898,13 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
                !event["beforeRows"].is_array() ||
                !event["afterRows"].is_array() {
                 return Err("수정 전후의 감사 스냅샷이 손상되었습니다.".into());
+            }
+            if let Some(context)=event.get("context").filter(|v|!v.is_null()){
+                if !context.is_object() || context["schemaVersion"]!=1 ||
+                    !valid_audit_classification(&context["beforeClassification"]) ||
+                    !valid_audit_classification(&context["afterClassification"]) {
+                    return Err("원문 배정 감사 이력의 형식이 잘못되었습니다.".into());
+                }
             }
             analysis_bytes=analysis_bytes.checked_add(event.to_string().len())
                 .ok_or("수정 이력의 크기를 확인할 수 없습니다.")?;
@@ -1042,6 +1074,14 @@ mod reception_edit_audit_tests {
                 recorded_at TEXT NOT NULL
              );"
         ).unwrap();
+        conn.execute("INSERT INTO reception_edit_audit VALUES
+            ('legacy','legacy-order','원문','{}','[]','[]','2026-11-21')",[]).unwrap();
+        ensure_reception_audit_context(&conn).unwrap();
+        ensure_reception_audit_context(&conn).unwrap();
+        let legacy:Option<String>=conn.query_row(
+            "SELECT context_json FROM reception_edit_audit WHERE id='legacy'",[],
+            |row|row.get(0)).unwrap();
+        assert!(legacy.is_none());
         drop(conn);
         let store=PreviewStore{path:path.clone()};
         let initial=json!({
@@ -1061,7 +1101,13 @@ mod reception_edit_audit_tests {
             edit_history:vec![json!({
                 "id":"change-1","at":"2026-11-22T00:00:00Z","sourceRaw":"원문",
                 "initialAnalysis":initial,"beforeRows":[{"id":"r1","name":"초기 수취인"}],
-                "afterRows":updated
+                "afterRows":updated,
+                "context":{"schemaVersion":1,"clientId":"c1",
+                    "beforeClassification":{"blocks":[{"id":"0:3","field":"quantity","text":"709"}],
+                        "assignments":{},"assignmentOrder":[]},
+                    "afterClassification":{"blocks":[{"id":"0:3","field":"quantity","text":"709"}],
+                        "assignments":{"0:3":{"field":"product","recipientId":"r1","itemId":"i1"}},
+                        "assignmentOrder":["0:3"]}}
             })]
         };
         let source=WorkingSource{
@@ -1089,6 +1135,13 @@ mod reception_edit_audit_tests {
             [],|row|row.get(0)
         ).unwrap();
         assert_eq!(preserved,1);
+        let context:String=conn.query_row(
+            "SELECT context_json FROM reception_edit_audit WHERE id='change-1'",[],
+            |row|row.get(0)).unwrap();
+        let context:Value=serde_json::from_str(&context).unwrap();
+        assert_eq!(context["beforeClassification"]["blocks"][0]["field"],"quantity");
+        assert_eq!(context["afterClassification"]["assignments"]["0:3"]["field"],"product");
+        assert_eq!(context["clientId"],"c1");
         drop(conn);
         let _=std::fs::remove_file(&path);
     }
