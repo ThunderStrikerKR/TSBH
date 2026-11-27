@@ -716,9 +716,9 @@ function indirectCardHeightSelfTest(){
 // Reviewed width writes: card policy owner and existing non-card geometry.
 // Exact file/function/receiver/argument/count, not whole-screen exemptions.
 const widthWriteAllowances=new Map([
-  ["card/mod.rs:apply_width_policy:ui.set_min_width(width)",1],
-  ["card/mod.rs:apply_width_policy:ui.set_width(width)",2],
-  ["card/mod.rs:apply_width_policy:ui.set_max_width(width)",2],
+  ["ui_primitives.rs:apply_width_policy:ui.set_min_width(width)",1],
+  ["ui_primitives.rs:apply_width_policy:ui.set_width(width)",2],
+  ["ui_primitives.rs:apply_width_policy:ui.set_max_width(width)",2],
 ]);
 export function auditCardWidths(source,file){
   const tokens=productionTokens(source),v=tokens.map(t=>t.v),hits=[],used=new Map();
@@ -763,9 +763,9 @@ function cardWidthSelfTest(){
   ];
   for(const [source,expected] of cases)assert.equal(check(source),expected,source);
   const owner="fn apply_width_policy(){ui.set_min_width(width);ui.set_width(width);ui.set_max_width(width);}";
-  assert.equal(check(owner,"card/mod.rs"),0);
+  assert.equal(check(owner,"ui_primitives.rs"),0);
   assert.equal(check(owner,"new_screen.rs"),3);
-  assert.equal(check(owner.replace("ui.set_min_width(width)","ui.set_min_width(width+1.0)"),"card/mod.rs"),1);
+  assert.equal(check(owner.replace("ui.set_min_width(width)","ui.set_min_width(width+1.0)"),"ui_primitives.rs"),1);
   assert.equal(check("fn other(){ui.set_width(width);}","card/mod.rs"),1);
   const viewport="fn details_and_freight(){pane.set_width(review_rect.width());}";
   assert.equal(check(viewport,"main.rs"),1);
