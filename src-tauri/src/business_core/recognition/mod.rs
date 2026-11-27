@@ -1264,7 +1264,9 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
     let note_label = Regex::new(
         r"^\s*\(?(?:배송\s*)?(?:메세지|메시지|요청(?:사항)?|메모)(?:\s*[:：]\s*|\s+)(.*)$"
     ).expect("note");
-    let mut note_continuation: Option<usize>=None;
+    // A heading without a value is only a pending continuation, not a
+    // zero-length evidence source. Keep its paragraph until text arrives.
+    let mut note_continuation: Option<(usize,Option<usize>)>=None;
     let mut sender_section = false;
     let mut sender_lines=HashSet::new();
     let mut non_delivery_segments=HashSet::new();
@@ -1315,7 +1317,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         }
         // The TS recognizer extends a memo through subsequent non-field
         // lines in the same paragraph, stopping at any contact/address/item.
-        if let Some(i)=note_continuation {
+        if let Some((paragraph,existing))=note_continuation {
             let field=person_label.is_match(line.text)
                 || note_label.is_match(line.text)
                 || address_begin(line.text).is_some()
@@ -1326,10 +1328,16 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
                     && model::category(line.text).is_some())
                 || product_signal(line.text,
                     search.decision(line.text),state);
-            if !field && line.paragraph==events[i].paragraph {
-                events[i].end=line.start+line.text.len();
-                if !events[i].value.is_empty(){events[i].value.push('\n');}
-                events[i].value.push_str(text);
+            if !field && line.paragraph==paragraph {
+                if let Some(i)=existing{
+                    events[i].end=line.start+line.text.len();
+                    if !events[i].value.is_empty(){events[i].value.push('\n');}
+                    events[i].value.push_str(text);
+                }else if let Some((a,b))=trim_span(line.text,0,line.text.len()){
+                    let i=add_match(&mut events,line,a,b,"note",
+                        text.to_owned(),"배송 요청사항 표제어");
+                    note_continuation=Some((paragraph,Some(i)));
+                }
                 continue;
             }
             note_continuation=None;
@@ -1339,9 +1347,14 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
                 let value=if text.starts_with('(') {
                     v.as_str().trim_end_matches(')').trim().to_owned()
                 } else {v.as_str().trim().to_owned()};
-                let i=add_match(&mut events, line, v.start(), v.end(), "note",
-                    value,"배송 요청사항 표제어");
-                note_continuation=Some(i);
+                if value.is_empty(){
+                    non_delivery_segments.insert(line.start);
+                    note_continuation=Some((line.paragraph,None));
+                }else{
+                    let i=add_match(&mut events,line,v.start(),v.end(),"note",
+                        value,"배송 요청사항 표제어");
+                    note_continuation=Some((line.paragraph,Some(i)));
+                }
             }
             continue;
         }
@@ -2715,6 +2728,31 @@ mod tests {
         assert_eq!(rows.len(),2);
         assert_eq!(rows[0]["mobile"],"010-1234-5678");
         assert_eq!(rows[1]["mobile"],"010-2345-6789");
+    }
+    #[test]
+    fn empty_memo_heading_does_not_create_zero_length_source(){
+        let state=state();
+        for ending in ["", "\n송하인: 가상상호\n010-0000-0002",
+                       "\n\n배송메모:"]{
+            let raw=format!("수취인: 김가상\n010-0000-0001\n709 1개\n배송메모 :{ending}");
+            let result=analyze(&raw,&state,None).unwrap();
+            assert_eq!(result["recipients"][0]["note"],"");
+            assert!(result["candidates"].as_array().unwrap().iter().all(|e|
+                e["kind"]!="note"&&e["start"].as_u64()<e["end"].as_u64()));
+            assert!(result["recipients"][0]["sources"].as_array().unwrap().iter().all(|e|
+                e["start"].as_u64()<e["end"].as_u64()));
+        }
+    }
+    #[test]
+    fn empty_memo_heading_can_still_accept_continuation(){
+        let raw="수취인: 김가상\n010-0000-0001\n709 1개\n배송메모 :\n문 앞에 놓아주세요";
+        let result=analyze(raw,&state(),None).unwrap();
+        assert_eq!(result["recipients"][0]["note"],"문 앞에 놓아주세요");
+        let notes=result["candidates"].as_array().unwrap().iter()
+            .filter(|e|e["kind"]=="note").collect::<Vec<_>>();
+        assert_eq!(notes.len(),1);
+        assert_eq!(notes[0]["text"],"문 앞에 놓아주세요");
+        assert!(notes[0]["start"].as_u64()<notes[0]["end"].as_u64());
     }
     #[test]
     fn shipping_memo_label_must_not_swallow_next_recipient_address(){
