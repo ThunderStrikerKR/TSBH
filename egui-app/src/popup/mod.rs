@@ -1150,6 +1150,58 @@ pub(crate) fn show_decision_window<R>(
     }
 }
 
+/// UI-only result: callers own the actual save, discard and navigation.
+#[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
+pub(crate) enum ChangeDecision{
+    #[default]
+    Pending,
+    Cancel,
+    Save,
+    Discard,
+}
+
+/// One confirmation body for both save-or-discard and discard-only prompts.
+/// Keep caller-specific wording, permission and busy state; never write data here.
+fn show_change_confirmation(
+    ctx:&egui::Context,area:Rect,id:&'static str,title:&str,message:&str,
+    cancel_label:&str,discard_label:&str,enabled:bool,save:Option<(&str,bool)>
+)->ChangeDecision{
+    let mut result=ChangeDecision::Pending;
+    show_decision_window(ctx,title,id,area,|ui|{
+        let (cancelled,action)=decision_content(ui,title,cancel_label,enabled,
+            |body|{body.label(typography::body(message));},
+            |actions|{
+                let mut action=ChangeDecision::Pending;
+                if let Some((label,can_save))=save{
+                    if crate::button::action(actions,label,theme::ButtonRole::Primary,enabled&&can_save).clicked(){
+                        action=ChangeDecision::Save;
+                    }
+                }
+                if crate::button::action(actions,discard_label,theme::ButtonRole::Danger,enabled).clicked(){
+                    action=ChangeDecision::Discard;
+                }
+                action
+            }
+        );
+        result=if cancelled{ChangeDecision::Cancel}else{action};
+    });
+    result
+}
+
+pub(crate) fn show_save_confirmation(
+    ctx:&egui::Context,area:Rect,id:&'static str,title:&str,message:&str,
+    save_label:&str,enabled:bool,can_save:bool
+)->ChangeDecision{
+    show_change_confirmation(ctx,area,id,title,message,"취소","저장 안 함",enabled,Some((save_label,can_save)))
+}
+
+pub(crate) fn show_discard_confirmation(
+    ctx:&egui::Context,area:Rect,id:&'static str,title:&str,message:&str,
+    cancel_label:&str,discard_label:&str,enabled:bool
+)->ChangeDecision{
+    show_change_confirmation(ctx,area,id,title,message,cancel_label,discard_label,enabled,None)
+}
+
 /// Draw the dim over the ENTIRE application viewport, including its header
 /// and KakaoTalk reserved pane. Only the actual dialog remains centered in
 /// the Kakao-safe work area; do not use that area to clip the backdrop.
