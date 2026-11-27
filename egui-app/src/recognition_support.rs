@@ -7,7 +7,7 @@ use std::collections::{BTreeMap,BTreeSet};
 
 const MAX_ORDERS:usize=50_000;
 const MAX_FACTS:usize=2_000_000;
-const SUPPORT_VERSION:i64=1;
+const SUPPORT_VERSION:i64=2;
 
 #[derive(Default)]
 struct Evidence{
@@ -86,6 +86,23 @@ struct Candidate{
     positive_orders:u64,
     negative_orders:u64,
 }
+// One validation label per order, limited to a unique explicit correction
+// with no unresolved or pending observations in this exact context.
+// These are correction-conditional labels, not representative ground truth.
+struct CorrectionSample{
+    label:Option<String>,
+    mass:BTreeMap<String,f64>,
+    outside:f64,
+}
+fn correction_interval(success:u64,total:u64)->Value{
+    if total==0{return Value::Null;}
+    let n=total as f64;let p=success as f64/n;
+    let z=1.959963984540054_f64;let z2=z*z;
+    let center=(p+z2/(2.0*n))/(1.0+z2/n);
+    let half=z*(p*(1.0-p)/n+z2/(4.0*n*n)).sqrt()/(1.0+z2/n);
+    json!({"orders":success,"sampleOrders":total,"frequency":p,
+        "wilson95Lower":(center-half).clamp(0.0,1.0),"wilson95Upper":(center+half).clamp(0.0,1.0)})
+}
 #[derive(Default)]
 struct Aggregate{
     candidates:BTreeMap<String,Candidate>,
@@ -101,8 +118,77 @@ struct Aggregate{
     weight_squared:f64,
     outside_support:f64,
     outside_negative:f64,
+    correction_samples:Vec<CorrectionSample>,
+    ambiguous_correction_orders:u64,
 }
 impl Aggregate{
+    fn record_correction(&mut self,e:&Evidence,allowed:&BTreeSet<String>,w:f64,s:f64,weak:u64,strong:u64){
+        if strong==0{return;}
+        if e.positive.len()!=1 || e.pending!=0 || e.unresolved!=0{
+            self.ambiguous_correction_orders+=1;
+            return;
+        }
+        let label=e.positive.keys().next().filter(|k|allowed.contains(*k)).cloned();
+        let mut sample=CorrectionSample{label,mass:BTreeMap::new(),outside:0.0};
+        for (map,budget,count) in [(&e.weak,w,weak),(&e.positive,s,strong)]{
+            if count==0{continue;}
+            for (candidate,n) in map{
+                let mass=budget*(*n as f64)/(count as f64);
+                if allowed.contains(candidate){*sample.mass.entry(candidate.clone()).or_default()+=mass;}
+                else{sample.outside+=mass;}
+            }
+        }
+        self.correction_samples.push(sample);
+    }
+    fn correction_validation(&self,allowed:&BTreeSet<String>)->Value{
+        let mut counts:BTreeMap<&str,u64>=BTreeMap::new();
+        let mut outside_labels=0u64;
+        let mut evaluated=0u64;let mut skipped=0u64;let mut tied=0u64;let mut correct=0u64;
+        let mut brier=0.0;let mut true_share=0.0;
+        for sample in &self.correction_samples{
+            if let Some(label)=sample.label.as_deref(){*counts.entry(label).or_default()+=1;}
+            else{outside_labels+=1;}
+            // This sample has strong evidence, so its entire positive budget
+            // is one. Subtract it before evaluating its explicit label.
+            // The queried target was already excluded by the SQL read.
+            let remaining=self.weight-1.0;
+            if remaining<=1e-10{skipped+=1;continue;}
+            let mut distribution=allowed.iter().map(|id|{
+                let mass=self.candidates.get(id).map_or(0.0,|c|c.support)
+                    -sample.mass.get(id).copied().unwrap_or(0.0);
+                (Some(id.as_str()),mass.max(0.0))
+            }).collect::<Vec<_>>();
+            distribution.push((None,(self.outside_support-sample.outside).max(0.0)));
+            let sum: f64=distribution.iter().map(|(_,m)|*m).sum();
+            if sum<=1e-10{skipped+=1;continue;}
+            let label=sample.label.as_deref();
+            let mut top=-1.0_f64;let mut top_count=0;let mut top_correct=false;
+            for (id,mass) in distribution{
+                let p=mass/sum;let actual=id==label;
+                brier+=(p-if actual{1.0}else{0.0}).powi(2);
+                if actual{true_share+=p;}
+                if p>top+1e-10{top=p;top_count=1;top_correct=actual;}
+                else if (p-top).abs()<=1e-10{top_count+=1;}
+            }
+            evaluated+=1;
+            if top_count!=1{tied+=1;}else if top_correct{correct+=1;}
+        }
+        let total=self.correction_samples.len() as u64;
+        let ratio=|v:f64,n:u64|if n>0{Some(v/n as f64)}else{None};
+        json!({"method":"leave_one_order_out_correction_only","labelOrders":total,
+            "excludedAmbiguousCorrectionOrders":self.ambiguous_correction_orders,
+            "candidateConditionalFrequencies":allowed.iter().map(|id|json!({"candidate":id,
+                "estimate":correction_interval(*counts.get(id.as_str()).unwrap_or(&0),total)})).collect::<Vec<_>>(),
+            "outsideCandidateEstimate":correction_interval(outside_labels,total),
+            "evaluatedOrders":evaluated,"skippedNoTrainingEvidenceOrders":skipped,
+            "tiedTopOrders":tied,"uniqueTopCorrectOrders":correct,
+            "uniqueTopAccuracy":ratio(correct as f64,evaluated-tied),
+            "multiclassBrierScore":ratio(brier,evaluated),
+            "meanTrueLabelSupportShare":ratio(true_share,evaluated),
+            "chronologicalHoldoutVerified":false,"representativeLabelsVerified":false,
+            "intervalAssumesIndependentRepresentativeLabels":true,
+            "calibratedProbability":null,"eligibleForAutomaticDecision":false})
+    }
     fn add(&mut self,e:Evidence,allowed:&BTreeSet<String>,ratio:f64)->Result<(),String>{
         self.context_orders+=1;
         self.pending_orders+=u64::from(e.pending>0);
@@ -116,6 +202,7 @@ impl Aggregate{
             (false,true)=>{self.explicit_only+=1;(0.0,1.0)},
             (false,false)=>{self.no_support+=1;return Ok(());}
         };
+        self.record_correction(&e,allowed,w,s,weak,strong);
         self.supported_orders+=1;
         self.weight+=w+s;self.weight_squared+=(w+s)*(w+s);
         for (candidate,n) in e.weak{
@@ -158,6 +245,7 @@ impl Aggregate{
             "totalSupportMass":self.weight,"weightEffectiveOrders":effective,
             "outsideCandidateSupportMass":self.outside_support,"outsideCandidateSupportShare":share(self.outside_support),
             "outsideCandidateOppositionMass":self.outside_negative,"candidates":candidates,
+            "correctionValidation":self.correction_validation(allowed),
             "calibratedProbability":null,"eligibleForAutomaticDecision":false,"decisionChanged":false,
             "fullHistoryReconciled":false,"targetOrderExcluded":true})
     }
@@ -273,6 +361,48 @@ mod recognition_support_tests{
         assert_eq!(wire["unresolvedOrders"],1);
         assert!(wire["candidates"][0]["supportShare"].is_null());
         assert!(wire["weightEffectiveOrders"].is_null());
+    }
+    #[test]
+    fn correction_validation_excludes_each_own_label_and_keeps_outside_mass(){
+        let mut a=Aggregate::default();let allowed=allowed();
+        a.add(evidence(&[],&[("a",1)],&[("b",1)]),&allowed,3.0).unwrap();
+        a.add(evidence(&[],&[("b",1)],&[("a",1)]),&allowed,3.0).unwrap();
+        let v=a.wire(&allowed,3.0)["correctionValidation"].clone();
+        assert_eq!(v["labelOrders"],2);assert_eq!(v["evaluatedOrders"],2);
+        near(v["uniqueTopAccuracy"].as_f64().unwrap(),0.0);
+        near(v["multiclassBrierScore"].as_f64().unwrap(),2.0);
+        near(v["meanTrueLabelSupportShare"].as_f64().unwrap(),0.0);
+        a.add(evidence(&[],&[("outside",1)],&[("b",1)]),&allowed,3.0).unwrap();
+        let v=a.wire(&allowed,3.0)["correctionValidation"].clone();
+        assert_eq!(v["outsideCandidateEstimate"]["orders"],1);
+        assert_eq!(v["tiedTopOrders"],3);
+        assert!(v["uniqueTopAccuracy"].is_null());
+        assert!(v["calibratedProbability"].is_null());
+    }
+    #[test]
+    fn correction_validation_excludes_unverified_and_ambiguous_labels(){
+        let mut a=Aggregate::default();let allowed=allowed();
+        a.add(evidence(&[("a",1)],&[],&[]),&allowed,3.0).unwrap();
+        a.add(evidence(&[],&[("a",1),("b",1)],&[("a",1),("b",1)]),&allowed,3.0).unwrap();
+        let mut pending=evidence(&[],&[("a",1)],&[("b",1)]);pending.pending=1;
+        a.add(pending,&allowed,3.0).unwrap();
+        let v=a.wire(&allowed,3.0)["correctionValidation"].clone();
+        assert_eq!(v["labelOrders"],0);
+        assert_eq!(v["excludedAmbiguousCorrectionOrders"],2);
+        assert!(v["multiclassBrierScore"].is_null());
+        assert!(v["outsideCandidateEstimate"].is_null());
+    }
+    #[test]
+    fn one_correction_cannot_validate_itself_or_claim_certainty(){
+        let mut a=Aggregate::default();let allowed=allowed();
+        a.add(evidence(&[],&[("a",1)],&[("b",1)]),&allowed,3.0).unwrap();
+        let v=a.wire(&allowed,3.0)["correctionValidation"].clone();
+        assert_eq!(v["evaluatedOrders"],0);
+        assert_eq!(v["skippedNoTrainingEvidenceOrders"],1);
+        let estimate=&v["candidateConditionalFrequencies"][0]["estimate"];
+        near(estimate["frequency"].as_f64().unwrap(),1.0);
+        assert!(estimate["wilson95Lower"].as_f64().unwrap()<0.25);
+        assert_eq!(v["eligibleForAutomaticDecision"],false);
     }
     #[test]
     fn large_order_cannot_outvote_many_independent_orders(){
