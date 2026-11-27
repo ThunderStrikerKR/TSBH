@@ -591,6 +591,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let control=columns[6].shrink2(
                 Vec2::new(theme::SPACE_8,theme::SPACE_4)
             );
+            let control=crate::ui_layout::aligned_rect(control);
             let action_gap=theme::SPACE_4;
             let action_width=(control.width()-action_gap)/2.0;
             ui.scope_builder(UiBuilder::new()
@@ -656,7 +657,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             // Actions live OUTSIDE the compact shipment card. Both actions
             // target this one shipment; the order-level copy remains separate.
             let block=history_detail_block_rect(rect,widths,spacing);
-            let actions_rect=history_detail_actions_rect(rect,block);
+            let actions_rect=crate::ui_layout::aligned_rect(history_detail_actions_rect(rect,block));
             let memo_text=shipment.map(|s|field(s,"managementMemo")).unwrap_or("");
             ui.scope_builder(UiBuilder::new()
                 .id_salt(("history-shipment-actions",id,recipient_index,shipment_index))
@@ -767,6 +768,8 @@ fn history_date_controls(
     crate::navigation::apply_management_date_control_spacing(ui);
     if compact{
         let (first,second)=crate::navigation::compact_date_range_rows(ui,RANGE_COMPACT_START_WIDTH,RANGE_COMPACT_END_WIDTH);
+        let first=crate::ui_layout::aligned_rect(first);
+        let second=crate::ui_layout::aligned_rect(second);
         ui.scope_builder(UiBuilder::new()
             .id_salt("history-range-start-line")
             .max_rect(first)
