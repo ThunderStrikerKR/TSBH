@@ -43,7 +43,10 @@ fn technical(raw:&str)->bool{
         (!trimmed.is_empty()&&!trimmed.chars().any(|c|matches!(c,'\u{ac00}'..='\u{d7a3}'|'\u{1100}'..='\u{11ff}'|'\u{3130}'..='\u{318f}')))
 }
 fn fallback(context:&str)->&'static str{
-    if context.starts_with("reception.review"){"확인할 내용을 불러오지 못했습니다. 다시 시도해 주세요."}
+    if context.starts_with("reception.preview"){"주문 미리보기를 불러오지 못했습니다. 주문을 다시 선택해 주세요."}
+    else if context.starts_with("reception.workflow.read"){"최신 주문 상태를 불러오지 못했습니다. 주문 상태를 다시 확인해 주세요."}
+    else if context.starts_with("reception.workflow.message"){"복사용 메시지를 만들지 못했습니다. 주문 정보와 메시지 설정을 확인해 주세요."}
+    else if context.starts_with("reception.review"){"확인할 내용을 불러오지 못했습니다. 다시 시도해 주세요."}
     else if context.starts_with("reception.remote"){"도서/산간 여부를 확인하지 못했습니다. 주소를 확인해 주세요."}
     else if context.starts_with("reception.manual"){"수동 분류를 처리하지 못했습니다. 입력 내용을 확인하고 다시 시도해 주세요."}
     else if context.starts_with("reception.item")||context.starts_with("reception.product"){"상품 정보를 처리하지 못했습니다. 다시 시도해 주세요."}
@@ -111,6 +114,19 @@ mod tests{
         assert!(display("settings","DB revision 충돌").contains("최신 정보"));
         assert!(display("products","permission denied").contains("권한"));
         assert!(display("settlement.query","unexpected EOF").contains("결산"));
+    }
+    #[test]
+    fn review_failures_identify_the_failed_operation(){
+        for (context,expected) in [
+            ("reception.preview","주문 미리보기"),
+            ("reception.workflow.read","최신 주문 상태"),
+            ("reception.workflow.message","복사용 메시지"),
+        ]{
+            let shown=display(context,"Rust JSON 형식 오류");
+            assert!(shown.contains(expected));
+            assert!(!shown.contains("JSON"));
+            assert_eq!(display(context,"배송 운임을 확인하세요").as_ref(),"배송 운임을 확인하세요");
+        }
     }
     #[test]
     fn mixed_lists_keep_business_blockers_without_technical_details(){
