@@ -147,6 +147,7 @@ fn action_with_palette(
 ) -> Response {
     let effective_enabled=enabled && ui.is_enabled();
     let (height,fill,color,stroke)=action_style(role,effective_enabled,review_white);
+    let light_surface=effective_enabled&&fill==theme::BRIGHT;
     let font_size = match role {
         ButtonRole::Navigation | ButtonRole::ActiveNavigation => typography::FONT_MAIN_NAV,
         ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab =>
@@ -188,19 +189,30 @@ fn action_with_palette(
             _ => 6.0,
         };
         ui.spacing_mut().button_padding = Vec2::new(padding_x, padding_y);
-        let button = egui::Button::new(
+        let mut button = egui::Button::new(
             typography::action_label(label, font_size, important, color)
         )
-            .fill(fill)
             .stroke(stroke)
             .corner_radius(CornerRadius::same(radius))
             .min_size(Vec2::new(min_width, height));
+        if light_surface{
+            // Native button fill is painted before its dark label. Explicit
+            // .fill() overrides hover visuals, so use the scoped widget style.
+            let widgets=&mut ui.visuals_mut().widgets;
+            widgets.inactive.weak_bg_fill=fill;
+            widgets.hovered.weak_bg_fill=theme::BUTTON_HOVER_LIGHT_BG;
+            widgets.active.weak_bg_fill=theme::BUTTON_HOVER_LIGHT_BG;
+            widgets.open.weak_bg_fill=theme::BUTTON_HOVER_LIGHT_BG;
+        }else{button=button.fill(fill);}
         ui.add_enabled(enabled, button)
     }).inner;
     #[cfg(test)]
     crate::ui_test_support::record_component_geometry("button",response.rect,ui.clip_rect(),Some(height));
     if effective_enabled {
-        paint_button_hover(ui,&response,radius as f32);
+        if light_surface{
+            crate::floating_notice::remember_response(ui.ctx(),&response);
+            crate::ui_primitives::paint_action_hover_surface(ui,&response,CornerRadius::same(radius),true);
+        }else{paint_button_hover(ui,&response,radius as f32);}
     }
     response
 }
@@ -397,6 +409,8 @@ pub(crate) fn workflow_fixed_action(
     let stage=matches!(action,WorkflowFixedAction::Stage(_));
     let role=if stage{theme::ButtonRole::Emphasized}else{theme::ButtonRole::Standard};
     let (_,fill,ink,stroke)=crate::button::action_style(role,enabled,false);
+    let light_surface=enabled&&fill==theme::BRIGHT;
+    let fill=if light_surface&&response.hovered(){theme::BUTTON_HOVER_LIGHT_BG}else{fill};
     let radius=5.0;
     let painter=ui.painter();
     painter.rect_filled(rect,radius,fill);
@@ -418,7 +432,12 @@ pub(crate) fn workflow_fixed_action(
                 ),galley,ink);
         }
     }
-    if enabled || stage{crate::button::paint_button_hover(ui,&response,radius);}
+    if enabled || stage{
+        if light_surface{
+            crate::floating_notice::remember_response(ui.ctx(),&response);
+            crate::ui_primitives::paint_action_hover_surface(ui,&response,CornerRadius::same(5),true);
+        }else{crate::button::paint_button_hover(ui,&response,radius);}
+    }
     response
 }
 
@@ -639,8 +658,10 @@ mod shared_action_style_tests{
 
     #[test]
     fn blue_pointer_hover_and_keyboard_focus_have_independent_paint(){
-        let hover_border=Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.82));
-        let focus_border=Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION);
+        let hover_border=Stroke::new(BUTTON_HOVER_BORDER_WIDTH,SELECTION);
+        let focus_border=hover_border;
+        assert_ne!(BUTTON_HOVER_LIGHT_BG,BRIGHT);
+        assert_eq!(BUTTON_HOVER_LIGHT_BG,Color32::from_rgb(143,197,255));
         assert_eq!(button_hover_palette(false,false),(None,None));
         assert_eq!(button_hover_palette(true,false),(Some(BUTTON_HOVER_TINT),Some(hover_border)));
         assert_eq!(button_hover_palette(false,true),(None,Some(focus_border)));
