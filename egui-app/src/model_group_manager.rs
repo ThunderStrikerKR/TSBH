@@ -327,10 +327,12 @@ impl ModelGroupManager {
                         body.horizontal(|heading|{
                             heading.label(typography::subsection_heading("등록 상품"));
                             heading.label(typography::caption(&format!("{}개",ids.len())));
+                            let guidance=(!text(&g,"representativeColor").is_empty()&&text(&g,"representativeProductId").is_empty())
+                                .then(||format!("이전 대표색상: {} · 대표모델 재지정 필요",text(&g,"representativeColor")));
+                            let width=heading.available_width();
+                            crate::ui_layout::fixed_status_slot(heading,width,typography::METADATA_LINE_HEIGHT,
+                                guidance.as_deref(),guidance.as_deref(),theme::MUTED);
                         });
-                        if !text(&g,"representativeColor").is_empty()&&text(&g,"representativeProductId").is_empty(){
-                            body.label(typography::caption(&format!("이전 대표색상: {} · 대표모델 재지정 필요",text(&g,"representativeColor"))));
-                        }
                         let body_height=(body_height-(body.cursor().top()-body_top)-theme::MANAGEMENT_TABLE_HEADER_HEIGHT-theme::SPACE_8).max(theme::MANAGEMENT_COMPACT_ROW_HEIGHT);
                         let rect=crate::table::registry_table(body,("model-group-registered-products",self.selected.clone()),
                             ["상품명","상세 정보","대표모델","관리"],[140.0,100.0,96.0,176.0],
