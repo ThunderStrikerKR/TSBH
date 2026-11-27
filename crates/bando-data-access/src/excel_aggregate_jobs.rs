@@ -8,6 +8,13 @@ fn err(e:impl std::fmt::Display)->String{e.to_string()}
 fn s<'a>(v:&'a Value,k:&str)->&'a str{v[k].as_str().unwrap_or("")}
 fn rows<'a>(v:&'a Value,k:&str)->&'a [Value]{v[k].as_array().map(Vec::as_slice).unwrap_or(&[])}
 pub fn initialize(conn:&Connection)->Result<(),String>{
+    // Normal reads and writes must not execute schema DDL. Check for
+    // both the current column and index so older installations still migrate.
+    let ready:bool=conn.query_row("SELECT
+        EXISTS(SELECT 1 FROM pragma_table_info('excel_aggregate_jobs') WHERE name='legacy_reply_ids')
+        AND EXISTS(SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_excel_aggregate_pending')",
+        [],|r|r.get(0)).map_err(err)?;
+    if ready{return Ok(())}
     conn.execute_batch("CREATE TABLE IF NOT EXISTS excel_aggregate_jobs(
         business_date TEXT NOT NULL, origin TEXT NOT NULL CHECK(origin IN ('FACTORY','STORE','REPLY')),
         target_path TEXT NOT NULL, desired_revision INTEGER NOT NULL CHECK(desired_revision>=0),
@@ -40,9 +47,12 @@ pub fn export_target(path:&Path,origin:&str)->Result<(String,PathBuf),String>{
     Ok((date,t))
 }
 pub(crate) fn enqueue(conn:&Connection,date:&str,origin:&str,path:&str,revision:u64)->Result<(),String>{
+    initialize(conn)?;
+    enqueue_initialized(conn,date,origin,path,revision)
+}
+fn enqueue_initialized(conn:&Connection,date:&str,origin:&str,path:&str,revision:u64)->Result<(),String>{
     let root=Path::new(path).ancestors().nth(5).ok_or("취합 경로 오류")?;
     if target(root,date,origin)?!=Path::new(path){return Err("취합 경로 불일치".into())}
-    initialize(conn)?;
     let rev=i64::try_from(revision).map_err(err)?;
     if rev==0{return Err("취합 버전 오류".into())}
     conn.execute("INSERT INTO excel_aggregate_jobs(business_date,origin,target_path,desired_revision)
@@ -55,11 +65,26 @@ pub(crate) fn enqueue(conn:&Connection,date:&str,origin:&str,path:&str,revision:
 pub struct Job{pub date:String,pub origin:String,pub path:String,pub desired:i64,pub saved:i64,pub retries:i64,pub hash:Option<String>}
 pub fn jobs(conn:&Connection,now:i64,all:bool)->Result<Vec<Job>,String>{
     initialize(conn)?;
+    if all{all_initialized(conn)}else{pending_initialized(conn,now,-1)}
+}
+fn job_row(r:&rusqlite::Row<'_>)->rusqlite::Result<Job>{
+    Ok(Job{date:r.get(0)?,origin:r.get(1)?,path:r.get(2)?,desired:r.get(3)?,
+        saved:r.get(4)?,retries:r.get(5)?,hash:r.get(6)?})
+}
+pub fn all_initialized(conn:&Connection)->Result<Vec<Job>,String>{
     let mut stmt=conn.prepare("SELECT business_date,origin,target_path,desired_revision,saved_revision,retry_count,file_hash
-        FROM excel_aggregate_jobs WHERE ?1 OR (desired_revision>saved_revision AND COALESCE(next_retry_at,0)<=?2)
-        ORDER BY business_date,origin,target_path").map_err(err)?;
-    let iter=stmt.query_map(params![all,now],|r|Ok(Job{date:r.get(0)?,origin:r.get(1)?,path:r.get(2)?,
-        desired:r.get(3)?,saved:r.get(4)?,retries:r.get(5)?,hash:r.get(6)?})).map_err(err)?;
+        FROM excel_aggregate_jobs ORDER BY business_date,origin,target_path").map_err(err)?;
+    let iter=stmt.query_map([],job_row).map_err(err)?;
+    iter.collect::<Result<Vec<_>,_>>().map_err(err)
+}
+/// Indexed pending-only query; limit at SQL boundary instead of allocating
+/// every pending job in the process.
+pub fn pending_initialized(conn:&Connection,now:i64,limit:i64)->Result<Vec<Job>,String>{
+    let mut stmt=conn.prepare("SELECT business_date,origin,target_path,desired_revision,saved_revision,retry_count,file_hash
+        FROM excel_aggregate_jobs WHERE desired_revision>saved_revision
+        AND (next_retry_at IS NULL OR next_retry_at<=?1)
+        ORDER BY business_date,origin,target_path LIMIT ?2").map_err(err)?;
+    let iter=stmt.query_map(params![now,limit],job_row).map_err(err)?;
     iter.collect::<Result<Vec<_>,_>>().map_err(err)
 }
 /// The worker sleeps until the actual next durable retry, not a fixed poll.
@@ -92,9 +117,31 @@ pub fn invalidate(conn:&Connection,j:&Job)->Result<(),String>{
         params![j.date,j.origin,j.path,j.saved,j.desired]).map_err(err)?;
     Ok(())
 }
-fn read_history(conn:&Connection)->Result<Value,String>{
-    let raw:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0)).map_err(err)?;
-    crate::decode_physical_envelope(conn,&raw)
+/// Project only the aggregate-owned arrays at the SQLite boundary. JSON1
+/// still parses the envelope; unrelated workflow data is not materialized in Rust.
+fn read_history(conn:&Connection,origin:Option<&str>)->Result<Value,String>{
+    let version=crate::recovery::schema_version(conn)?;
+    if version>3{return Err("이 프로그램보다 새로운 DB 구조입니다.".into())}
+    if crate::workflow_events::active(conn)?!=(version==3){return Err("업무 이벤트 테이블과 DB 버전 불일치".into())}
+    let prefix=if version==3{"$[0]"}else{"$"};
+    let root_valid:bool=conn.query_row("SELECT json_type(payload,?1)='object'
+        AND (?2=0 OR (json_type(payload)='array' AND json_array_length(payload)=1)) FROM app_state WHERE id=1",
+        params![prefix,version==3],|r|r.get(0)).map_err(err)?;
+    if !root_valid{return Err("업무 상태 저장 형식 오류".into())}
+    let path=|key:&str|format!("{prefix}.{key}");
+    let raw:String=conn.query_row("SELECT json_object(
+        'revision',json_extract(payload,?1),
+        'exports',CASE WHEN ?4 THEN json_extract(payload,?2) ELSE NULL END,
+        'factoryReplies',CASE WHEN ?5 THEN json_extract(payload,?3) ELSE NULL END)
+        FROM app_state WHERE id=1",
+        params![path("revision"),path("exports"),path("factoryReplies"),origin!=Some("REPLY"),
+            origin.is_none()||origin==Some("REPLY")],|r|r.get(0)).map_err(err)?;
+    serde_json::from_str(&raw).map_err(err)
+}
+/// v2 native settings lookup: no trade partner, export or workflow hydration.
+pub fn archive_directory_v2(conn:&Connection)->Result<Option<String>,String>{
+    conn.query_row("SELECT json_extract(payload,'$.settings.excelDirectory') FROM app_state WHERE id=1",
+        [],|r|r.get(0)).map_err(err)
 }
 pub fn legacy_ids(conn:&Connection,j:&Job)->Result<Vec<String>,String>{
     let raw:String=conn.query_row("SELECT legacy_reply_ids FROM excel_aggregate_jobs WHERE business_date=?1 AND origin=?2 AND target_path=?3",
@@ -111,28 +158,33 @@ fn reply_date(record:&Value)->Option<String>{
 /// immutable business history. Once assigned, a legacy reply keeps its path.
 pub fn recover_history(conn:&Connection,configured_root:Option<&Path>)->Result<(),String>{
     initialize(conn)?;
-    let state=read_history(conn)?;
+    let state=read_history(conn,None)?;
     let revision=state["revision"].as_u64().ok_or("취합 복구 revision 누락")?;
     if revision==0{return Ok(())}
-    let existing=jobs(conn,0,true)?;
+    let existing=all_initialized(conn)?;
     let mut keys:HashSet<(String,String,String)>=existing.iter().map(|j|(j.date.clone(),j.origin.clone(),j.path.clone())).collect();
     for e in rows(&state,"exports"){
         let path=Path::new(s(e,"savedPath"));
         for origin in ["FACTORY","STORE"]{
             let Ok((date,target))=export_target(path,origin)else{continue};
             let path=target.to_str().ok_or("취합 경로 인코딩 오류")?;
-            if keys.insert((date.clone(),origin.into(),path.into())){enqueue(conn,&date,origin,path,revision)?;}
+            if keys.insert((date.clone(),origin.into(),path.into())){enqueue_initialized(conn,&date,origin,path,revision)?;}
         }
     }
     let mut assigned=HashSet::new();
-    for j in existing.iter().filter(|j|j.origin=="REPLY"){assigned.extend(legacy_ids(conn,j)?);}
+    // Fetch all legacy bindings in one query, rather than one per past day.
+    let mut stmt=conn.prepare("SELECT legacy_reply_ids FROM excel_aggregate_jobs WHERE origin='REPLY'").map_err(err)?;
+    for raw in stmt.query_map([],|r|r.get::<_,String>(0)).map_err(err)?{
+        assigned.extend(serde_json::from_str::<Vec<String>>(&raw.map_err(err)?).map_err(err)?);
+    }
+    drop(stmt);
     let mut groups:HashMap<(String,String),Vec<String>>=HashMap::new();
     for r in rows(&state,"factoryReplies"){
         if !rows(r,"rows").iter().any(|row|row["applied"]==true){continue}
         let Some(date)=reply_date(r)else{continue};
         let explicit=s(r,"aggregateTargetPath");
         if !explicit.is_empty(){
-            if keys.insert((date.clone(),"REPLY".into(),explicit.into())){enqueue(conn,&date,"REPLY",explicit,revision)?;}
+            if keys.insert((date.clone(),"REPLY".into(),explicit.into())){enqueue_initialized(conn,&date,"REPLY",explicit,revision)?;}
             continue
         }
         let id=s(r,"id");
@@ -143,7 +195,7 @@ pub fn recover_history(conn:&Connection,configured_root:Option<&Path>)->Result<(
         assigned.insert(id.to_owned());
     }
     for ((date,path),ids) in groups{
-        enqueue(conn,&date,"REPLY",&path,revision)?;
+        enqueue_initialized(conn,&date,"REPLY",&path,revision)?;
         let j=Job{date,origin:"REPLY".into(),path,desired:0,saved:0,retries:0,hash:None};
         let mut all=legacy_ids(conn,&j)?;all.extend(ids);
         // Invalidate even if the legacy binding is discovered at the same
@@ -165,9 +217,13 @@ pub fn invalidate_after_restore(conn:&Connection,revision:u64)->Result<(),String
 /// Read only the metadata envelope, not order/catalog tables.
 pub fn daily_rows<F>(conn:&Connection,j:&Job,legacy:F)->Result<Vec<Vec<String>>,String>
 where F:FnMut(&Value,&Value)->Result<Vec<String>,String>{
-    let state=read_history(conn)?;
     let ids=legacy_ids(conn,j)?;
-    project_with(&state,j,&ids,legacy)
+    daily_rows_with_binding(conn,j,&ids,legacy)
+}
+pub fn daily_rows_with_binding<F>(conn:&Connection,j:&Job,ids:&[String],legacy:F)->Result<Vec<Vec<String>>,String>
+where F:FnMut(&Value,&Value)->Result<Vec<String>,String>{
+    let state=read_history(conn,Some(&j.origin))?;
+    project_with(&state,j,ids,legacy)
 }
 fn values(v:&Value,n:usize)->Result<Vec<String>,String>{
     let arr=v.as_array().ok_or("취합 출력값 누락")?;
@@ -231,6 +287,26 @@ mod tests{
     use super::*;
     use serde_json::json;
     fn root()->PathBuf{std::env::temp_dir().join("aggregate-fixture")}
+    #[test]
+    fn pending_batch_is_bounded_and_settings_lookup_needs_no_client_tables(){
+        let c=Connection::open_in_memory().unwrap();initialize(&c).unwrap();
+        c.execute_batch("CREATE TABLE core_schema(key TEXT PRIMARY KEY,version INTEGER);
+            INSERT INTO core_schema VALUES('business-core',2);CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);").unwrap();
+        c.execute("INSERT INTO app_state VALUES(1,?1)",[json!({"revision":1,"settings":{"excelDirectory":"fixture"},
+            "workflow":{"events":[{"id":"unused"}]},"exports":[],"factoryReplies":[]}).to_string()]).unwrap();
+        assert_eq!(archive_directory_v2(&c).unwrap().as_deref(),Some("fixture"));
+        let p=read_history(&c,Some("STORE")).unwrap();
+        assert!(p.get("workflow").is_none());assert!(p["factoryReplies"].is_null());
+        for day in 1..=20{
+            let date=format!("2026-11-{day:02}");
+            let p=target(&root(),&date,"STORE").unwrap();
+            enqueue(&c,&date,"STORE",p.to_str().unwrap(),1).unwrap();
+        }
+        let batch=pending_initialized(&c,0,16).unwrap();assert_eq!(batch.len(),16);
+        for j in batch{mark_saved(&c,&j,"hash").unwrap();}
+        assert_eq!(pending_initialized(&c,0,16).unwrap().len(),4);
+        assert_eq!(all_initialized(&c).unwrap().len(),20);
+    }
     #[test]
     fn next_due_ignores_completed_and_tracks_actual_retry(){
         let c=Connection::open_in_memory().unwrap();initialize(&c).unwrap();

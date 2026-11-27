@@ -5,7 +5,9 @@ use chrono::Utc;
 use rusqlite::{Connection,TransactionBehavior};
 use rust_xlsxwriter::{Format,Workbook};
 use sha2::{Digest,Sha256};
-use std::{collections::HashMap,fs,io::{Cursor,Read,Write},path::{Path,PathBuf},sync::{OnceLock,mpsc::{self,SyncSender,Receiver,RecvTimeoutError},atomic::{AtomicBool,Ordering}},time::{Duration,Instant}};
+use std::{collections::HashMap,fs,io::{Cursor,Read,Write},path::{Path,PathBuf},sync::{OnceLock,mpsc::{self,SyncSender,Receiver,RecvTimeoutError},atomic::{AtomicBool,Ordering}},time::Duration};
+#[cfg(test)]
+use std::time::Instant;
 use uuid::Uuid;
 
 fn err(e:impl std::fmt::Display)->String{e.to_string()}
@@ -130,7 +132,7 @@ where F:FnMut(&str)->Result<(),String>{
     if j.desired<=j.saved{return Ok(())}
     let binding=jobs::legacy_ids(&tx,&j)?;
     let mut cache=HashMap::new();
-    let rows=jobs::daily_rows(&tx,&j,|record,row|read_legacy_reply(base,record,row,&mut cache))?;
+    let rows=jobs::daily_rows_with_binding(&tx,&j,&binding,|record,row|read_legacy_reply(base,record,row,&mut cache))?;
     tx.commit().map_err(err)?;
     #[cfg(test)]
     crash_checkpoint("after_db_commit");
@@ -179,7 +181,7 @@ where F:FnMut(&str)->Result<(),String>{
     Ok(())
 }
 fn verify_completed(conn:&Connection)->Result<(),String>{
-    for j in jobs::jobs(conn,Utc::now().timestamp(),true)?{
+    for j in jobs::all_initialized(conn)?{
         if j.saved!=j.desired{continue}
         let valid=checked_target(&j).and_then(|p|file_hash(&p)).ok().as_ref()==j.hash.as_ref()&&j.hash.is_some();
         if !valid{jobs::invalidate(conn,&j)?;}
@@ -188,7 +190,7 @@ fn verify_completed(conn:&Connection)->Result<(),String>{
 }
 fn clean_stale_temps(conn:&mut Connection,min_age:Duration)->Result<(),String>{
     // Do not hold the business writer lock while scanning archive directories.
-    for j in jobs::jobs(conn,0,true)?{
+    for j in jobs::all_initialized(conn)?{
         let Ok(target)=checked_target(&j)else{continue};
         let Some(dir)=target.parent()else{continue};
         let Ok(entries)=fs::read_dir(dir)else{continue};
@@ -208,8 +210,7 @@ fn run(reconcile:bool)->Result<Option<Duration>,String>{
     let (mut conn,base)=crate::factory_reply_inbox::open_db()?;
     if reconcile{
         let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(err)?;
-        let settings=bando_data_access::read_v2_settings_snapshot(&tx)?;
-        let configured=settings["settings"]["excelDirectory"].as_str().filter(|p|!p.trim().is_empty()).map(PathBuf::from);
+        let configured=jobs::archive_directory_v2(&tx)?.filter(|p|!p.trim().is_empty()).map(PathBuf::from);
         let root=if crate::business_state::test_launch(){Some(crate::business_state::test_directory("Excel")?)}else{
             configured.filter(|p|p.is_absolute()).map(|p|p.canonicalize().unwrap_or(p))
         };
@@ -217,9 +218,9 @@ fn run(reconcile:bool)->Result<Option<Duration>,String>{
         tx.commit().map_err(err)?;
         verify_completed(&conn)?;
         clean_stale_temps(&mut conn,Duration::from_secs(24*3600))?;
-    }
+    }else{jobs::initialize(&conn)?;}
     let now=Utc::now().timestamp();
-    for job in jobs::jobs(&conn,now,false)?.into_iter().take(16){
+    for job in jobs::pending_initialized(&conn,now,16)?{
         if let Err(e)=publish(&mut conn,&job,&base){
             jobs::mark_failed(&conn,&job,Utc::now().timestamp(),&e)?;
         }

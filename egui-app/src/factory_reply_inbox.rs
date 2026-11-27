@@ -118,8 +118,8 @@ fn preflight(conn:&Connection,dir:&Path,path:&Path,file_id:&str)->Result<(u64,bo
 /// Stable bytes have already been parsed by the scanner. The only hydrated
 /// before-image is the CAS transaction's authoritative state.
 fn aggregate_target(conn:&Connection,date:&str)->Result<Option<String>,String>{
-    let state=bando_data_access::read_v2_export_metadata(conn)?;
-    let raw=text(&state["settings"],"excelDirectory").trim();
+    let setting=bando_data_access::excel_aggregate_jobs::archive_directory_v2(conn)?.unwrap_or_default();
+    let raw=setting.trim();
     if raw.is_empty(){return Ok(None)}
     let path=PathBuf::from(raw);
     if !path.is_absolute(){return Ok(None)}
