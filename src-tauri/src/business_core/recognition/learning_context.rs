@@ -25,6 +25,73 @@ fn event_index(units:&[u16],first:&Value)->Vec<Event>{
     out.sort_by_key(|e|(e.position,e.role));
     out
 }
+// 03-11: provisional document shape, separate from the existing local
+// context contract. Never use final labels, values, distances or client IDs
+// as pattern identity. Keep repetition count outside the structural key.
+const DOCUMENT_PATTERN_VERSION:u32=1;
+const DOCUMENT_PATTERN_MAX_EVENTS:usize=4096;
+fn exact_role_period(roles:&[&str])->usize{
+    if roles.is_empty(){return 0;}
+    // Prefix function: O(n) time and O(n) bounded temporary storage.
+    let mut prefix=vec![0usize;roles.len()];
+    for i in 1..roles.len(){
+        let mut j=prefix[i-1];
+        while j>0&&roles[i]!=roles[j]{j=prefix[j-1];}
+        if roles[i]==roles[j]{j+=1;}
+        prefix[i]=j;
+    }
+    let p=roles.len()-prefix[roles.len()-1];
+    if roles.len()%p==0{p}else{roles.len()}
+}
+fn document_pattern(events:&[Event],first:&Value)->Value{
+    let unavailable=|reason:&str|json!({"patternVersion":DOCUMENT_PATTERN_VERSION,
+        "status":reason,"candidateKey":null,"learningEligible":false});
+    if events.is_empty(){return unavailable("no_observed_roles");}
+    if events.len()>DOCUMENT_PATTERN_MAX_EVENTS{return unavailable("event_limit_exceeded");}
+    // Missing, unknown, duplicate or overlapping candidate roles cannot
+    // be silently resolved into a supposedly certain pattern.
+    if first["candidates"].as_array().is_none_or(|v|v.len()!=events.len())||
+        events.windows(2).any(|w|w[0].position.1>w[1].position.0||
+            w[0].line>w[1].line||w[0].paragraph>w[1].paragraph){
+        return unavailable("ambiguous_or_incomplete_candidates");
+    }
+    let observed=events.iter().map(|e|e.role).collect::<Vec<_>>();
+    let mut normalized=Vec::new();
+    let mut i=0;
+    while i<events.len(){
+        let e=&events[i];
+        if e.role=="note"{i+=1;continue;}
+        // A contiguous run of product/quantity pairs is a single item
+        // section. Preserve whether quantity appears before or after a
+        // product; do not guess a link from an orphan quantity.
+        if e.role=="product"{
+            normalized.push("product_section");
+            let paragraph=e.paragraph;
+            i+=1;
+            while i<events.len()&&events[i].paragraph==paragraph&&
+                matches!(events[i].role,"product"|"quantity"){i+=1;}
+            continue;
+        }
+        if e.role=="contact"&&i>0&&events[i-1].role=="contact"&&
+            events[i-1].paragraph==e.paragraph{i+=1;continue;}
+        normalized.push(e.role);
+        i+=1;
+    }
+    if normalized.is_empty(){return unavailable("no_structural_roles");}
+    let p=exact_role_period(&normalized);
+    let cycle=&normalized[..p];
+    // A repeated field alone is not evidence of repeated recipient blocks.
+    let recipient_cycle=cycle.contains(&"name")&&
+        (cycle.contains(&"address")||cycle.contains(&"contact"));
+    let cycle=if recipient_cycle{cycle}else{normalized.as_slice()};
+    let repeats=normalized.len()/cycle.len();
+    let candidate_key=json!([DOCUMENT_PATTERN_VERSION,"document_role_cycle",cycle]).to_string();
+    json!({"patternVersion":DOCUMENT_PATTERN_VERSION,"status":"candidate_only",
+        "candidateKey":candidate_key,"observedRoleSequence":observed,
+        "normalizedRoleSequence":normalized,"cycle":cycle,"exactRepeatCount":repeats,
+        "recipientCycleObserved":recipient_cycle,"learningEligible":false})
+}
+
 fn document_lead(events:&[Event])->&'static str{
     let mut leads=BTreeMap::new();
     for e in events{
@@ -385,7 +452,8 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
         }
         entry
     }).collect::<Vec<_>>();
-    let mut result=json!({"featureVersion":FEATURE_VERSION,"entries":entries,"fieldEntries":field_entries});
+    let mut result=json!({"featureVersion":FEATURE_VERSION,"entries":entries,"fieldEntries":field_entries,
+        "documentPattern":document_pattern(&events,first)});
     // Optional offline comparison. Ordinary context projection remains unchanged.
     if let Some(history)=payload.get("historicalOrders"){
         let orders=history.as_array().ok_or("비교 주문 목록 형식 오류")?;
@@ -769,6 +837,39 @@ fn statistics_with_comparison(payload:&Value,prepared:Option<&Value>)->Result<Va
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn document_pattern_candidate_preserves_order_and_ignores_item_count(){
+        // Synthetic single-character spans; no customer data.
+        let project=|roles:&[&str],gap:usize|{
+            let raw="x ".repeat(roles.len()*(gap+1));
+            let candidates=roles.iter().enumerate().map(|(i,kind)|{
+                let start=i*(gap+1)*2;
+                json!({"start":start,"end":start+1,"text":"x","kind":kind,"line":i*gap,"paragraph":0})
+            }).collect::<Vec<_>>();
+            lookup(&json!({"raw":raw,"initialAnalysis":{"candidates":candidates}})).unwrap()["documentPattern"].clone()
+        };
+        let a=project(&["product","quantity","name","phone","address"],1);
+        let b=project(&["product","quantity","product","quantity","name","mobile","phone","address"],3);
+        assert_eq!(a["candidateKey"],b["candidateKey"]);
+        assert_ne!(a["observedRoleSequence"],b["observedRoleSequence"]);
+        let twice=project(&["product","quantity","name","phone","address",
+            "product","quantity","name","phone","address"],1);
+        assert_eq!(a["candidateKey"],twice["candidateKey"]);
+        assert_eq!(twice["exactRepeatCount"],2);
+        let different=project(&["name","phone","address","product","quantity"],1);
+        assert_ne!(a["candidateKey"],different["candidateKey"]);
+        let partial=project(&["product","name","phone","address","product","name"],1);
+        assert_eq!(partial["exactRepeatCount"],1);
+        assert_ne!(a["candidateKey"],partial["candidateKey"]);
+        assert_eq!(a["learningEligible"],false);
+        assert_eq!(project(&["product","unknown"],1)["candidateKey"],Value::Null);
+        let overlap=json!({"raw":"xx","initialAnalysis":{"candidates":[
+            {"start":0,"end":2,"text":"xx","kind":"name","line":0,"paragraph":0},
+            {"start":1,"end":2,"text":"x","kind":"phone","line":0,"paragraph":0}]}});
+        assert_eq!(lookup(&overlap).unwrap()["documentPattern"]["candidateKey"],Value::Null);
+        assert_eq!(exact_role_period(&["name","phone","name","phone"]),2);
+        assert_eq!(exact_role_period(&["name","phone","name"]),3);
+    }
     #[test]
     fn shadow_trace_expansion_uses_only_bound_item_and_exact_source(){
         let units="709 3개".encode_utf16().collect::<Vec<_>>();
