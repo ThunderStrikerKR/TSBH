@@ -120,9 +120,10 @@ pub(crate) fn apply_width_policy(ui:&mut Ui,policy:CardWidthPolicy,target:f32){
     match policy{
         CardWidthPolicy::FitContent=>{},
         CardWidthPolicy::FillAvailable=>ui.set_min_width(width),
-        CardWidthPolicy::Fixed=>ui.set_width(width),
+        // egui set_width already applies both min and max constraints.
+        // Retain the distinct semantic roles for screen callers.
+        CardWidthPolicy::Fixed|CardWidthPolicy::Bounded=>ui.set_width(width),
         CardWidthPolicy::UpperLimit=>ui.set_max_width(width),
-        CardWidthPolicy::Bounded=>ui.set_width(width),
     }
 }
 
