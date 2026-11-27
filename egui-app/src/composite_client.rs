@@ -110,13 +110,14 @@ impl ClientDisplaySummary{
 /// The tier palette belongs to the shared design system. Badge geometry is
 /// painted inside the client column and cannot expand the row's layout.
 fn client_tier_colors(tier:&str)->(Color32,Color32) {
-    match tier {
-        "wholesale"=>(theme::CLIENT_TIER_WHOLESALE_BG,theme::CLIENT_TIER_WHOLESALE_TEXT),
-        "semi"=>(theme::CLIENT_TIER_SEMI_BG,theme::CLIENT_TIER_SEMI_TEXT),
-        "retail"=>(theme::CLIENT_TIER_RETAIL_BG,theme::CLIENT_TIER_RETAIL_TEXT),
-        "special"=>(theme::CLIENT_TIER_SPECIAL_BG,theme::CLIENT_TIER_SPECIAL_TEXT),
-        _=>(theme::surface_palette(theme::SurfaceRole::Button,theme::VisualState::Normal).fill,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)),
-    }
+    use theme::ClientTierRole;
+    theme::client_tier_palette(match tier {
+        "wholesale"=>ClientTierRole::Wholesale,
+        "semi"=>ClientTierRole::Semi,
+        "retail"=>ClientTierRole::Retail,
+        "special"=>ClientTierRole::Special,
+        _=>ClientTierRole::Unclassified,
+    })
 }
 
 /// Shared measured badge: the longest label (반도매) controls width.

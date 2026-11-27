@@ -64,12 +64,13 @@ fn displayed_sale_status(product:&Value)->&str{
 }
 
 fn sale_status_color(status:&str)->egui::Color32{
-    match status{
-        "판매중"=>theme::SALE_STATUS_SELLING,
-        "품절"=>theme::SALE_STATUS_SOLD_OUT,
-        "판매준비중"=>theme::SALE_STATUS_PREPARING,
-        _=>theme::SALE_STATUS_STOPPED,
-    }
+    use theme::SaleStatusRole;
+    theme::sale_status_ink(match status{
+        "판매중"=>SaleStatusRole::Selling,
+        "품절"=>SaleStatusRole::SoldOut,
+        "판매준비중"=>SaleStatusRole::Preparing,
+        _=>SaleStatusRole::Stopped,
+    })
 }
 
 fn set_sale_status(product:&mut Value,status:&str){

@@ -388,15 +388,14 @@ struct HeaderActions {
 /// Before dealer confirmation all four slots have neutral outlines only.
 /// Once the dealer is confirmed, the first pending order stage is active.
 fn workflow_signal_palette(stages:Option<[bool;4]>,index:usize)->(egui::Color32,egui::Color32){
-    match stages{
-        None=>(theme::WORKFLOW_SIGNAL_EMPTY,theme::WORKFLOW_SIGNAL_EMPTY_BORDER),
-        Some([false,false,false,false]) if index!=0=>
-            (theme::WORKFLOW_SIGNAL_EMPTY,theme::WORKFLOW_SIGNAL_EMPTY_BORDER),
-        Some(stages) if stages[index]=>(theme::WORKFLOW_SIGNAL_DONE,theme::WORKFLOW_SIGNAL_DONE_BORDER),
-        Some(stages) if stages.iter().position(|done|!*done)==Some(index)=>
-            (theme::WORKFLOW_SIGNAL_CURRENT,theme::WORKFLOW_SIGNAL_CURRENT_BORDER),
-        _=>(theme::WORKFLOW_SIGNAL_PENDING,theme::WORKFLOW_SIGNAL_PENDING_BORDER),
-    }
+    use theme::WorkflowSignalRole;
+    theme::workflow_signal_colors(match stages{
+        None=>WorkflowSignalRole::Empty,
+        Some([false,false,false,false]) if index!=0=>WorkflowSignalRole::Empty,
+        Some(stages) if stages[index]=>WorkflowSignalRole::Done,
+        Some(stages) if stages.iter().position(|done|!*done)==Some(index)=>WorkflowSignalRole::Current,
+        _=>WorkflowSignalRole::Pending,
+    })
 }
 
 // An eligible collapsed pending card reserves its title hover for the

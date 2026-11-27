@@ -1267,3 +1267,68 @@ mod management_primary_card_geometry_tests {
     }
 }
 
+
+
+// Domain status palettes: screens choose a semantic state; the theme owns ink.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum SaleStatusRole { Selling, SoldOut, Preparing, Stopped }
+pub(crate) const fn sale_status_ink(role:SaleStatusRole)->Color32 {
+    match role {
+        SaleStatusRole::Selling=>SALE_STATUS_SELLING,
+        SaleStatusRole::SoldOut=>SALE_STATUS_SOLD_OUT,
+        SaleStatusRole::Preparing=>SALE_STATUS_PREPARING,
+        SaleStatusRole::Stopped=>SALE_STATUS_STOPPED,
+    }
+}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum ClientTierRole { Wholesale, Semi, Retail, Special, Unclassified }
+pub(crate) const fn client_tier_palette(role:ClientTierRole)->(Color32,Color32) {
+    match role {
+        ClientTierRole::Wholesale=>(CLIENT_TIER_WHOLESALE_BG,CLIENT_TIER_WHOLESALE_TEXT),
+        ClientTierRole::Semi=>(CLIENT_TIER_SEMI_BG,CLIENT_TIER_SEMI_TEXT),
+        ClientTierRole::Retail=>(CLIENT_TIER_RETAIL_BG,CLIENT_TIER_RETAIL_TEXT),
+        ClientTierRole::Special=>(CLIENT_TIER_SPECIAL_BG,CLIENT_TIER_SPECIAL_TEXT),
+        ClientTierRole::Unclassified=>(
+            surface_palette(SurfaceRole::Button,VisualState::Normal).fill,
+            text_ink(TextRole::Label,TextState::Normal)),
+    }
+}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum WorkflowSignalRole { Empty, Done, Current, Pending }
+pub(crate) const fn workflow_signal_colors(role:WorkflowSignalRole)->(Color32,Color32) {
+    match role {
+        WorkflowSignalRole::Empty=>(WORKFLOW_SIGNAL_EMPTY,WORKFLOW_SIGNAL_EMPTY_BORDER),
+        WorkflowSignalRole::Done=>(WORKFLOW_SIGNAL_DONE,WORKFLOW_SIGNAL_DONE_BORDER),
+        WorkflowSignalRole::Current=>(WORKFLOW_SIGNAL_CURRENT,WORKFLOW_SIGNAL_CURRENT_BORDER),
+        WorkflowSignalRole::Pending=>(WORKFLOW_SIGNAL_PENDING,WORKFLOW_SIGNAL_PENDING_BORDER),
+    }
+}
+
+#[cfg(test)]
+mod semantic_status_palette_tests {
+    use super::*;
+    #[test]
+    fn domain_palettes_keep_existing_color_values() {
+        assert_eq!(sale_status_ink(SaleStatusRole::Selling), Color32::from_rgb(123,207,148));
+        assert_eq!(sale_status_ink(SaleStatusRole::SoldOut), Color32::from_rgb(231,122,120));
+        assert_eq!(sale_status_ink(SaleStatusRole::Preparing), Color32::from_rgb(228,195,104));
+        assert_eq!(sale_status_ink(SaleStatusRole::Stopped), Color32::from_rgb(145,145,145));
+        for (role, fill, ink) in [
+            (ClientTierRole::Wholesale, CLIENT_TIER_WHOLESALE_BG, CLIENT_TIER_WHOLESALE_TEXT),
+            (ClientTierRole::Semi, CLIENT_TIER_SEMI_BG, CLIENT_TIER_SEMI_TEXT),
+            (ClientTierRole::Retail, CLIENT_TIER_RETAIL_BG, CLIENT_TIER_RETAIL_TEXT),
+            (ClientTierRole::Special, CLIENT_TIER_SPECIAL_BG, CLIENT_TIER_SPECIAL_TEXT),
+        ] { assert_eq!(client_tier_palette(role),(fill,ink)); }
+        assert_eq!(client_tier_palette(ClientTierRole::Unclassified),(
+            surface_palette(SurfaceRole::Button,VisualState::Normal).fill,
+            text_ink(TextRole::Label,TextState::Normal)));
+        for (role, fill, border) in [
+            (WorkflowSignalRole::Empty,WORKFLOW_SIGNAL_EMPTY,WORKFLOW_SIGNAL_EMPTY_BORDER),
+            (WorkflowSignalRole::Done,WORKFLOW_SIGNAL_DONE,WORKFLOW_SIGNAL_DONE_BORDER),
+            (WorkflowSignalRole::Current,WORKFLOW_SIGNAL_CURRENT,WORKFLOW_SIGNAL_CURRENT_BORDER),
+            (WorkflowSignalRole::Pending,WORKFLOW_SIGNAL_PENDING,WORKFLOW_SIGNAL_PENDING_BORDER),
+        ] { assert_eq!(workflow_signal_colors(role),(fill,border)); }
+    }
+}
