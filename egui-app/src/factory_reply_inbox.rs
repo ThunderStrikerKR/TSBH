@@ -766,6 +766,31 @@ mod tests{
         assert!(bando_data_access::excel_aggregate_jobs::jobs(&conn,0,false).unwrap().is_empty());
     }
     #[test]
+    fn same_filename_with_new_bytes_updates_and_invalid_reply_never_enters_aggregate(){
+        use calamine::{Data,Reader,Xlsx};
+        let base=Temp::new();let (mut conn,inbox)=synthetic_db(&base.0);
+        let path=inbox.join("reply.xlsx");
+        let first=reply_bytes("001234567890",3000);
+        fs::write(&path,&first).unwrap();
+        assert_eq!(scan_ready(&mut Scan::default(),&mut conn,&base.0).applied,1);
+        let second=reply_bytes("009876543210",4000);fs::write(&path,&second).unwrap();
+        assert_eq!(scan_ready(&mut Scan::default(),&mut conn,&base.0).applied,1);
+        let mut book=rust_xlsxwriter::Workbook::new();let sheet=book.add_worksheet();
+        sheet.write_string(0,0,"수하인명").unwrap();sheet.write_string(0,16,"운송장번호").unwrap();
+        sheet.write_string(1,0,"잘못된 수하인").unwrap();sheet.write_string(1,16,"001111111111").unwrap();
+        sheet.write_number(1,6,5000.).unwrap();
+        fs::write(&path,book.save_to_buffer().unwrap()).unwrap();
+        let held=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert_eq!((held.applied,held.held),(0,1));
+        let j=bando_data_access::excel_aggregate_jobs::jobs(&conn,0,false).unwrap().remove(0);
+        crate::excel_aggregate::publish(&mut conn,&j,&base.0).unwrap();
+        let mut book=Xlsx::new(std::io::Cursor::new(fs::read(&j.path).unwrap())).unwrap();
+        let rows=book.worksheet_range("로젠택배").unwrap();
+        assert_eq!(rows.end().unwrap().0,1);
+        assert_eq!(rows.get_value((1,16)),Some(&Data::String("009876543210".into())));
+        assert_eq!(snapshot(&mut conn).unwrap()["workflow"]["shipments"][0]["tracking"]["FACTORY"],"009876543210");
+    }
+    #[test]
     fn reply_commit_is_not_reverted_when_aggregate_path_is_unavailable(){
         let base=Temp::new();let (mut conn,inbox)=synthetic_db(&base.0);
         let before=snapshot(&mut conn).unwrap();

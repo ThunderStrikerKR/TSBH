@@ -1203,6 +1203,20 @@ mod ambiguity_selection_tests{
         }
         review["selectedShipmentId"]=json!("s2");
         assert!(approve_factory_conflict_for_state(&next,&review).is_err());
+        // Simulate a later valid reply for the same selected shipment while
+        // the original ambiguous row is still waiting for review.
+        let mut latest=state.clone();
+        let mut later=next["factoryReplies"][1].clone();
+        later["id"]=json!("later-valid");
+        later.as_object_mut().unwrap().remove("resolves");
+        later["rows"][0]["tracking"]=json!("000099990002");
+        latest["factoryReplies"].as_array_mut().unwrap().push(later);
+        latest["workflow"]["shipments"][1]=next["workflow"]["shipments"][1].clone();
+        latest["workflow"]["shipments"][1]["tracking"]["FACTORY"]=json!("000099990002");
+        review["confirmedText"]=conflict_confirmation_for_state(&latest,&review).unwrap()["text"].clone();
+        let error=approve_factory_conflict_for_state(&latest,&review).unwrap_err();
+        assert!(error.contains("더 최근 공장 회신"),"{error}");
+        assert_eq!(latest["workflow"]["shipments"][1]["tracking"]["FACTORY"],"000099990002");
     }
 }
 

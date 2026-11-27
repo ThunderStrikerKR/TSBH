@@ -58,12 +58,16 @@ fn file_hash(path:&Path)->Result<String,String>{
     Ok(format!("{:x}",h.finalize()))
 }
 fn checked_target(j:&jobs::Job)->Result<PathBuf,String>{
+    let isolated=if crate::business_state::test_launch(){Some(crate::business_state::test_directory("Excel")?)}else{None};
+    checked_target_in(j,isolated.as_deref())
+}
+fn checked_target_in(j:&jobs::Job,isolated:Option<&Path>)->Result<PathBuf,String>{
     let path=Path::new(&j.path);
     let root=path.ancestors().nth(5).ok_or("취합 보관함 경로 오류")?;
     if jobs::target(root,&j.date,&j.origin)?!=path{return Err("취합 파일 경로 오류".into())}
     let actual=root.canonicalize().map_err(err)?;
     if !actual.is_dir(){return Err("취합 보관함 폴더가 없습니다.".into())}
-    if crate::business_state::test_launch()&&actual!=crate::business_state::test_directory("Excel")?{
+    if isolated.is_some_and(|root|actual!=root){
         return Err("테스트 취합 폴더 격리 위반".into())
     }
     let relative=path.strip_prefix(root).map_err(err)?;
@@ -126,6 +130,7 @@ where F:FnMut(&str)->Result<(),String>{
     let tx=conn.transaction().map_err(err)?;
     let Some(j)=jobs::current(&tx,requested)? else{return Ok(())};
     if j.desired<=j.saved{return Ok(())}
+    let binding=jobs::legacy_ids(&tx,&j)?;
     let mut cache=HashMap::new();
     let rows=jobs::daily_rows(&tx,&j,|record,row|read_legacy_reply(base,record,row,&mut cache))?;
     tx.commit().map_err(err)?;
@@ -157,7 +162,7 @@ where F:FnMut(&str)->Result<(),String>{
     // replace a newer generation with this obsolete snapshot.
     let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(err)?;
     let Some(latest)=jobs::current(&tx,&j)? else{return Ok(())};
-    if latest.desired!=j.desired||latest.saved>=j.desired{return Ok(())}
+    if latest.desired!=j.desired||latest.saved>=j.desired||jobs::legacy_ids(&tx,&j)?!=binding{return Ok(())}
     if checked_target(&j)?!=target{return Err("취합 보관함 경로 변경".into())}
     // Same-directory rename replaces the destination without truncating it
     // first. On Windows a sharing violation leaves the previous file intact.
@@ -477,6 +482,18 @@ mod tests{
         assert_eq!((j.saved,j.desired),(3,3));
         let mut book=Xlsx::new(Cursor::new(fs::read(&j.path).unwrap())).unwrap();
         assert_eq!(book.worksheet_range("로젠택배").unwrap().end().unwrap().0,3);
+    }
+    #[test]
+    fn isolated_archive_guard_rejects_other_workspace_before_creating_folders(){
+        let f=Fixture::new();
+        let other=f.root.join("isolated-test");fs::create_dir(&other).unwrap();
+        let other=other.canonicalize().unwrap();
+        assert!(checked_target_in(&f.job,Some(&other)).is_err());
+        assert!(!Path::new(&f.job.path).parent().unwrap().exists());
+        let mut isolated=f.job.clone();
+        isolated.path=jobs::target(&other,&isolated.date,&isolated.origin).unwrap().to_str().unwrap().into();
+        assert!(checked_target_in(&isolated,Some(&other)).is_ok());
+        assert!(!Path::new(&f.job.path).parent().unwrap().exists());
     }
     #[test]
     fn large_daily_workbook_roundtrip_without_individual_files(){

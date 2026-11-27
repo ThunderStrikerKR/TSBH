@@ -91,7 +91,7 @@ fn read_history(conn:&Connection)->Result<Value,String>{
     let raw:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0)).map_err(err)?;
     crate::decode_physical_envelope(conn,&raw)
 }
-fn legacy_ids(conn:&Connection,j:&Job)->Result<Vec<String>,String>{
+pub fn legacy_ids(conn:&Connection,j:&Job)->Result<Vec<String>,String>{
     let raw:String=conn.query_row("SELECT legacy_reply_ids FROM excel_aggregate_jobs WHERE business_date=?1 AND origin=?2 AND target_path=?3",
         params![j.date,j.origin,j.path],|r|r.get(0)).map_err(err)?;
     serde_json::from_str(&raw).map_err(err)
