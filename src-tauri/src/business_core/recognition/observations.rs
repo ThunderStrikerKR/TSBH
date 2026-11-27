@@ -4,14 +4,14 @@
 use serde_json::{json,Value};
 use std::collections::{BTreeMap,BTreeSet};
 
-type Span=(usize,usize);
+pub(super) type Span=(usize,usize);
 type Candidates=BTreeMap<(Span,&'static str),BTreeSet<String>>;
 
 fn rows(v:&Value)->impl Iterator<Item=&Value>{
     v.as_array().into_iter().flatten()
 }
 
-fn span(units:&[u16],source:&Value)->Option<Span>{
+pub(super) fn span(units:&[u16],source:&Value)->Option<Span>{
     let start=usize::try_from(source["start"].as_u64()?).ok()?;
     let end=usize::try_from(source["end"].as_u64()?).ok()?;
     if start>=end || end>units.len(){return None;}
@@ -53,7 +53,7 @@ fn linked(units:&[u16],recipients:&Value,out:&mut Candidates){
 
 // Ownership identity is a verified name span, never a generated row ID,
 // row position or a name string shared by two destinations.
-fn position(units:&[u16],v:&Value)->Option<Span>{
+pub(super) fn position(units:&[u16],v:&Value)->Option<Span>{
     let a=usize::try_from(v["start"].as_u64()?).ok()?;
     let b=usize::try_from(v["end"].as_u64()?).ok()?;
     if a>=b || b>units.len(){return None;}
@@ -143,6 +143,7 @@ impl<'a> OwnerIndex<'a>{
 fn owner_observations(units:&[u16],first:&Value,final_rows:&Value)->Vec<Value>{
     let trace=&first["recipientOwnerTrace"];
     if trace["schemaVersion"]!=1{return Vec::new();}
+    let contexts=super::learning_context::contexts(units,first);
     let before=OwnerIndex::new(units,&first["recipients"]);
     let after=OwnerIndex::new(units,final_rows);
     let mut originals=BTreeMap::<Span,Vec<&Value>>::new();
@@ -210,7 +211,8 @@ fn owner_observations(units:&[u16],first:&Value,final_rows:&Value)->Vec<Value>{
             // A comparison alone cannot prove deliberate correction.
             // Audit reconciliation remains a separate P02 requirement.
             "requiresReview":outcome!="unchanged_observed",
-            "eligibleForCandidateLearning":outcome=="unchanged_observed"
+            "eligibleForCandidateLearning":outcome=="unchanged_observed",
+            "contexts":contexts.get(&s)
         }));
     }
     result
