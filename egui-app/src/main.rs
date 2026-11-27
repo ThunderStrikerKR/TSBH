@@ -10848,7 +10848,39 @@ mod inline_single_click_handoff_tests {
     }
 }
 
+// Opt-in developer verification only: count candidate kinds without printing
+// private order text, names, addresses, or IDs. No recognition rule is changed.
+fn recognition_correction_audit_summary()->Result<serde_json::Value,String>{
+    let mut query=serde_json::json!({"limit":100});
+    let mut events=0u64;
+    let mut legacy=0u64;
+    let mut counts=std::collections::BTreeMap::<String,u64>::new();
+    loop{
+        let page=gateway::read_recognition_correction_page(&query)?;
+        events+=page["eventCount"].as_u64().ok_or("감사 조회 건수 오류")?;
+        legacy+=page["legacyEventCount"].as_u64().ok_or("기존 감사 건수 오류")?;
+        for candidate in page["candidates"].as_array().ok_or("정정 후보 목록 오류")?{
+            let kind=candidate["kind"].as_str().ok_or("정정 후보 유형 오류")?;
+            *counts.entry(kind.to_owned()).or_default()+=1;
+        }
+        if page["nextCursor"].is_null(){break;}
+        query["cursor"]=page["nextCursor"].clone();
+    }
+    Ok(serde_json::json!({"auditEvents":events,"legacyEvents":legacy,"candidateCounts":counts,
+        "rulesInstalled":false}))
+}
+
 fn main() -> eframe::Result<()> {
+    if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-correction-audit"){
+        match recognition_correction_audit_summary(){
+            Ok(summary)=>println!("{summary}"),
+            Err(error)=>{
+                eprintln!("[BANDO HUB] 분류 정정 감사 조회 실패: {error}");
+                std::process::exit(2);
+            }
+        }
+        return Ok(());
+    }
     // Connect to an existing operating v2 DB before starting workers.
     // Debug builds do not auto-discover it. No DB is created here.
     match business_state::bind_existing_tauri_database() {
