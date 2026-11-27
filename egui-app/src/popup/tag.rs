@@ -1,5 +1,6 @@
 //! Shared tag block geometry. Read-only and removable tags differ only
 //! by the reserved action slot and the caller's display policy.
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use eframe::egui::{self,Rect,Response,Sense,Ui,Vec2};
 use crate::{theme,typography};
@@ -24,12 +25,12 @@ impl TagChip{
     }
     pub(crate) fn paint(&self,ui:&Ui,rect:Rect,clip:Rect)->Rect{
         let clip=clip.intersect(ui.clip_rect());
-        let painter=ui.painter().with_clip_rect(clip);
+        let painter=ui.painter().with_shared_clip(clip);
         theme::paint_bordered_surface(&painter,rect,self.frame.corner_radius,self.frame.fill,self.frame.stroke.color);
         let inner=rect.shrink2(self.inset);
         let label=Rect::from_min_max(inner.min,egui::pos2(inner.right()-self.action_width,inner.bottom()));
         let pos=egui::pos2(label.left(),label.center().y-self.galley.size().y*0.5);
-        painter.with_clip_rect(label.intersect(clip)).galley(pos,self.galley.clone(),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
+        painter.with_shared_clip(label.intersect(clip)).galley(pos,self.galley.clone(),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
         label
     }
 }
