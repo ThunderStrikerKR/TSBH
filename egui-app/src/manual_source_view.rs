@@ -39,12 +39,15 @@ pub fn source_document(
     scroll_to:Option<&LinkKey>,
     enabled:bool,
     selected_source:Option<&str>,
+    recommended_sources:&HashSet<String>,
 )->SourceInteraction {
     let width=ui.available_width().max(1.0);
     let text_inset=theme::SOURCE_DOCUMENT_TEXT_MARGIN as f32;
     let content_width=(width-2.0*text_inset).max(1.0);
-    let job=source_highlight::layout_manual(
-        raw,spans,selected_recipient,active,assigned_ids,content_width,
+    let mut highlighted=recommended_sources.clone();
+    if let Some(id)=selected_source{highlighted.insert(id.to_owned());}
+    let job=source_highlight::layout_manual_recommended(
+        raw,spans,selected_recipient,active,assigned_ids,&highlighted,content_width,
         FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),
         theme::text_ink(theme::TextRole::Value,theme::TextState::Normal),
     );
@@ -57,24 +60,13 @@ pub fn source_document(
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("manual source viewport",response.rect,ui.clip_rect());
     let galley_pos=rect.min+egui::vec2(text_inset,text_inset);
-    let (fills,outlines)=source_highlight::block_shapes_manual(
-        raw,&galley,galley_pos,spans,selected_recipient,active,assigned_ids,
+    let (fills,outlines)=source_highlight::block_shapes_manual_recommended(
+        raw,&galley,galley_pos,spans,selected_recipient,active,assigned_ids,&highlighted,
         rect.intersect(ui.clip_rect()),
     );
     ui.painter().add(egui::Shape::Vec(fills));
     ui.painter().galley(galley_pos,galley.clone(),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
     ui.painter().add(egui::Shape::Vec(outlines));
-    // Selection is exact by native source ID, even if another span shares its LinkKey.
-    if let Some(span)=selected_source.and_then(|id|spans.iter().find(|s|s.source_id.as_deref()==Some(id))){
-        let (fill,outline)=source_highlight::block_shapes_manual(
-            raw,&galley,galley_pos,std::slice::from_ref(span),selected_recipient,
-            Some(&span.key),assigned_ids,rect.intersect(ui.clip_rect())
-        );
-        ui.painter().add(egui::Shape::Vec(fill));
-        ui.painter().galley(galley_pos,galley.clone(),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
-        ui.painter().add(egui::Shape::Vec(outline));
-    }
-
     let mut result=SourceInteraction::default();
     result.drag_layout_width=content_width;
     // egui::Response::interact_pointer_pos() is None for a pure hover:
@@ -157,7 +149,7 @@ mod tests {
                 ui.set_width(320.0);
                 *origin=ui.cursor().min;
                 interaction=source_document(
-                    ui,raw,spans,&HashSet::new(),None,None,None,enabled,None
+                    ui,raw,spans,&HashSet::new(),None,None,None,enabled,None,&HashSet::new()
                 );
             });
         });
