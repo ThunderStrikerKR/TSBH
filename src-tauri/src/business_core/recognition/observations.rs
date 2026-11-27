@@ -2472,6 +2472,10 @@ pub(super) fn evaluate_combined_prepared(order:&Value,prepared:Option<&Value>)->
     for v in decisions{if !seen.insert(position(&units,v).ok_or("결합 예측 위치 오류")?){return Err("결합 예측 중복".into());}}
     let mut groups=BTreeMap::<(&str,&str,&str,&str),[u64;7]>::new();
     let (mut eligible,mut missing,mut excluded)=(0u64,0u64,0u64);
+    // A valid numerical recommendation is not necessarily representable
+    // by the original parser. Count only jointly replay-verified changes.
+    let replay_verified=combined["parserReplayValidation"]=="validated_counterfactual";
+    let mut replay_blocked=0u64;
     for obs in rows(&compared["observations"]).filter(|o|o["task"]=="recipient_ownership"){
         let label=match obs["outcome"].as_str(){
             Some("explicit_correction_observed") if obs["eligibleForCandidateLearning"]==true=>"explicit_correction",
@@ -2512,6 +2516,13 @@ pub(super) fn evaluate_combined_prepared(order:&Value,prepared:Option<&Value>)->
         })();
         let Some((kind,route,level,proposal))=parsed else{missing+=1;continue;};
         let c=groups.entry((kind,route,level,label)).or_default();
+        if proposal.is_some()&&(!replay_verified||
+            v["calibrationScope"]!=OWNER_PAIR_CALIBRATION_SCOPE||
+            v["outsideSupport"].as_f64().is_none_or(|p|!p.is_finite()||p<0.0||p>MAX_CHANGE_OUTSIDE+1e-10)){
+            replay_blocked+=1;
+        }
+        let proposal=proposal.filter(|_|replay_verified&&v["calibrationScope"]==OWNER_PAIR_CALIBRATION_SCOPE&&
+            v["outsideSupport"].as_f64().is_some_and(|p|p.is_finite()&&p>=0.0&&p<=MAX_CHANGE_OUTSIDE+1e-10));
         let predicted=proposal.unwrap_or(old);
         c[0]+=1;c[1]+=u64::from(old==actual);c[2]+=u64::from(predicted==actual);
         c[3]+=u64::from(proposal.is_some());c[4]+=u64::from(old!=actual&&predicted==actual);
@@ -2522,6 +2533,7 @@ pub(super) fn evaluate_combined_prepared(order:&Value,prepared:Option<&Value>)->
         "legacyAgrees":c[1],"screenedCombinedAgrees":c[2],"proposals":c[3],"improved":c[4],"worsened":c[5],"outsideLabels":c[6]})).collect::<Vec<_>>();
     Ok(json!({"schemaVersion":1,"status":"compared_diagnostic_only","modelId":model,"groups":groups,
         "eligibleObservations":eligible,"missingOrIneligiblePredictions":missing,"excludedLabels":excluded,
+        "parserReplayBlockedProposals":replay_blocked,"parserReplayRequired":true,
         "representativeLabelsVerified":false,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
 }
 
@@ -3063,6 +3075,37 @@ mod tests{
         let evaluated=assert_equivalent(&p);
         assert_eq!(evaluated["combinedEvaluation"]["status"],"compared_diagnostic_only");
         assert_eq!(evaluated["combinedEvaluation"]["groups"][0]["evaluated"],1);
+    }
+    #[test]
+    fn confirmation_evaluation_preserves_legacy_when_parser_replay_is_unverified(){
+        let mut p=patterned_order("replay-eval");
+        p["learningActive"]=json!(true);
+        p["confirmationSnapshot"]["recognitionBaseline"]["auditEventIds"]=json!([]);
+        p["confirmationSnapshot"]["recognitionBaseline"]["initialAnalysis"]["initialPredictionCapture"]=json!({
+            "schemaVersion":1,"origin":"native_reception_worker","orderId":"replay-eval",
+            "analysisStartedAt":"2026-11-26T23:00:00Z","analysisCompletedAt":"2026-11-26T23:00:01Z",
+            "learningShadow":{"captureVersion":4,"sourceDigestsMatched":true,"capturedAt":"2026-11-26T23:00:02Z",
+                "combinedShadow":{"status":"runtime_shadow_only","schemaVersion":1,
+                    "modelId":format!("blend-{}","a".repeat(64)),"predictionAt":"2026-11-26T23:00:03Z",
+                    "currentModelSourceDigestsMatched":true,"automaticChangeAuthorized":false,"decisionChanged":false,
+                    "parserReplayValidation":"unverified_replay",
+                    "decisions":[{"start":6,"end":19,"legacyCandidate":"previous","sourceKind":"contact",
+                        "legacyRoute":"gate","contextLevel":"base","learningWeight":1.0,
+                        "calibrationScope":OWNER_PAIR_CALIBRATION_SCOPE,"outsideSupport":0.01,
+                        "candidateOrder":["next","previous","outside"],"legacyProxy":[0.1,0.9,0.0],
+                        "learningProxy":[0.95,0.05,0.0],"combinedProxy":[0.95,0.05,0.0],
+                        "status":"diagnostic_proposal_only","diagnosticCandidate":"next",
+                        "decisionChanged":false,"eligibleForAutomaticDecision":false}]}}});
+        let r=evaluate_combined_confirmation(&p).unwrap();
+        assert_eq!(r["groups"][0]["screenedCombinedAgrees"],1);
+        assert_eq!(r["groups"][0]["proposals"],0);
+        assert_eq!(r["parserReplayBlockedProposals"],1);
+        let combined=&mut p["confirmationSnapshot"]["recognitionBaseline"]["initialAnalysis"]["initialPredictionCapture"]["learningShadow"]["combinedShadow"];
+        combined["parserReplayValidation"]=json!("validated_counterfactual");
+        let r=evaluate_combined_confirmation(&p).unwrap();
+        assert_eq!(r["groups"][0]["screenedCombinedAgrees"],0);
+        assert_eq!(r["groups"][0]["worsened"],1);
+        assert_eq!(r["parserReplayBlockedProposals"],0);
     }
     #[test]
     fn field_runtime_shadow_uses_frozen_model_and_preserves_initial_product(){
