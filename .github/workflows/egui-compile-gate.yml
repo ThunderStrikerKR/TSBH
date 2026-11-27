@@ -119,7 +119,8 @@ jobs:
           $filters = @(
             'brand_delete_only_removes_the_selected_unreferenced_brand',
             'brand_delete_blocks_even_archived_and_superseded_product_references',
-            'brand_delete_requires_original_entity_and_rejects_stale_edits'
+            'brand_delete_requires_original_entity_and_rejects_stale_edits',
+            'brand_delete_rejects_stale_product_editor_relink'
           )
           foreach ($filter in $filters) {
             $listed = cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --list
