@@ -3,8 +3,20 @@ on:
   push:
     branches: [audit-154-p01-p02]
     paths:
-      - 'egui-app/src/**'
-      - 'src-tauri/src/business_core/recognition/**'
+      - 'egui-app/**'
+      - 'crates/bando-data-access/**'
+      - 'src-tauri/src/business_core/**'
+      - 'src-tauri/resources/state-seed.json'
+      - 'tests/rust-migration/recognition/**'
+      - '.github/workflows/learning-engine-performance.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'egui-app/**'
+      - 'crates/bando-data-access/**'
+      - 'src-tauri/src/business_core/**'
+      - 'src-tauri/resources/state-seed.json'
+      - 'tests/rust-migration/recognition/**'
       - '.github/workflows/learning-engine-performance.yml'
   workflow_dispatch:
 permissions:
@@ -13,6 +25,30 @@ concurrency:
   group: learning-engine-performance-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  recognition-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tests/rust-migration/recognition -> target
+      - name: Compile production recognition module and verify fixture discovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=tests/rust-migration/recognition/Cargo.toml
+          cargo test --manifest-path "$manifest" --no-run
+          cargo test --manifest-path "$manifest" -- --list > recognition-tests.txt
+          for n in $(seq -w 1 20); do
+            if [ "$(grep -Ec "^regressions::order_${n}: test$" recognition-tests.txt || true)" -ne 1 ]; then
+              echo "Expected exactly one operational fixture test: order_$n"
+              exit 1
+            fi
+          done
+      - name: Run existing native recognition regressions
+        run: cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml
   learning-performance:
     runs-on: windows-latest
     timeout-minutes: 45
