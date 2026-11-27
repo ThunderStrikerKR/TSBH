@@ -52,6 +52,23 @@ mod logical_alignment_tests{
     }
 }
 
+/// Size constraints use the same logical lattice as explicit placements.
+/// Keep egui's next-widget-relative semantics: a fixed constraint sets
+/// both bounds, while a minimum reservation must still permit growth.
+pub(crate) fn aligned_extent(value:f32)->f32{
+    use egui::emath::GuiRounding as _;
+    value.round_ui()
+}
+pub(crate) fn set_fixed_height(ui:&mut Ui,height:f32){
+    ui.set_height(aligned_extent(height));
+}
+pub(crate) fn reserve_min_height(ui:&mut Ui,height:f32){
+    ui.set_min_height(aligned_extent(height));
+}
+pub(crate) fn reserve_min_size(ui:&mut Ui,size:Vec2){
+    ui.set_min_size(Vec2::new(aligned_extent(size.x),aligned_extent(size.y)));
+}
+
 /// Semantic layout profiles. Screen modules choose a content role, never
 /// a numeric spacing override. Preserve the reviewed spacing for each role.
 #[derive(Clone,Copy)]
@@ -127,7 +144,7 @@ pub fn fixed_result_viewport<R>(
 )->(Rect,R){
     let width=ui.available_width();
     fixed_row(ui,Vec2::new(width,height),Layout::top_down(Align::Min),|pane|{
-        pane.set_min_height(height);
+        reserve_min_height(pane,height);
         scroll_area(ScrollAxes::Vertical).id_salt(id)
             .max_height(height).auto_shrink([false,false])
             .show(pane,render).inner
@@ -184,7 +201,7 @@ pub fn reception_goods_viewport(
         .aligned_max_rect(rect).layout(Layout::top_down(Align::Min)));
     child.set_clip_rect(rect.intersect(ui.clip_rect()));
     child.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());
-    child.set_height(rect.height());
+    set_fixed_height(&mut child,rect.height());
     child.spacing_mut().item_spacing.y=0.0;
     content(&mut child);
 }
@@ -206,7 +223,7 @@ pub fn reception_section_scroll(
         .aligned_max_rect(rect).layout(Layout::top_down(Align::Min)));
     child.set_clip_rect(rect.intersect(ui.clip_rect()));
     child.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());
-    child.set_height(rect.height());
+    set_fixed_height(&mut child,rect.height());
     scroll_area(ScrollAxes::Vertical).id_salt(id_salt)
         .max_height(height).auto_shrink([false,false]).show(&mut child,content);
 }
@@ -422,7 +439,7 @@ pub(crate) fn management_toolbar_slot<R>(
     ui.scope_builder(UiBuilder::new().id_salt(id).aligned_max_rect(rect).layout(layout),|slot|{
         if clip{slot.set_clip_rect(rect.intersect(slot.clip_rect()));}
         slot.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());
-        if fixed_height{slot.set_height(rect.height());}
+        if fixed_height{set_fixed_height(slot,rect.height());}
         draw(slot)
     }).inner
 }
