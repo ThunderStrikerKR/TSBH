@@ -489,11 +489,6 @@ fn issue_card(
                 product_caption.as_deref().unwrap_or(caption.as_ref()),tone
             )).wrap());
             let model_action=model_resolution_kind(kind)&&severity!="INFO"&&!rid.is_empty()&&iid.is_some_and(|id|!id.is_empty());
-            if model_action{
-                if crate::button::review_action(cell,PRODUCT_ACTION,ButtonRole::Standard,enabled).clicked(){
-                    *selected=Some(model_navigation(issue));
-                }
-            }
             if product_caption.is_none() && !detail.is_empty() && detail!=title {
                 // Native recipient-only details repeat the old title; keep
                 // identity and actual matching evidence without repeating it.
@@ -533,7 +528,13 @@ fn issue_card(
             let recipient=analysis.recognition.get("recipients")
                 .and_then(Value::as_array)
                 .and_then(|rows|rows.iter().find(|row|text(row,"id")==rid));
+            // Keep all actions in one wrapping row, regardless of issue tone.
             cell.horizontal_wrapped(|buttons|{
+                if model_action && crate::button::review_action(
+                    buttons,PRODUCT_ACTION,ButtonRole::Standard,enabled
+                ).clicked(){
+                    *selected=Some(model_navigation(issue));
+                }
                 if kind=="CLIENT_MATCH_CONFLICT" && severity!="INFO"{
                     if let Some(id)=issue.get("selectedClientId").and_then(Value::as_str).filter(|id|!id.is_empty()){
                         if crate::button::review_action(buttons,APPROVE_ACTION,ButtonRole::Standard,enabled).clicked(){
@@ -603,33 +604,31 @@ fn issue_card(
                     }
                 }
                 // React's informational client-match evidence has no action.
-                if model_action || (kind=="CLIENT_MATCH_EVIDENCE" && severity=="INFO"){return;}
-                let caption=navigation_caption(kind);
-                if crate::button::review_action(buttons,caption,ButtonRole::Standard,enabled).clicked(){
-                    *selected=Some(Action::Navigate{
-                        kind:kind.to_owned(),recipient_id:rid.to_owned(),
-                        item_id:iid.map(str::to_owned),
-                        link_key:link_key.map(str::to_owned)
-                    });
+                if !model_action && !(kind=="CLIENT_MATCH_EVIDENCE" && severity=="INFO"){
+                    let caption=navigation_caption(kind);
+                    if crate::button::review_action(buttons,caption,ButtonRole::Standard,enabled).clicked(){
+                        *selected=Some(Action::Navigate{
+                            kind:kind.to_owned(),recipient_id:rid.to_owned(),
+                            item_id:iid.map(str::to_owned),
+                            link_key:link_key.map(str::to_owned)
+                        });
+                    }
+                    if let Some(target)=notice::show_freight_rate_actions(buttons,issue,enabled){
+                        *selected=Some(Action::OpenFreightRate(target));
+                    }
                 }
-                if let Some(target)=notice::show_freight_rate_actions(buttons,issue,enabled){
-                    *selected=Some(Action::OpenFreightRate(target));
+                if let Some(cancel)=show_validation_approval_action(buttons,issue,enabled){
+                    *selected=Some(Action::ValidationApproval{recipient_id:rid.to_owned(),
+                        request:validation_approval_request(issue),cancel});
+                }
+                if let Some(cancel)=show_inquiry_action(buttons,issue,enabled){
+                    *selected=Some(Action::CustomerInquiry{recipient_id:rid.to_owned(),
+                        request:inquiry_request(issue),cancel});
                 }
             });
-            if let Some(cancel)=show_validation_approval_action(cell,issue,enabled){
-                *selected=Some(Action::ValidationApproval{recipient_id:rid.to_owned(),
-                    request:validation_approval_request(issue),cancel});
-            }
-            if let Some(cancel)=show_inquiry_action(cell,issue,enabled){
-                *selected=Some(Action::CustomerInquiry{recipient_id:rid.to_owned(),
-                    request:inquiry_request(issue),cancel});
-            }
             // Keep the immediate action ahead of the secondary reference
             // guidance so a narrow panel does not hide the input button.
             if severity!="INFO"{
-                if model_action{
-                    cell.add(egui::Label::new(typography::review_detail(MODEL_RESOLUTION_GUIDANCE,tone)).wrap());
-                }
                 if notice::has_freight_rate_targets(issue){
                     cell.add(egui::Label::new(typography::review_detail("운임 기준을 등록하거나 이번 배송 건의 운임을 직접 입력하세요.",tone)).wrap());
                 }else if let Some(hint)=pricing_registration_hint(kind){
@@ -641,6 +640,50 @@ fn issue_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn review_quantity_and_model_actions_share_one_row_below_guidance(){
+        let analysis=ReceptionAnalysis{
+            recognition:json!({"recipients":[{"id":"r","name":"검증 수취인",
+                "items":[{"id":"i","name":"검증 상품"}]}]}),
+            reference:Vec::new(),client_match:json!({}),client_candidates:Vec::new(),
+            matched_client_name:None,chosen_client_name:None,directory_count:0,
+            linked_spans:Vec::new(),
+        };
+        for (issue,labels) in [
+            (json!({"kind":"QUANTITY_MISSING","severity":"ACTION","recipientId":"r","itemId":"i",
+                "canApproveOne":true,"canRequestInquiry":true}),
+                vec!["1개로 잠정 처리","수량 수정","거래처에 문의"]),
+            (json!({"kind":"QUANTITY_MISSING","severity":"INFO","recipientId":"r","itemId":"i",
+                "resolution":"PROVISIONALLY_APPROVED"}),
+                vec!["1개로 잠정 처리","잠정 승인 취소","수량 수정"]),
+            (json!({"kind":"MODEL_CHOICE","severity":"ACTION","recipientId":"r","itemId":"i",
+                "canRequestInquiry":true}),vec!["상품 확인","거래처에 문의"]),
+        ]{
+            let ctx=crate::ui_test_support::test_context();
+            let mut selected=None;
+            let output=ctx.run(egui::RawInput{
+                screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(650.0,400.0))),
+                ..Default::default()
+            },|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    issue_card(ui,&issue,&analysis,true,&mut selected);
+                });
+            });
+            assert!(selected.is_none());
+            let rects=labels.iter().map(|label|{
+                let painted=crate::ui_test_support::painted_text_rects(&output,label);
+                assert_eq!(painted.len(),1,"expected one rendered action: {label}");
+                painted[0].0
+            }).collect::<Vec<_>>();
+            for pair in rects.windows(2){
+                assert!((pair[0].center().y-pair[1].center().y).abs()<=0.5,
+                    "actions must share one row: {labels:?}");
+                assert!(pair[0].right()<=pair[1].left());
+            }
+            assert!(crate::ui_test_support::painted_text_rects(&output,MODEL_RESOLUTION_GUIDANCE).is_empty());
+        }
+    }
+
     #[test]
     fn confirmed_product_captions_retain_reason_and_exact_identity(){
         let recognition=json!({"recipients":[{"id":"r","name":"가상 수취인",
