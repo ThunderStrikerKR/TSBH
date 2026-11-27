@@ -42,6 +42,9 @@ impl CandidateDisposition {
 #[derive(Default)]
 struct DeferredCandidates {
     entries:HashMap<(&'static str,usize,usize),CandidateDisposition>,
+    // Product identities for spans suppressed by a provisional type choice.
+    // Key by absolute source span and identity, not by the winning name.
+    competing_products:HashMap<(usize,usize,String),bool>,
     truncated:bool,
 }
 impl DeferredCandidates {
@@ -54,6 +57,25 @@ impl DeferredCandidates {
         }
         if self.entries.len()>=4096{self.truncated=true;return;}
         self.entries.insert(key,reason);
+    }
+    fn record_competing_products(&mut self,raw:&str,offset:usize,len:usize,result:&CachedProductDecision){
+        self.truncated|=result.truncated;
+        for c in &result.candidates{
+            let (a,b)=c.span;
+            if a>=b||b>len||raw.get(offset+a..offset+b).is_none(){
+                self.truncated=true;continue;
+            }
+            let (a,b)=(offset+a,offset+b);
+            let key=(a,b,c.product_id.clone());
+            if let Some(literal)=self.competing_products.get_mut(&key){
+                *literal|=c.literal;continue;
+            }
+            if self.competing_products.len()>=4096{
+                self.truncated=true;break;
+            }
+            self.record(raw,"product",a,b,CandidateDisposition::CompetingType);
+            self.competing_products.insert(key,c.literal);
+        }
     }
     fn excludes(&self,kind:&'static str,start:usize,end:usize)->bool{
         self.entries.get(&(kind,start,end)).is_some_and(|reason|reason.hard())
@@ -1420,6 +1442,15 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
             exclusions.record(raw,"name",line.start+a,line.start+b,CandidateDisposition::CompetingType);
         }
         if let Some((begin,end))=name_span{
+            // A structurally inferred name (including a suffix after an
+            // item quantity) is a provisional choice, not proof that a
+            // registered product hypothesis at that span does not exist.
+            // Explicit recipient labels retain their hard field semantics.
+            if explicit_name.is_none()&&!after_label{
+                let candidate=&line.text[begin..end];
+                let matched=search.result(candidate);
+                exclusions.record_competing_products(raw,line.start+begin,candidate.len(),matched);
+            }
             add_match(&mut events,line,begin,end,"name",line.text[begin..end].to_owned(),
                 if explicit_name.is_some()||after_label{"명시적 수취인 이름"}
                 else{"수취인 필드 경계에서 원문 전체 보존"});
@@ -2499,6 +2530,31 @@ mod tests {
             assert!(raw.get(hit.source_start+c.span.0..hit.source_start+c.span.1).is_some());
         }
         assert!(assign_document(doc,&state,None).is_ok());
+    }
+    #[test]
+    fn inferred_name_preserves_competing_product_identity_without_confirming_it(){
+        let state=state();
+        let raw="709 1개 GT-1\n010-0000-0001";
+        let doc=extract_document(raw,&state,None);
+        let start=raw.find("GT-1").unwrap();
+        assert!(doc.events.iter().any(|e|e.kind=="name"&&e.start==start));
+        assert_eq!(doc.exclusions.competing_products.get(&(start,start+4,"pgt".to_owned())),Some(&true));
+        assert_eq!(doc.exclusions.entries.get(&("product",start,start+4)),
+            Some(&CandidateDisposition::CompetingType));
+        assert!(!doc.exclusions.excludes("product",start,start+4));
+        let result=assign_document(doc,&state,None).unwrap();
+        assert_eq!(result["recipients"][0]["name"],"GT-1");
+        assert_eq!(result["recipients"][0]["items"].as_array().unwrap().len(),1);
+        assert_eq!(result["recipients"][0]["items"][0]["productId"],"p709");
+    }
+    #[test]
+    fn explicitly_labelled_name_does_not_create_competing_product_identity(){
+        let state=state();
+        let raw="수취인: GT-1\n010-0000-0001\n709 1개";
+        let doc=extract_document(raw,&state,None);
+        assert!(doc.exclusions.competing_products.is_empty());
+        let result=assign_document(doc,&state,None).unwrap();
+        assert_eq!(result["recipients"][0]["name"],"GT-1");
     }
     #[test]
     fn sender_scope_resumes_only_at_explicit_receiving_label(){
