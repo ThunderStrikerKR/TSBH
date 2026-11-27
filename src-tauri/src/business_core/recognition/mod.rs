@@ -1009,6 +1009,95 @@ fn evaluate_field_weights(payload:&Value)->Result<Value,String>{
         "unseenPatterns":{"independentOrders":unseen_count,"correct":unseen_correct,"total":unseen.len()},
         "labelProvenanceVerified":false,"productionAuthorized":false}))
 }
+// The comparison is based on the final source spans, not the order in
+// which the legacy parser happened to consume a detached quantity.
+fn quantity_link_features(raw:&str,product:&Evidence,q:&Evidence)->[u8;3]{
+    let relation=SourceRelation::between(product.line as u64,product.paragraph as u64,
+        q.line as u64,q.paragraph as u64);
+    let gap=if product.end<=q.start{raw.get(product.end..q.start)}
+        else if q.end<=product.start{raw.get(q.end..product.start)}else{None};
+    let distance=gap.map_or(0,|s|s.chars().take(8).count());
+    [if relation.same_paragraph{8}else{0},
+        (8/(1+relation.distance().min(8))) as u8,(8/(1+distance)) as u8]
+}
+fn quantity_source_id(start:usize,end:usize)->String{format!("{start}:{end}")}
+fn quantity_link_projection(raw:&str,events:&[Evidence],hits:&[ProductHit],anchors:&[usize],
+    recipients:&[Value],bindings:&[(usize,usize,usize)],truncated:bool)->Value{
+    let unavailable=|reason:&str|json!({"status":reason,"samples":[],
+        "productionAuthorized":false,"decisionChanged":false});
+    if truncated||events.len()>4096||bindings.len()>64||
+        recipients.iter().map(|r|r["items"].as_array().map_or(0,Vec::len)).sum::<usize>()!=bindings.len(){
+        return unavailable("candidate_budget_exceeded");
+    }
+    let product_lines=hits.iter().map(|h|h.line).collect::<HashSet<_>>();
+    let quantity_ids=events.iter().enumerate().filter(|(_,e)|e.kind=="quantity").map(|(i,e)|
+        (i,quantity_source_id(utf16(raw,e.start),utf16(raw,e.end)))).collect::<HashMap<_,_>>();
+    let mut detached=HashMap::<usize,Vec<usize>>::new();
+    for (i,e) in events.iter().enumerate().filter(|(_,e)|e.kind=="quantity"&&!product_lines.contains(&e.line)){
+        detached.entry(owner_index(anchors,events,e.start)).or_default().push(i);
+    }
+    // Common products retain their business-rule result. A detached token
+    // used by such a product cannot also be consumed by a private item.
+    let mut reserved=HashSet::new();
+    let mut common_count=0usize;
+    for &(ri,ii,hi) in bindings{
+        if !hits[hi].common{continue;}
+        common_count+=1;
+        for src in recipients[ri]["items"][ii]["sources"].as_array().into_iter().flatten()
+            .filter(|s|s["field"]=="quantity"){
+            if let (Some(a),Some(b))=(src["start"].as_u64(),src["end"].as_u64()){
+                reserved.insert(quantity_source_id(a as usize,b as usize));
+            }
+        }
+    }
+    let mut samples=Vec::new();
+    for &(ri,ii,hi) in bindings{
+        let hit=&hits[hi];
+        if hit.common{continue;}
+        let item=&recipients[ri]["items"][ii];
+        let p=&events[hit.evidence];
+        let mut seen=HashSet::new();
+        let mut candidates=Vec::new();
+        for &qi in hit.quantities.iter().chain(detached.get(&ri).into_iter().flatten()){
+            let q=&events[qi];
+            let Some(id)=quantity_ids.get(&qi)else{return unavailable("invalid_quantity_reference");};
+            if !seen.insert(id){continue;}
+            if candidates.len()>=64{return unavailable("candidate_budget_exceeded");}
+            let blocked=reserved.contains(id)||p.start<q.end&&q.start<p.end||
+                q.value.parse::<i64>().ok().is_none_or(|n|n<=0);
+            candidates.push(json!({"id":id,"features":quantity_link_features(raw,p,q),"blocked":blocked,
+                "origin":if product_lines.contains(&q.line){"same_hit"}else{"detached"}}));
+        }
+        let legacy=unique_candidate(item["sources"].as_array().into_iter().flatten()
+            .filter(|s|s["field"]=="quantity").filter_map(|s|Some(quantity_source_id(
+                s["start"].as_u64()? as usize,s["end"].as_u64()? as usize))))
+            .unwrap_or_else(||"abstain".to_owned());
+        samples.push(json!({"sourceId":item["id"],"recipientId":recipients[ri]["id"],
+            "legacy":legacy,"candidates":candidates}));
+    }
+    let local=samples.iter().map(|sample|{
+        let candidates=sample["candidates"].as_array().unwrap().iter().map(|c|{
+            let f=c["features"].as_array().unwrap();
+            FieldWeightCandidate{id:c["id"].as_str().unwrap(),features:[
+                f[0].as_u64().unwrap() as u8,f[1].as_u64().unwrap() as u8,f[2].as_u64().unwrap() as u8],
+                blocked:c["blocked"].as_bool().unwrap()}
+        }).collect::<Vec<_>>();
+        field_weight_prediction("quantity_link",&candidates,[1,1,1],4)
+    }).collect::<Vec<_>>();
+    let exclusive=exclusive_quantity_predictions(local.iter().map(|&id|("document",id)));
+    let decisions=local.iter().zip(exclusive).map(|(&before,after)|
+        (after.to_owned(),before!=after)).collect::<Vec<_>>();
+    drop(local);
+    for (sample,(choice,collision)) in samples.iter_mut().zip(decisions){
+        sample["preferredCandidate"]=json!(choice);
+        sample["collisionAbstained"]=json!(collision);
+    }
+    json!({"status":"provisional_comparison","policyVersion":"quantity-link-geometry-v1",
+        "coverage":"same_hit_and_detached_within_legacy_recipient",
+        "commonItemsExcluded":common_count,"samples":samples,
+        "productionAuthorized":false,"decisionChanged":false})
+}
+
 fn compare_owner_candidates(candidate:&Evidence,preceding:&Evidence,following:&Evidence,
     previous_relation:&SourceRelation,following_relation:&SourceRelation,
     previous_gap:&InterveningLines,following_gap:&InterveningLines,
@@ -1354,6 +1443,8 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
     let mut candidate_trace=Vec::new();
     let mut candidate_trace_truncated=false;
     let mut item_candidate_trace=Vec::new();
+    let mut quantity_bindings=Vec::new();
+    let mut quantity_bindings_truncated=false;
     let mut type_trace=Vec::new();
     let mut type_trace_truncated=false;
     let mut record_type=|line:usize,start:usize,end:usize,kind:&str,reason:&str|{
@@ -1834,7 +1925,7 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
     let mut product_owner_trace=Vec::new();
     let has_leading = anchors.first().map_or(false, |a| product_hits.iter().any(|h|
         !h.common && events[h.evidence].start < events[*a].start));
-    for hit in &product_hits {
+    for (hit_index,hit) in product_hits.iter().enumerate() {
         let anchor_index = owner_index(&anchors,&events,events[hit.evidence].start);
         let owner = if has_leading && !anchors.is_empty() {
             anchors.iter().position(|a| events[*a].start > events[hit.evidence].start)
@@ -2005,11 +2096,7 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
                     let quantity_candidates=hit.quantities.iter().take(128).map(|qi|{
                         let q=&events[*qi];
                         let product=&events[hit.evidence];
-                        let relation=SourceRelation::between(product.line as u64,product.paragraph as u64,q.line as u64,q.paragraph as u64);
-                        let char_gap=if product.end<=q.start{raw[product.end..q.start].chars().count()}
-                            else if q.end<=product.start{raw[q.end..product.start].chars().count()}else{0};
-                        let features=[if relation.same_paragraph{8}else{0},
-                            (8/(1+relation.distance().min(8))) as u8,(8/(1+char_gap.min(8))) as u8];
+                        let features=quantity_link_features(raw,product,q);
                         let overlap=product.start<q.end&&q.start<product.end;
                         let blocked=overlap||q.value.parse::<i64>().ok().is_none_or(|n|n<=0)||
                             (hit.common&&(!hit.each||hit.quantities.len()!=1))||
@@ -2076,6 +2163,11 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
                 events[qi].recipient=Some(idx);
             }
             item["sources"] = json!(sources);
+            if collect_candidate_trace{
+                if quantity_bindings.len()<64{
+                    quantity_bindings.push((idx,recipients[idx]["items"].as_array().expect("items").len(),hit_index));
+                }else{quantity_bindings_truncated=true;}
+            }
             recipients[idx]["items"].as_array_mut().expect("items").push(item);
             if events[hit.evidence].recipient.is_none() {
                 events[hit.evidence].recipient=Some(idx);
@@ -2142,6 +2234,8 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
         }
         candidate
     }).collect();
+    let quantity_link=collect_candidate_trace.then(||quantity_link_projection(raw,&events,&product_hits,&anchors,
+        &recipients,&quantity_bindings,quantity_bindings_truncated));
     let mut result=json!({"recipients":recipients,"candidates":candidates,"unassigned":unassigned});
     if let Some(trace)=owner_trace {
         result["recipientOwnerTrace"]=json!({"schemaVersion":1,"scorePolicyVersion":"owner-margin-30-v1","decisions":trace});
@@ -2165,6 +2259,7 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
             "coverage":"product_stages_variant_selection_and_quantity_post_extraction",
             "truncated":candidate_trace_truncated,"decisions":candidate_trace,
             "itemDecisions":item_candidate_trace,
+            "quantityLinkComparison":quantity_link,
             "productOwnerDecisions":product_owner_trace,
             "productOwnerTraceTruncated":product_hits.len()>64,
             "addressFormatAssessments":address_formats,
