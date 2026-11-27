@@ -91,10 +91,32 @@ fn upsert_brand(state:&Value,payload:&Value)->Result<Value,String>{
     validate(state,&next)?;
     Ok(json!({"state":next}))
 }
+// Deletion is deliberately restricted to unreferenced brands. Do not
+// implicitly change a product's identity or its historical data.
+fn delete_brand(state:&Value,payload:&Value)->Result<Value,String>{
+    let id=field(payload,"brandId");
+    if id.trim().is_empty(){return Err("삭제할 브랜드를 확인할 수 없습니다.".into());}
+    let brands=state["brands"].as_array().ok_or("브랜드 목록이 없습니다.")?;
+    let index=brands.iter().position(|row|field(row,"id")==id)
+        .ok_or("삭제할 브랜드를 찾을 수 없습니다.")?;
+    if brands.iter().filter(|row|field(row,"id")==id).count()!=1{
+        return Err("브랜드 식별자가 중복되어 삭제할 수 없습니다.".into());
+    }
+    let linked=state["products"].as_array().ok_or("상품 목록이 없습니다.")?
+        .iter().filter(|product|field(product,"brandId")==id).count();
+    if linked>0{
+        return Err(format!("연결된 상품 {linked}개가 있습니다. 브랜드 연결을 변경한 후 삭제하세요."));
+    }
+    let mut next=state.clone();
+    next["brands"].as_array_mut().ok_or("브랜드 목록이 없습니다.")?.remove(index);
+    validate(state,&next)?;
+    Ok(json!({"state":next}))
+}
 pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
     let state=payload.get("state").ok_or("현재 상태가 없습니다.")?;
     match operation{
         "upsert_brand"=>upsert_brand(state,payload),
+        "delete_brand"=>delete_brand(state,payload),
         "validate_brands"=>{
             validate(payload.get("before").unwrap_or(&Value::Null),state)?;
             Ok(json!({"valid":true}))
@@ -105,6 +127,30 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn brand_delete_only_removes_the_selected_unreferenced_brand(){
+        let state=json!({"brands":[{"id":"b"},{"id":"other"}],
+            "products":[{"id":"p","brandId":"other","priceHistory":[{"at":"old"}]}],
+            "aliases":[{"id":"a","productId":"p"}],"orders":[{"id":"o"}],
+            "workflow":{"shipments":[{"id":"s"}]}});
+        let next=execute("delete_brand",&json!({"state":state,"brandId":"b"})).unwrap();
+        let mut expected=state.clone();
+        expected["brands"]=json!([{"id":"other"}]);
+        assert_eq!(next["state"],expected);
+        for id in ["","missing","other"]{
+            assert!(execute("delete_brand",&json!({"state":state,"brandId":id})).is_err());
+        }
+    }
+    #[test]
+    fn brand_delete_blocks_even_archived_and_superseded_product_references(){
+        for product in [json!({"id":"p","brandId":"b","active":false}),
+            json!({"id":"p","brandId":"b","deletedAt":"old"}),
+            json!({"id":"p","brandId":"b","supersededBy":"new"})]{
+            let state=json!({"brands":[{"id":"b"}],"products":[product]});
+            assert!(execute("delete_brand",&json!({"state":state,"brandId":"b"}))
+                .unwrap_err().contains("연결된 상품 1개"));
+        }
+    }
     #[test]
     fn block_aliases_preserve_literal_commas_and_normalized_duplicates(){
         let state=json!({"brands":[]});
