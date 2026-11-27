@@ -287,12 +287,17 @@ fn employee_payment_confirmation(state:&Value,shipment_ids:&HashSet<&str>)->Valu
     dates.sort_by(|a,b|{
         let instant=|value:&str|DateTime::parse_from_rfc3339(value).ok()
             .map(|date|date.timestamp_millis());
-        instant(a.0).cmp(&instant(b.0)).then_with(||a.1.cmp(&b.1))
+        a.1.cmp(&b.1).then_with(||instant(a.0).cmp(&instant(b.0)))
     });
-    let latest=dates.last().map(|pair|pair.1.clone()).unwrap_or_default();
+    let (confirmed_at,latest)=dates.last().expect("nonempty confirmation dates");
+    let datetime=DateTime::parse_from_rfc3339(confirmed_at).ok()
+        .map(|stamp|stamp.with_timezone(&FixedOffset::east_opt(9*3600).unwrap())
+            .format("%Y-%m-%d %H:%M").to_string());
     actors.sort();actors.dedup();
     json!({
         "date":latest,
+        "confirmedAt":confirmed_at,
+        "dateTime":datetime,
         "partial":covered.len()<shipment_ids.len(),
         "approvedShipments":covered.len(),
         "totalShipments":shipment_ids.len(),
@@ -501,6 +506,8 @@ mod tests {
         let ids=HashSet::from(["s1","s2"]);
         let approval=employee_payment_confirmation(&state,&ids);
         assert_eq!(approval["date"],"2026-11-21");
+        assert_eq!(approval["confirmedAt"],"2026-11-20T18:00:00Z");
+        assert_eq!(approval["dateTime"],"2026-11-21 03:00");
         assert_eq!(approval["partial"],false);
         assert_eq!(approval["approvedShipments"],2);
         assert_eq!(approval["actors"],json!(["직원 A","직원 B"]));
@@ -509,6 +516,7 @@ mod tests {
         state["workflow"]["confirmations"].as_array_mut().unwrap().pop();
         let partial=employee_payment_confirmation(&state,&ids);
         assert_eq!(partial["date"],"2026-11-20");
+        assert_eq!(partial["dateTime"],"2026-11-20 01:30");
         assert_eq!(partial["partial"],true);
         assert_eq!(partial["approvedShipments"],1);
 

@@ -641,7 +641,7 @@ const fn management_columns_min_width<const N:usize>(base:[f32;N],gap:f32)->f32{
     sum+N.saturating_sub(1) as f32*gap
 }
 const FREIGHT_ASSIGNMENT_BASE_COLUMNS:[f32;6]=[44.0,202.0,104.0,258.0,150.0,144.0];
-const ORDER_HISTORY_BASE_COLUMNS:[f32;7]=[112.0,156.0,300.0,126.0,124.0,112.0,264.0];
+const ORDER_HISTORY_BASE_COLUMNS:[f32;7]=[112.0,156.0,300.0,126.0,124.0,244.0,132.0];
 
 // Freight > Shipping Group Assignment: selection, product, color/option,
 // category, shipping group, settings. Fixed 42pt rows; 6 columns + 5 gaps.

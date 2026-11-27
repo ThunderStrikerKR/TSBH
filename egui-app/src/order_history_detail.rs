@@ -132,7 +132,8 @@ fn payment_panel(
     text_kv(ui,"접수일시", &kst(field(order,"createdAt")));
     text_kv(ui,"주문 확인일시", &kst(field(order,"confirmedAt")));
     let staff=&row["display"]["employeePaymentConfirmation"];
-    text_kv(ui,"입금 확인일",display_or(field(staff,"date"),"미확인"));
+    text_kv(ui,"입금 확인 일시",display_or(field(staff,"dateTime"),
+        display_or(field(staff,"date"),"미확인")));
     ui.add_space(theme::SPACE_4);
     if payments.is_empty(){
         crate::ui_primitives::management_body_state_inline(ui,"해당 주문에 연결된 실제 입금 기록이 없습니다.");
