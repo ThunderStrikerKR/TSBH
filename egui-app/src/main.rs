@@ -95,6 +95,7 @@ mod excel_manager;
 mod excel_service;
 mod management_queries;
 
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self, Align, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use crate::ui_primitives::UiWidthPolicyExt;
@@ -5240,7 +5241,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         ui.ctx().request_repaint();
                         return;
                     }
-                    let (bounds,_)=ui.allocate_exact_size(
+                    let (bounds,_)=ui.shared_allocate_exact_size(
                         body_size,Sense::hover()
                     );
                     // The enclosing Window owns only the single allocated
@@ -5312,7 +5313,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             toolbar.with_layout(
                                 Layout::right_to_left(Align::Center),
                                 |zoom|{
-                                    zoom.add_sized(
+                                    zoom.shared_add_sized(
                                         Vec2::new(54.0,24.0),
                                         egui::Label::new(
                                             typography::ocr_zoom_label(review.zoom)
@@ -5759,7 +5760,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 // Every header child shares this one 62pt-high center line.
                 // The logo and label are display-only, with no click, hover
                 // styling, drag or double-click action.
-                ui.allocate_ui_with_layout(
+                ui.shared_allocate_ui_with_layout(
                     Vec2::new(ui.available_width(), theme::HEADER_HEIGHT),
                     Layout::left_to_right(Align::Center),
                     |bar| {
@@ -5775,7 +5776,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         } else {
                             0.0
                         };
-                        let (_, brand_slot) = bar.allocate_space(Vec2::new(
+                        let (_, brand_slot) = bar.shared_allocate_space(Vec2::new(
                             icon_and_gap + wordmark.size().x,
                             theme::HEADER_HEIGHT,
                         ));
@@ -5919,7 +5920,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             // double-click behavior as the original titlebar.
                             let empty = actions.available_width();
                             if empty > 8.0 {
-                                let drag = actions.allocate_response(
+                                let drag = actions.shared_allocate_response(
                                     Vec2::new(empty, theme::NAV_HEIGHT),
                                     Sense::click_and_drag(),
                                 );
@@ -6137,7 +6138,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 // along the bottom even when the four panes fitted exactly.
                 let mut draw_columns = |ui: &mut Ui| {
                         let widths = self.layout.widths(content_width);
-                        let (_, all) = ui.allocate_space(Vec2::new(content_width, content_height));
+                        let (_, all) = ui.shared_allocate_space(Vec2::new(content_width, content_height));
                         let mut x = all.left();
                         let mut splitter_visuals =
                             Vec::with_capacity(layout::PANEL_COUNT - 1);
@@ -6269,7 +6270,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let height = ui.available_height().max(1.0);
         let width = ui.available_width();
         let (source_height, message_height) = self.layout.vertical_heights(height);
-        let (_, all) = ui.allocate_space(Vec2::new(width, height));
+        let (_, all) = ui.shared_allocate_space(Vec2::new(width, height));
         let source_rect = Rect::from_min_size(all.min, Vec2::new(width, source_height));
         let splitter_rect = Rect::from_min_size(
             egui::pos2(all.left(), source_rect.bottom()),
@@ -6420,7 +6421,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 crate::ui_layout::apply_spacing_role(body,crate::ui_layout::SpacingRole::DocumentBody);
                 let available=crate::card::docked_section_body_height(height)
                     .min(body.available_height().max(0.0));
-                let (body_rect,_)=body.allocate_exact_size(
+                let (body_rect,_)=body.shared_allocate_exact_size(
                     Vec2::new(body.available_width(),available),Sense::hover()
                 );
                 let card_rect=crate::ui_layout::reception_source_client_rect(body_rect);
@@ -6538,7 +6539,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 crate::ui_layout::apply_spacing_role(body,crate::ui_layout::SpacingRole::DocumentBody);
                 let available=crate::card::docked_section_body_height(height)
                     .min(body.available_height().max(0.0));
-                let (body_rect,_)=body.allocate_exact_size(
+                let (body_rect,_)=body.shared_allocate_exact_size(
                     Vec2::new(body.available_width(),available),Sense::hover()
                 );
                 let card_rect=crate::ui_layout::reception_source_client_rect(body_rect);
@@ -6656,7 +6657,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.source_hover = None;
                 let available_body = crate::card::docked_section_body_height(height)
                     .min(ui.available_height().max(0.0));
-                let (body_rect, _) = ui.allocate_exact_size(
+                let (body_rect, _) = ui.shared_allocate_exact_size(
                     Vec2::new(ui.available_width(), available_body),
                     Sense::hover(),
                 );
@@ -6706,7 +6707,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         // reception source body with no additional caption.
                         if let (Some((texture,_,_)),Some(size))=
                             (processing_preview.as_ref(),image_size){
-                            let (image_rect,_)=progress.allocate_exact_size(
+                            let (image_rect,_)=progress.shared_allocate_exact_size(
                                 size,Sense::hover()
                             );
                             progress.painter().image(
@@ -6734,7 +6735,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.source_hover=None;
                 let available_body=crate::card::docked_section_body_height(height)
                     .min(ui.available_height().max(0.0));
-                let (body_rect,_)=ui.allocate_exact_size(
+                let (body_rect,_)=ui.shared_allocate_exact_size(
                     Vec2::new(ui.available_width(),available_body),Sense::hover()
                 );
                 let gap=theme::SPACE_8;
@@ -6783,7 +6784,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 // card's bottom border. Position all three from ONE origin.
                 let available_body = crate::card::docked_section_body_height(height)
                     .min(ui.available_height().max(0.0));
-                let (body_rect, _) = ui.allocate_exact_size(
+                let (body_rect, _) = ui.shared_allocate_exact_size(
                     Vec2::new(ui.available_width(), available_body),
                     Sense::hover(),
                 );
@@ -7266,7 +7267,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     -theme::RECEPTION_MESSAGE_ACTION_GAP).max(0.0);
                 // The canvas owns its fixed rectangle even when the message
                 // is empty or its content is shorter than the viewport.
-                let (message_rect,_)=body.allocate_exact_size(
+                let (message_rect,_)=body.shared_allocate_exact_size(
                     Vec2::new(body.available_width(),message_height),Sense::hover()
                 );
                 let _=crate::card::reception_document_viewport(body,message_rect,
@@ -7390,7 +7391,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let available_body = crate::card::docked_section_body_height(height)
                 .min(ui.available_height().max(0.0));
             let field_height = (available_body - bottom_controls).max(0.0);
-            let (field_rect, _) = ui.allocate_exact_size(
+            let (field_rect, _) = ui.shared_allocate_exact_size(
                 Vec2::new(ui.available_width(), field_height),
                 Sense::hover(),
             );
@@ -7432,7 +7433,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let [review_height, recipient_height, _bottom_height] =
             self.layout.detail_heights(full_height);
         let full_width = ui.available_width();
-        let (_, bounds) = ui.allocate_space(Vec2::new(full_width, full_height));
+        let (_, bounds) = ui.shared_allocate_space(Vec2::new(full_width, full_height));
         let review_rect = Rect::from_min_size(
             bounds.min, Vec2::new(full_width, review_height),
         );
@@ -10224,7 +10225,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let height=ui.available_height().max(1.0);
                 let mut draw_management=|host:&mut Ui|{
                         let widths=self.layout.widths(content_width);
-                        let (_,all)=host.allocate_space(
+                        let (_,all)=host.shared_allocate_space(
                             Vec2::new(content_width,height)
                         );
                         let left=Rect::from_min_size(
