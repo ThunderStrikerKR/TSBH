@@ -1,7 +1,7 @@
 //! React WorkflowQueue's Excel management view, now native egui.
 //! Export, sender validation, workflow state and file history remain owned by
 //! the original Rust business core and Tauri's existing SQLite database.
-use crate::ui_layout::SharedAllocationExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
 use crate::{gateway::{BandoGateway,ReadOperation},order_history_manager,settings_help,theme,typography};
 use chrono::{DateTime,FixedOffset,NaiveDate,Utc};
 use eframe::egui::{self,Align,Align2,Rect,Sense,Ui,Vec2};
