@@ -708,6 +708,58 @@ mod tests{
     }
 
     #[test]
+    fn ten_real_replies_publish_only_latest_and_replays_do_not_change_customer_payment(){
+        use calamine::{Data,Reader,Xlsx};
+        let base=Temp::new();let (mut conn,inbox)=synthetic_db(&base.0);
+        let initial=snapshot(&mut conn).unwrap();let mut cache=Scan::default();
+        let mut originals=Vec::new();
+        for n in 1..=10{
+            let tracking=format!("{n:012}");
+            let bytes=reply_bytes(&tracking,3000+n);
+            let path=inbox.join(format!("reply-{n:02}.xlsx"));
+            fs::write(&path,&bytes).unwrap();originals.push((path,bytes));
+            let out=scan_ready(&mut cache,&mut conn,&base.0);
+            assert_eq!((out.files,out.applied,out.held),(1,1,0),"{:?}",out.error);
+            assert!(out.error.is_none());
+        }
+        let jobs=bando_data_access::excel_aggregate_jobs::jobs(&conn,0,false).unwrap();
+        assert_eq!(jobs.len(),1);assert_eq!(jobs[0].origin,"REPLY");
+        crate::excel_aggregate::publish(&mut conn,&jobs[0],&base.0).unwrap();
+        let mut book=Xlsx::new(std::io::Cursor::new(fs::read(&jobs[0].path).unwrap())).unwrap();
+        let rows=book.worksheet_range("로젠택배").unwrap();
+        assert_eq!(rows.end().unwrap().0,1);
+        assert_eq!(rows.get_value((1,16)),Some(&Data::String("000000000010".into())));
+        let current=snapshot(&mut conn).unwrap();
+        assert_eq!(current["workflow"]["shipments"][0]["tracking"]["FACTORY"],"000000000010");
+        assert_eq!(current["workflow"]["payments"],initial["workflow"]["payments"]);
+        assert_eq!(current["workflow"]["confirmations"],initial["workflow"]["confirmations"]);
+        assert_eq!(current["orders"],initial["orders"]);
+        for (path,bytes) in &originals{assert_eq!(&fs::read(path).unwrap(),bytes);}
+        fs::write(inbox.join("old-renamed.xlsx"),&originals[0].1).unwrap();
+        let out=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert_eq!(out.files,0);assert_eq!(snapshot(&mut conn).unwrap(),current);
+        assert!(bando_data_access::excel_aggregate_jobs::jobs(&conn,0,false).unwrap().is_empty());
+    }
+    #[test]
+    fn reply_commit_is_not_reverted_when_aggregate_path_is_unavailable(){
+        let base=Temp::new();let (mut conn,inbox)=synthetic_db(&base.0);
+        let before=snapshot(&mut conn).unwrap();
+        let bytes=reply_bytes("001234567890",4000);
+        fs::write(inbox.join("reply.xlsx"),&bytes).unwrap();
+        let out=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert_eq!((out.files,out.applied),(1,1));
+        let j=bando_data_access::excel_aggregate_jobs::jobs(&conn,0,false).unwrap().remove(0);
+        let root=base.0.join("excel");let offline=base.0.join("offline");
+        fs::rename(&root,&offline).unwrap();
+        let result=crate::excel_aggregate::publish(&mut conn,&j,&base.0);
+        fs::rename(&offline,&root).unwrap();assert!(result.is_err());
+        let after=snapshot(&mut conn).unwrap();
+        assert_eq!(after["workflow"]["shipments"][0]["tracking"]["FACTORY"],"001234567890");
+        assert_eq!(after["workflow"]["payments"],before["workflow"]["payments"]);
+        crate::excel_aggregate::publish(&mut conn,&j,&base.0).unwrap();
+        assert_eq!(snapshot(&mut conn).unwrap(),after);
+    }
+    #[test]
     fn automatic_factory_correction_updates_only_cost_and_preserves_paid_amounts_and_history(){
         let base=Temp::new();
         let (mut conn,inbox)=synthetic_db(&base.0);

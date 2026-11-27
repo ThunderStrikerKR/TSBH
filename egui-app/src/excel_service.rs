@@ -82,7 +82,9 @@ fn save(root:&Path,origin:&str,bytes:&[u8])->Result<PathBuf,String>{
     if bytes.len()<4||bytes.len()>25*1024*1024||!bytes.starts_with(b"PK\x03\x04"){
         return Err("정상적인 Excel XLSX 파일이 아닙니다.".into())
     }
-    let day=Local::now().date_naive();
+    save_at(root,origin,bytes,Local::now().date_naive())
+}
+fn save_at(root:&Path,origin:&str,bytes:&[u8],day:chrono::NaiveDate)->Result<PathBuf,String>{
     let dir=archive_day_at(root,origin,day)?;
     let (_,_,stem)=kind(origin)?;
     let date=day.format("%Y%m%d").to_string();
@@ -286,6 +288,25 @@ pub fn open_daily(origin:&str)->Result<(),String>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn aggregate_filename_never_consumes_individual_sequence_and_date_is_frozen(){
+        let root=std::env::temp_dir().join(format!("bando-aggregate-sequence-{}",Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();let root=root.canonicalize().unwrap();
+        let day=chrono::NaiveDate::from_ymd_opt(2026,12,31).unwrap();
+        let next=day.succ_opt().unwrap();
+        let bytes=encode(&json!({"rows":[{"values":vec!["test";16]}]})).unwrap();
+        for (origin,stem) in [("FACTORY","공장"),("STORE","매장")]{
+            let aggregate=bando_data_access::excel_aggregate_jobs::target(&root,"2026-12-31",origin).unwrap();
+            fs::create_dir_all(aggregate.parent().unwrap()).unwrap();fs::write(&aggregate,&bytes).unwrap();
+            let p1=save_at(&root,origin,&bytes,day).unwrap();let p2=save_at(&root,origin,&bytes,day).unwrap();
+            let p3=save_at(&root,origin,&bytes,next).unwrap();
+            assert_eq!(p1.file_name().unwrap().to_str().unwrap(),format!("20261231({stem}1).xlsx"));
+            assert_eq!(p2.file_name().unwrap().to_str().unwrap(),format!("20261231({stem}2).xlsx"));
+            assert_eq!(p3.file_name().unwrap().to_str().unwrap(),format!("20270101({stem}1).xlsx"));
+            assert_eq!(fs::read(aggregate).unwrap(),bytes);assert_eq!(fs::read(p1).unwrap(),bytes);
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn product_archive_preserves_date_folder_and_never_overwrites(){
         let root=std::env::temp_dir().join(format!(

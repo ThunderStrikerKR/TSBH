@@ -59,3 +59,6 @@ jobs:
         run: cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib excel_aggregate_jobs::tests -- --nocapture
       - name: Verify daily Excel publication, leading zeros, damage recovery and Windows locking
         run: cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui excel_aggregate::tests -- --nocapture
+
+      - name: Verify individual export sequence and date boundary
+        run: cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui aggregate_filename_never_consumes_individual_sequence_and_date_is_frozen -- --nocapture

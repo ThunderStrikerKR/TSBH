@@ -117,7 +117,11 @@ fn crash_checkpoint(stage:&str){
     fs::write(root.join("crash-ready"),stage).expect("write crash checkpoint");
     loop{std::thread::sleep(Duration::from_millis(100));}
 }
-fn publish(conn:&mut Connection,requested:&jobs::Job,base:&Path)->Result<(),String>{
+pub(crate) fn publish(conn:&mut Connection,requested:&jobs::Job,base:&Path)->Result<(),String>{
+    publish_with(conn,requested,base,|_|Ok(()))
+}
+fn publish_with<F>(conn:&mut Connection,requested:&jobs::Job,base:&Path,mut checkpoint:F)->Result<(),String>
+where F:FnMut(&str)->Result<(),String>{
     // Capture generation and projected rows from a consistent SQLite read.
     let tx=conn.transaction().map_err(err)?;
     let Some(j)=jobs::current(&tx,requested)? else{return Ok(())};
@@ -128,10 +132,13 @@ fn publish(conn:&mut Connection,requested:&jobs::Job,base:&Path)->Result<(),Stri
     #[cfg(test)]
     crash_checkpoint("after_db_commit");
     let bytes=encode(&rows,j.origin=="REPLY")?;
+    checkpoint("before_target")?;
     let target=checked_target(&j)?;
     let dir=target.parent().ok_or("취합 저장 폴더 누락")?;
     let tmp=Temp(dir.join(format!(".bando-aggregate-{}.tmp",Uuid::new_v4())));
+    checkpoint("before_temp_open")?;
     let mut file=fs::OpenOptions::new().create_new(true).write(true).open(&tmp.0).map_err(err)?;
+    checkpoint("before_temp_write")?;
     #[cfg(test)]
     {
         let half=bytes.len()/2;
@@ -142,8 +149,10 @@ fn publish(conn:&mut Connection,requested:&jobs::Job,base:&Path)->Result<(),Stri
     #[cfg(not(test))]
     file.write_all(&bytes).and_then(|_|file.sync_all()).map_err(err)?;
     drop(file);
+    checkpoint("after_temp_write")?;
     let hash=format!("{:x}",Sha256::digest(&bytes));
     if file_hash(&tmp.0)?!=hash{return Err("임시 취합 Excel 해시 불일치".into())}
+    checkpoint("before_commit_lock")?;
     // Hold only the short final publish transaction; concurrent writers cannot
     // replace a newer generation with this obsolete snapshot.
     let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(err)?;
@@ -154,6 +163,7 @@ fn publish(conn:&mut Connection,requested:&jobs::Job,base:&Path)->Result<(),Stri
     // first. On Windows a sharing violation leaves the previous file intact.
     #[cfg(test)]
     crash_checkpoint("before_replace");
+    checkpoint("before_replace")?;
     fs::rename(&tmp.0,&target).map_err(err)?;
     #[cfg(test)]
     crash_checkpoint("after_replace");
@@ -385,6 +395,70 @@ mod tests{
             assert!(!fs::read_dir(Path::new(&f.job.path).parent().unwrap()).unwrap()
                 .filter_map(Result::ok).any(|e|e.file_name().to_string_lossy().starts_with(".bando-aggregate-")));
         }
+    }
+    #[test]
+    fn injected_io_failures_preserve_old_workbook_and_pending_revision(){
+        for (stage,kind) in [("before_temp_open",std::io::ErrorKind::PermissionDenied),
+            ("before_temp_write",std::io::ErrorKind::StorageFull),
+            ("after_temp_write",std::io::ErrorKind::Other),
+            ("before_replace",std::io::ErrorKind::PermissionDenied)]{
+            let mut f=Fixture::new();f.update(1);publish(&mut f.conn,&f.job,&f.root).unwrap();
+            let old=fs::read(&f.job.path).unwrap();f.update(2);
+            let result=publish_with(&mut f.conn,&f.job,&f.root,|s|{
+                if s==stage{Err(std::io::Error::from(kind).to_string())}else{Ok(())}
+            });
+            assert!(result.is_err(),"{stage}");assert_eq!(fs::read(&f.job.path).unwrap(),old);
+            let pending=jobs::current(&f.conn,&f.job).unwrap().unwrap();
+            assert_eq!((pending.saved,pending.desired),(1,2));
+            assert!(!fs::read_dir(Path::new(&f.job.path).parent().unwrap()).unwrap()
+                .filter_map(Result::ok).any(|e|e.file_name().to_string_lossy().starts_with(".bando-aggregate-")));
+            publish(&mut f.conn,&f.job,&f.root).unwrap();
+            assert_eq!(jobs::current(&f.conn,&f.job).unwrap().unwrap().saved,2);
+        }
+    }
+    #[test]
+    fn missing_archive_root_recovers_without_redirecting_to_other_folder(){
+        let mut f=Fixture::new();f.update(1);publish(&mut f.conn,&f.job,&f.root).unwrap();
+        let old=fs::read(&f.job.path).unwrap();f.update(2);
+        let offline=f.root.with_extension("offline");
+        fs::rename(&f.root,&offline).unwrap();
+        let failed=publish(&mut f.conn,&f.job,&f.root);
+        fs::rename(&offline,&f.root).unwrap();
+        assert!(failed.is_err());assert_eq!(fs::read(&f.job.path).unwrap(),old);
+        assert_eq!(jobs::current(&f.conn,&f.job).unwrap().unwrap().saved,1);
+        publish(&mut f.conn,&f.job,&f.root).unwrap();
+        assert_eq!(jobs::current(&f.conn,&f.job).unwrap().unwrap().saved,2);
+    }
+    #[test]
+    fn ten_locked_generations_coalesce_to_one_latest_workbook(){
+        let mut f=Fixture::new();f.update(1);publish(&mut f.conn,&f.job,&f.root).unwrap();
+        let old=fs::read(&f.job.path).unwrap();
+        for n in 2..=11{
+            f.update(n);
+            assert!(publish_with(&mut f.conn,&f.job,&f.root,|s|if s=="before_replace"{Err("sharing violation fixture".into())}else{Ok(())}).is_err());
+            assert_eq!(fs::read(&f.job.path).unwrap(),old);
+        }
+        let pending=jobs::jobs(&f.conn,0,false).unwrap();assert_eq!(pending.len(),1);
+        publish(&mut f.conn,&pending[0],&f.root).unwrap();
+        let mut book=Xlsx::new(Cursor::new(fs::read(&f.job.path).unwrap())).unwrap();
+        assert_eq!(book.worksheet_range("로젠택배").unwrap().end().unwrap().0,11);
+        assert!(jobs::jobs(&f.conn,0,false).unwrap().is_empty());
+    }
+    #[test]
+    fn large_daily_workbook_roundtrip_without_individual_files(){
+        let mut f=Fixture::new();f.update(5000);
+        let start=Instant::now();publish(&mut f.conn,&f.job,&f.root).unwrap();
+        let elapsed=start.elapsed();
+        let mut book=Xlsx::new(Cursor::new(fs::read(&f.job.path).unwrap())).unwrap();
+        let range=book.worksheet_range("로젠택배").unwrap();
+        assert_eq!(range.end().unwrap().0,5000);
+        for (i,h) in crate::excel_service::HEADERS.iter().enumerate(){
+            if h.is_empty(){continue}
+            assert_eq!(range.get_value((0,i as u32)),Some(&Data::String((*h).into())));
+        }
+        assert_eq!(range.get_value((5000,1)),Some(&Data::String("01234".into())));
+        assert_eq!(fs::read_dir(Path::new(&f.job.path).parent().unwrap()).unwrap().count(),1);
+        eprintln!("synthetic 5000-row aggregate publish: {elapsed:?}");
     }
     #[test]
     fn same_directory_replacement_preserves_complete_bytes(){
