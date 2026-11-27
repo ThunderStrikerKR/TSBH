@@ -3,6 +3,10 @@
 
 use serde_json::Value;
 
+#[path = "../../../src-tauri/src/business_core/rules/settings_accounts.rs"]
+mod settings_accounts;
+pub(crate) use settings_accounts::validate as validate_accounts;
+
 pub fn valid_state(s: &Value) -> Result<(), String> {
     for field in ["products", "orders", "clients", "aliases", "queue", "exports"] {
         if !s.get(field).is_some_and(Value::is_array) {

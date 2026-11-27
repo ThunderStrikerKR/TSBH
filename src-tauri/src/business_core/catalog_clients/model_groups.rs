@@ -34,7 +34,7 @@ fn validate_product_ids(state:&Value,ids:&[Value],rep:&str)->Result<(),String>{
     }
     Ok(())
 }
-fn validate(state:&Value)->Result<(),String>{
+pub(super) fn validate(state:&Value)->Result<(),String>{
     let Some(groups)=state.get("settings").and_then(|s|s.get("colorGuidanceGroups"))
         .filter(|v|v.is_object()) else{return Ok(())};
     let mut names=HashSet::new();
@@ -70,7 +70,7 @@ fn validate(state:&Value)->Result<(),String>{
 pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
     let state=payload.get("state").ok_or("현재 상태가 없습니다.")?;
     match operation{
-        "validate_model_groups"=>{validate(state)?;Ok(json!({"valid":true}))},
+        "validate_model_groups"=>{super::validate_model_groups(state)?;Ok(json!({"valid":true}))},
         "eligible_model_group_product_ids"=>{
             Ok(json!(items(state,"products").iter()
                 .filter(|p|eligible_product(p))

@@ -83,6 +83,12 @@ pub(super) fn product_url_ok(value: &str) -> bool {
 fn validate_client(state: &Value, client: &Value) -> Result<(), String> {
     client_mutation::validate_client(state,client)
 }
+/// Borrow the existing model-group validator without constructing a
+/// JSON dispatcher command. The dispatcher delegates to the same rule.
+pub(crate) fn validate_model_groups(state:&Value)->Result<(),String>{
+    model_groups::validate(state)
+}
+
 fn validate_product(state: &Value, product: &Value) -> Result<(), String> {
     bando_data_access::validate_product_assignment(state,product)?;
     // src/domain.ts::productSchema and validateProduct: one sale unit only,

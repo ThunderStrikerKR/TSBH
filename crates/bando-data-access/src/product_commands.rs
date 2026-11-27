@@ -10,8 +10,7 @@ use std::time::{SystemTime,UNIX_EPOCH};
 mod catalog_clients;
 
 pub(crate) fn validate_native_model_groups(state:&Value)->Result<(),String>{
-    catalog_clients::execute("validate_model_groups",json!({"state":state}))?;
-    Ok(())
+    catalog_clients::validate_model_groups(state)
 }
 
 /// Derive committed history from the authoritative before/after product, not
@@ -106,9 +105,7 @@ pub fn patch_model_groups_v2(
         return Err("colorGuidanceGroups 설정이 다른 화면에서 수정됐습니다. 다시 불러온 뒤 저장하세요.".into());
     }
     settings.insert("colorGuidanceGroups".into(),groups.clone());
-    catalog_clients::execute(
-        "validate_model_groups",json!({"state":&state})
-    )?;
+    validate_native_model_groups(&state)?;
     Ok((state!=*before).then_some(state))
     })
 }
@@ -556,6 +553,19 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
 #[cfg(test)]
 mod management_scope_cas_tests{
     use super::*;
+    #[test]
+    fn borrowed_model_group_validation_matches_existing_dispatch(){
+        for state in [
+            json!({"products":[],"settings":{"colorGuidanceGroups":{}}}),
+            json!({"products":[],"settings":{"colorGuidanceGroups":{"g":{"name":"","productIds":[]}}}}),
+            json!({"products":[],"settings":{"colorGuidanceGroups":{"g":{"name":"그룹","productIds":["a","b"],"representativeProductId":"a"}}}}),
+        ]{
+            let native=validate_native_model_groups(&state);
+            let dispatched=catalog_clients::execute("validate_model_groups",json!({"state":&state})).map(|_|());
+            assert_eq!(native,dispatched);
+        }
+    }
+
     #[test]
     fn category_batch_move_is_all_or_nothing_and_keeps_prices(){
         let product=|id:&str|json!({"id":id,"code":id,"name":id,
