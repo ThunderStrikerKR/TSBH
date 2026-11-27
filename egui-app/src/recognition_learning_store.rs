@@ -602,6 +602,7 @@ pub(super) fn integrity(tx:&Transaction<'_>,scope:&str)->Result<Value,String>{
         .map_err(|e|e.to_string())?;
     let mut ids=stmt.query(params![scope,FEATURE_VERSION]).map_err(|e|e.to_string())?;
     let mut invalid=0u64;let mut inspected=0u64;
+    let mut missing_evaluations=0u64;let mut invalid_evaluations=0u64;
     while let Some(row)=ids.next().map_err(|e|e.to_string())?{
         let id:String=row.get(0).map_err(|e|e.to_string())?;
         let record:Option<(String,i64)>=tx.query_row("SELECT fingerprint,contribution_version
@@ -611,6 +612,11 @@ pub(super) fn integrity(tx:&Transaction<'_>,scope:&str)->Result<Value,String>{
         match record{
             Some((digest,version)) if version==CONTRIBUTION_VERSION=>{
                 if !matches!(cached_count(tx,scope,&id,&digest),Ok(Some(_))){invalid+=1;}
+                match combined_evaluation_cached(tx,scope,&id,&digest){
+                    Ok(true)=>{},
+                    Ok(false)=>missing_evaluations+=1,
+                    Err(_)=>invalid_evaluations+=1,
+                }
             }
             _=>invalid+=1,
         }
@@ -618,7 +624,8 @@ pub(super) fn integrity(tx:&Transaction<'_>,scope:&str)->Result<Value,String>{
     Ok(json!({"status":"diagnostic_only","featureVersion":FEATURE_VERSION,
         "inspectedOrders":inspected,"invalidContributionOrders":invalid,
         "totalMismatchRows":mismatch,"pendingOrders":pending,
-        "internallyConsistent":invalid==0&&mismatch==0&&pending==0,
+        "missingCombinedEvaluationOrders":missing_evaluations,"invalidCombinedEvaluationOrders":invalid_evaluations,
+        "internallyConsistent":invalid==0&&mismatch==0&&pending==0&&missing_evaluations==0&&invalid_evaluations==0,
         "fullHistoryReconciled":false,"automaticDecisionEnabled":false}))
 }
 
@@ -693,6 +700,9 @@ mod recognition_learning_store_tests{
         let id="combined-test";let digest="a".repeat(64);
         save_fingerprint(&tx,"scope",id,&digest,&[]).unwrap();
         assert!(!combined_evaluation_cached(&tx,"scope",id,&digest).unwrap());
+        let missing=integrity(&tx,"scope").unwrap();
+        assert_eq!(missing["missingCombinedEvaluationOrders"],1);
+        assert_eq!(missing["internallyConsistent"],false);
         let mut report=json!({"combinedEvaluation":{"schemaVersion":1,"status":"compared_diagnostic_only",
             "groups":[],"eligibleForAutomaticDecision":false,"decisionChanged":false,"eligibleObservations":1}});
         save_combined_evaluation(&tx,"scope",id,&digest,&report).unwrap();
@@ -707,6 +717,9 @@ mod recognition_learning_store_tests{
         assert!(!combined_evaluation_cached(&tx,"scope",id,&"b".repeat(64)).unwrap());
         tx.execute("UPDATE recognition_combined_evaluation SET payload='{}' WHERE scope='scope'",[]).unwrap();
         assert!(combined_evaluation_cached(&tx,"scope",id,&digest).is_err());
+        let corrupt=integrity(&tx,"scope").unwrap();
+        assert_eq!(corrupt["invalidCombinedEvaluationOrders"],1);
+        assert_eq!(corrupt["internallyConsistent"],false);
         revoke_pending(&tx,"scope",id).unwrap();
         assert!(!combined_evaluation_cached(&tx,"scope",id,&digest).unwrap());
     }
