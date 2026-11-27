@@ -2986,9 +2986,12 @@ mod tests {
         manager.begin_edit(manager.products[0].clone());
         let work=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(1760.0,1000.0));
         let mut text=Vec::new();
-        for _ in 0..6{
+        for frame in 0..6{
+            crate::ui_test_support::begin_component_geometry();
             let output=ctx.run(egui::RawInput{screen_rect:Some(work),..Default::default()},
                 |ctx|manager.show_detail(ctx,work));
+            let components=crate::ui_test_support::finish_component_geometry(work);
+            if frame==5{crate::ui_test_support::assert_component_roles(&components,&["popup","button","input"]);}
             text.clear();
             for shape in &output.shapes{collect_product_text(&shape.shape,&mut text);}
         }
