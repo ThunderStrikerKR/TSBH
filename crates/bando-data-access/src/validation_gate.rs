@@ -92,9 +92,13 @@ fn execute_plan(before:&Value,next:&Value,plan:Dependencies)->ValidationReport{
     for rule in report.required.iter().copied(){
         let Some(check)=binding(rule)else{report.unavailable.insert(rule);continue;};
         report.checked.insert(rule);
-        if rule==Account{
-            let compared=crate::validation_policy::compare(
-                validation::account_diagnostics(before),validation::account_diagnostics(next));
+        let diagnostic=match rule{
+            Account=>Some(validation::account_diagnostics as fn(&Value)->Vec<crate::validation_policy::Finding>),
+            ModelGroup=>Some(crate::product_commands::native_model_group_diagnostics as fn(&Value)->Vec<crate::validation_policy::Finding>),
+            _=>None,
+        };
+        if let Some(diagnostics)=diagnostic{
+            let compared=crate::validation_policy::compare(diagnostics(before),diagnostics(next));
             if compared.retained>0{report.retained_legacy.insert(rule,compared.retained);}
             if compared.resolved>0{report.resolved_legacy.insert(rule,compared.resolved);}
             report.failures.extend(compared.blocking.into_iter().map(|message|ValidationFailure{rule,message}));
@@ -199,6 +203,17 @@ mod tests{
         let report=inspect(&a,&b);
         assert!(report.failures.iter().any(|f|f.rule==Account));
         assert!(!report.is_complete_and_valid());
+    }
+    #[test]
+    fn model_group_old_member_error_does_not_hide_new_member_error(){
+        let mut a=state();
+        a["products"]=json!([{"id":"p","variants":[{"id":"v","source":"MANUAL"}]}]);
+        a["settings"]["colorGuidanceGroups"]=json!({"g":{"name":"G","productIds":["missing","p"],"representativeProductId":"p"}});
+        let mut b=a.clone();
+        b["products"][0]["active"]=json!(false);
+        let report=inspect(&a,&b);
+        assert_eq!(report.retained_legacy.get(&ModelGroup),Some(&1));
+        assert!(report.failures.iter().any(|f|f.rule==ModelGroup));
     }
     #[test]
     fn model_group_change_has_no_duplicate_invocations(){

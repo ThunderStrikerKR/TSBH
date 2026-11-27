@@ -12,6 +12,9 @@ pub(super) mod catalog_clients;
 pub(crate) fn validate_native_model_groups(state:&Value)->Result<(),String>{
     catalog_clients::validate_model_groups(state)
 }
+pub(crate) fn native_model_group_diagnostics(state:&Value)->Vec<(Vec<String>,Value,String)>{
+    catalog_clients::model_group_diagnostics(state)
+}
 
 pub(crate) fn validate_native_category_topology(state:&Value)->Result<(),String>{
     catalog_clients::validate_category_topology(state)

@@ -88,6 +88,9 @@ fn validate_client(state: &Value, client: &Value) -> Result<(), String> {
 pub(crate) fn validate_model_groups(state:&Value)->Result<(),String>{
     model_groups::validate(state)
 }
+pub(crate) fn model_group_diagnostics(state:&Value)->Vec<(Vec<String>,Value,String)>{
+    model_groups::diagnostics(state)
+}
 
 /// Pure hierarchy validation, without repeating the assignment transition.
 pub(crate) fn validate_category_topology(state:&Value)->Result<(),String>{
