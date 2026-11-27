@@ -53,6 +53,13 @@ pub(super) fn prepare(conn:&Connection)->Result<(),String>{
         CREATE TABLE IF NOT EXISTS recognition_learning_pending(
         scope TEXT NOT NULL,feature_version INTEGER NOT NULL,order_id TEXT NOT NULL,
         PRIMARY KEY(scope,feature_version,order_id));
+        CREATE TABLE IF NOT EXISTS recognition_combined_evaluation(
+        scope TEXT NOT NULL,feature_version INTEGER NOT NULL,order_id TEXT NOT NULL,
+        evaluation_version INTEGER NOT NULL CHECK(evaluation_version=1),
+        source_digest TEXT NOT NULL,payload TEXT NOT NULL,payload_digest TEXT NOT NULL,
+        PRIMARY KEY(scope,feature_version,order_id),
+        FOREIGN KEY(scope,feature_version,order_id) REFERENCES recognition_learning_fingerprints
+        (scope,feature_version,order_id) ON DELETE CASCADE);
         CREATE INDEX IF NOT EXISTS recognition_learning_facts_context
         ON recognition_learning_facts(scope,feature_version,family,context_key,order_id);")
         .map_err(|e|e.to_string())?;
@@ -206,6 +213,45 @@ fn save_fingerprint(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str,facts:&[F
     Ok(())
 }
 
+// Independent derived evaluation; no contribution to learning support.
+pub(super) fn combined_evaluation_cached(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str)->Result<bool,String>{
+    let row:Option<(String,String,String,i64)>=tx.query_row("SELECT source_digest,payload,payload_digest,evaluation_version
+        FROM recognition_combined_evaluation WHERE scope=?1 AND feature_version=?2 AND order_id=?3",
+        params![scope,FEATURE_VERSION,id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)))
+        .optional().map_err(|e|e.to_string())?;
+    let Some((source,payload,proof,version))=row else{return Ok(false);};
+    if version!=1||source!=digest{return Ok(false);}
+    if format!("{:x}",Sha256::digest(payload.as_bytes()))!=proof{return Err("결합 평가 지문 불일치".into());}
+    Ok(true)
+}
+fn save_combined_evaluation(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str,report:&Value)->Result<(),String>{
+    let fallback=json!({"schemaVersion":1,"status":"no_combined_prediction","groups":[],
+        "eligibleForAutomaticDecision":false,"decisionChanged":false});
+    let v=report.get("combinedEvaluation").unwrap_or(&fallback);
+    if v["schemaVersion"]!=1||v["eligibleForAutomaticDecision"]!=false||v["decisionChanged"]!=false||
+        v["groups"].as_array().is_none_or(|a|a.len()>64){return Err("결합 평가 규격 오류".into());}
+    let payload=serde_json::to_string(v).map_err(|_|"결합 평가 직렬화 오류")?;
+    if payload.len()>64*1024{return Err("결합 평가 저장 한도 초과".into());}
+    let proof=format!("{:x}",Sha256::digest(payload.as_bytes()));
+    tx.execute("INSERT INTO recognition_combined_evaluation VALUES(?1,?2,?3,1,?4,?5,?6)
+        ON CONFLICT(scope,feature_version,order_id) DO UPDATE SET source_digest=excluded.source_digest,
+        payload=excluded.payload,payload_digest=excluded.payload_digest,evaluation_version=excluded.evaluation_version",
+        params![scope,FEATURE_VERSION,id,digest,payload,proof]).map_err(|e|e.to_string())?;
+    Ok(())
+}
+pub(super) fn combined_evaluation_report(tx:&Transaction<'_>,scope:&str,digests:&BTreeMap<String,String>)->Result<Value,String>{
+    let mut reports=Vec::new();let mut missing=0;
+    for (id,digest) in digests{
+        if !combined_evaluation_cached(tx,scope,id,digest)?{missing+=1;continue;}
+        let payload:String=tx.query_row("SELECT payload FROM recognition_combined_evaluation
+            WHERE scope=?1 AND feature_version=?2 AND order_id=?3",params![scope,FEATURE_VERSION,id],|r|r.get(0))
+            .map_err(|e|e.to_string())?;
+        reports.push(serde_json::from_str::<Value>(&payload).map_err(|_|"결합 평가 JSON 오류")?);
+    }
+    Ok(json!({"status":"stored_combined_evaluation_diagnostic_only","orders":reports,
+        "missingEvaluationOrders":missing,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
+}
+
 /// The caller holds an IMMEDIATE transaction in the audit database across
 /// snapshot read, per-order projection, delta replacement and revalidation.
 pub(super) fn synchronize_with_digests(tx:&Transaction<'_>,scope:&str,ids:&[String],
@@ -231,17 +277,21 @@ pub(super) fn synchronize_with_digests(tx:&Transaction<'_>,scope:&str,ids:&[Stri
     for id in requested.iter().copied(){
         if let Some(digest)=digests.get(id){
             if let Some(count)=cached_count(tx,scope,id,digest)?{
+                if combined_evaluation_cached(tx,scope,id,digest)?{
                 reused+=1;
                 if count>0{eligible+=1;}
                 clear_pending(tx,scope,id)?;
                 continue;
+                }
             }
             let order=by_id.get(id).ok_or("변경된 학습 주문 원본 누락")?;
-            let new=facts(&summarize(order)?)?;
+            let summary=summarize(order)?;
+            let new=facts(&summary)?;
             recalculated+=1;
             if !new.is_empty(){eligible+=1;}
             if replace(tx,scope,id,&new)?{changed+=1;}
             save_fingerprint(tx,scope,id,digest,&new)?;
+            save_combined_evaluation(tx,scope,id,digest,&summary)?;
         }else{
             // Missing/inactive orders revoke their prior contributions and
             // cache entry; reactivation must be checked from current inputs.
@@ -400,7 +450,7 @@ pub(super) fn integrity(tx:&Transaction<'_>,scope:&str)->Result<Value,String>{
 /// Startup/periodic reconciliation will replay authoritative confirmations.
 pub(super) fn reset_derived(tx:&Transaction<'_>,scope:&str)->Result<Value,String>{
     let mut removed=0usize;
-    for table in ["recognition_learning_fact_proofs","recognition_learning_fingerprints",
+    for table in ["recognition_combined_evaluation","recognition_learning_fact_proofs","recognition_learning_fingerprints",
         "recognition_learning_facts","recognition_learning_orders","recognition_learning_totals",
         "recognition_learning_pending"]{
         removed+=tx.execute(&format!("DELETE FROM {table} WHERE scope=?1 AND feature_version=?2"),

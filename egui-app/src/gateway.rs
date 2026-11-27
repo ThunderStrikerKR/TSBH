@@ -1205,8 +1205,11 @@ pub(crate) fn start_recognition_learning_worker(){
 pub(crate) fn sync_recognition_learning(ids:&[String])->Result<Value,String>{
     let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
     if !mode.trim().eq_ignore_ascii_case("local"){return Err("학습 통계 저장은 로컬 DB에서만 지원합니다.".into());}
-    PreviewStore::sync_recognition_learning(ids,|order|recognition::execute(
-        "summarize_owner_statistics",serde_json::json!({"orders":[order]})))
+    PreviewStore::sync_recognition_learning(ids,|order|{
+        let mut report=recognition::execute("summarize_owner_statistics",serde_json::json!({"orders":[order]}))?;
+        report["combinedEvaluation"]=recognition::execute("evaluate_combined_confirmation",order.clone())?;
+        Ok(report)
+    })
 }
 
 pub(crate) fn recognition_learning_support(input:&Value)->Result<Value,String>{
