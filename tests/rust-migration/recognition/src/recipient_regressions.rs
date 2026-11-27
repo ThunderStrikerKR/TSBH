@@ -191,3 +191,97 @@ fn preserve_secondary_contact_and_show_unassigned_quantity_evidence() {
         }
     }
 }
+
+// Independent expectations transcribed from the existing anonymized 18
+// text orders and the pinned catalog, NOT generated from parser output.
+// Address anchors are partial truth; unspecified or unavailable SKU
+// identities are not counted as correct automatically. Never emit PII.
+#[test]
+fn operational_field_truth_report(){
+    struct Row<'a>{
+        name:&'a str, address:&'a str, contacts:&'a [&'a str],
+        items:&'a [(Option<&'a str>,Option<i64>)],
+    }
+    let truth:Vec<Vec<Row<'_>>>=vec![
+        vec![Row{name:"가상고등학교",address:"동창로 207",contacts:&["010-1234-5678","010-1111-2222"],items:&[(Some("sku:bando-site-50:bando-50-P00000BX000C"),Some(30)),(Some("bando-site-63"),Some(1)),(Some("bando-site-83"),Some(2))]}],
+        vec![Row{name:"김가상 예수아님",address:"한강대로104라길 13",contacts:&["0504-1234-5678"],items:&[(Some("bando-site-290"),Some(2))]}],
+        vec![Row{name:"박가상",address:"구월말로 51",contacts:&["010-1234-5678"],items:&[(Some("bando-site-107"),Some(2))]}],
+        vec![Row{name:"가상월드",address:"소래로 41번길 66-73",contacts:&["031-123-4567"],items:&[(Some("bando-site-87"),Some(1))]}],
+        vec![Row{name:"정가상 목사",address:"석촌호수로 162",contacts:&["010-1234-5678"],items:&[(None,Some(1))]}],
+        vec![Row{name:"남가상",address:"함양여중길 18-9",contacts:&["010-1234-5678"],items:&[(None,None)]}],
+        vec![Row{name:"청소년활동팀(1층)(김가상)",address:"문화로 120",contacts:&["010-1234-5678"],items:&[(Some("bando-site-130"),Some(1))]}],
+        vec![Row{name:"임가상",address:"구율2길 19",contacts:&["010-1234-5678"],items:&[(Some("bando-site-290"),Some(6))]}],
+        vec![Row{name:"이가상",address:"안청남로 40",contacts:&["010-1234-5678"],items:&[(Some("bando-site-176"),Some(2))]}],
+        vec![Row{name:"심가상",address:"410동 804호",contacts:&["0502-1234-5678"],items:&[(Some("sku:bando-site-48:bando-48-P00000BV000B"),Some(1))]}],
+        vec![Row{name:"상가상",address:"도봉로133길 50",contacts:&["010-1234-5678"],items:&[(Some("bando-site-202"),Some(1))]}],
+        vec![Row{name:"배가상",address:"석정로461번길 7",contacts:&["010-1234-5678"],items:&[(Some("sku:bando-site-48:bando-48-P00000BV000B"),Some(3))]}],
+        vec![Row{name:"장가상",address:"월곡동 538-1",contacts:&["0502-1234-5678"],items:&[(None,Some(2))]},
+             Row{name:"정가상",address:"하늘달빛로 113",contacts:&["0502-2345-6789"],items:&[(Some("sku:bando-site-23:bando-23-P000000W000F"),Some(1))]}],
+        vec![Row{name:"김가상",address:"에듀시티로 23",contacts:&["010-1234-5678"],items:&[(Some("bando-site-150"),Some(1))]}],
+        vec![Row{name:"김가상",address:"안양천서로 177",contacts:&["010-1234-5678"],items:&[(Some("bando-site-70"),Some(3))]}],
+        vec![Row{name:"배가상",address:"백운길 199",contacts:&["0502-1234-5678"],items:&[(Some("bando-site-63"),Some(1))]}],
+        vec![Row{name:"김가상",address:"가곡길 39",contacts:&["010-1234-5678"],items:&[(Some("sku:bando-site-48:bando-48-P00000BV000B"),Some(4))]},
+             Row{name:"박가상",address:"팔마1길 25",contacts:&["010-2345-6789"],items:&[(Some("sku:bando-site-237:bando-237-P00000JC000J"),Some(1))]}],
+        vec![Row{name:"이가상",address:"동탄역로 196",contacts:&["010-1234-5678"],items:&[(Some("sku:bando-site-48:bando-48-P00000BV000C"),Some(1))]}],
+    ];
+    let fixtures=original_samples();
+    let state=seed();
+    let client=recipient_client();
+    let mut results=Vec::new();
+    assert_eq!(truth.len(),18);
+    for (i,expected) in truth.iter().enumerate(){
+        let case=&fixtures[i];
+        let raw=case["raw"].as_str().unwrap();
+        assert_eq!(case["id"],json!(i+1));
+        assert_eq!(expected.len(),case["expectedRecipients"].as_u64().unwrap() as usize);
+        // Check the independent annotations actually refer to this input.
+        for e in expected{
+            assert!(raw.contains(e.name)&&raw.contains(e.address),"fixture {} label source",i+1);
+            for contact in e.contacts{assert!(raw.contains(contact),"fixture {} contact source",i+1);}
+            for (id,_) in e.items{
+                if let Some(id)=id{assert!(state["products"].as_array().unwrap().iter().any(|p|p["id"]==*id),"fixture {} catalog identity",i+1);}
+            }
+        }
+        let parsed=recognition::execute("analyze_order",json!({"raw":raw,"state":state,"client":client}))
+            .unwrap_or_else(|_|panic!("field evaluation failed at fixture {}",i+1));
+        let rows=parsed["recipients"].as_array().unwrap();
+        let units=raw.encode_utf16().collect::<Vec<_>>();
+        let span_ok=|s:&Value|{
+            let Some(a)=s["start"].as_u64().map(|v|v as usize)else{return false;};
+            let Some(b)=s["end"].as_u64().map(|v|v as usize)else{return false;};
+            a<b&&units.get(a..b).and_then(|x|String::from_utf16(x).ok())
+                .is_some_and(|x|s["text"].as_str()==Some(x.as_str()))
+        };
+        let mut checks=Vec::new();
+        for (j,e) in expected.iter().enumerate(){
+            // Recipient order is part of the expectation, not a sorted bag.
+            let row=rows.get(j).unwrap_or(&Value::Null);
+            let mut contacts=[row["phone"].as_str().unwrap_or(""),row["mobile"].as_str().unwrap_or("")]
+                .into_iter().filter(|v|!v.is_empty()).collect::<Vec<_>>();
+            contacts.sort_unstable();
+            let mut want=e.contacts.to_vec();want.sort_unstable();
+            let items=row["items"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+            let item_checks=e.items.iter().enumerate().map(|(k,(pid,qty))|{
+                let item=items.get(k).unwrap_or(&Value::Null);
+                json!({"sku":pid.map(|id|!item.is_null()&&item["productId"]==id),
+                    "quantity":!item.is_null()&&item["quantity"]==json!(qty),
+                    "quantityConfirmed":!item.is_null()&&item["quantityConfirmed"]==qty.is_some()})
+            }).collect::<Vec<_>>();
+            checks.push(json!({"name":row["name"]==e.name,
+                "addressAnchor":row["address"].as_str().is_some_and(|a|a.contains(e.address)),
+                "contacts":contacts==want,"itemCount":items.len()==e.items.len(),
+                "items":item_checks}));
+        }
+        let links=rows.iter().all(|r|{
+            r["sources"].as_array().into_iter().flatten().all(|s|
+                span_ok(s)&&s["recipientId"]==r["id"]&&s["targetId"]==r["id"])&&
+            r["items"].as_array().into_iter().flatten().all(|it|
+                it["sources"].as_array().into_iter().flatten().all(|s|
+                    span_ok(s)&&s["recipientId"]==r["id"]&&s["targetId"]==it["id"]))
+        })&&parsed["candidates"].as_array().into_iter().flatten().all(span_ok);
+        results.push(json!({"fixtureId":i+1,"recipientCount":rows.len()==expected.len(),
+            "sourceLinks":links,"recipients":checks}));
+    }
+    println!("RECOGNITION_FIELD_TRUTH {}",json!({"schemaVersion":1,"fixtureCount":18,
+        "fullAddressTruth":false,"patternTruth":false,"fixtures":results}));
+}

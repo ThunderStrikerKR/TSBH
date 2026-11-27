@@ -1,7 +1,7 @@
 name: Native egui interaction, management and workflow regression
 on:
   push:
-    branches: [main]
+    branches: [main, integration-recognition-rebuild]
     paths:
       - .github/workflows/egui-manual-classification-check.yml
       - egui-app/src/manual_workspace.rs
@@ -45,6 +45,136 @@ concurrency:
   group: egui-manual-classification-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  recognition-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tests/rust-migration/recognition -> target
+      - name: Compile and discover existing recognition regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=tests/rust-migration/recognition/Cargo.toml
+          cargo test --manifest-path "$manifest" --no-run
+          cargo test --manifest-path "$manifest" -- --list > /tmp/recognition-tests.txt
+          for n in $(seq -w 1 20); do
+            test "$(grep -Ec "^regressions::order_${n}: test$" /tmp/recognition-tests.txt || true)" -eq 1
+          done
+          test "$(grep -Ec "^regressions::recognition_baseline_report: test$" /tmp/recognition-tests.txt || true)" -eq 1
+      - name: Checkout pinned main baseline with the same measurement harness
+        uses: actions/checkout@v4
+        with:
+          ref: e2e6fcbaf45e2e5826a74be1c5f15102270bdbd3
+          path: .recognition-reference
+          persist-credentials: false
+      - name: Compare fixed main baseline and current recognition
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=tests/rust-migration/recognition/Cargo.toml
+          # Use the exact same fixture expectations, catalog and measurement
+          # code for both engines. Never silently compare different data.
+          cmp "$manifest" ".recognition-reference/$manifest"
+          cmp tests/rust-migration/recognition/operational-order-samples.json .recognition-reference/tests/rust-migration/recognition/operational-order-samples.json
+          cmp src-tauri/resources/state-seed.json .recognition-reference/src-tauri/resources/state-seed.json
+          cp tests/rust-migration/recognition/src/lib.rs .recognition-reference/tests/rust-migration/recognition/src/lib.rs
+          capture() {
+            local input="$1" output="$2"
+            cargo test --manifest-path "$input" --lib regressions::recognition_baseline_report -- --exact --nocapture > /tmp/recognition-baseline.log 2>&1 || {
+              echo "Recognition measurement failed; raw parser output withheld."
+              exit 1
+            }
+            sed -n 's/^.*RECOGNITION_BASELINE //p' /tmp/recognition-baseline.log > "$output"
+            python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["fixtureCount"]==20 and r["timing"]["measurements"]==100' "$output"
+          }
+          capture ".recognition-reference/$manifest" recognition-main-baseline.json
+          capture "$manifest" recognition-current.json
+          python3 - <<'PY'
+          import json
+          a=json.load(open("recognition-main-baseline.json"))
+          b=json.load(open("recognition-current.json"))
+          for metric in ("deliveryCountCorrect","quantityMultisetCorrect"):
+              print(metric, a[metric], "->", b[metric])
+          for metric in ("median","p95","max"):
+              print("microseconds", metric, a["timing"][metric], "->", b["timing"][metric])
+          # Protect individual previously passing cases, not only totals.
+          previous={x["fixtureId"]:x for x in a["fixtures"]}
+          failures=[(x["fixtureId"],k) for x in b["fixtures"]
+                    for k in ("deliveryCountMatches","quantityMultisetMatches")
+                    if previous[x["fixtureId"]][k] and not x[k]]
+          if failures:
+              raise SystemExit("Previously passing fixture regression: "+str(failures))
+          PY
+      - name: Compare independently annotated field truth on the same inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=tests/rust-migration/recognition/Cargo.toml
+          # Reuse the expanded independent test on the pinned engine too.
+          # No changes to the reference production source or catalog.
+          testfile=tests/rust-migration/recognition/src/recipient_regressions.rs
+          cp "$testfile" ".recognition-reference/$testfile"
+          capture_truth() {
+            local input="$1" output="$2"
+            cargo test --manifest-path "$input" --lib recipient_regressions::operational_field_truth_report -- --exact --nocapture > /tmp/recognition-field-truth.log 2>&1 || {
+              echo "Independent field truth test failed; raw output withheld."
+              exit 1
+            }
+            sed -n 's/^.*RECOGNITION_FIELD_TRUTH //p' /tmp/recognition-field-truth.log > "$output"
+          }
+          capture_truth ".recognition-reference/$manifest" recognition-main-field-truth.json
+          capture_truth "$manifest" recognition-current-field-truth.json
+          python3 - <<'PY'
+          import json
+          def flatten(report):
+              assert report["fixtureCount"]==18 and len(report["fixtures"])==18
+              out={}
+              for f in report["fixtures"]:
+                  fid=f["fixtureId"]
+                  for k in ("recipientCount","sourceLinks"):
+                      out[(fid,-1,-1,k)]=f[k]
+                  for ri,r in enumerate(f["recipients"]):
+                      for k in ("name","addressAnchor","contacts","itemCount"):
+                          out[(fid,ri,-1,k)]=r[k]
+                      for ii,item in enumerate(r["items"]):
+                          for k,v in item.items():
+                              if v is not None:
+                                  out[(fid,ri,ii,k)]=v
+              return out
+          a=flatten(json.load(open("recognition-main-field-truth.json")))
+          b=flatten(json.load(open("recognition-current-field-truth.json")))
+          assert a.keys()==b.keys()
+          for k in sorted({key[-1] for key in a}):
+              keys=[key for key in a if key[-1]==k]
+              print("field truth",k,sum(a[key] for key in keys),"->",sum(b[key] for key in keys),"/",len(keys))
+          failures=[key for key in a if a[key] and not b[key]]
+          if failures:
+              raise SystemExit("Independently labelled field regression: "+str(failures))
+          PY
+      - name: Upload paired recognition reports without raw order or contact values
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: recognition-baseline
+          path: |
+            recognition-main-baseline.json
+            recognition-current.json
+            recognition-main-field-truth.json
+            recognition-current-field-truth.json
+          retention-days: 7
+      - name: Run native recognition regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          result=0
+          cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml > /tmp/recognition-regressions.log 2>&1 || result=$?
+          # Do not publish arbitrary fixture text from failed assertions.
+          grep -E '^test [a-zA-Z0-9_:]+ \.\.\. (ok|FAILED|ignored)$|^test result:' /tmp/recognition-regressions.log || true
+          exit "$result"
   manual-classification:
     runs-on: windows-latest
     timeout-minutes: 50

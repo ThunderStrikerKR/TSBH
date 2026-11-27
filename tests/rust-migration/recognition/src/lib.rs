@@ -117,6 +117,64 @@ mod regressions {
     case!(order_19,19);
     case!(order_20,20);
 
+    // A01: Capture the current production parser's behavior without adding a
+    // second recognizer or persisting customer names, contacts, or raw text.
+    // Expected counts come from the existing independently maintained fixtures.
+    #[test]
+    fn recognition_baseline_report(){
+        let fixtures=samples();
+        let state=seed();
+        let client=json!({"id":"ci-dealer","name":"가상거래처","tier":"wholesale",
+            "overrides":{},"active":true,"payment":"PREPAID"});
+        let mut rows=Vec::new();
+        let mut elapsed=Vec::<u64>::new();
+        for case in &fixtures {
+            let raw=case["raw"].as_str().expect("fixture raw");
+            let mut last=None;
+            for trial in 0..=5 {
+                let payload=json!({"raw":raw,"client":client,"state":state});
+                let began=std::time::Instant::now();
+                let value=recognition::execute("analyze_order",payload)
+                    .unwrap_or_else(|_|panic!("baseline analysis failed for fixture {}",case["id"]));
+                let micros=began.elapsed().as_micros().min(u64::MAX as u128) as u64;
+                if trial>0{elapsed.push(micros);}
+                last=Some(value);
+            }
+            let result=last.expect("baseline analysis");
+            let recipients=result["recipients"].as_array().expect("recipient rows");
+            let mut quantities=recipients.iter().flat_map(|r|r["items"].as_array().into_iter().flatten())
+                .map(|i|i["quantity"].to_string()).collect::<Vec<_>>();
+            let mut expected=case["expectedQuantities"].as_array().expect("expected quantities")
+                .iter().map(Value::to_string).collect::<Vec<_>>();
+            quantities.sort();expected.sort();
+            let projected=recipients.iter().map(|r|{
+                let items=r["items"].as_array().into_iter().flatten().map(|i|json!({
+                    "productId":i["productId"],"variantId":i["variantId"],
+                    "quantity":i["quantity"],"quantityConfirmed":i["quantityConfirmed"]
+                })).collect::<Vec<_>>();
+                json!({"namePresent":r["name"].as_str().is_some_and(|v|!v.is_empty()),
+                    "addressPresent":r["address"].as_str().is_some_and(|v|!v.is_empty()),
+                    "phonePresent":r["phone"].as_str().is_some_and(|v|!v.is_empty()),
+                    "mobilePresent":r["mobile"].as_str().is_some_and(|v|!v.is_empty()),
+                    "items":items})
+            }).collect::<Vec<_>>();
+            rows.push(json!({"fixtureId":case["id"],
+                "deliveryCountMatches":Some(recipients.len() as u64)==case["expectedRecipients"].as_u64(),
+                "quantityMultisetMatches":quantities==expected,"recipients":projected}));
+        }
+        elapsed.sort_unstable();
+        let n=elapsed.len();
+        let percentile=|p:usize|elapsed[((n*p+99)/100).saturating_sub(1)];
+        let report=json!({"schemaVersion":1,"fixtureCount":rows.len(),
+            "deliveryCountCorrect":rows.iter().filter(|r|r["deliveryCountMatches"]==true).count(),
+            "quantityMultisetCorrect":rows.iter().filter(|r|r["quantityMultisetMatches"]==true).count(),
+            "timing":{"unit":"microseconds","measurements":n,"warmupPerFixture":1,
+                "median":percentile(50),"p95":percentile(95),"max":elapsed[n-1]},
+            "fullFieldTruthAvailable":false,"memoryMeasured":false,"fixtures":rows});
+        println!("RECOGNITION_BASELINE {}",report);
+    }
+
+
     // Current reception contract: address institutions are not extra
     // recipients, but explicitly named institutions are valid recipients.
     fn institution_boundary(institution:&str, standalone:bool) {

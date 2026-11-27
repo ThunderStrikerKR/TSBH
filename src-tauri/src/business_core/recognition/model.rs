@@ -268,10 +268,8 @@ fn brand_matches(text: &str, words: &[&str]) -> bool {
     words.iter().any(|w|!w.is_empty() && lower.contains(&w.to_lowercase()))
 }
 fn filter_business_candidates<'a>(
-    text: &str,state: &'a Value, ps: &[&'a Value],mut entries:Vec<Entry<'a>>
-) -> (Vec<Entry<'a>>,bool) {
-    let branded:Vec<&Value>=ps.iter().copied().filter(|p|
-        brand_matches(text,&brand_words(state,p))).collect();
+    text: &str,branded:&[&Value],mut entries:Vec<Entry<'a>>
+) -> Vec<Entry<'a>> {
     if !branded.is_empty() {
         entries.retain(|e|branded.iter().any(|p|str_field(p,"id")==str_field(e.p,"id")));
     } else if entries.iter().any(|e|str_field(e.p,"catalog")!="BANDOMALL")
@@ -284,14 +282,16 @@ fn filter_business_candidates<'a>(
         entries.retain(|e|!variants(e.p).iter()
             .any(|v|str_field(v,"source")=="DEMO"));
     }
-    let known=state.get("brands").and_then(Value::as_array).map_or(false,|brands|
+    entries
+}
+fn known_brand(text:&str,state:&Value)->bool{
+    state.get("brands").and_then(Value::as_array).map_or(false,|brands|
         brands.iter().any(|b|{
             let mut words=vec![str_field(b,"name"),str_field(b,"korean")];
             words.extend(b.get("aliases").and_then(Value::as_array)
                 .into_iter().flatten().filter_map(Value::as_str));
             brand_matches(text,&words)
-        }));
-    (entries,known)
+        }))
 }
 
 fn qualifiers(text: &str) -> HashSet<String> {
@@ -394,9 +394,8 @@ fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
     if priority == 1 && xs.len() > 1 { return vec![]; }
     xs
 }
-fn name_entries<'a>(text: &str, ps: &[&'a Value],
+fn name_entries<'a>(text: &str, mut entries: Vec<Entry<'a>>,
     verified: &HashSet<String>) -> Vec<Entry<'a>> {
-    let mut entries: Vec<_> = ps.iter().filter_map(|p| evidence(text, p, verified)).collect();
     if no_holes(text) {
         entries.retain(|e| top(e.p, verified) != Some("PERFORATED"));
     } else if with_holes(text) {
@@ -470,59 +469,65 @@ fn conductor_semantic_entries<'a>(text: &str, ps: &[&'a Value]) -> Vec<Entry<'a>
             && str_field(p,"name").contains("보면대"))
         .map(|p|Entry{p,priority:1,span:(m.start(),m.end())}).collect()
 }
-pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
-    let ps = products(state);
-    let verified = verified_bases(&ps);
-    let entries = name_entries(text, &ps, &verified);
-    // parser.ts:487-510 filters brand/catalog and DEMO before options.
-    let (mut entries,known_brand) =
-        filter_business_candidates(text,state,&ps,entries);
-    let aliases = alias_entries(text, state, client_id, &ps);
-    let mut hint=code_color_hint(text,&ps);
-    if let Some((base,_,term))=hint.clone() {
-        // parser.ts::protectedCode guards against reinterpreting the final
-        // letter of a *registered full model* as a color suffix. Examples:
-        // 700W (wide), 719B, 930BK, 801C. Once protected, that hint
-        // must not be carried forward as an explicit requested color.
+// The five candidate families are collected before any identity is
+// selected. The evaluator cannot create a new catalog hypothesis.
+// Preserve main's selection policy until independently calibrated.
+pub(super) struct ProductHypotheses<'a>{
+    verified:HashSet<String>,
+    names:Vec<Entry<'a>>,
+    aliases:Vec<(&'a Value,&'a Value)>,
+    color_hint:Option<(String,String,String)>,
+    color_codes:Vec<Entry<'a>>,
+    semantic:Vec<Entry<'a>>,
+    branded:Vec<&'a Value>,
+    known_brand:bool,
+}
+pub(super) fn collect<'a>(text:&str,state:&'a Value,client_id:&str)->ProductHypotheses<'a>{
+    let ps=products(state);
+    let verified=verified_bases(&ps);
+    let names=ps.iter().filter_map(|p|evidence(text,p,&verified)).collect();
+    let aliases=alias_entries(text,state,client_id,&ps);
+    let color_hint=code_color_hint(text,&ps);
+    let color_codes=if let Some((base,_,term))=&color_hint{
+        let span=find_term(text,term,false).unwrap_or((0,text.len()));
+        ps.iter().copied().filter(|p|model_names(p).iter()
+            .any(|name|model_key(name)==model_key(base)))
+            .map(|p|Entry{p,priority:2,span}).collect()
+    }else{vec![]};
+    let semantic=conductor_semantic_entries(text,&ps);
+    let branded=ps.iter().copied().filter(|p|
+        brand_matches(text,&brand_words(state,p))).collect();
+    let known_brand=known_brand(text,state);
+    ProductHypotheses{verified,names,aliases,color_hint,color_codes,semantic,branded,known_brand}
+}
+pub(crate) fn decide(text:&str,state:&Value,client_id:&str)->Decision{
+    evaluate(text,collect(text,state,client_id))
+}
+pub(super) fn evaluate(text:&str,hypotheses:ProductHypotheses<'_>)->Decision{
+    let ProductHypotheses{verified,names,aliases,color_hint:mut hint,mut color_codes,
+        semantic,branded,known_brand}=hypotheses;
+    let mut entries=filter_business_candidates(text,&branded,name_entries(text,names,&verified));
+    if let Some((_,_,term))=&hint{
+        // A registered full model protects its suffix from being read as color.
         let protected=entries.iter().any(|e|model_names(e.p).iter()
-            .any(|name|model_key(name)==model_key(&term)));
-        if protected {
-            hint=None;
-        } else {
-            let mut matched:Vec<Entry<'_>>=ps.iter().copied()
-                .filter(|p|model_names(p).iter()
-                    .any(|name|model_key(name)==model_key(&base)))
-                .map(|p|Entry{
-                    p,priority:2,span:find_term(text,&term,false)
-                        .unwrap_or((0,text.len()))
-                }).collect();
-            if matched.iter().any(|e|!variants(e.p).iter()
-                .any(|v|str_field(v,"source")=="DEMO")) {
-                matched.retain(|e|!variants(e.p).iter()
+            .any(|name|model_key(name)==model_key(term)));
+        if protected{hint=None;}else{
+            if color_codes.iter().any(|e|!variants(e.p).iter()
+                .any(|v|str_field(v,"source")=="DEMO")){
+                color_codes.retain(|e|!variants(e.p).iter()
                     .any(|v|str_field(v,"source")=="DEMO"));
             }
-            entries=matched;
+            entries=color_codes;
         }
     }
-    // Only use meaning-equivalent wording if literal names and aliases
-    // found nothing. Ambiguous variants remain unresolved by the usual
-    // candidate-selection safeguards.
     let mut semantic_name=false;
-    if entries.is_empty() && aliases.is_empty() {
-        let semantic=conductor_semantic_entries(text,&ps);
-        if !semantic.is_empty() {
-            let (filtered,_)=filter_business_candidates(text,state,&ps,semantic);
-            if !filtered.is_empty() {
-                entries=filtered;
-                semantic_name=true;
-            }
-        }
+    if entries.is_empty()&&aliases.is_empty()&&!semantic.is_empty(){
+        let filtered=filter_business_candidates(text,&branded,semantic);
+        if !filtered.is_empty(){entries=filtered;semantic_name=true;}
     }
     let mut branded_category=false;
-    if entries.is_empty() && aliases.is_empty() && known_brand {
-        entries=ps.iter().copied().filter(|p|
-            brand_matches(text,&brand_words(state,p)))
-            .map(|p|Entry{p,priority:0,span:(0,text.len())}).collect();
+    if entries.is_empty()&&aliases.is_empty()&&known_brand{
+        entries=branded.into_iter().map(|p|Entry{p,priority:0,span:(0,text.len())}).collect();
         branded_category=true;
     }
     let proof = qualifiers(text);
@@ -671,6 +676,19 @@ pub(crate) fn decision_json(decision: &Decision) -> Value {
 mod option_boundary_tests {
     use super::*;
 
+    #[test]
+    fn collected_catalog_hypotheses_keep_competing_name_and_alias_before_selection(){
+        let state=json!({"products":[
+            {"id":"a","name":"GT-1","variants":[]},
+            {"id":"b","name":"GT-2","variants":[]}
+        ],"aliases":[{"id":"alias","text":"GT-1","productId":"b"}]});
+        let batch=collect("GT-1 2개",&state,"");
+        assert!(batch.names.iter().any(|e|str_field(e.p,"id")=="a"));
+        assert!(batch.aliases.iter().any(|(_,p)|str_field(p,"id")=="b"));
+        let decision=evaluate("GT-1 2개",batch);
+        assert_eq!(decision.kind,"CONFLICT");
+        assert!(decision.product_id.is_none());
+    }
     #[test]
     fn type_evidence_cannot_bridge_model_code_boundary() {
         for (input,type_key,other) in [
