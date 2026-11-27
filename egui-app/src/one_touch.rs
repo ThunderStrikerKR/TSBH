@@ -2,7 +2,6 @@
 use crate::ui_layout::geometry::SharedPainterClipExt as _;
 use eframe::egui::{self,Color32,Context,Rect,Stroke,Ui};
 use crate::{theme,typography};
-pub const INK:Color32=theme::one_touch_palette().text;
 #[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
 pub enum Stage{#[default] None,Review,Freight,PaymentCopy,PaymentConfirm}
 impl Stage{
@@ -130,7 +129,7 @@ fn payment_job(text:&str,signature:&str,emphasis:bool,width:f32)->egui::text::La
     let format=|active|egui::TextFormat{
         font_id:egui::FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),
         line_height:Some(typography::RECEPTION_SOURCE_LINE_HEIGHT),
-        color:if active{INK}else{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)},
+        color:if active{theme::one_touch_palette().text}else{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)},
         ..Default::default()};
     let mut start=0;
     for (a,b) in payment_ranges(text,signature){
@@ -207,8 +206,8 @@ mod tests{
     }
     #[test] fn one_touch_palette_keeps_orange_fill_and_tint(){
         assert_eq!(theme::one_touch_palette().fill,Color32::from_rgb(59,43,27));
-        assert_ne!(theme::one_touch_palette().fill,theme::PANEL);
-        assert_ne!(theme::one_touch_palette().fill,theme::INPUT);
+        assert_ne!(theme::one_touch_palette().fill,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
+        assert_ne!(theme::one_touch_palette().fill,theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill);
         assert_eq!(theme::one_touch_palette().text,Color32::from_rgb(255,228,188));
         assert_eq!(theme::one_touch_palette().border,Color32::from_rgb(245,158,11));
         assert_eq!(theme::ONE_TOUCH_BORDER_WIDTH,2.0);
@@ -226,7 +225,7 @@ mod tests{
         assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r) if r.fill==theme::one_touch_palette().tint)));
         assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r) if r.stroke.color==theme::one_touch_palette().border && r.stroke.width==theme::ONE_TOUCH_BORDER_WIDTH)));
         let job=payment_job("합계 8,000원 (부가세 포함)","",true,400.0);
-        assert!(job.sections.iter().any(|s|s.format.color==INK));
+        assert!(job.sections.iter().any(|s|s.format.color==theme::one_touch_palette().text));
         assert!(job.sections.iter().all(|s|s.format.background==Color32::TRANSPARENT));
     }
     #[test] fn payment_message_hover_preserves_document_metrics_and_uses_shared_outline(){

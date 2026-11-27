@@ -857,7 +857,7 @@ mod tests {
             .nth(1).unwrap().split("fn body_error_overlay(").next().unwrap();
         assert!(shared.contains("egui::FontId::proportional(typography::FONT_METADATA)"));
         assert!(shared.contains("egui::Align2::CENTER_CENTER"));
-        assert!(shared.contains("theme::MUTED"));
+        assert!(shared.contains("theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)"));
     }
     #[test]
     fn review_tones_follow_native_severity_without_changing_actions(){

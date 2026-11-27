@@ -653,7 +653,7 @@ fn shipment_row_fill(chosen:bool,previewed:bool)->egui::Color32{
         // A confirmed choice must never be overwritten by a hover preview.
         theme::workflow_selected_row_fill()
     }else if previewed {
-        source_highlight::ACTIVE_FILL
+        theme::linked_preview_palette().fill
     }else {
         theme::surface_palette(theme::SurfaceRole::WorkflowDetailRow,theme::VisualState::Normal).fill
     }
@@ -1349,7 +1349,7 @@ mod shipment_list_tests {
             assert_eq!(rect.height(),measured[0].height());
             assert!(rect.height()>=theme::ACTION_STANDARD_HEIGHT);
         }
-        assert_eq!(theme::surface_palette(theme::SurfaceRole::WorkflowDetailRow,theme::VisualState::Normal).fill,theme::PANEL);
+        assert_eq!(theme::surface_palette(theme::SurfaceRole::WorkflowDetailRow,theme::VisualState::Normal).fill,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
     }
 }
 
@@ -1879,8 +1879,8 @@ mod linked_highlight_palette_tests {
     use super::*;
     #[test]
     fn preview_row_matches_linked_source_recipient_and_item_palette() {
-        assert_eq!(shipment_row_fill(false,true),source_highlight::ACTIVE_FILL);
-        assert_ne!(shipment_row_fill(true,true),source_highlight::ACTIVE_FILL);
+        assert_eq!(shipment_row_fill(false,true),theme::linked_preview_palette().fill);
+        assert_ne!(shipment_row_fill(true,true),theme::linked_preview_palette().fill);
         assert_eq!(shipment_row_fill(false,false),theme::surface_palette(theme::SurfaceRole::WorkflowDetailRow,theme::VisualState::Normal).fill);
         assert_eq!(source_highlight::ACTIVE_BORDER_WIDTH,2.0);
     }
@@ -1888,33 +1888,33 @@ mod linked_highlight_palette_tests {
     #[test]
     fn shared_selection_palette_preserves_selection_geometry_and_white_buttons() {
         use egui::Color32;
-        assert_eq!(theme::SELECTED_ORDER,Color32::from_rgb(245,158,11));
-        assert_eq!(crate::highlight::palette(crate::highlight::Role::Selected).stroke.unwrap().color,theme::SELECTED_ORDER);
+        assert_eq!(theme::selected_palette().border,Color32::from_rgb(245,158,11));
+        assert_eq!(crate::highlight::palette(crate::highlight::Role::Selected).stroke.unwrap().color,theme::selected_palette().border);
         assert_eq!(theme::WORKFLOW_SELECTED_STRIPE,2.0);
         assert_eq!(theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Selected).fill,theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Normal).fill);
-        assert_eq!(theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Normal).fill,theme::INPUT);
-        assert_ne!(theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Normal).fill,theme::PANEL);
-        assert_eq!(theme::CANVAS,Color32::from_rgb(16,16,16));
-        assert_eq!(theme::PANEL,Color32::from_rgb(24,24,24));
-        assert_eq!(theme::INPUT,Color32::from_rgb(34,34,34));
-        assert_eq!(theme::RAISED,Color32::from_rgb(41,41,41));
+        assert_eq!(theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Normal).fill,theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill);
+        assert_ne!(theme::surface_palette(theme::SurfaceRole::WorkflowCard,theme::VisualState::Normal).fill,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
+        assert_eq!(theme::surface_palette(theme::SurfaceRole::Workspace,theme::VisualState::Normal).fill,Color32::from_rgb(16,16,16));
+        assert_eq!(theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill,Color32::from_rgb(24,24,24));
+        assert_eq!(theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill,Color32::from_rgb(34,34,34));
+        assert_eq!(theme::surface_palette(theme::SurfaceRole::Button,theme::VisualState::Normal).fill,Color32::from_rgb(41,41,41));
         assert_eq!(shipment_row_fill(true,false),Color32::from_rgb(48,42,34));
         let selected=crate::card::workflow_shipment_row_frame(shipment_row_fill(true,false),true);
         let normal=crate::card::workflow_shipment_row_frame(shipment_row_fill(false,false),false);
         assert_eq!(selected.fill,Color32::from_rgb(48,42,34));
         assert_eq!(selected.stroke.color,Color32::TRANSPARENT);
-        assert_eq!(normal.stroke.color,theme::DIVIDER);
+        assert_eq!(normal.stroke.color,theme::border_ink(theme::BorderRole::Divider));
         assert_eq!(selected.stroke.width,normal.stroke.width);
         assert_eq!(selected.inner_margin,normal.inner_margin);
         assert_eq!(selected.corner_radius,normal.corner_radius);
         assert_eq!(theme::workflow_text_ink(theme::WorkflowTextRole::SelectedRow),Color32::from_rgb(244,214,162));
         assert_eq!(shipment_row_fill(true,true),shipment_row_fill(true,false));
         assert_eq!(theme::ReviewTone::Action.palette(),(
-            theme::ORANGE_EMPHASIS_BG,Color32::from_rgb(245,158,11),
+            theme::selected_palette().fill,Color32::from_rgb(245,158,11),
             Color32::from_rgb(255,228,188),Color32::from_rgb(217,188,152)
         ));
         assert_eq!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill,Color32::from_rgb(214,214,214));
-        assert_eq!(theme::BRIGHT,Color32::WHITE);
+        assert_eq!(theme::primary_action_colors().0,Color32::WHITE);
     }
 }
 

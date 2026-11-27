@@ -997,7 +997,7 @@ impl OrderHistoryManager {
                             }
                             let status_text=status_messages.join(" · ");
                             let status_color=if self.memo_error.is_some(){
-                                theme::DANGER
+                                theme::message_ink(theme::MessageInkRole::Danger)
                             }else{theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)};
                             let status_width=ui.available_width();
                             crate::ui_layout::fixed_status_slot(

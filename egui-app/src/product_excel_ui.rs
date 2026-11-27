@@ -346,7 +346,7 @@ impl ProductExcelUi {
                         let error_width=ui.available_width();
                         crate::ui_layout::fixed_status_slot(
                             ui,error_width,typography::METADATA_LINE_HEIGHT,
-                            self.error.as_deref(),self.error.as_deref(),theme::DANGER
+                            self.error.as_deref(),self.error.as_deref(),theme::message_ink(theme::MessageInkRole::Danger)
                         );
                     });
                     workspace.footer_single(|buttons|{

@@ -79,7 +79,7 @@ mod fixed_layout_slot_contract_tests {
                     let expected_gap=ui.spacing().item_spacing.y;
                     let slot=fixed_status_slot(
                         ui,status_width,typography::METADATA_LINE_HEIGHT,
-                        message,message,theme::DANGER
+                        message,message,theme::message_ink(theme::MessageInkRole::Danger)
                     );
                     let (next,_)=ui.allocate_exact_size(
                         Vec2::new(120.0,theme::ACTION_STANDARD_HEIGHT),Sense::hover()
@@ -814,7 +814,7 @@ mod shared_selection_interaction_tests {
                     Selector::Status=>["판매중","품절"],
                 };
                 let width=if matches!(kind,Selector::Compact){90.0}else{180.0};
-                let colors=[theme::TEXT,theme::DANGER];
+                let colors=[theme::text_ink(theme::TextRole::Value,theme::TextState::Normal),theme::message_ink(theme::MessageInkRole::Danger)];
                 let label=labels[*selected];
                 let current_color=colors[*selected];
                 let mut options=Vec::new();
@@ -2547,7 +2547,7 @@ mod shared_placeholder_color_contract_tests{
             assert_color(&output,HINT,APPROVED);
             value=VALUE.to_owned();
             let (output,_)=render(&ctx,None,|ui|draw(ui,&mut value));
-            assert_color(&output,VALUE,theme::TEXT);
+            assert_color(&output,VALUE,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
             assert!(colors(&output,HINT).is_empty(),"hint survives nonempty input");
             value.clear();
             let (output,_)=render(&ctx,None,|ui|draw(ui,&mut value));
@@ -2585,7 +2585,7 @@ mod shared_placeholder_color_contract_tests{
             assert_color(&output,HINT,APPROVED);
             if kind!=3{selected="id".to_owned();}
             let (output,_)=render(&ctx,None,|ui|draw(ui,&mut selected,false));
-            assert_color(&output,VALUE,theme::TEXT);
+            assert_color(&output,VALUE,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
             assert!(colors(&output,HINT).is_empty(),"hint survives selection");
             selected.clear();
             let (output,_)=render(&ctx,None,|ui|draw(ui,&mut selected,true));

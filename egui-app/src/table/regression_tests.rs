@@ -671,7 +671,7 @@ mod shared_table_rendered_geometry_tests{
                     });
                 });
                 let (rect,cells)=measured.unwrap();
-                let fill=if checked{theme::ORANGE_EMPHASIS_BG}else if hover{theme::BUTTON_HOVER_BG}else{theme::PANEL};
+                let fill=if checked{theme::selected_palette().fill}else if hover{theme::hover_palette().row_fill}else{theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill};
                 if let Some(old)=baseline{assert_eq!(cells,old);}else{baseline=Some(cells);}
                 // egui hover may settle after the first frame; check settled output below.
                 if frame == 2 {assert!(output.shapes.iter().any(|s|contains_paint(&s.shape,rect,fill)));}
@@ -724,7 +724,7 @@ mod shared_table_rendered_geometry_tests{
                     assert_geometry_value("table rows","row spacing",pair[1].1.top()-pair[0].1.bottom(),0.0,1.0);
                 }
                 assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r)
-                    if r.stroke.color==theme::BORDER && r.stroke.width>0.0
+                    if r.stroke.color==theme::border_ink(theme::BorderRole::Standard) && r.stroke.width>0.0
                     && (r.rect.min-frame.min).length()<=1.5
                     && (r.rect.max-frame.max).length()<=1.5)),
                     "missing painted table perimeter: {frame:?}");

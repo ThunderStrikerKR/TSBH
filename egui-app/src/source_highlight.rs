@@ -370,9 +370,6 @@ pub fn key(recipient:&str,target:&str,field:&str)->LinkKey {
 /// Shared evidence emphasis for source, recipient input values and item cells.
 /// All three destinations use the same blue fill, text and four-sided inset
 /// border. The source only projects native evidence; never alters ownership.
-pub const ACTIVE_FILL:Color32=theme::linked_preview_palette().fill;
-pub const ACTIVE_TEXT:Color32=theme::linked_preview_palette().text;
-pub const ACTIVE_BORDER:Color32=theme::linked_preview_palette().border;
 pub const ACTIVE_BORDER_WIDTH:f32=theme::LINKED_PREVIEW_BORDER_WIDTH;
 
 pub fn is_active(active:Option<&LinkKey>, key:&LinkKey)->bool {
@@ -456,9 +453,6 @@ pub fn hovered_key_at_pointer(
 // horizontal glyph clearance and a consistent vertical inset.
 const SOURCE_BLOCK:Color32=theme::source_block_palette(theme::SourceBlockRole::Recognized).fill;        // #424242
 const SOURCE_CONTEXT:Color32=theme::source_block_palette(theme::SourceBlockRole::Context).fill;      // #494949
-const SOURCE_ACTIVE:Color32=ACTIVE_FILL;
-const SOURCE_ACTIVE_TEXT:Color32=ACTIVE_TEXT;
-const SOURCE_ACTIVE_BORDER:Color32=ACTIVE_BORDER;
 
 #[derive(Clone,Debug,PartialEq,Eq)]
 struct VisualBlock {
@@ -617,7 +611,7 @@ fn style_visual_blocks(
                 ManualBlockState::Classified
             }else{ManualBlockState::Unassigned}
         });
-        let fill=if is_focused {SOURCE_ACTIVE}
+        let fill=if is_focused {theme::linked_preview_palette().fill}
             else {match manual_state {
                 Some(ManualBlockState::Unassigned)=>theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill,
                 Some(ManualBlockState::Classified)=>theme::source_block_palette(theme::SourceBlockRole::ManualClassified).fill,
@@ -695,7 +689,7 @@ fn layout_with_states(
         job.append(&raw[block.start..block.end],0.0,egui::TextFormat {
             font_id:font.clone(),
             line_height:Some(typography::RECEPTION_SOURCE_LINE_HEIGHT),
-            color:if block.focused {SOURCE_ACTIVE_TEXT} else {
+            color:if block.focused {theme::linked_preview_palette().text} else {
                 match block.manual_state {
                     Some(ManualBlockState::Unassigned)=>theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).text,
                     Some(ManualBlockState::Classified)=>theme::source_block_palette(theme::SourceBlockRole::ManualClassified).text,
@@ -796,9 +790,9 @@ pub fn manual_source_block_style(
     let focused=active.is_some_and(|key|same_target(&span.key,key));
     if focused {
         ManualSourceBlockStyle {
-            fill:SOURCE_ACTIVE,
-            text:SOURCE_ACTIVE_TEXT,
-            border:SOURCE_ACTIVE_BORDER,
+            fill:theme::linked_preview_palette().fill,
+            text:theme::linked_preview_palette().text,
+            border:theme::linked_preview_palette().border,
             border_width:ACTIVE_BORDER_WIDTH,
         }
     } else if span.source_id.as_ref().is_some_and(|id|assigned_ids.contains(id)) {
@@ -946,7 +940,7 @@ fn block_shapes_with_states(
                 if block.focused {
                     focused.push(background);
                     focused_outlines.push(crate::highlight::outline_shape(
-                        rect,geometry,egui::Stroke::new(ACTIVE_BORDER_WIDTH,ACTIVE_BORDER)
+                        rect,geometry,egui::Stroke::new(ACTIVE_BORDER_WIDTH,theme::linked_preview_palette().border)
                     ));
                 } else {
                     normal.push(background);
@@ -1187,8 +1181,8 @@ mod tests {
             let font=FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT);
             let assigned=HashSet::new();
             let jobs=[
-                layout(raw,&spans,None,None,600.0,font.clone(),theme::TEXT),
-                layout_manual(raw,&spans,None,None,&assigned,600.0,font,theme::TEXT)
+                layout(raw,&spans,None,None,600.0,font.clone(),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)),
+                layout_manual(raw,&spans,None,None,&assigned,600.0,font,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal))
             ];
             for job in jobs{
                 assert!(job.sections.iter().all(|s|s.format.line_height==
@@ -1222,26 +1216,23 @@ mod tests {
         let blocks=visual_blocks(raw,&spans,Some("r1"),Some(&active));
         assert_eq!(blocks.len(),1);
         assert!(blocks[0].focused);
-        assert_eq!(blocks[0].fill,ACTIVE_FILL);
-        assert_eq!(SOURCE_ACTIVE,ACTIVE_FILL);
-        assert_eq!(SOURCE_ACTIVE_TEXT,ACTIVE_TEXT);
-        assert_eq!(SOURCE_ACTIVE_BORDER,ACTIVE_BORDER);
+        assert_eq!(blocks[0].fill,theme::linked_preview_palette().fill);
         assert_eq!(crate::highlight::SOURCE_RADIUS,4.0);
         assert_eq!(ACTIVE_BORDER_WIDTH,2.0);
     }
 
     #[test]
     fn manual_assignment_state_changes_only_manual_palette_and_ink() {
-        assert_eq!(theme::PRIMARY_ACTION_FILL,Color32::WHITE);
+        assert_eq!(theme::primary_action_colors().0,Color32::WHITE);
         assert_eq!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill,Color32::from_rgb(214,214,214));
-        assert_eq!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).text,theme::BRIGHT_TEXT);
+        assert_eq!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).text,theme::primary_action_colors().1);
         assert_eq!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).border,theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill);
         assert_eq!(theme::SOURCE_BLOCK_RADIUS,4.0);
         assert_eq!(crate::highlight::SOURCE_RADIUS,theme::SOURCE_BLOCK_RADIUS);
         assert_eq!(theme::source_block_palette(theme::SourceBlockRole::ManualClassified).border,theme::source_block_palette(theme::SourceBlockRole::Recognized).border);
         assert_ne!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).border,theme::source_block_palette(theme::SourceBlockRole::Recognized).border);
-        assert_ne!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill,ACTIVE_FILL);
-        assert_ne!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).border,ACTIVE_BORDER);
+        assert_ne!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill,theme::linked_preview_palette().fill);
+        assert_ne!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).border,theme::linked_preview_palette().border);
         // Both reading states must remain legible; use the actual palette
         // luminance contrast instead of hard-coding obsolete gray swatches.
         let luminance=|c:Color32|{
@@ -1287,7 +1278,7 @@ mod tests {
         let highlighted=visual_blocks_with_manual_states(
             raw,&spans,None,Some(&active),Some(&assigned)
         );
-        assert_eq!(highlighted[1].fill,ACTIVE_FILL);
+        assert_eq!(highlighted[1].fill,theme::linked_preview_palette().fill);
         assert!(highlighted[1].focused);
 
         // The manual status palette stays scoped to the manual viewer;
@@ -1380,7 +1371,7 @@ mod tests {
             assert_eq!(focused.len(),2);
             assert!(matches!(focused.last(),
                 Some(egui::Shape::Rect(rect))
-                    if rect.stroke.color==ACTIVE_BORDER
+                    if rect.stroke.color==theme::linked_preview_palette().border
                     && rect.stroke.width==ACTIVE_BORDER_WIDTH
                     && rect.corner_radius==egui::CornerRadius::same(4)
             ),"focused blue border must retain the common radius and draw last");

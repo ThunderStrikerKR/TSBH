@@ -36,13 +36,13 @@ pub(crate) fn body_error_overlay(ui:&Ui,viewport:Rect,context:&str,error:&str){
     let painter=ui.painter().with_shared_clip(visible);
     let galley=painter.layout(display.as_ref().to_owned(),
         egui::FontId::proportional(typography::FONT_METADATA),
-        theme::DANGER,(visible.width()-2.0*theme::SPACE_8).max(1.0));
+        theme::message_ink(theme::MessageInkRole::Danger),(visible.width()-2.0*theme::SPACE_8).max(1.0));
     let pos=egui::pos2(
         visible.center().x-galley.size().x/2.0,
         (visible.center().y-galley.size().y/2.0).max(visible.top())
     );
     let clipped=text_exceeds_rect(galley.size(),visible);
-    painter.galley(pos,galley,theme::DANGER);
+    painter.galley(pos,galley,theme::message_ink(theme::MessageInkRole::Danger));
     overflow_region_tooltip(ui,visible,ui.id().with(("body-error-overlay",context)),
         clipped,display.as_ref());
 }
