@@ -327,6 +327,20 @@ fn signed_line_distance(from:u64,to:u64)->i64{
     if to>=from{(to-from).min(i64::MAX as u64) as i64}
     else{-((from-to).min(i64::MAX as u64) as i64)}
 }
+// Common directional geometry used by the fixed owner policy and
+// document/local learning features. No classification weight lives here.
+struct SourceRelation{
+    line_delta:i64,
+    same_paragraph:bool,
+}
+impl SourceRelation{
+    fn between(from_line:u64,from_paragraph:u64,to_line:u64,to_paragraph:u64)->Self{
+        Self{line_delta:signed_line_distance(from_line,to_line),
+            same_paragraph:from_paragraph==to_paragraph}
+    }
+    fn forward_lines(&self)->usize{self.line_delta.max(0) as usize}
+    fn distance(&self)->u64{self.line_delta.unsigned_abs()}
+}
 fn phone_regex() -> Regex {
     Regex::new(r"(?i)(0(?:50\d|1[016789]|2|[3-6]\d|70|80))[\s().-]*(\d{3,4})[\s().-]*(\d{4})")
         .expect("phone")
@@ -673,8 +687,12 @@ fn recipient_owner_index(
     // On ordinary analysis preserve the original short-circuit costs.
     // In observation mode collect features even for locally rejected
     // alternatives, without changing the legacy decision.
-    let same_previous=candidate.paragraph==preceding.paragraph;
-    let same_following=candidate.paragraph==following.paragraph;
+    let previous_relation=SourceRelation::between(preceding.line as u64,preceding.paragraph as u64,
+        candidate.line as u64,candidate.paragraph as u64);
+    let following_relation=SourceRelation::between(candidate.line as u64,candidate.paragraph as u64,
+        following.line as u64,following.paragraph as u64);
+    let same_previous=previous_relation.same_paragraph;
+    let same_following=following_relation.same_paragraph;
     let paragraph_blocked=same_previous || !same_following;
     if trace.is_none() && paragraph_blocked {return previous;}
     let previous_has_delivery=events.iter().any(|e|
@@ -686,7 +704,7 @@ fn recipient_owner_index(
     let previous_gap=geometry.between(preceding.line,candidate.line);
     let following_gap=geometry.between(candidate.line,following.line);
     if trace.is_none() && following_gap.blank_lines>0 {return previous;}
-    let next_distance=signed_line_distance(candidate.line as u64,following.line as u64).max(0) as usize;
+    let next_distance=following_relation.forward_lines();
     if trace.is_none() && next_distance>3 {return previous;}
     let has_nearby_address=events.iter().any(|e|
         e.kind=="address" && e.paragraph==candidate.paragraph
@@ -697,7 +715,7 @@ fn recipient_owner_index(
     let blocked=legacy_owner_gate(paragraph_blocked,previous_has_delivery,
         following_gap.blank_lines,next_distance,contact_without_address);
 
-    let preceding_distance=signed_line_distance(preceding.line as u64,candidate.line as u64).max(0) as usize;
+    let preceding_distance=previous_relation.forward_lines();
     // These are the original score components, not probabilities. No
     // score is fabricated for a candidate the original gates rejected.
     let scores=legacy_owner_scores(same_previous,preceding_distance,next_distance,
@@ -2209,6 +2227,13 @@ mod tests {
         assert_eq!(signed_line_distance(2,5),3);
         assert_eq!(signed_line_distance(5,2),-3);
         assert_eq!(signed_line_distance(2,2),0);
+        let reverse=SourceRelation::between(5,1,2,0);
+        assert_eq!(reverse.distance(),3);
+        assert_eq!(reverse.forward_lines(),0);
+        assert!(!reverse.same_paragraph);
+        let forward=SourceRelation::between(2,1,5,1);
+        assert_eq!(forward.forward_lines(),3);
+        assert!(forward.same_paragraph);
     }
     #[test]
     fn content_blank_and_whitespace_only_lines_are_distinct_evidence() {
