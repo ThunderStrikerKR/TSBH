@@ -310,3 +310,173 @@ pub(crate) fn issue_instruction(issue:&Value)->Option<&'static str>{
     }
     review_instruction(kind)
 }
+
+// Workflow presentation projection; no mutations or second business engine.
+use crate::workflow_board::{GroupRow,ShipmentRow,workflow_issue_label};
+use std::collections::HashSet;
+fn rows(value:&Value)->&[Value]{value.as_array().map(Vec::as_slice).unwrap_or(&[])}
+fn field<'a>(value:&'a Value,key:&str)->&'a Value{value.get(key).unwrap_or(&Value::Null)}
+
+// Presentation-only grouping of the two native calculation-failure labels.
+fn calculation_failure_label(label:&str)->bool{
+    let label=label.trim().trim_end_matches('.');
+    label=="청구액 미확정"||label.ends_with(": 청구액 미확정")||
+        label=="입금 청구액 확인 필요"||label.ends_with(" 입금 청구액 확인 필요")
+}
+fn calculation_failure_is_covered(native:&Value,shipments:&[ShipmentRow],issues:&[Value])->bool{
+    // Only suppress the generic card if every missing native total is
+    // explained by a concrete actionable issue on that exact delivery.
+    // Missing projection data, VAT/overflow failures and unknown causes
+    // must keep the generic calculation card.
+    if shipments.is_empty(){return false;}
+    let mut missing=false;
+    for ship in shipments{
+        let Some(projected)=rows(field(native,"shipments")).iter()
+            .find(|p|text(p,"shipmentId")==ship.id)else{return false;};
+        let totals=field(projected,"totals");
+        if field(totals,"total").as_i64().is_some(){continue;}
+        if totals.get("total")!=Some(&Value::Null){return false;}
+        missing=true;
+        let subtotal_missing=totals.get("subtotal")==Some(&Value::Null);
+        let shipping_missing=totals.get("shipping")==Some(&Value::Null);
+        if !subtotal_missing&&!shipping_missing{return false;}
+        let has=|kinds:&[&str]|issues.iter().any(|i|
+            text(i,"severity")=="ACTION"&&text(i,"orderId")==ship.order_id&&
+            text(i,"recipientId")==ship.recipient_id&&kinds.contains(&text(i,"kind")));
+        if subtotal_missing&&!has(&["PRICE","ITEM","MODEL","MODEL_CHOICE","QUANTITY_INVALID","QUANTITY_MISSING","QUANTITY_LINK","ALIAS_CONFLICT","CATEGORY_CONFLICT"]){return false;}
+        if shipping_missing&&!has(&["FREIGHT","ORIGIN"]){return false;}
+        if totals.get("subtotal").is_none()||totals.get("shipping").is_none(){return false;}
+    }
+    missing
+}
+/// Keep native issue identity, severity and recipient routing. Stage blockers
+/// are a second projection of the same validation, not additional cards.
+pub(crate) fn workflow_review_entries(native:&Value,shipments:&[ShipmentRow])->Vec<Value>{
+    let mut issues:Vec<Value>=Vec::new();
+    let mut represented=HashSet::new();
+    let mut ids=HashSet::new();
+    for issue in rows(field(native,"issues")){
+        let Some(label)=workflow_issue_label(issue) else{continue};
+        let id=text(issue,"issueId");
+        if !id.is_empty()&&!ids.insert(id.to_owned()){continue;}
+        represented.insert(review_message_key(&label));
+        let title=text(issue,"title");
+        if !title.is_empty()&&text(issue,"severity")=="ACTION"{
+            let rid=text(issue,"recipientId");
+            let recipient=if rid.is_empty(){shipments.first()}else{
+                shipments.iter().find(|s|s.recipient_id==rid &&
+                    (text(issue,"orderId").is_empty()||s.order_id==text(issue,"orderId")))
+            };
+            if let Some(s)=recipient{
+                let name=if s.recipient_name.is_empty(){"수취인"}else{&s.recipient_name};
+                // A bare name is not an identity. Keep the original structured
+                // cards, and only match recipient-scoped string aliases if
+                // the name maps to exactly one recipient in this group.
+                if rid.is_empty()||shipments.iter().filter(|row|
+                    row.recipient_name==s.recipient_name).all(|row|
+                    row.order_id==s.order_id&&row.recipient_id==s.recipient_id){
+                    represented.insert(review_message_key(&format!("{name}: {title}")));
+                }
+            }
+        }
+        issues.push(issue.clone());
+    }
+    let mut calculation=Vec::new();
+    for label in rows(field(native,"nextStageBlockers")).iter().filter_map(workflow_issue_label){
+        if represented.insert(review_message_key(&label)){
+            if calculation_failure_label(&label){calculation.push(label);}
+            else{issues.push(json!({"detail":label,"severity":"ACTION","kind":"STAGE_BLOCKER"}));}
+        }
+    }
+    if !calculation.is_empty(){
+        if calculation_failure_is_covered(native,shipments,&issues){
+            // Preserve aliases for extra-message deduplication without
+            // altering native blockers or creating a second visible card.
+            if let Some(issue)=issues.iter_mut().find(|i|text(i,"severity")=="ACTION"&&
+                ["PRICE","ITEM","MODEL","MODEL_CHOICE","QUANTITY_INVALID","QUANTITY_MISSING",
+                 "QUANTITY_LINK","ALIAS_CONFLICT","CATEGORY_CONFLICT","FREIGHT","ORIGIN"]
+                .contains(&text(i,"kind"))){
+                issue["reviewCoveredMessages"]=json!(calculation);
+            }
+        }else{
+            let projected=rows(field(native,"shipments"));
+            let targets=shipments.iter().filter(|ship|projected.iter().any(|p|
+                text(p,"shipmentId")==ship.id&&field(field(p,"totals"),"total").is_null()))
+                .map(|ship|json!({"shipmentId":ship.id,"orderId":ship.order_id,
+                    "recipientId":ship.recipient_id,"name":ship.recipient_name})).collect::<Vec<_>>();
+            issues.push(json!({"detail":calculation[0],"title":"청구액 계산 불가",
+                "severity":"ACTION","kind":"CHARGE_CALCULATION",
+                "reviewCoveredMessages":calculation,"calculationTargets":targets}));
+        }
+    }
+    issues
+}
+
+/// Presentation-only equality for the native detail and legacy blocker
+/// wording. Keep the recipient prefix; different recipients are not duplicates.
+fn review_message_key(message:&str)->String{
+    message.trim().trim_end_matches('.').trim_end()
+        .replace(" / ",": ")
+}
+/// The structured issue card owns its action and severity. Additional string
+/// errors from mutations and automatic message generation must not repeat it.
+/// Do not alter stored errors, refresh admission or native validation.
+pub(crate) fn workflow_review_extra_messages(group:&GroupRow,workflow_error:Option<&str>)->Vec<String>{
+    let mut represented=HashSet::new();
+    for issue in &group.issues{
+        for label in rows(field(issue,"reviewCoveredMessages")).iter().filter_map(Value::as_str){
+            represented.insert(review_message_key(label));
+        }
+        if let Some(label)=workflow_issue_label(issue){
+            represented.insert(review_message_key(&label));
+        }
+        let title=text(issue,"title");
+        if title.is_empty(){continue;}
+        if text(issue,"recipientId").is_empty(){
+            represented.insert(review_message_key(title));
+            // Native stage messages prefix group-wide actions with its first
+            // shipment name. Match that exact projection, not arbitrary names.
+            if let Some(ship)=group.shipments.first(){
+                let name=if ship.recipient_name.is_empty(){"수취인"}else{&ship.recipient_name};
+                represented.insert(review_message_key(&format!("{name}: {title}")));
+            }
+            continue;
+        }
+        if let Some(ship)=group.shipments.iter().find(|s|
+            s.recipient_id==text(issue,"recipientId") &&
+            (text(issue,"orderId").is_empty() || s.order_id==text(issue,"orderId"))
+        ){
+            let name=if ship.recipient_name.is_empty(){"수취인"}else{&ship.recipient_name};
+            represented.insert(review_message_key(&format!("{name}: {title}")));
+        }
+    }
+    let mut extra=Vec::new();
+    for raw in [workflow_error,group.automatic_error.as_deref()].into_iter().flatten(){
+        let remaining=raw.lines().filter(|line|!line.trim().is_empty())
+            .filter(|line|represented.insert(review_message_key(line)))
+            .collect::<Vec<_>>();
+        if !remaining.is_empty(){extra.push(remaining.join("\n"));}
+    }
+    extra
+}
+
+
+#[cfg(test)]
+mod shared_review_notice_policy_tests{
+    use super::*;
+    #[test]
+    fn confirmed_and_reception_use_same_money_and_input_captions(){
+        for (kind,field) in [("PRICE","unitPrice"),("QUANTITY_MISSING","quantity"),
+            ("ADDRESS","address"),("NAME","name")]{
+            let issue=json!({"kind":kind,"severity":"ACTION"});
+            assert_eq!(confirmed_input_field(&issue),Some(field));
+            assert_eq!(navigation_caption(kind),input_action_caption(field));
+        }
+        assert_eq!(navigation_caption("FREIGHT"),FREIGHT_ACTION);
+        assert_eq!(navigation_caption("CLIENT_MATCH_ERROR"),"거래처 선택");
+        assert!(confirmed_input_field(&json!({"kind":"PRICE","severity":"INFO"})).is_none());
+        assert!(!confirmed_product_action(&json!({"kind":"MODEL","severity":"INFO"})));
+        assert!(confirmed_product_action(&json!({"kind":"MODEL","severity":"ACTION"})));
+        assert!(!confirmed_product_action(&json!({"kind":"CHARGE_CALCULATION","severity":"ACTION"})));
+    }
+}
