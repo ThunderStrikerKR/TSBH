@@ -230,7 +230,8 @@ fn highlight_invariance_semantic_states_on_real_components(){
         let screen=Rect::from_min_size(Pos2::ZERO,Vec2::new(900.0,850.0));
         let mut baseline=None;
         for state in 0..8{
-            for frame in 0..3{
+            let frames=if state==0{12}else{3};
+            for frame in 0..frames{
                 let snapshot=highlight_frame(&ctx,screen,None,|ctx|{
                     crate::one_touch::set(ctx,if state==3||state==5{crate::one_touch::Stage::Review}
                         else{crate::one_touch::Stage::None},false);
@@ -266,11 +267,48 @@ fn highlight_invariance_semantic_states_on_real_components(){
                     });
                 });
                 if state==0{
-                    if frame==2{baseline=Some(snapshot);}
+                    if frame==frames-1{baseline=Some(snapshot);}
                 }else{
                     baseline.as_ref().unwrap().assert_invariant(&snapshot,&format!("semantic state {state} frame {frame} dpi {scale}"));
                 }
             }
         }
+    }
+}
+
+#[test]
+fn highlight_invariance_source_glyphs_and_adjacent_slots(){
+    use crate::source_highlight::{self,LinkedSpan,LinkKey};
+    use crate::ui_test_support::highlight_frame;
+    let raw="홍길동 709 보면대 3개";
+    let name="홍길동";
+    let key=LinkKey{recipient_id:"r1".into(),target_id:"r1".into(),field:"name".into()};
+    let spans=[LinkedSpan{start:0,end:name.len(),start_char:0,end_char:name.chars().count(),
+        key:key.clone(),source_id:None}];
+    for scale in [1.0,1.25,1.5,2.0]{
+        let ctx=test_context();ctx.set_pixels_per_point(scale);
+        let screen=Rect::from_min_size(Pos2::ZERO,Vec2::new(700.0,500.0));
+        let draw=|active:bool|highlight_frame(&ctx,screen,None,|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let (rect,_)=ui.allocate_exact_size(Vec2::new(420.0,80.0),Sense::hover());
+                let active=active.then_some(&key);
+                let job=source_highlight::layout(raw,&spans,Some("r1"),active,rect.width()-16.0,
+                    egui::FontId::proportional(crate::typography::FONT_RECEPTION_SOURCE_TEXT),theme::TEXT);
+                let galley=ui.painter().layout_job(job);
+                let origin=rect.min+egui::vec2(8.0,8.0);
+                let (backgrounds,outlines)=source_highlight::block_shapes(raw,&galley,origin,&spans,
+                    Some("r1"),active,rect);
+                let painter=ui.painter().with_clip_rect(rect);
+                for shape in backgrounds{painter.add(shape);}
+                painter.galley(origin,galley,theme::TEXT);
+                for shape in outlines{painter.add(shape);}
+                crate::ui_test_support::record("source viewport",rect);
+                crate::button::action(ui,"복사",theme::ButtonRole::Standard,true);
+            });
+        });
+        let _=draw(false);
+        let baseline=draw(false);
+        baseline.assert_invariant(&draw(true),"source linked enter");
+        baseline.assert_invariant(&draw(false),"source linked leave");
     }
 }

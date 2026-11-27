@@ -6,8 +6,6 @@ use crate::ui_primitives::{paint_workflow_icon,WorkflowIcon,ManagementChevronDir
 
 /// Register an actual interaction, then paint using the shared primitive.
 fn paint_button_hover_corners(ui:&Ui,response:&Response,geometry:crate::highlight::Geometry){
-    #[cfg(test)]
-    crate::ui_test_support::record_highlight_target("custom action",response.rect,ui.clip_rect());
     crate::floating_notice::remember_response(ui.ctx(),response);
     crate::ui_primitives::paint_action_hover_corners(ui,response,geometry);
 }
@@ -28,6 +26,8 @@ pub(crate) fn remove_at(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->bool{
 pub(crate) fn remove_at_response(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->Response{
     let enabled=enabled && ui.is_enabled();
     let response=ui.interact(hit,id,if enabled{Sense::click()}else{Sense::hover()});
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("remove action",response.rect,ui.clip_rect());
     let ink=theme::icon_ink(theme::IconRole::Secondary,theme::VisualState::enabled(enabled));
     if enabled{paint_button_hover(ui,&response,crate::highlight::Geometry::Control);}
     let center=hit.center();
@@ -51,6 +51,8 @@ pub(crate) fn disclosure_at(
         ManagementChevronDirection::Down
     }else{ManagementChevronDirection::Right});
     let response=ui.interact(hit,id,Sense::click());
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("disclosure action",response.rect,ui.clip_rect());
     let response=crate::ui_primitives::overflow_tooltip(response,overflow,full);
     paint_button_hover(ui,&response,geometry);
     response
@@ -188,6 +190,8 @@ pub(crate) fn window_control(ui: &mut Ui, control: WindowControl) -> Response {
     }).inner;
     // Window chrome uses the same hover outline as every other actionable
     // control, without shifting the 32pt hit rectangle or painted glyph.
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("window action",response.rect,ui.clip_rect());
     paint_button_hover(ui,&response,crate::highlight::Geometry::Compact);
     let center = response.rect.center();
     let ink = theme::icon_ink(theme::IconRole::Interactive,theme::VisualState::pointer(true,response.hovered()));
@@ -293,6 +297,8 @@ pub(crate) fn icon_action_button(
     let response=compact_action_surface(ui,enabled,egui::Button::new(label)
         .frame(false)
         .min_size(Vec2::splat(theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH)));
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("icon action",response.rect,ui.clip_rect());
     if enabled{
         crate::button::paint_button_hover(
             ui,&response,crate::highlight::Geometry::Control
@@ -427,6 +433,8 @@ pub(crate) fn management_date_segment(
             .corner_radius(corners),
         None
     );
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("date segment",response.rect,ui.clip_rect());
     crate::button::paint_button_hover_corners(ui,&response,geometry);
     if let Some(direction)=direction{
         let painter=ui.painter().with_clip_rect(response.rect);
@@ -478,6 +486,8 @@ pub(crate) fn date_navigation_segment_button(
             egui::Button::new("").fill(fill).stroke(Stroke::NONE).corner_radius(crate::highlight::Geometry::DateMiddle.corners()),
             Some(enabled)
         );
+        #[cfg(test)]
+        crate::ui_test_support::record_highlight_target("navigation segment",response.rect,ui.clip_rect());
         let ink=theme::icon_ink(theme::IconRole::Navigation,theme::VisualState::pointer(enabled,response.hovered()));
         if enabled{crate::button::paint_button_hover(ui,&response,crate::highlight::Geometry::TableRow);}
         let painter=ui.painter().with_clip_rect(response.rect);
@@ -499,6 +509,8 @@ pub(crate) fn date_navigation_segment_button(
     let corners=geometry.corners();
     let response=ui.interact(rect,ui.id().with(id),
         if enabled{Sense::click()}else{Sense::hover()});
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("step segment",response.rect,ui.clip_rect());
     let painter=ui.painter().with_clip_rect(rect);
     let (fill,ink)=match glyph{
         DateNavigationSegmentGlyph::CompactVerticalChevron{..}=>{
@@ -537,6 +549,8 @@ pub(crate) fn date_navigation_button_surface(
         }else{button=button.fill(fill).stroke(stroke);}
         navigation_native_button(ui,Vec2::splat(theme::CALENDAR_NAV_SIZE),button,Some(effective_enabled))
     }).inner;
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("date navigation",response.rect,ui.clip_rect());
     let ink=if effective_enabled && response.hovered(){
         theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
     }else{ink};
@@ -576,6 +590,8 @@ pub(crate) fn dispatch_origin(right:&mut Ui,label:&str,selected:bool,editable:bo
         else{button=button.fill(fill).stroke(stroke);}
         ui.add_enabled(editable,button)
     }).inner;
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("dispatch origin",response.rect,right.clip_rect());
     if effective_enabled{crate::floating_notice::remember_response(right.ctx(),&response);}
     response
 }

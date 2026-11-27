@@ -152,6 +152,8 @@ mod workflow_freight_typography_tests{
 
 /// Same state precedence in draft bundles and confirmed orders.
 pub fn workflow_shipment_hover(ui:&Ui,response:&Response,chosen:bool,previewed:bool){
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("workflow shipment",response.rect,ui.clip_rect());
     if !chosen && !previewed{
         // The common hover painter already records the action origin.
         crate::button::paint_button_hover(ui,response,crate::highlight::Geometry::Control);

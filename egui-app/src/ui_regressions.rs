@@ -1219,7 +1219,7 @@ pub(crate) mod general_screen_geometry_tests {
             let ctx=test_context();
             let mut app=crate::BandoEgui::with_layout(crate::layout::LayoutState::default());
             app.gateway=Arc::new(GeometryGateway);
-            app.raw_source="합성 발주원문\\n검증 수취인 및 상품".into();
+            app.raw_source="합성 발주원문\n검증 수취인 및 상품".into();
             app.analysis=Some(crate::reception_service::ReceptionAnalysis{
                 recognition:serde_json::json!({"recipients":[
                     {"id":"geometry-r1","name":"검증 수취인","address":"합성 주소","mobile":"010-0000-0000","phone":"","note":"","freightCode":"010",
