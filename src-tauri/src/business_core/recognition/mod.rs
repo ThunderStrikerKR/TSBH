@@ -1313,6 +1313,9 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         }
         if is_money_or_header(text) {
             non_delivery_segments.insert(line.start);
+            // A contiguous memo source must never bridge an excluded
+            // document row (amount, header, or greeting).
+            note_continuation=None;
             continue;
         }
         // The TS recognizer extends a memo through subsequent non-field
@@ -2741,6 +2744,25 @@ mod tests {
                 e["kind"]!="note"&&e["start"].as_u64()<e["end"].as_u64()));
             assert!(result["recipients"][0]["sources"].as_array().unwrap().iter().all(|e|
                 e["start"].as_u64()<e["end"].as_u64()));
+        }
+    }
+    #[test]
+    fn ignored_document_rows_terminate_memo_continuation(){
+        let state=state();
+        for heading in ["배송메모 : 문 앞에 놓아주세요", "배송메모 :"] {
+            for boundary in ["합계: 100,000원", "발주일: 2026-11-27", "감사합니다"] {
+                assert!(is_money_or_header(boundary));
+                let raw=format!("수취인: 김가상\n010-0000-0001\n709 1개\n{heading}\n{boundary}\n경비실에 맡겨주세요");
+                let document=extract_document(&raw,&state,None);
+                let notes=document.events.iter().filter(|e|e.kind=="note").collect::<Vec<_>>();
+                if heading.ends_with(':'){
+                    assert!(notes.is_empty());
+                }else{
+                    assert_eq!(notes.len(),1);
+                    assert_eq!(notes[0].value,"문 앞에 놓아주세요");
+                    assert_eq!(&raw[notes[0].start..notes[0].end],"문 앞에 놓아주세요");
+                }
+            }
         }
     }
     #[test]
