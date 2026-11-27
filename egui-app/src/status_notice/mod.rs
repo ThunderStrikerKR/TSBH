@@ -1,5 +1,5 @@
 //! Layout-neutral status and error notices plus the shared informational review card.
-use crate::ui_layout::SharedPainterClipExt as _;
+use crate::ui_layout::geometry::SharedPainterClipExt as _;
 use eframe::egui::{self,Rect,Ui};
 use crate::{theme,typography};
 use crate::ui_primitives::{overflow_region_tooltip,text_exceeds_rect};
