@@ -251,6 +251,11 @@ impl ReviewPanel {
             return None;
         }
         if self.pending.pending() && self.issues.is_empty(){
+            if let Some(viewport)=review_empty_overlay_rect(ui.available_rect_before_wrap().intersect(ui.clip_rect())){
+                crate::status_notice::management_body_state_overlay(
+                    ui,viewport,Some("확인할 내용을 조회 중입니다.")
+                );
+            }
             return None;
         }
         let actions=&self.action_indices;
@@ -609,10 +614,23 @@ pub(crate) fn issue_instruction(issue:&Value)->Option<&'static str>{
     if kind=="STAGE_BLOCKER"{
         let detail=text(issue,"detail").trim().trim_end_matches('.');
         let problem=detail.rsplit_once(": ").map(|(_,problem)|problem).unwrap_or(detail);
+        // The native stage engine aggregates the outstanding balance by
+        // dealer, not recipient. Preserve the exact dealer and amount.
+        if detail.ends_with(" 입금 청구액 확인 필요")||problem=="입금 청구액 확인 필요"{
+            return Some("청구 금액과 기존 입금 내역을 확인한 뒤 입금 확인 단계를 진행하세요.");
+        }
+        if let Some((dealer,amount))=detail.rsplit_once(" 입금 청구 "){
+            if !dealer.trim().is_empty()&&amount.strip_suffix('원').is_some_and(|n|
+                !n.is_empty()&&n.chars().any(|c|c.is_ascii_digit())&&
+                n.chars().all(|c|c.is_ascii_digit()||c==',')){
+                return Some("거래처의 미입금 금액입니다. 실제 입금액을 확인한 뒤 입금 확인 단계를 진행하세요.");
+            }
+        }
         return match problem{
             "청구액 미확정"=>Some("품목 단가, 수량 및 운임을 확인하여 청구액을 확정하세요."),
             "운임 적용 필요"=>Some("배송 운임을 확인하고 운임 적용 단계를 완료하세요."),
             "계좌 안내 완료 필요"=>Some("입금 계좌와 청구액을 확인하고 계좌 안내 단계를 완료하세요."),
+            "입금 부족"|"입금액이 부족합니다"=>Some("청구액과 실제 입금액을 대조하고 부족한 금액의 입금을 확인하세요."),
             _=>None,
         };
     }
@@ -826,6 +844,17 @@ mod tests {
         assert!(issue_instruction(&stage).unwrap().contains("청구액을 확정"));
         let unknown=json!({"kind":"STAGE_BLOCKER","severity":"ACTION","detail":"다른 오류"});
         assert!(issue_instruction(&unknown).is_none());
+        for (detail,expected) in [
+            ("가상 거래처 입금 청구 12,000원","미입금 금액"),
+            ("가상 거래처 입금 청구액 확인 필요","기존 입금 내역"),
+            ("가상 수취인: 입금 부족","부족한 금액"),
+        ]{
+            let issue=json!({"kind":"STAGE_BLOCKER","severity":"ACTION","detail":detail});
+            assert!(issue_instruction(&issue).unwrap().contains(expected));
+            assert_eq!(workflow_review_text(&issue,detail,&Value::Null),detail);
+        }
+        let unrelated=json!({"kind":"STAGE_BLOCKER","severity":"ACTION","detail":"가상 거래처 입금 청구 오류"});
+        assert!(issue_instruction(&unrelated).is_none());
     }
     #[test]
     fn recovered_review_labels_keep_native_issue_identity_and_approval(){
