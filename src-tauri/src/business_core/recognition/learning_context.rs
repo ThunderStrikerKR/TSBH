@@ -73,6 +73,64 @@ fn local_recipient_runs(roles:&[&str],events:&[Event],ranges:&[(usize,usize)])->
     }
     result
 }
+// Bounded partial order: each adjacent pair and each pair separated by
+// one observed role. Keep the occurrence counts out of pattern identity.
+fn partial_role_order(roles:&[&str])->Vec<Value>{
+    let mut counts=BTreeMap::<(&str,&str,usize),usize>::new();
+    for (i,&from) in roles.iter().enumerate(){
+        for step in 1..=2{
+            if let Some(&to)=roles.get(i+step){*counts.entry((from,to,step)).or_default()+=1;}
+        }
+    }
+    counts.into_iter().map(|((from,to,step),count)|
+        json!({"from":from,"to":to,"roleDistance":step,"count":count})).collect()
+}
+// Detect one missing or extra role, or one adjacent swap, without a
+// quadratic edit-distance matrix. Identical blocks use the exact path.
+fn near_block_relation(a:&[&str],b:&[&str])->Option<&'static str>{
+    if a==b{return None;}
+    let prefix=a.iter().zip(b).take_while(|(x,y)|x==y).count();
+    if a.len()==b.len()+1&&prefix<a.len()&&a[prefix+1..]==b[prefix..]{
+        return Some("later_block_missing_role");
+    }
+    if b.len()==a.len()+1&&prefix<b.len()&&b[prefix+1..]==a[prefix..]{
+        return Some("later_block_extra_role");
+    }
+    if a.len()==b.len()&&prefix+1<a.len()&&a[prefix]==b[prefix+1]&&
+        a[prefix+1]==b[prefix]&&a[prefix+2..]==b[prefix+2..]{
+        return Some("adjacent_role_swap");
+    }
+    None
+}
+fn near_recipient_blocks(roles:&[&str],events:&[Event],ranges:&[(usize,usize)])->Vec<Value>{
+    let mut anchors=roles.iter().enumerate().filter_map(|(i,r)|(*r=="name").then_some(i)).collect::<Vec<_>>();
+    anchors.push(roles.len());
+    let mut out=Vec::new();
+    for w in anchors.windows(3){
+        let (a,b,c)=(w[0],w[1],w[2]);
+        let first=&roles[a..b];let next=&roles[b..c];
+        // Require delivery evidence in both blocks. An isolated name
+        // is not a verified partial recipient structure.
+        let has_delivery=|r:&[&str]|r.contains(&"address")||r.contains(&"contact");
+        if !has_delivery(first)||!has_delivery(next){continue;}
+        if let Some(relation)=near_block_relation(first,next){
+            out.push(json!({"relation":relation,"firstRoles":first,"nextRoles":next,
+                "first":observed_segment(events,ranges,a,b),
+                "next":observed_segment(events,ranges,b,c),"identityMerged":false}));
+        }
+    }
+    out
+}
+// One local feature projection used by both owner and field contexts.
+// Preserve v1 byte-for-byte order, magnitude and same-paragraph semantics.
+fn local_context(events:&[Event],i:usize)->Vec<Value>{
+    let e=&events[i];
+    events[i.saturating_sub(2)..(i+3).min(events.len())].iter().map(|n|
+        json!([n.role,n.position==e.position,
+            distance_bucket(super::signed_line_distance(e.line,n.line).unsigned_abs()),
+            n.paragraph==e.paragraph])).collect()
+}
+
 fn document_pattern(events:&[Event],first:&Value)->Value{
     let unavailable=|reason:&str|json!({"patternVersion":DOCUMENT_PATTERN_VERSION,
         "status":reason,"candidateKey":null,"learningEligible":false});
@@ -138,11 +196,14 @@ fn document_pattern(events:&[Event],first:&Value)->Value{
             "tail":observed_segment(events,&ranges,count*prefix,normalized.len())})
     }else{Value::Null};
     let runs=local_recipient_runs(&normalized,events,&ranges);
+    let near=near_recipient_blocks(&normalized,events,&ranges);
+    let partial=partial_role_order(&normalized);
     json!({"patternVersion":DOCUMENT_PATTERN_VERSION,"status":"candidate_only",
         "candidateKey":candidate_key,"observedRoleSequence":observed,
         "normalizedRoleSequence":normalized,"cycle":cycle,"exactRepeatCount":repeats,
         "exactRepeatSegments":repeat_segments,"incompletePrefixRepeat":incomplete,
-        "localRecipientRuns":runs,"recipientCycleObserved":recipient_cycle,"learningEligible":false})
+        "localRecipientRuns":runs,"nearRecipientBlocks":near,"partialRoleOrder":partial,
+        "recipientCycleObserved":recipient_cycle,"learningEligible":false})
 }
 
 // Diagnostic feature projection only; do not change the v1 context key
@@ -237,10 +298,7 @@ fn owner_contexts_from_events(units:&[u16],first:&Value,events:&[Event],lead:&st
         let mut projections=vec![key("base",&base,None)];
         // A bounded local sequence and between-anchor sequence describe
         // the observed order of fields without guessing their final owners.
-        let local=events[i.saturating_sub(2)..(i+3).min(events.len())].iter().map(|e|
-            json!([e.role,e.position==s,distance_bucket(super::signed_line_distance(events[i].line,e.line).unsigned_abs()),
-                e.paragraph==events[i].paragraph])
-        ).collect::<Vec<_>>();
+        let local=local_context(events,i);
         let begin=events.partition_point(|e|e.position.0<a.0);
         let end=events.partition_point(|e|e.position.0<=b.0);
         let regional=if end-begin<=16 {
@@ -308,9 +366,7 @@ fn field_contexts_from_events(units:&[u16],first:&Value,events:&[Event],lead:&st
         let s=e.position;
         if i>0&&events[i-1].position==s || i+1<events.len()&&events[i+1].position==s{continue;}
         let Some(shape)=source_shape(units,s)else{continue;};
-        let local=events[i.saturating_sub(2)..(i+3).min(events.len())].iter().map(|n|
-            json!([n.role,n.position==s,distance_bucket(super::signed_line_distance(e.line,n.line).unsigned_abs()),
-                n.paragraph==e.paragraph])).collect::<Vec<_>>();
+        let local=local_context(events,i);
         let line_order=line_roles.get(&e.line).filter(|v|v.len()<=16);
         let mut tasks=vec![("type",json!([e.role,shape]))];
         if let Some(links)=items.get(&s).filter(|v|v.len()==1){
@@ -952,6 +1008,13 @@ mod tests{
         assert_eq!(partial["incompletePrefixRepeat"]["completeCycles"],1);
         let local=project(&["product","name","phone","address","name","phone","address"],1);
         assert_eq!(local["localRecipientRuns"][0]["repeatCount"],2);
+        let missing=project(&["name","phone","address","product","name","address","product"],1);
+        assert_eq!(missing["nearRecipientBlocks"][0]["relation"],"later_block_missing_role");
+        assert_eq!(missing["nearRecipientBlocks"][0]["identityMerged"],false);
+        let swap=project(&["name","phone","address","name","address","phone"],1);
+        assert_eq!(swap["nearRecipientBlocks"][0]["relation"],"adjacent_role_swap");
+        assert_ne!(swap["candidateKey"],local["candidateKey"]);
+        assert!(rows(&a["partialRoleOrder"]).any(|p|p["from"]=="name"&&p["to"]=="address"&&p["roleDistance"]==2));
         assert_eq!(a["learningEligible"],false);
         assert_eq!(project(&["product","unknown"],1)["candidateKey"],Value::Null);
         let overlap=json!({"raw":"xx","initialAnalysis":{"candidates":[
