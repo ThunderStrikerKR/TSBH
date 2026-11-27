@@ -404,9 +404,28 @@ fn weak_recipient_hint(text: &str) -> bool {
 fn delivery_boundary(line:&str,phone:&Regex)->bool{
     address_begin(line).is_some() || phone.is_match(line)
 }
-fn unlabelled_recipient_span(
-    line:&str,address:Option<usize>,phone:&Regex,near_delivery:bool,state:&Value,client_id:&str
+// Cache exact source slices only within the current logical record. The
+// catalog/client are fixed for that record; no cross-order cache or new
+// persistent data is needed. Different slices are independent candidates.
+struct ProductSearch<'a,'s>{
+    state:&'s Value,
+    client_id:&'s str,
+    decisions:HashMap<&'a str,Value>,
+}
+impl<'a,'s> ProductSearch<'a,'s>{
+    fn new(state:&'s Value,client_id:&'s str)->Self{
+        Self{state,client_id,decisions:HashMap::new()}
+    }
+    fn decision(&mut self,text:&'a str)->&Value{
+        let state=self.state;
+        let client=self.client_id;
+        self.decisions.entry(text).or_insert_with(||model::decision_json(&model::decide(text,state,client)))
+    }
+}
+fn unlabelled_recipient_span<'a>(
+    line:&'a str,address:Option<usize>,phone:&Regex,near_delivery:bool,search:&mut ProductSearch<'a,'_>
 )->Option<(usize,usize)>{
+    let state=search.state;
     let contact=phone.find(line).map(|m|m.start());
     let end=address.into_iter().chain(contact).min().unwrap_or(line.len());
     let prefix=&line[..end];
@@ -432,8 +451,7 @@ fn unlabelled_recipient_span(
     // Preserve the ENTIRE suffix, including company and English names.
     for q in quantity::extract(prefix).into_iter().rev(){
         let before=&prefix[..q.end];
-        let decision=model::decision_json(&model::decide(before,state,client_id));
-        if !product_signal(before,&decision,state){continue;}
+        if !product_signal(before,search.decision(before),state){continue;}
         let tail=&prefix[q.end..];
         let tail=tail.trim_start_matches(|c:char|c.is_whitespace()||c=='|'||c=='ㅣ');
         let a=q.end+prefix[q.end..].len()-tail.len();
@@ -449,16 +467,14 @@ fn unlabelled_recipient_span(
         let candidate=&line[a..b];
         // Address/phone prefixes with no product quantity must not promote
         // a known model to a consignee. The explicit label path has priority.
-        let decision=model::decision_json(&model::decide(candidate,state,client_id));
-        if product_signal(candidate,&decision,state){return None;}
+        if product_signal(candidate,search.decision(candidate),state){return None;}
         return Some((a,b));
     }
     let (a,b)=trim_span(line,0,line.len())?;
     let candidate=&line[a..b];
     if other_recipient_field(candidate) || !quantity::extract(candidate).is_empty(){return None;}
     if !near_delivery && !weak_recipient_hint(candidate){return None;}
-    let decision=model::decision_json(&model::decide(candidate,state,client_id));
-    if product_signal(candidate,&decision,state){return None;}
+    if product_signal(candidate,search.decision(candidate),state){return None;}
     Some((a,b))
 }
 fn is_money_or_header(text: &str) -> bool { ts_semantics::ignored_document_line(text) }
@@ -833,6 +849,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
     let mut sender_section = false;
     let mut sender_lines=HashSet::new();
     for (line_index,line) in lines.iter().enumerate() {
+        let mut search=ProductSearch::new(state,client_id);
         let text = line.text.trim();
         let explicit_name=explicit_recipient_span(line.text,&person_label,&phone);
         let near_delivery=lines.get(line_index+1).is_some_and(|next|
@@ -874,7 +891,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
                 || (quantity::extract(line.text).len()>0
                     && model::category(line.text).is_some())
                 || product_signal(line.text,
-                    &model::decision_json(&model::decide(line.text,state,client_id)),state);
+                    search.decision(line.text),state);
             if !field && line.paragraph==events[i].paragraph {
                 events[i].end=line.start+line.text.len();
                 if !events[i].value.is_empty(){events[i].value.push('\n');}
@@ -945,7 +962,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
                 !other_recipient_field(text){
                 trim_span(line.text,0,line.text.len())
             }else{
-                unlabelled_recipient_span(line.text,address,&phone,near_delivery,state,client_id)
+                unlabelled_recipient_span(line.text,address,&phone,near_delivery,&mut search)
             }
         });
         if let Some((begin,end))=name_span{
@@ -1001,7 +1018,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         // create a product even when its digits match a generic model regex.
         let trim_phones: Vec<(usize,usize)> = phone.find_iter(trimmed)
             .map(|m|(m.start(),m.end())).collect();
-        let decision = model::decision_json(&model::decide(trimmed,state,client_id));
+        let decision = search.decision(trimmed);
         // parser.ts::parseLegacy: a full contact may share the same physical
         // line with a valid product and quantity; filter contact-only rows,
         // not valid joint records such as "709 민판 한개 이가상 010-...".
@@ -1010,15 +1027,13 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
             && decision.pointer("/match/kind").and_then(Value::as_str)==Some("UNKNOWN") {
             continue;
         }
-        if !product_signal(trimmed, &decision, state) { continue; }
+        if !product_signal(trimmed, decision, state) { continue; }
         // Require model/category evidence, not a value made solely from a date or contact.
         if trimmed.contains("발주일") || trimmed.contains("발송일") { continue; }
         let skip_until = ts_semantics::table_product_prefix(trimmed);
         // Never synthesize a new string and then treat its indexes as offsets
         // into raw: UTF-8/UTF-16 source-evidence contract must be lossless.
-        let matched = if skip_until==trimmed{decision}else{
-            model::decision_json(&model::decide(skip_until,state,client_id))
-        };
+        let matched=search.decision(skip_until).clone();
         let mut quantity_values = if trimmed.contains('|') {
             let model_end=matched.get("evidence").and_then(Value::as_object)
                 .and_then(|o|o.get("end")).and_then(Value::as_u64)
@@ -1810,6 +1825,18 @@ mod tests {
         assert_eq!(recipients.len(),1);
         assert_eq!(recipients[0]["mobile"],"010-1234-5678");
         assert_eq!(recipients[0]["phone"],"010-3456-7890");
+    }
+    #[test]
+    fn product_search_reuses_exact_slices_without_merging_distinct_candidates(){
+        let state=state();
+        let mut search=ProductSearch::new(&state,"");
+        let raw="709 2개";
+        let a=search.decision(raw).clone();
+        assert_eq!(&a,search.decision(raw));
+        assert_eq!(search.decisions.len(),1);
+        assert_eq!(search.decision("GT-1 2개")["productId"],"pgt");
+        assert_eq!(search.decisions.len(),2);
+        assert_eq!(search.decision(raw)["productId"],"p709");
     }
     #[test]
     fn extracted_document_is_pre_assignment_and_reused_by_normal_analysis(){
