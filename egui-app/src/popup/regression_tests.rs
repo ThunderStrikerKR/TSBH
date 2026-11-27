@@ -39,12 +39,12 @@ fn manual_linked_table_cell(
 )->Response {
     let label=if value.trim().is_empty(){"미입력"}else{value};
     let border=if linked {
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH/2.0,theme::DIVIDER)
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH/2.0,theme::border_ink(theme::BorderRole::Divider))
     }else if selected {
-        Stroke::new(theme::DOCK_SPLITTER_HOVER_LINE,theme::SELECTED_ORDER)
+        Stroke::new(theme::DOCK_SPLITTER_HOVER_LINE,theme::selected_palette().border)
     }else{
         // Two adjacent cells share one visual divider, not a doubled border.
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH/2.0,theme::DIVIDER)
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH/2.0,theme::border_ink(theme::BorderRole::Divider))
     };
     // Match the selected editor and the 16pt reception/source standard.
     // Read-only manual fields must not shrink when focus leaves a cell.
@@ -52,11 +52,11 @@ fn manual_linked_table_cell(
     let response=ui.add_sized(
         Vec2::new(width,theme::MANAGEMENT_COMPACT_ROW_HEIGHT),
         egui::Button::new(
-            if linked{text.color(source_highlight::ACTIVE_TEXT)}else{text}
+            if linked{text.color(theme::linked_preview_palette().text)}else{text}
         )
             .truncate()
-            .fill(if linked{source_highlight::ACTIVE_FILL}
-                  else if selected{theme::RAISED}else{theme::INPUT})
+            .fill(if linked{theme::linked_preview_palette().fill}
+                  else if selected{theme::surface_palette(theme::SurfaceRole::Button,theme::VisualState::Normal).fill}else{theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill})
             .stroke(border)
             .corner_radius(0),
     );
@@ -294,7 +294,7 @@ mod modal_editor_workspace_geometry_tests {
     // not the spacing constants or a second implementation of the renderer.
     fn collect_modal_paint(shape:&egui::Shape,rules:&mut Vec<Rect>,heading:&mut Vec<Rect>){
         match shape{
-            egui::Shape::Rect(rect) if rect.fill==theme::DIVIDER
+            egui::Shape::Rect(rect) if rect.fill==theme::border_ink(theme::BorderRole::Divider)
                 &&rect.rect.height()<=2.0&&rect.rect.width()>100.0=>{
                 rules.push(rect.rect);
             }
@@ -681,27 +681,54 @@ mod modal_input_routing_tests {
         let mut popup_layer=None;
         let mut popup_rect=Rect::NOTHING;
         let mut owner_body=Rect::NOTHING;
-        for _ in 0..4 {
+        // Mount the owner before opening its menu. Native Area sizing and
+        // fade-in are distinct from foreground occlusion; measure the
+        // settled menu on three consecutive raises with explicit time.
+        for frame in 0..7 {
+            popup_layer=None;
+            popup_rect=Rect::NOTHING;
             let mut raw=egui::RawInput::default();
             raw.screen_rect=Some(work_area);
-            let _=ctx.run(raw,|ctx|{
+            raw.time=Some(f64::from(frame)*0.2);
+            let output=ctx.run(raw,|ctx|{
                 modal_backdrop(ctx,"popup-owner-regression-dim",true);
                 show_decision_window(ctx,"Popup owner","popup-owner-regression",work_area,|ui|{
                     let trigger=ui.button("Open popup");
-                    egui::Popup::open_id(ctx,egui::Popup::default_response_id(&trigger));
+                    if frame>=2{
+                        egui::Popup::open_id(ctx,egui::Popup::default_response_id(&trigger));
+                    }
                     let _=crate::overlay::show_menu(&trigger,None,|menu|{
                         let response=menu.button("Select option");
                         popup_layer=Some(response.layer_id);
                         popup_rect=response.rect;
                     });
                     owner_body=ui.allocate_exact_size(Vec2::new(300.0,180.0),Sense::hover()).0;
+                    // A real opaque background is intentionally painted by
+                    // the owner AFTER the popup is built. Layer sorting must
+                    // still place the menu caption above that background.
+                    ui.painter().rect_filled(owner_body,0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
                 });
             });
+            if frame>=4{
+                let layer=popup_layer.expect("settled popup must render on each raise");
+                assert!(popup_rect.is_positive()&&owner_body.intersects(popup_rect));
+                crate::ui_test_support::assert_painted_caption(&output,"Select option",popup_rect);
+                let overlap=owner_body.intersect(popup_rect);
+                for fraction in [0.25_f32,0.5,0.75]{
+                    let hit=egui::pos2(overlap.left()+overlap.width()*fraction,overlap.center().y);
+                    assert_eq!(ctx.layer_id_at(hit),Some(layer),"frame {frame}: popup input layer mismatch");
+                }
+            }
         }
         let popup_layer=popup_layer.expect("popup rendered");
         assert!(owner_body.intersects(popup_rect),"test must exercise overlapping layers");
-        let hit=owner_body.intersect(popup_rect).center();
-        assert_eq!(ctx.layer_id_at(hit),Some(popup_layer));
+        let overlap=owner_body.intersect(popup_rect);
+        assert!(overlap.is_positive());
+        for fraction in [0.25_f32,0.5,0.75]{
+            let hit=egui::pos2(overlap.left()+overlap.width()*fraction,overlap.center().y);
+            assert_eq!(ctx.layer_id_at(hit),Some(popup_layer),
+                "popup paint and input layer disagree at {hit:?}");
+        }
         assert!(ctx.memory(|m|m.allows_interaction(popup_layer)));
         assert_eq!(ctx.memory(|m|m.top_modal_layer()),
             Some(modal_window_layer("popup-owner-regression")));
@@ -721,7 +748,7 @@ mod modal_input_routing_tests {
             raw.screen_rect=Some(work_area);
             let mut action_rect=Rect::NOTHING;
             let mut plain_rect=Rect::NOTHING;
-            let _=ctx.run(raw,|ctx|{
+            let output=ctx.run(raw,|ctx|{
                 modal_window(ctx,"수동 분류","manual-parent-workspace",work_area)
                     .show(ctx,|ui|{
                         ui.disable();
@@ -758,6 +785,13 @@ mod modal_input_routing_tests {
                 Some(modal_window_layer("manual-discard-prompt")),
                 "the full-screen dim Area must never remain above the decision window"
             );
+            // The initial sizing pass may not paint the window. Once
+            // mounted, verify the top decision's actual text at every
+            // pointer transition, independently of its hit-test result.
+            if ctx.input(|input|input.time)>=0.1{
+                crate::ui_test_support::assert_painted_caption(&output,"변경 취소",action_rect);
+                crate::ui_test_support::assert_painted_caption(&output,"plain pointer probe",plain_rect);
+            }
             (action_rect,plain_rect)
         }
 
@@ -983,13 +1017,13 @@ mod manual_nested_prompt_regression_tests{
         });
         assert!(output.shapes.iter().any(|paint|
             matches!(&paint.shape,
-                egui::Shape::Rect(rect) if rect.fill==source_highlight::ACTIVE_FILL
+                egui::Shape::Rect(rect) if rect.fill==theme::linked_preview_palette().fill
             )
         ),"shared blue source fill is absent from linked table cells");
         assert!(output.shapes.iter().any(|paint|
             matches!(&paint.shape,
                 egui::Shape::Rect(rect)
-                    if rect.stroke.color==source_highlight::ACTIVE_BORDER
+                    if rect.stroke.color==theme::linked_preview_palette().border
             )
         ),"shared blue source border is absent from linked table cells");
     }
