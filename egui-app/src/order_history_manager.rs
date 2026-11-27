@@ -2,6 +2,8 @@
 //! decisions are all projected by existing native Rust rules::history::list_view.
 //! The native egui view owns only date/search presentation, sort, expansion,
 //! clipboard copy and virtualized fixed-height rows.
+use crate::ui_layout::SharedUiClipExt as _;
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use crate::{
@@ -281,7 +283,7 @@ fn history_detail_cells(block:Rect)->[Rect;4]{
 }
 fn paint_history_branch(ui:&Ui,row_rect:Rect,widths:&[f32;7],
     branch:HistoryBranch,spacing:DetailSpacing){
-    let painter=ui.painter().with_clip_rect(row_rect.intersect(ui.clip_rect()));
+    let painter=ui.painter().with_shared_clip(row_rect.intersect(ui.clip_rect()));
     // The last 12pt of the reception-date cell is blank even when a
     // YYYY-MM-DD is present; do not displace the date or column divider.
     let x=row_rect.left()+widths[0]-theme::SPACE_12;
@@ -600,7 +602,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 .id_salt(("order-history-actions",id))
                 .aligned_max_rect(control)
                 .layout(egui::Layout::left_to_right(Align::Center)),|actions|{
-                    actions.set_clip_rect(control.intersect(area));
+                    actions.restrict_shared_clip(control.intersect(area));
                     actions.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,control.width());
                     crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::CompactActions);
                     // Copy the FULL order's existing Rust-generated message.
@@ -665,7 +667,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 .id_salt(("history-shipment-actions",id,recipient_index,shipment_index))
                 .aligned_max_rect(actions_rect)
                 .layout(egui::Layout::left_to_right(Align::Center)),|actions|{
-                    actions.set_clip_rect(actions_rect.intersect(area));
+                    actions.restrict_shared_clip(actions_rect.intersect(area));
                     crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::Toolbar);
                     let memo_button=crate::button::action(actions,"관리 메모",
                         theme::ButtonRole::TableSecondary,shipment.is_some());
