@@ -542,7 +542,7 @@ mod modal_editor_workspace_geometry_tests {
             egui::pos2(40.0,20.0),Vec2::new(900.0,180.0)
         );
         let content=modal_master_content_rect(bounds);
-        let toolbar=modal_master_header_toolbar_rect(bounds,1.0);
+        let toolbar=modal_master_header_toolbar_rect(bounds);
         let top_rule=modal_master_rule_rect(bounds,1.0,false);
         let bottom_rule=modal_master_rule_rect(bounds,1.0,true);
         let actions=modal_master_action_area(bounds,theme::ACTION_PRIMARY_HEIGHT);
@@ -553,6 +553,26 @@ mod modal_editor_workspace_geometry_tests {
         }
         assert_eq!(content.left()-bounds.left(),theme::MODAL_MASTER_CONTENT_INSET);
         assert_eq!(bounds.right()-content.right(),theme::MODAL_MASTER_CONTENT_INSET);
+    }
+
+    #[test]
+    fn fractional_modal_geometry_uses_logical_anchors_not_device_pixels(){
+        use egui::emath::GuiRounding as _;
+        let bounds=Rect::from_min_max(egui::pos2(40.25,20.25),egui::pos2(941.25,220.25));
+        let logical=crate::ui_layout::geometry::aligned_rect(bounds);
+        let geometry=modal_master_workspace_geometry(bounds,32.0,Some(2.0/3.0));
+        let toolbar=modal_master_header_toolbar_rect(bounds);
+        assert_eq!(geometry.toolbar_bottom,(logical.top()+32.0).round_ui());
+        assert_eq!(geometry.divider_x,Some((logical.left()+logical.width()*2.0/3.0).round_ui()));
+        assert_eq!(toolbar.bottom(),logical.bottom());
+        for scale in [1.0,1.25,1.5,1.75,2.0] {
+            let paint=modal_master_pixel_aligned_rect(logical,scale);
+            assert!((paint.left()-logical.left()).abs()<=0.5/scale+0.0001);
+            assert!((paint.top()-logical.top()).abs()<=0.5/scale+0.0001);
+            let next=modal_master_workspace_geometry(bounds,32.0,Some(2.0/3.0));
+            assert_eq!(next.toolbar_bottom,geometry.toolbar_bottom);
+            assert_eq!(next.divider_x,geometry.divider_x);
+        }
     }
 
     #[test]

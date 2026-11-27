@@ -5258,19 +5258,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         theme::MODAL_FOOTER_HEIGHT,
                         theme::MODAL_MASTER_WORKSPACE_GAP
                     );
-                    // The OCR master paints all three chrome regions on the
-                    // same device-pixel grid. Fractional work-area sizes must
-                    // not introduce fuzzy header rules or rounded corners.
-                    let ppp=master_ui.ctx().pixels_per_point();
-                    let header_rect=crate::popup::modal_master_pixel_aligned_rect(
-                        master.header,ppp
-                    );
-                    let footer_rect=crate::popup::modal_master_pixel_aligned_rect(
-                        master.footer,ppp
-                    );
-                    let compare_rect=crate::popup::modal_master_pixel_aligned_rect(
-                        master.workspace,ppp
-                    );
+                    // Layout and hit/clip regions remain in logical points.
+                    // The popup master snaps only its painted chrome.
+                    let header_rect=crate::ui_layout::geometry::aligned_rect(master.header);
+                    let footer_rect=crate::ui_layout::geometry::aligned_rect(master.footer);
+                    let compare_rect=crate::ui_layout::geometry::aligned_rect(master.workspace);
                     close=crate::popup::modal_master_header_in_rect(
                         &mut master_ui,header_rect,"OCR 문자 인식 검토",
                         "원본 이미지와 인식된 텍스트를 대조하고 오타를 수정한 뒤 반영하세요.",

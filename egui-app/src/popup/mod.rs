@@ -242,9 +242,7 @@ impl ModalEditorWorkspace<'_> {
             Sense::hover()
         );
         self.geometry.header=Some(header);
-        let toolbar_rect=modal_master_header_toolbar_rect(
-            header,self.ui.ctx().pixels_per_point().max(1.0)
-        );
+        let toolbar_rect=modal_master_header_toolbar_rect(header);
         self.geometry.header_toolbar=Some(toolbar_rect);
         modal_master_header_with_toolbar_in_rect(
             self.ui,header,title,close_label,enabled,toolbar
@@ -442,7 +440,7 @@ pub(crate) struct ModalMasterWorkspace {
 /// rounded workspace, or footer. Layout still owns the original dimensions;
 /// every edge moves by at most half a device pixel. All strokes and pane fills
 /// must use the SAME aligned rect so anti-aliasing cannot expose a seam.
-pub(crate) fn modal_master_pixel_aligned_rect(rect:Rect,pixels_per_point:f32)->Rect {
+fn modal_master_pixel_aligned_rect(rect:Rect,pixels_per_point:f32)->Rect {
     let scale=pixels_per_point.max(1.0);
     let snap=|v:f32|(v*scale).round()/scale;
     Rect::from_min_max(
@@ -494,13 +492,19 @@ fn modal_master_action_area(rect:Rect,action_height:f32)->Rect {
 pub(crate) fn modal_master_workspace_background(
     ui:&Ui,rect:Rect,toolbar_height:f32,split_ratio:Option<f32>
 )->ModalMasterWorkspace {
-    let ppp=ui.ctx().pixels_per_point().max(1.0);
-    let rect=modal_master_pixel_aligned_rect(rect,ppp);
-    ui.painter().rect_filled(rect,theme::CONTROL_RADIUS,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
-    let snap=|v:f32|(v*ppp).round()/ppp;
-    let toolbar_bottom=snap((rect.top()+toolbar_height.max(0.0)).min(rect.bottom()));
+    let ppp=ui.ctx().pixels_per_point();
+    let paint_rect=modal_master_pixel_aligned_rect(rect,ppp);
+    ui.painter().rect_filled(paint_rect,theme::CONTROL_RADIUS,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
+    modal_master_workspace_geometry(rect,toolbar_height,split_ratio)
+}
+
+/// Layout anchors stay in logical points, independent of device-pixel scale.
+fn modal_master_workspace_geometry(rect:Rect,toolbar_height:f32,split_ratio:Option<f32>)->ModalMasterWorkspace {
+    use egui::emath::GuiRounding as _;
+    let rect=crate::ui_layout::geometry::aligned_rect(rect);
+    let toolbar_bottom=(rect.top()+toolbar_height.max(0.0)).min(rect.bottom()).round_ui();
     let divider_x=split_ratio.map(|share|{
-        snap(rect.left()+rect.width()*share.clamp(0.0,1.0))
+        (rect.left()+rect.width()*share.clamp(0.0,1.0)).round_ui()
     });
     ModalMasterWorkspace{toolbar_bottom,divider_x}
 }
@@ -623,12 +627,13 @@ pub(crate) fn modal_master_header_in_rect(
     close_label:&str,enabled:bool
 )->bool {
     let ppp=ui.ctx().pixels_per_point().max(1.0);
-    let rect=modal_master_pixel_aligned_rect(rect,ppp);
-    ui.painter().rect_filled(rect,0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
+    let rect=crate::ui_layout::geometry::aligned_rect(rect);
+    let paint_rect=modal_master_pixel_aligned_rect(rect,ppp);
+    ui.painter().rect_filled(paint_rect,0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
     // A centered line at rect.bottom() is half clipped and can appear
     // darker at one end. Fill exactly one pixel-aligned INNER rule instead.
     ui.painter().rect_filled(
-        modal_master_rule_rect(rect,ppp,true),0.0,theme::border_ink(theme::BorderRole::Divider)
+        modal_master_rule_rect(paint_rect,ppp,true),0.0,theme::border_ink(theme::BorderRole::Divider)
     );
     modal_master_header_content_in_rect(
         ui,rect,title,description,close_label,enabled
@@ -655,16 +660,16 @@ fn modal_master_toolbar_rule_rect(rect:Rect,ppp:f32)->Rect{
 }
 
 /// Toolbar uses the same horizontal inset as the body, below the rule.
-fn modal_master_header_toolbar_rect(rect:Rect,ppp:f32)->Rect{
-    let rect=modal_master_pixel_aligned_rect(rect,ppp);
+fn modal_master_header_toolbar_rect(rect:Rect)->Rect{
+    let rect=crate::ui_layout::geometry::aligned_rect(rect);
     let content=modal_master_content_rect(rect);
     let top=(rect.top()+theme::MODAL_HEADER_HEIGHT
         +theme::SOFT_DIVIDER_WIDTH+theme::MODAL_MASTER_TOOLBAR_RULE_GAP)
         .min(rect.bottom());
-    Rect::from_min_max(
+    crate::ui_layout::geometry::aligned_rect(Rect::from_min_max(
         egui::pos2(content.left(),top),
         egui::pos2(content.right(),rect.bottom())
-    )
+    ))
 }
 
 /// Common header: title/close, single divider, then the status/action row.
@@ -673,8 +678,9 @@ pub(crate) fn modal_master_header_with_toolbar_in_rect<R>(
     toolbar:impl FnOnce(&mut Ui)->R,
 )->(bool,R){
     let ppp=ui.ctx().pixels_per_point().max(1.0);
-    let rect=modal_master_pixel_aligned_rect(rect,ppp);
-    ui.painter().rect_filled(rect,0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
+    let rect=crate::ui_layout::geometry::aligned_rect(rect);
+    let paint_rect=modal_master_pixel_aligned_rect(rect,ppp);
+    ui.painter().rect_filled(paint_rect,0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
     ui.painter().rect_filled(
         modal_master_toolbar_rule_rect(rect,ppp),0.0,theme::border_ink(theme::BorderRole::Divider)
     );
@@ -684,7 +690,7 @@ pub(crate) fn modal_master_header_with_toolbar_in_rect<R>(
     let close=modal_master_header_content_in_rect(
         ui,title_rect,title,"",close_label,enabled
     );
-    let toolbar_rect=crate::ui_layout::geometry::aligned_rect(modal_master_header_toolbar_rect(rect,ppp));
+    let toolbar_rect=modal_master_header_toolbar_rect(rect);
     let mut toolbar_ui=ui.new_child(
         egui::UiBuilder::new().id_salt("modal-master-header-toolbar")
             .aligned_max_rect(toolbar_rect)
