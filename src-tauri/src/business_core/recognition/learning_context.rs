@@ -173,7 +173,10 @@ fn level_diagnostic(context:&Value,counts:Option<&Value>)->Value{
         "level":context["level"],"direction":direction,
         "previousOrders":previous,"nextOrders":next,
         "independentOrders":counts.and_then(|c|c["weakIndependentOrders"].as_u64()).unwrap_or(0),
-        "pendingCorrections":counts.and_then(|c|c["pendingCorrectionCount"].as_u64()).unwrap_or(0)
+        "pendingCorrections":counts.and_then(|c|c["pendingCorrectionCount"].as_u64()).unwrap_or(0),
+        "explicitCorrectionOrders":counts.and_then(|c|c["explicitCorrectionOrders"].as_u64()).unwrap_or(0),
+        "explicitPositiveCandidateOrders":counts.map(|c|c["explicitPositiveCandidateOrders"].clone()),
+        "explicitNegativeCandidateOrders":counts.map(|c|c["explicitNegativeCandidateOrders"].clone())
     })
 }
 
@@ -201,6 +204,11 @@ struct Counts{
     previous:u64,
     next:u64,
     pending:u64,
+    explicit_previous:u64,
+    explicit_next:u64,
+    explicit_orders:u64,
+    explicit_previous_orders:u64,
+    explicit_next_orders:u64,
     unresolved:u64,
     orders:u64,
     weak_orders:u64,
@@ -217,6 +225,13 @@ impl Counts{
                 Some("next")=>self.next+=1,
                 _=>self.unresolved+=1,
             }
+        }else if o["outcome"]=="explicit_correction_observed" && o["eligibleForCandidateLearning"]==true{
+            match (o["negativeCandidates"].as_array().filter(|v|v.len()==1).and_then(|v|v[0].as_str()),
+                o["positiveCandidates"].as_array().filter(|v|v.len()==1).and_then(|v|v[0].as_str())){
+                (Some("next"),Some("previous"))=>self.explicit_previous+=1,
+                (Some("previous"),Some("next"))=>self.explicit_next+=1,
+                _=>self.unresolved+=1,
+            }
         }else if o["outcome"]=="changed_requires_review"{self.pending+=1;}
         else{self.unresolved+=1;}
     }
@@ -225,6 +240,11 @@ impl Counts{
         self.previous+=other.previous;
         self.next+=other.next;
         self.pending+=other.pending;
+        self.explicit_previous+=other.explicit_previous;
+        self.explicit_next+=other.explicit_next;
+        self.explicit_orders+=u64::from(other.explicit_previous+other.explicit_next>0);
+        self.explicit_previous_orders+=u64::from(other.explicit_previous>0);
+        self.explicit_next_orders+=u64::from(other.explicit_next>0);
         self.unresolved+=other.unresolved;
         self.orders+=1;
         self.weak_orders+=u64::from(other.previous+other.next>0);
@@ -238,6 +258,12 @@ impl Counts{
             "weakIndependentOrders":self.weak_orders,
             "weakCandidates":{"previous":self.previous,"next":self.next},
             "weakCandidateOrders":{"previous":self.previous_orders,"next":self.next_orders},
+            "explicitCorrectionCount":self.explicit_previous+self.explicit_next,
+            "explicitCorrectionOrders":self.explicit_orders,
+            "explicitPositiveCandidates":{"previous":self.explicit_previous,"next":self.explicit_next},
+            "explicitNegativeCandidates":{"previous":self.explicit_next,"next":self.explicit_previous},
+            "explicitPositiveCandidateOrders":{"previous":self.explicit_previous_orders,"next":self.explicit_next_orders},
+            "explicitNegativeCandidateOrders":{"previous":self.explicit_next_orders,"next":self.explicit_previous_orders},
             "pendingCorrectionCount":self.pending,"unresolvedCount":self.unresolved,
             "eligibleForAutomaticDecision":false
         })
@@ -268,7 +294,11 @@ fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<BTreeMap<St
     let mut groups=BTreeMap::<String,Counts>::new();
     for o in rows(&compared["observations"]).filter(|o|o["task"]=="recipient_ownership"){
         for context in rows(&o["contexts"]){
-            if context["level"]=="client_structure"&&!client_valid{continue;}
+            if context["level"]=="client_structure"{
+                if !client_valid{continue;}
+                if o["outcome"]=="explicit_correction_observed" &&
+                    (o["auditClientId"].as_str()!=final_client || o["auditClientSelection"]!="MANUAL"){continue;}
+            }
             let Some(key)=context["key"].as_str()else{continue;};
             if !filter.is_empty()&&!filter.contains(key){continue;}
             groups.entry(key.to_owned()).or_default().add_observation(o);
@@ -280,7 +310,7 @@ fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<BTreeMap<St
 /// Explicit bounded batch, not an operational history scan. Caller supplies
 /// immutable confirmed order records. Duplicate snapshots count once; a
 /// conflicting duplicate fails instead of silently choosing a revision.
-/// These are descriptive weak observations, not calibrated probabilities.
+/// Weak observations and verified explicit corrections remain separate, not calibrated probabilities.
 pub(super) fn statistics(payload:&Value)->Result<Value,String>{
     let orders=payload["orders"].as_array().ok_or("확정 주문 목록이 없습니다.")?;
     if orders.len()>250{return Err("귀속 통계 검증은 한 번에 최대 250개 주문만 허용합니다.".into());}
