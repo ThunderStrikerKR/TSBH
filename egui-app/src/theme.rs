@@ -111,6 +111,10 @@ pub const ORANGE_EMPHASIS_BG: Color32 = Color32::from_rgb(59, 43, 27); // #3B2B1
 // Orange confirmation surfaces share a single palette regardless of
 // whether the trigger is a persistent review card or a one-touch hover.
 pub const ORANGE_EMPHASIS_TEXT:Color32=Color32::from_rgb(255,228,188);
+// A small checked icon needs stronger contrast than a full-row tint.
+pub const CHECKBOX_CHECKED_BG:Color32=Color32::from_rgb(140,76,16);
+pub const CHECKBOX_CHECKED_MARK:Color32=ORANGE_EMPHASIS_TEXT;
+pub const CHECKBOX_CHECKED_STROKE_WIDTH:f32=2.0;
 pub const ONE_TOUCH_BG:Color32=ORANGE_EMPHASIS_BG;
 pub const ONE_TOUCH_TEXT:Color32=ORANGE_EMPHASIS_TEXT;
 pub const ONE_TOUCH_BORDER:Color32=SELECTED_ORDER;
