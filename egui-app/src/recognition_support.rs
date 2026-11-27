@@ -251,6 +251,115 @@ impl Aggregate{
     }
 }
 
+// P06 screening policy: deliberately provisional, not a probability or
+// production admission rule. Independent prospective validation is still needed.
+fn context_quality_policy()->Value{
+    json!({"version":1,"status":"provisional_diagnostic",
+        "minimumSupportedOrders":20,"minimumEffectiveOrders":15.0,
+        "minimumExplicitLabelOrders":5,"minimumTopExplicitPositiveOrders":3,
+        "minimumTopShare":0.65,"minimumMargin":0.20,"maximumOutsideShare":0.15,
+        "maximumTopOppositionShare":0.10,"minimumConditionalValidationCoverage":0.80,
+        "minimumConditionalValidationAgreement":0.70})
+}
+fn context_quality(report:&Value)->Value{
+    let policy=context_quality_policy();
+    let mut reasons=Vec::<&str>::new();
+    let num=|key:&str|report[key].as_f64().filter(|v|v.is_finite()&&*v>=0.0);
+    let supported=report["supportedOrders"].as_u64();
+    let effective=num("weightEffectiveOrders");
+    let explicit=report["correctionValidation"]["labelOrders"].as_u64();
+    let validation=&report["correctionValidation"];
+    let evaluated=validation["evaluatedOrders"].as_u64();
+    let tied=validation["tiedTopOrders"].as_u64();
+    let correct=validation["uniqueTopCorrectOrders"].as_u64();
+    let validation_coverage=match (explicit,evaluated,tied,correct){
+        (Some(n),Some(e),Some(t),Some(c)) if n>0&&e<=n&&t<=e&&c<=e-t=>Some((e-t) as f64/n as f64),
+        _=>None
+    };
+    let validation_agreement=match (evaluated,tied,correct){
+        (Some(e),Some(t),Some(c)) if e>t&&c<=e-t=>Some(c as f64/(e-t) as f64),
+        _=>None
+    };
+    let mass=num("totalSupportMass").filter(|v|*v>0.0);
+    let outside=num("outsideCandidateSupportMass");
+    let outside_share=mass.zip(outside).map(|(m,o)|o/m);
+    let mut ranked=Vec::new();
+    let mut seen=BTreeSet::new();
+    let mut valid=report["candidates"].as_array().is_some_and(|a|!a.is_empty()&&a.len()<=64);
+    for c in report["candidates"].as_array().into_iter().flatten(){
+        let id=c["candidate"].as_str().filter(|id|!id.is_empty());
+        let support=c["supportMass"].as_f64().filter(|v|v.is_finite()&&*v>=0.0);
+        if let (Some(id),Some(value))=(id,support){
+            if seen.insert(id){ranked.push((id,value,c));}else{valid=false;}
+        }else{valid=false;}
+    }
+    if let (Some(m),Some(o))=(mass,outside){
+        valid&=(ranked.iter().map(|x|x.1).sum::<f64>()+o-m).abs()<=1e-7*m.max(1.0);
+    }else{valid=false;}
+    ranked.sort_by(|a,b|b.1.total_cmp(&a.1));
+    let top=ranked.first().filter(|_|valid);
+    let top_share=top.zip(mass).map(|(r,m)|r.1/m);
+    let margin=top.zip(mass).zip(outside).map(|((r,m),o)|
+        (r.1-ranked.get(1).map_or(0.0,|x|x.1).max(o))/m);
+    let top_opposition=top.and_then(|r|r.2["explicitOppositionMass"].as_f64())
+        .filter(|v|v.is_finite()&&*v>=0.0).zip(mass).map(|(o,m)|o/m);
+    let top_explicit=top.and_then(|r|r.2["explicitPositiveOrders"].as_u64());
+    if !valid{reasons.push("missing_or_inconsistent_support");}
+    if report["pendingCorrectionOrders"].as_u64()!=Some(0)||
+        report["unresolvedOrders"].as_u64()!=Some(0){reasons.push("pending_or_unresolved_evidence");}
+    if supported.is_none_or(|n|n<20){reasons.push("insufficient_independent_orders");}
+    if effective.is_none_or(|n|n<15.0){reasons.push("insufficient_effective_orders");}
+    if explicit.is_none_or(|n|n<5){reasons.push("insufficient_explicit_labels");}
+    if top_explicit.is_none_or(|n|n<3){reasons.push("insufficient_top_explicit_orders");}
+    if top_share.is_none_or(|p|p<0.65){reasons.push("low_top_support");}
+    if margin.is_none_or(|p|p<0.20-1e-10){reasons.push("small_or_negative_margin");}
+    if outside_share.is_none_or(|p|p>0.15+1e-10){reasons.push("outside_candidate_risk");}
+    if top_opposition.is_none_or(|p|p>0.10+1e-10){reasons.push("explicit_opposition");}
+    if validation_coverage.is_none_or(|p|p<0.80){reasons.push("insufficient_conditional_validation_coverage");}
+    if validation_agreement.is_none_or(|p|p<0.70){reasons.push("low_conditional_validation_agreement");}
+    json!({"policy":policy,"status":if reasons.is_empty(){"diagnostic_screen_pass"}else{"insufficient_or_conflicting"},
+        "reasons":reasons,"topCandidate":top.map(|r|r.0),"topSupportShare":top_share,
+        "marginIncludingOutside":margin,"outsideSupportShare":outside_share,
+        "topExplicitOppositionToSupportMass":top_opposition,"topExplicitPositiveOrders":top_explicit,
+        "supportedOrders":supported,"effectiveOrders":effective,"explicitLabelOrders":explicit,
+        "conditionalValidationCoverage":validation_coverage,"conditionalValidationAgreement":validation_agreement,
+        "prospectivePerformanceVerified":false,"calibrationVerified":false,
+        "representativeLabelsVerified":false,"confidenceProbability":null,
+        "eligibleForAutomaticDecision":false})
+}
+// Choose exactly one context, never add correlated tiers together.
+// Qualified disagreements block selection even when one tier is narrower.
+pub(super) fn select_contexts(locations:&[Value],reports:&[Value])->Vec<Value>{
+    locations.iter().map(|loc|{
+        let mut levels=Vec::new();let mut passed=Vec::new();let mut seen=BTreeSet::new();
+        let task=&loc["task"];
+        let mut invalid=false;
+        for key in loc["contextKeys"].as_array().into_iter().flatten(){
+            let parsed=key.as_str().and_then(|k|serde_json::from_str::<Value>(k).ok());
+            let level=parsed.as_ref().and_then(|v|v[2].as_str());
+            let rank=match level{Some("client_structure")=>3,Some("structure")=>2,Some("base")=>1,_=>{invalid=true;continue;}};
+            if parsed.as_ref().is_none_or(|v|v[1]!=*task)||!seen.insert(rank){invalid=true;continue;}
+            let mut matched=reports.iter().filter(|r|r["contextKey"]==*key&&r["task"]==*task&&
+                r["candidateIds"]==loc["candidates"]);
+            let Some(report)=matched.next()else{invalid=true;continue;};
+            if matched.next().is_some(){invalid=true;continue;}
+            let q=&report["contextQuality"];
+            if q["status"]=="diagnostic_screen_pass"{
+                if let Some(id)=q["topCandidate"].as_str(){passed.push((rank,id,key.clone()));}else{invalid=true;}
+            }
+            levels.push(json!({"level":level,"contextKey":key,"quality":q}));
+        }
+        passed.sort_by_key(|r|std::cmp::Reverse(r.0));
+        let conflict=passed.first().is_some_and(|first|passed.iter().any(|r|r.1!=first.1));
+        let selected=if invalid||conflict{None}else{passed.first()};
+        json!({"start":loc["start"],"end":loc["end"],"task":task,
+            "status":if invalid{"invalid_context_join"}else if conflict{"context_conflict"}else if selected.is_some(){"diagnostic_context_selected"}else{"retain_legacy_no_qualified_context"},
+            "contextConflict":conflict,"selectedContextKey":selected.map(|r|&r.2),
+            "diagnosticCandidate":selected.map(|r|r.1),"levels":levels,
+            "overlappingContextsCombined":false,"eligibleForAutomaticDecision":false,"decisionChanged":false})
+    }).collect()
+}
+
 fn request(input:&Value)->Result<(&str,&str,&str,BTreeSet<String>,f64),String>{
     let task=input["task"].as_str().filter(|t|matches!(*t,"recipient_ownership"|"type"|"product"|"variant"|"quantity")).ok_or("학습 작업 유형 오류")?;
     let key=input["contextKey"].as_str().filter(|v|!v.is_empty()&&v.len()<=8192).ok_or("학습 문맥 키 오류")?;
@@ -493,6 +602,7 @@ pub(super) fn assess(tx:&Transaction<'_>,scope:&str,input:&Value)->Result<Value,
         result.add(Evidence::from_facts(&facts,family,key)?,&allowed,ratio)?;
     }
     let mut report=result.wire(&allowed,ratio);
+    report["contextQuality"]=context_quality(&report);
     if let Some(validation)=input.get("chronologicalValidation"){
         report["chronologicalCalibration"]=chronological_calibration(validation,&allowed,key,target,ratio)?;
     }
@@ -503,6 +613,46 @@ pub(super) fn assess(tx:&Transaction<'_>,scope:&str,input:&Value)->Result<Value,
 mod recognition_support_tests{
     use super::*;
     fn allowed()->BTreeSet<String>{BTreeSet::from(["a".into(),"b".into()])}
+    #[test]
+    fn context_quality_is_diagnostic_and_blocks_weak_or_conflicting_evidence(){
+        let mut a=Aggregate::default();let ids=allowed();
+        for _ in 0..20{a.add(evidence(&[],&[("a",1)],&[("b",1)]),&ids,3.0).unwrap();}
+        let r=a.wire(&ids,3.0);
+        let q=context_quality(&r);
+        assert_eq!(q["status"],"diagnostic_screen_pass");
+        assert_eq!(q["eligibleForAutomaticDecision"],false);
+        assert!(q["confidenceProbability"].is_null());
+        let mut weak=Aggregate::default();
+        for _ in 0..20{weak.add(evidence(&[("a",1)],&[],&[]),&ids,3.0).unwrap();}
+        let q=context_quality(&weak.wire(&ids,3.0));
+        assert_eq!(q["status"],"insufficient_or_conflicting");
+        assert!(q["reasons"].as_array().unwrap().iter().any(|r|r=="insufficient_explicit_labels"));
+        let mut bad=r.clone();bad["pendingCorrectionOrders"]=json!(1);
+        assert_eq!(context_quality(&bad)["status"],"insufficient_or_conflicting");
+        bad=r.clone();bad["outsideCandidateSupportMass"]=json!(10.0);
+        assert_eq!(context_quality(&bad)["status"],"insufficient_or_conflicting");
+    }
+    #[test]
+    fn context_selection_falls_back_without_summing_and_blocks_qualified_conflicts(){
+        let base=json!([1,"type","base",null,[]]).to_string();
+        let structure=json!([1,"type","structure",null,[]]).to_string();
+        let location=json!({"start":0,"end":1,"task":"type","candidates":["a","b"],
+            "contextKeys":[base,structure]});
+        let report=|k:&str,status:&str,id:&str|json!({"contextKey":k,"task":"type","candidateIds":["a","b"],
+            "contextQuality":{"status":status,"topCandidate":id}});
+        let mut reports=vec![report(&base,"diagnostic_screen_pass","a"),report(&structure,"insufficient_or_conflicting","b")];
+        let chosen=select_contexts(&[location.clone()],&reports);
+        assert_eq!(chosen[0]["selectedContextKey"],base);
+        reports[1]=report(&structure,"diagnostic_screen_pass","a");
+        let chosen=select_contexts(&[location.clone()],&reports);
+        assert_eq!(chosen[0]["selectedContextKey"],structure);
+        assert_eq!(chosen[0]["overlappingContextsCombined"],false);
+        reports[1]=report(&structure,"diagnostic_screen_pass","b");
+        let chosen=select_contexts(&[location],&reports);
+        assert_eq!(chosen[0]["status"],"context_conflict");
+        assert!(chosen[0]["diagnosticCandidate"].is_null());
+        assert_eq!(chosen[0]["decisionChanged"],false);
+    }
     fn evidence(weak:&[(&str,u64)],positive:&[(&str,u64)],negative:&[(&str,u64)])->Evidence{
         let map=|x:&[(&str,u64)]|x.iter().map(|(k,n)|(k.to_string(),*n)).collect();
         Evidence{weak:map(weak),positive:map(positive),negative:map(negative),..Default::default()}

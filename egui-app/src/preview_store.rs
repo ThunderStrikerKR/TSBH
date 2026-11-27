@@ -979,20 +979,22 @@ impl PreviewStore {
                 "contextOrders":report["contextOrders"],"supportedOrders":report["supportedOrders"],
                 "totalSupportMass":report["totalSupportMass"],"weightEffectiveOrders":report["weightEffectiveOrders"],
                 "outsideCandidateSupportMass":report["outsideCandidateSupportMass"],
-                "candidates":report["candidates"],"calibratedProbability":null}));
+                "candidates":report["candidates"],"contextQuality":report["contextQuality"],
+                "calibratedProbability":null}));
         }
         if (!ids.is_empty()&&crate::business_state::read_learning_sources(&ids)?!=frozen) ||
             crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
             return Err("실시간 학습 조회 중 원본 변경".into());
         }
+        let selection=recognition_learning_store::select_learning_contexts(&locations,&results);
         let mut hash=Sha256::new();
-        hash.update(serde_json::to_vec(&json!(["recognition-shadow-v3",scope,RATIO,digests,results]))
+        hash.update(serde_json::to_vec(&json!(["recognition-shadow-v4",scope,RATIO,digests,results]))
             .map_err(|_|"실시간 학습 모델 지문 오류")?);
         let model=format!("shadow-{:x}",hash.finalize());
-        let result=json!({"status":"captured_shadow_support","captureVersion":3,"skippedMissingCandidates":skipped,
+        let result=json!({"status":"captured_shadow_support","captureVersion":4,"skippedMissingCandidates":skipped,
             "modelId":model,"capturedAt":chrono::Utc::now().to_rfc3339(),
             "explicitToWeakRatio":RATIO,"verifiedSourceOrders":ids.len(),"locations":locations,
-            "contexts":results,"sourceDigestsMatched":true,"fullHistoryReconciled":false,
+            "contexts":results,"contextSelection":selection,"sourceDigestsMatched":true,"fullHistoryReconciled":false,
             "calibratedProbability":null,"eligibleForAutomaticDecision":false,"decisionChanged":false});
         tx.commit().map_err(|e|e.to_string())?;
         Ok(result)

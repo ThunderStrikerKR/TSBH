@@ -270,6 +270,10 @@ fn synchronize(tx:&Transaction<'_>,scope:&str,ids:&[String],orders:&[Value],
     synchronize_with_digests(tx,scope,ids,&digests,orders,summarize)
 }
 
+pub(super) fn select_learning_contexts(locations:&[Value],reports:&[Value])->Vec<Value>{
+    recognition_support::select_contexts(locations,reports)
+}
+
 pub(super) fn assess_support(tx:&Transaction<'_>,scope:&str,input:&Value)->Result<Value,String>{
     recognition_support::assess(tx,scope,input)
 }
