@@ -112,6 +112,22 @@ mod shared_notification_center_screen_geometry_tests{
     use super::*;
     use crate::ui_test_support::{test_context,begin_component_geometry,finish_component_geometry,assert_component_roles};
     #[test]
+    fn actual_notification_popup_keeps_rects_during_read_and_error_changes(){
+        use crate::ui_test_support::assert_popup_transition_geometry;
+        let ctx=test_context();
+        let mut center=Center{open:true,..Default::default()};
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1280.0,800.0));
+        center.items=vec![serde_json::json!({
+            "id":"synthetic-notice","title":"검증 알림","detail":"합성 변경 내역",
+            "at":"2026-11-27","read":false
+        })];
+        assert_popup_transition_geometry(&ctx,screen,4,|ctx,phase|{
+            center.items[0]["read"]=serde_json::json!(phase==1);
+            center.error=(phase==2).then(||"검증 오류".into());
+            center.show(ctx,screen);
+        });
+    }
+    #[test]
     fn actual_center_uses_shared_popup_and_buttons_in_empty_unread_and_read_states(){
         let ctx=test_context();
         let mut center=Center{open:true,..Default::default()};
