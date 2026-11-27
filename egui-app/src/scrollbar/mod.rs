@@ -154,6 +154,8 @@ pub(crate) fn sweep_snapshots(ctx:&egui::Context,now:std::time::Instant){
 // Non-table scrollers that have their own viewport restoration still
 // register native state for the same expiration and reclamation policy.
 pub(crate) fn track_native<R>(ui:&Ui,output:&egui::containers::scroll_area::ScrollAreaOutput<R>){
+    #[cfg(test)]
+    crate::ui_test_support::record_component_geometry("scrollbar",output.inner_rect,ui.clip_rect(),None);
     let now=std::time::Instant::now();
     sweep_snapshots(ui.ctx(),now);
     ui.ctx().data_mut(|data|{
@@ -190,6 +192,8 @@ impl ScrollCapture{
     }
     pub(crate) fn finish<R>(mut self,ui:&Ui,
         output:&egui::containers::scroll_area::ScrollAreaOutput<R>,rows:Option<ScrollRows<'_>>){
+        #[cfg(test)]
+        crate::ui_test_support::record_component_geometry("scrollbar",output.inner_rect,ui.clip_rect(),None);
         self.state.observe(self.ready,output.state.offset,rows);
         ui.ctx().data_mut(|data|{
             let store=data.get_temp_mut_or_default::<ScrollStore>(store_id());
