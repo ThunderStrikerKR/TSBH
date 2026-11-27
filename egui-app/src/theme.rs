@@ -5,6 +5,7 @@
 //! docs/egui-ui-design-contract.md.
 //! Keep screen-specific hard-coded colors and geometry out of view code.
 
+use crate::ui_layout::SharedAllocationExt as _;
 use eframe::egui::{
     self, Color32, CornerRadius, Frame, Stroke, Ui, Vec2,
 };
@@ -1257,7 +1258,7 @@ pub(crate) fn paint_soft_rule(painter:&egui::Painter,rect:egui::Rect){
 /// One soft horizontal rule. The reserved rectangle and painted surface
 /// coincide: no centered stroke protrudes into the preceding row.
 pub fn soft_rule(ui:&mut Ui)->egui::Rect{
-    let (rect,_)=ui.allocate_exact_size(
+    let (rect,_)=ui.shared_allocate_exact_size(
         Vec2::new(ui.available_width(),SOFT_DIVIDER_WIDTH),egui::Sense::hover()
     );
     paint_soft_rule(ui.painter(),rect);
