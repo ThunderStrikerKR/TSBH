@@ -1,10 +1,10 @@
 //! Shared date selection, segmented navigation and recipient/count traversal.
-use crate::ui_layout::SharedUiClipExt as _;
-use crate::ui_layout::SharedPainterClipExt as _;
-use crate::ui_layout::SharedAllocationExt as _;
-use crate::ui_layout::AlignedUiBuilderExt as _;
+use crate::ui_layout::geometry::SharedUiClipExt as _;
+use crate::ui_layout::geometry::SharedPainterClipExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
+use crate::ui_layout::geometry::AlignedUiBuilderExt as _;
 use chrono::{Datelike,Duration as Days,Months,NaiveDate};
-use crate::ui_primitives::UiWidthPolicyExt;
+use crate::ui_layout::geometry::UiWidthPolicyExt;
 use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
 #[cfg(test)]
 use eframe::egui::UiBuilder;
@@ -99,8 +99,8 @@ pub fn reception_recipient_navigator(
         ui,"reception-recipient-nav-header",Vec2::new(width,height),
         |segments,inner|{
             let mut selected=None;
-            segments.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,inner.width());
-            crate::ui_layout::set_fixed_height(segments,inner.height());
+            segments.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,inner.width());
+            crate::ui_layout::geometry::set_fixed_height(segments,inner.height());
             segments.spacing_mut().item_spacing=Vec2::ZERO;
 
             let previous=date_navigation_segment_button(
@@ -129,7 +129,7 @@ pub fn reception_recipient_navigator(
             let label=overflow_tooltip(label,clipped,display);
             if clipped{
                 crate::overlay::show_menu(&label,None,|popup|{
-            popup.apply_shared_width(crate::ui_primitives::CardWidthPolicy::UpperLimit,320.0);
+            popup.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::UpperLimit,320.0);
                         popup.add(egui::Label::new(typography::body(display)).wrap());
                     });
             }
@@ -331,7 +331,7 @@ pub fn date_calendar(
             calendar.spacing_mut().item_spacing=egui::vec2(
                 theme::CALENDAR_GRID_GAP,theme::CALENDAR_GRID_GAP
             );
-            calendar.apply_shared_width(crate::ui_primitives::CardWidthPolicy::FillAvailable,theme::CALENDAR_GRID_WIDTH);
+            calendar.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,theme::CALENDAR_GRID_WIDTH);
             calendar.horizontal(|nav|{
                 nav.spacing_mut().item_spacing.x=theme::CALENDAR_GRID_GAP;
                 if calendar_nav_button(
@@ -703,7 +703,7 @@ pub(crate) fn excel_export_date_controls(
             .aligned_max_rect(first)
             .layout(egui::Layout::left_to_right(Align::Center)
                 .with_main_align(Align::Max)),|line|{
-                line.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,first.width());
+                line.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,first.width());
                 crate::navigation::apply_management_date_control_spacing(line);
                 let all_dates=from.is_empty()&&to.is_empty();
                 changed|=range_date_picker(line,all_dates,from,from_month,
@@ -713,7 +713,7 @@ pub(crate) fn excel_export_date_controls(
             .aligned_max_rect(second)
             .layout(egui::Layout::left_to_right(Align::Center)
                 .with_main_align(Align::Max)),|line|{
-                line.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,second.width());
+                line.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,second.width());
                 crate::navigation::apply_management_date_control_spacing(line);
                 changed|=excel_export_date_end(line,from,to,to_month);
             });
