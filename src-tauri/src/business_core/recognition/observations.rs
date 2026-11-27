@@ -453,7 +453,10 @@ fn reconcile_field_audits(units:&[u16],initial_rows:&Value,final_rows:&Value,eve
         }).collect::<Vec<_>>();
         let state=|rs:&Value|field_state(units,rs,s,task);
         if o["outcome"]=="unchanged_observed"{
-            let changed=events.iter().any(|e|state(&e["beforeRows"])!=state(&e["afterRows"]));
+            let initial=singleton(&o["initialCandidates"]);
+            let changed=events.iter().any(|e|
+                state(&e["beforeRows"]).as_deref()!=initial ||
+                state(&e["afterRows"]).as_deref()!=initial);
             if !changed && (relevant.is_empty() || task=="product"&&relevant.iter().all(|(_,c)|
                 c["beforeValue"]["productId"]==c["afterValue"]["productId"]&&
                 c["method"]!="explicit_binding")){continue;}
@@ -557,8 +560,9 @@ fn reconcile_owner_audits(payload:&Value,units:&[u16],first:&Value,observations:
             && c["kind"].as_str()==Some(kind)).and_then(|c|c["value"].as_str())else{continue;};
         let state=|rs:&Value|OwnerIndex::new(units,rs).owner(s,kind,original);
         if observation["outcome"]=="unchanged_observed"{
-            if entries.is_empty()&&!ordered.iter().any(|e|
-                state(&e["beforeRows"])!=state(&e["afterRows"])){continue;}
+            let initial=position(units,&observation["initialAnchor"]);
+            if entries.is_empty()&&initial.is_some()&&!ordered.iter().any(|e|
+                state(&e["beforeRows"])!=initial||state(&e["afterRows"])!=initial){continue;}
             // An explicit intervention (including a reverted edit) is not
             // an untouched observation. Do not count it as weak success.
             observation["outcome"]=json!("changed_requires_review");
@@ -643,6 +647,34 @@ fn audit_coverage(payload:&Value)->&'static str{
     if actual==expected{"verified_manifest"}else{"incomplete_history"}
 }
 
+// Diagnostic-only resource guard. Never truncate a source or an audit chain
+// and then count it as a complete observation.
+fn check_comparison_budget(payload:&Value,raw:&str,first:&Value,final_rows:&Value)->Result<(),String>{
+    const LIMIT:&str="학습 진단 처리 한도 초과: 주문 또는 감사 범위를 분할하세요.";
+    if raw.len()>128*1024{return Err(LIMIT.into());}
+    let row_weight=|rs:&Value|->usize{
+        rows(rs).map(|r|1usize.saturating_add(rows(&r["sources"]).count())
+            .saturating_add(rows(&r["items"]).map(|i|
+                1usize.saturating_add(rows(&i["sources"]).count())).fold(0usize,usize::saturating_add)))
+            .fold(0usize,usize::saturating_add)
+    };
+    let events=rows(&payload["recognitionAuditEvents"]);
+    let mut total=row_weight(&first["recipients"]).saturating_add(row_weight(final_rows));
+    let candidates=rows(&first["candidates"]).count();
+    let traces=rows(&first["recipientOwnerTrace"]["decisions"]).count();
+    if candidates>4096||traces>4096||total>16384{return Err(LIMIT.into());}
+    let mut count=0usize;
+    for event in events{
+        count+=1;
+        total=total.saturating_add(row_weight(&event["beforeRows"])).saturating_add(row_weight(&event["afterRows"]));
+        if count>1000||total>100_000{return Err(LIMIT.into());}
+    }
+    // Bound repeated source/row scans and document-local candidate searches.
+    if total.saturating_mul(candidates.saturating_add(traces).max(1))>16_000_000
+        || total.saturating_mul(raw.len())>64*1024*1024{return Err(LIMIT.into());}
+    Ok(())
+}
+
 pub(super) fn compare(payload:&Value)->Result<Value,String>{
     let snapshot=&payload["confirmationSnapshot"];
     let Some(raw)=snapshot["raw"].as_str().filter(|raw|!raw.trim().is_empty())
@@ -653,6 +685,7 @@ pub(super) fn compare(payload:&Value)->Result<Value,String>{
         || !first["candidates"].is_array() || !snapshot["recipients"].is_array(){
         return Ok(json!({"status":"unavailable","observations":[]}));
     }
+    check_comparison_budget(payload,raw,first,&snapshot["recipients"])?;
     let units=raw.encode_utf16().collect::<Vec<_>>();
     let mut before=Candidates::new();
     let mut after=Candidates::new();
