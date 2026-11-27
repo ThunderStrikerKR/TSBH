@@ -961,6 +961,62 @@ fn owner_score_input(units:&[u16],trace:&Value,obs:&Value)->Option<(&'static str
         position(units,&obs["initialAnchor"])!=Some(anchor){return None;}
     Some((kind,owner_score_bin(delta)))
 }
+const OWNER_GATE_REASONS:[&str;5]=["paragraph_boundary","prior_delivery_missing",
+    "blank_before_next","next_distance_exceeds_3","contact_without_nearby_address"];
+// Only the first actually evaluated blocking reason is attributable.
+// Reconstruct the ordered gates from the frozen trace, not from final rows.
+fn owner_gate_input(units:&[u16],trace:&Value,obs:&Value)->Option<(&'static str,&'static str)>{
+    let reason=*OWNER_GATE_REASONS.iter().find(|r|trace["legacyFirstBlockingReason"].as_str()==Some(**r))?;
+    if trace["legacyRequiredMargin"]!=30||singleton(&obs["initialCandidates"])!=Some("previous"){return None;}
+    let s=position(units,&obs["source"])?;
+    if position(units,&trace["source"])!=Some(s){return None;}
+    let kind=match trace["source"]["kind"].as_str()?{
+        "address"=>"address","phone"|"mobile"=>"contact",_=>return None};
+    let candidates=trace["candidates"].as_array().filter(|a|a.len()==2)?;
+    let mut by_relation=BTreeMap::new();
+    for c in candidates{
+        let relation=c["relation"].as_str()?;
+        if !matches!(relation,"previous"|"next")||c["anchor"]["kind"]!="name"||
+            c.get("legacyScore")!=Some(&Value::Null){return None;}
+        if by_relation.insert(relation,c).is_some(){return None;}
+    }
+    let previous=*by_relation.get("previous")?;
+    let next=*by_relation.get("next")?;
+    let a=position(units,&previous["anchor"])?;
+    let b=position(units,&next["anchor"])?;
+    if !(a.0<s.0&&s.0<b.0)||position(units,&trace["selectedAnchor"])!=Some(a)||
+        position(units,&obs["initialAnchor"])!=Some(a){return None;}
+    let same_previous=previous["sameParagraph"].as_bool()?;
+    let same_next=next["sameParagraph"].as_bool()?;
+    let prior=trace["previousHasDelivery"].as_bool()?;
+    let blanks=next["gap"]["blankLines"].as_u64()?;
+    let distance=next["lineDistance"].as_u64()?;
+    let nearby=trace["nearbyAddress"].as_bool()?;
+    let actual_reason=if same_previous||!same_next{"paragraph_boundary"}
+        else if !prior{"prior_delivery_missing"}
+        else if blanks>0{"blank_before_next"}
+        else if distance>3{"next_distance_exceeds_3"}
+        else if kind=="contact"&&!nearby{"contact_without_nearby_address"}
+        else{return None;};
+    (reason==actual_reason).then_some((kind,reason))
+}
+#[derive(Default)]
+struct GateCounts{observations:usize,corrections:usize,unchanged:usize,orders:usize,order_error_sum:f64}
+impl GateCounts{
+    fn add(&mut self,corrections:usize,unchanged:usize){
+        let n=corrections+unchanged;
+        if n==0{return;}
+        self.observations+=n;self.corrections+=corrections;self.unchanged+=unchanged;
+        self.orders+=1;self.order_error_sum+=corrections as f64/n as f64;
+    }
+    fn wire(&self)->Value{
+        json!({"eligibleObservations":self.observations,"explicitReassignmentObservations":self.corrections,
+            "unchangedProxyObservations":self.unchanged,"independentOrders":self.orders,
+            "observedCorrectionFraction":(self.observations>0).then(||self.corrections as f64/self.observations as f64),
+            "orderMacroCorrectionFraction":(self.orders>0).then(||self.order_error_sum/self.orders as f64),
+            "trueErrorRateVerified":false})
+    }
+}
 #[derive(Default)]
 struct OwnerFitBin{orders:usize,next_sum:f64}
 impl OwnerFitBin{
@@ -1016,6 +1072,11 @@ pub(super) fn calibrate_legacy_scores(payload:&Value)->Result<Value,String>{
     let mut seen=BTreeSet::new();
     let mut bins=BTreeMap::<(&str,usize),OwnerFitBin>::new();
     let mut tests=Vec::new();
+    let mut gate_fit=BTreeMap::<(&str,&str),OwnerFitBin>::new();
+    let mut gate_fit_counts=BTreeMap::<(&str,&str),GateCounts>::new();
+    let mut gate_test_counts=BTreeMap::<(&str,&str),GateCounts>::new();
+    let mut gate_tests=Vec::new();
+    let mut invalid_gates=0usize;
     let (mut skipped,mut late,mut blocked,mut invalid,mut unverified)=(0usize,0usize,0usize,0usize,0usize);
     let (mut fit_orders,mut test_orders)=(0usize,0usize);
     for order in orders{
@@ -1043,7 +1104,7 @@ pub(super) fn calibrate_legacy_scores(payload:&Value)->Result<Value,String>{
         if compared["auditCoverage"]!="verified_manifest"{skipped+=1;continue;}
         let raw=snap["raw"].as_str().ok_or("보정 원문 누락")?;
         let units=raw.encode_utf16().collect::<Vec<_>>();
-        let mut samples=Vec::new();let mut used=BTreeSet::new();
+        let mut samples=Vec::new();let mut gate_samples=Vec::new();let mut used=BTreeSet::new();
         for obs in rows(&compared["observations"]).filter(|o|o["task"]=="recipient_ownership"){
             let label=match obs["outcome"].as_str(){
                 Some("explicit_correction_observed") if obs["eligibleForCandidateLearning"]==true=>"explicit_correction",
@@ -1060,9 +1121,30 @@ pub(super) fn calibrate_legacy_scores(payload:&Value)->Result<Value,String>{
             let mut traces=rows(&trace["decisions"]).filter(|d|position(&units,&d["source"])==Some(s));
             let Some(d)=traces.next()else{invalid+=1;continue;};
             if traces.next().is_some(){invalid+=1;continue;}
-            if !d["legacyFirstBlockingReason"].is_null(){blocked+=1;continue;}
+            if !d["legacyFirstBlockingReason"].is_null(){
+                blocked+=1;
+                if let Some((kind,reason))=owner_gate_input(&units,d,obs){
+                    gate_samples.push((kind,reason,label,actual=="next"));
+                }else{invalid_gates+=1;}
+                continue;
+            }
             let Some((kind,bin))=owner_score_input(&units,d,obs)else{invalid+=1;continue;};
             samples.push((kind,bin,label,old=="next",actual=="next"));
+        }
+        // Gate data has its own denominator and never enters numeric-score bins.
+        if !gate_samples.is_empty(){
+            let mut local=BTreeMap::<(&str,&str),(usize,usize)>::new();
+            for &(kind,reason,_,actual) in &gate_samples{
+                let c=local.entry((kind,reason)).or_default();
+                if actual{c.0+=1;}else{c.1+=1;}
+            }
+            for (key,(corrections,unchanged)) in local{
+                if fit{
+                    gate_fit_counts.entry(key).or_default().add(corrections,unchanged);
+                    gate_fit.entry(key).or_default().add_order(corrections,corrections+unchanged);
+                }else{gate_test_counts.entry(key).or_default().add(corrections,unchanged);}
+            }
+            if !fit{gate_tests.push(gate_samples);}
         }
         if samples.is_empty(){continue;}
         if fit{
@@ -1096,12 +1178,44 @@ pub(super) fn calibrate_legacy_scores(payload:&Value)->Result<Value,String>{
     }
     let groups=totals.into_iter().map(|((kind,label),v)|json!({"sourceKind":kind,"labelKind":label,
         "metrics":v.wire()})).collect::<Vec<_>>();
+    let mut gate_totals=BTreeMap::<(&str,&str,&str),OwnerTest>::new();
+    for samples in gate_tests{
+        let mut local=BTreeMap::<(&str,&str,&str),OwnerTest>::new();
+        for (kind,reason,label,actual) in samples{
+            let p=gate_fit.get(&(kind,reason)).and_then(OwnerFitBin::estimate);
+            for group in [label,"mixed_proxy"]{
+                local.entry((kind,reason,group)).or_default().observe(p,false,actual);
+            }
+        }
+        for (key,value) in local{gate_totals.entry(key).or_default().merge_order(value);}
+    }
+    let mut gates=Vec::new();
+    for kind in ["address","contact"]{
+        for reason in OWNER_GATE_REASONS{
+            if kind=="address"&&reason=="contact_without_nearby_address"{continue;}
+            let empty=GateCounts::default();
+            let fit=gate_fit_counts.get(&(kind,reason)).unwrap_or(&empty);
+            let test=gate_test_counts.get(&(kind,reason)).unwrap_or(&empty);
+            let estimate=gate_fit.get(&(kind,reason)).and_then(OwnerFitBin::estimate);
+            gates.push(json!({"sourceKind":kind,"firstBlockingReason":reason,
+                "fit":fit.wire(),"test":test.wire(),
+                "estimatedNextProxyFrequency":estimate,
+                "estimatedPreviousProxyFrequency":estimate.map(|p|1.0-p)}));
+        }
+    }
+    let gate_groups=gate_totals.into_iter().map(|((kind,reason,label),v)|json!({
+        "sourceKind":kind,"firstBlockingReason":reason,"labelKind":label,"metrics":v.wire()})).collect::<Vec<_>>();
     Ok(json!({"status":"legacy_score_calibration_diagnostic_only","method":"fixed_bins_order_weighted_beta_1_1",
         "scorePolicyVersion":OWNER_SCORE_POLICY,"clientBuildVersion":build,"minimumFitOrdersPerBin":MIN_CALIBRATION_ORDERS,
         "fitStart":config["fitStart"],"testStart":config["testStart"],"testEnd":config["testEnd"],
         "evaluationAsOf":config["evaluationAsOf"],"fitOrders":fit_orders,"testOrders":test_orders,
         "excludedOrders":skipped,"lateLabelOrders":late,"blockedObservations":blocked,
         "invalidObservations":invalid,"unverifiedObservations":unverified,"bins":table,"testGroups":groups,
+        "gateCalibration":{"method":"first_blocking_reason_order_weighted_beta_1_1",
+            "minimumFitOrders":MIN_CALIBRATION_ORDERS,"invalidGateObservations":invalid_gates,
+            "groups":gates,"testGroups":gate_groups,"onlyFirstBlockingReasonAttributed":true,
+            "trueErrorRateVerified":false,"calibratedProbability":null,"decisionChanged":false,
+            "eligibleForAutomaticDecision":false},
         "fitLabelKind":"mixed_operational_proxy","representativeLabelsVerified":false,
         "historicalModelVerified":false,"sourceProvenanceVerified":false,
         "calibratedProbability":null,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
@@ -1194,6 +1308,38 @@ mod tests{
         assert!((report["bins"][15]["estimatedNextProxyFrequency"].as_f64().unwrap()-6.0/7.0).abs()<1e-10);
         assert!(report["testGroups"].as_array().unwrap().iter().all(|g|g["metrics"]["coveredObservations"]==1));
         assert_eq!(report["eligibleForAutomaticDecision"],false);
+    }
+    #[test]
+    fn owner_gate_reconstructs_first_block_and_never_invents_numeric_score(){
+        let units="😀김가상\n010-1234-5678\n박가상".encode_utf16().collect::<Vec<_>>();
+        let mut p=owner_fixture();let obs=owner_result(&p);
+        let d=&mut p["confirmationSnapshot"]["recognitionBaseline"]["initialAnalysis"]["recipientOwnerTrace"]["decisions"][0];
+        d["legacyRequiredMargin"]=json!(30);
+        d["legacyFirstBlockingReason"]=json!("paragraph_boundary");
+        d["previousHasDelivery"]=json!(false);d["nearbyAddress"]=json!(false);
+        d["candidates"][0]["sameParagraph"]=json!(true);d["candidates"][0]["legacyScore"]=Value::Null;
+        d["candidates"][1]["sameParagraph"]=json!(false);d["candidates"][1]["legacyScore"]=Value::Null;
+        d["candidates"][1]["gap"]=json!({"blankLines":1});d["candidates"][1]["lineDistance"]=json!(4);
+        assert_eq!(owner_gate_input(&units,d,&obs),Some(("contact","paragraph_boundary")));
+        d["legacyFirstBlockingReason"]=json!("prior_delivery_missing");
+        assert!(owner_gate_input(&units,d,&obs).is_none());
+        d["candidates"][0]["sameParagraph"]=json!(false);d["candidates"][1]["sameParagraph"]=json!(true);
+        assert_eq!(owner_gate_input(&units,d,&obs),Some(("contact","prior_delivery_missing")));
+        d["previousHasDelivery"]=json!(true);d["legacyFirstBlockingReason"]=json!("blank_before_next");
+        assert_eq!(owner_gate_input(&units,d,&obs),Some(("contact","blank_before_next")));
+        d["candidates"][1]["gap"]["blankLines"]=json!(0);d["legacyFirstBlockingReason"]=json!("next_distance_exceeds_3");
+        assert_eq!(owner_gate_input(&units,d,&obs),Some(("contact","next_distance_exceeds_3")));
+        d["candidates"][1]["lineDistance"]=json!(3);d["legacyFirstBlockingReason"]=json!("contact_without_nearby_address");
+        assert_eq!(owner_gate_input(&units,d,&obs),Some(("contact","contact_without_nearby_address")));
+        d["candidates"][0]["legacyScore"]=json!(0);
+        assert!(owner_gate_input(&units,d,&obs).is_none());
+    }
+    #[test]
+    fn gate_counts_keep_order_macro_and_observation_rate_distinct(){
+        let mut counts=GateCounts::default();counts.add(1,0);counts.add(0,9);
+        let v=counts.wire();assert_eq!(v["observedCorrectionFraction"],0.1);
+        assert_eq!(v["orderMacroCorrectionFraction"],0.5);
+        assert_eq!(v["trueErrorRateVerified"],false);
     }
     fn owner_fixture()->Value{
         // Emoji makes the UTF-16 positions differ from byte offsets.
