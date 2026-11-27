@@ -20,8 +20,9 @@ pub const DEFAULT_RATIOS: [f32; PANEL_COUNT] = [20.9, 24.155, 32.545, 22.4];
 const PREVIOUS_DEFAULT_RATIOS: [f32; PANEL_COUNT] = [20.9, 28.4, 28.3, 22.4];
 const LEGACY_DEFAULT_RATIOS: [f32; PANEL_COUNT] = [20.0, 29.0, 29.0, 22.0];
 // The middle column owns a fixed recipient card and a fixed order total.
-// The two remaining cards share the free height equally, independent of
-// persisted source/message or legacy middle-column splitter ratios.
+// Review receives 85% of its former equal share; all released height
+// goes to items. Persisted source/message and legacy middle ratios do not apply.
+const REVIEW_HEIGHT_FACTOR:f32=0.85;
 pub const SOURCE_MIN: f32 = 275.0;
 pub const MESSAGE_MIN: f32 = 160.0;
 pub const VERTICAL_DEFAULT: f32 = 0.5;
@@ -196,7 +197,8 @@ impl LayoutState {
     }
 
     /// [review, recipient, items + summary gap + summary]. Reserve the
-    /// two section gutters and the summary first; split the rest 50:50.
+    /// two section gutters and the summary first; transfer 15% of the
+    /// former review height to items, while preserving the review header.
     /// In a short window reduce the recipient viewport only as necessary
     /// to protect the two variable card headers. Its body can scroll.
     pub fn detail_heights(&self, available: f32) -> [f32; 3] {
@@ -207,8 +209,12 @@ impl LayoutState {
         let remaining = (space - summary).max(0.0);
         let recipient = (remaining - 2.0 * theme::RECEPTION_SECTION_CHROME_HEIGHT)
             .max(0.0).min(theme::RECEPTION_RECIPIENT_SECTION_HEIGHT);
-        let variable = (remaining - recipient) * 0.5;
-        [variable, recipient, space - variable - recipient]
+        let previous_review = (remaining - recipient) * 0.5;
+        // Preserve the old header protection in short windows; the review
+        // must never exceed its old share, even below the minimum viewport.
+        let review = (previous_review * REVIEW_HEIGHT_FACTOR)
+            .max(theme::RECEPTION_SECTION_CHROME_HEIGHT.min(previous_review));
+        [review, recipient, space - review - recipient]
     }
 
     pub fn resize_vertical(&mut self, current_first: f32, delta: f32, available: f32) {
@@ -286,7 +292,7 @@ mod geometry_contract {
     }
 
     #[test]
-    fn middle_column_splits_remaining_space_equally_with_fixed_recipient_and_summary() {
+    fn middle_column_transfers_fifteen_percent_of_review_to_items() {
         use crate::theme;
         assert_eq!(theme::RECEPTION_RECIPIENT_SECTION_HEIGHT,235.0);
         assert_eq!(theme::RECEPTION_ORDER_TOTAL_SECTION_HEIGHT,123.0);
@@ -296,7 +302,11 @@ mod geometry_contract {
             let [review,recipient,bottom]=LayoutState::default().detail_heights(height);
             let items=bottom-reserved;
             assert!((recipient-235.0).abs()<0.02);
-            assert!((review-items).abs()<0.02);
+            let previous=(review+items)*0.5;
+            let expected=(previous*0.85).max(theme::RECEPTION_SECTION_CHROME_HEIGHT.min(previous));
+            assert!((review-expected).abs()<0.02);
+            assert!((items-(previous+(previous-review))).abs()<0.02);
+            if height>=720.0{assert!((review-previous*0.85).abs()<0.02);}
             assert!((review+recipient+bottom+2.0*SPLITTER-height).abs()<0.02);
         }
     }
@@ -327,7 +337,7 @@ mod geometry_contract {
     }
 
     #[test]
-    fn compact_middle_column_keeps_equal_variable_cards_and_bounded_recipient() {
+    fn compact_middle_column_protects_review_header_and_transfers_only_available_height() {
         use crate::theme;
         let reserved=theme::RECEPTION_ORDER_TOTAL_SECTION_HEIGHT
             +theme::RECEPTION_ORDER_TOTAL_SECTION_GAP;
@@ -335,7 +345,11 @@ mod geometry_contract {
             let [review,recipient,bottom]=LayoutState::default().detail_heights(height);
             assert!(recipient>=0.0 && recipient<=theme::RECEPTION_RECIPIENT_SECTION_HEIGHT);
             assert!(review+0.02>=theme::RECEPTION_SECTION_CHROME_HEIGHT);
-            assert!((review-(bottom-reserved)).abs()<0.02);
+            let items=bottom-reserved;
+            let previous=(review+items)*0.5;
+            assert!((review-(previous*0.85).max(theme::RECEPTION_SECTION_CHROME_HEIGHT.min(previous))).abs()<0.02);
+            assert!(items+0.02>=previous);
+            assert!(review<=previous+0.02);
             assert!((review+recipient+bottom+2.0*SPLITTER-height).abs()<0.02);
         }
     }
