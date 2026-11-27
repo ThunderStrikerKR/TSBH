@@ -1,4 +1,5 @@
 //! Shared native input construction, formatting and exact-cell editing.
+use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Layout,Rect,Response,Stroke,Ui,Vec2};
 use crate::{source_highlight,theme,typography};
 use crate::button::{date_navigation_segment_button,DateNavigationSegmentGlyph};
@@ -502,7 +503,7 @@ fn reception_text_editor_at_click(
     let cell=crate::ui_layout::aligned_rect(cell);
     let mut placed=ui.new_child(
         egui::UiBuilder::new()
-            .max_rect(cell)
+            .aligned_max_rect(cell)
             .layout(egui::Layout::centered_and_justified(
                 egui::Direction::TopDown
             ))
