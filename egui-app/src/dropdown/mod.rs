@@ -103,6 +103,8 @@ fn management_dropdown_trigger_inner(
             .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
     );
     let rect=trigger.rect;
+    #[cfg(test)]
+    crate::ui_test_support::record_component_geometry("dropdown",rect,ui.clip_rect(),Some(height));
     let painter=ui.painter().with_clip_rect(rect);
     let arrow_left=rect.right()-30.0;
     let caption=if let Some(values)=values{
