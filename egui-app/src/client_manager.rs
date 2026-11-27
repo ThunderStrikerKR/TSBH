@@ -612,7 +612,7 @@ impl ClientManager {
             controls.vertical(|panel|{
             crate::ui_layout::apply_spacing_role(panel,crate::ui_layout::SpacingRole::WorkflowDetail);
             let tags=client_search_tags::labels(draft);
-            let interaction=crate::input::tag_block_editor(panel,&tags,&mut self.tag_input,"검색 태그 입력");
+            let interaction=crate::ui_layout::tag_block_editor(panel,&tags,&mut self.tag_input,"검색 태그 입력");
             if interaction.changed{self.tag_notice=None;}
             if let Some(tag)=interaction.remove{
                 client_search_tags::remove(draft,&tag);
