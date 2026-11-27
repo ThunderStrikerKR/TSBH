@@ -1651,6 +1651,22 @@ struct ExtractedDocument<'a>{
     exclusions:CommonCandidates,
     features:DocumentFeatures,
 }
+// Retain the original explicit sale-unit rule. The rejected span stays
+// in the shared candidate index and cannot reappear as a detached quantity.
+fn validate_sale_unit_quantity(raw:&str,text:&str,offset:usize,state:&Value,decision:&Value,
+    quantities:&mut Vec<quantity::Quantity>,candidates:&mut CommonCandidates){
+    if quantities.len()!=1{return;}
+    let Some(id)=decision["productId"].as_str()else{return;};
+    let Some(p)=model::products(state).into_iter().find(|p|p["id"].as_str()==Some(id))else{return;};
+    let option=p["variants"].as_array().and_then(|vs|vs.first())
+        .and_then(|v|v["option"].as_str());
+    if p["sellingUnit"].as_str()==Some("2개 구성")&&
+        option.is_some_and(|o|!o.is_empty()&&text.contains(o)){
+        for q in quantities.drain(..){
+            candidates.record(raw,"quantity",offset+q.start,offset+q.end,CandidateDisposition::SaleUnit);
+        }
+    }
+}
 fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->ExtractedDocument<'a>{
     let client_id = client_id(client);
     let phone = phone_regex();
@@ -1898,41 +1914,44 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         // Never synthesize a new string and then treat its indexes as offsets
         // into raw: UTF-8/UTF-16 source-evidence contract must be lossless.
         let offset=line.text.find(trimmed).unwrap_or(0);
-        let matched=search.result_with_registration(skip_until,
-            Some((raw,line.start+offset,&mut exclusions))).output.clone();
-        let mut quantity_values = if trimmed.contains('|') {
-            let model_end=matched.get("evidence").and_then(Value::as_object)
-                .and_then(|o|o.get("end")).and_then(Value::as_u64)
-                .map(|v|v as usize);
-            ts_semantics::table_quantity(trimmed,model_end).map_or_else(Vec::new,
-                |(value,start,end)|vec![quantity::Quantity{value,start,end}])
-        } else {
+        // Quantity discovery does not require a chosen product identity.
+        // Table cells retain their original byte spans before projection.
+        let table=trimmed.contains('|');
+        let cells=if table{ts_semantics::table_quantity_candidates(trimmed)}else{vec![]};
+        let mut quantity_values=if table{vec![]}else{
             let explicit=search.quantities(skip_until).to_vec();
             if !explicit.is_empty(){explicit}else{
                 let known=search.has_registered_model(skip_until);
                 quantity::for_product(skip_until,false,known)
             }
         };
-        // parser.ts:537-552: a compound sale-unit phrase containing
-        // "2개" is part of the option name, not an order quantity.
-        if quantity_values.len()==1 {
-            if let Some(p)=matched.get("productId").and_then(Value::as_str)
-                .and_then(|pid|model::products(state).into_iter().find(|p|
-                    p.get("id").and_then(Value::as_str)==Some(pid))) {
-                let sale_unit=p.get("sellingUnit").and_then(Value::as_str);
-                let option=p.get("variants").and_then(Value::as_array)
-                    .and_then(|vs|vs.first())
-                    .and_then(|v|v.get("option")).and_then(Value::as_str);
-                if sale_unit==Some("2개 구성")
-                    && option.map_or(false,|o|!o.is_empty() && trimmed.contains(o)) {
-                    for q in &quantity_values{
-                        exclusions.record(raw,"quantity",line.start+offset+q.start,
-                            line.start+offset+q.end,CandidateDisposition::SaleUnit);
-                    }
-                    quantity_values.clear();
+        for &(_,a,b) in &cells{
+            if trimmed[a..b].parse::<i64>().is_ok(){
+                let _=exclusions.register(raw,"quantity",line.start+offset+a,line.start+offset+b);
+            }
+        }
+        for q in &quantity_values{
+            let _=exclusions.register(raw,"quantity",line.start+offset+q.start,line.start+offset+q.end);
+        }
+        let matched=search.result_with_registration(skip_until,
+            Some((raw,line.start+offset,&mut exclusions))).output.clone();
+        if table{
+            let model_end=matched.get("evidence").and_then(Value::as_object)
+                .and_then(|o|o.get("end")).and_then(Value::as_u64).map(|v|v as usize);
+            quantity_values=ts_semantics::table_quantity(trimmed,model_end,&cells).map_or_else(Vec::new,
+                |(value,start,end)|vec![quantity::Quantity{value,start,end}]);
+            for &(_,a,b) in &cells{
+                if trimmed[a..b].parse::<i64>().is_ok()&&
+                    !quantity_values.iter().any(|q|q.start==a&&q.end==b){
+                    exclusions.record(raw,"quantity",line.start+offset+a,line.start+offset+b,
+                        CandidateDisposition::CompetingQuantity);
                 }
             }
         }
+        // A selected product's sale-unit policy is applied to the
+        // projection, never to the original candidate discovery.
+        validate_sale_unit_quantity(raw,trimmed,line.start+offset,state,&matched,
+            &mut quantity_values,&mut exclusions);
         let mut quantity_indexes = Vec::new();
         for q in quantity_values {
             quantity_indexes.push(add_match(&mut events, line, offset+q.start,offset+q.end,
@@ -3231,6 +3250,37 @@ mod tests {
         let result=assign_document(doc,&state,None).unwrap();
         assert_eq!(result["recipients"][0]["name"],"김가상");
         assert_eq!(result["recipients"][0]["items"][0]["quantity"],1);
+    }
+    #[test]
+    fn table_quantity_discovery_preserves_all_numeric_columns_before_projection(){
+        let raw="1 | GT-1 | 2 | 3";
+        let state=state();
+        let cells=ts_semantics::table_quantity_candidates(raw);
+        assert_eq!(cells.iter().map(|&(_,a,b)|&raw[a..b]).collect::<Vec<_>>(),vec!["2","3"]);
+        let doc=extract_document(raw,&state,None);
+        let last=raw.rfind('3').unwrap();
+        assert_eq!(doc.exclusions.disposition("quantity",last,last+1),Some(CandidateDisposition::CompetingQuantity));
+        assert!(!doc.exclusions.excludes("quantity",last,last+1));
+        let result=assign_document(doc,&state,None).unwrap();
+        assert_eq!(result["recipients"][0]["items"][0]["quantity"],2);
+    }
+    #[test]
+    fn sale_unit_validation_retains_excluded_span_without_an_order_quantity(){
+        let raw="GT-1 2개 구성";
+        let mut state=state();
+        let product=state["products"].as_array_mut().unwrap().iter_mut()
+            .find(|p|p["id"]=="pgt").unwrap();
+        product["sellingUnit"]=json!("2개 구성");
+        product["variants"][0]["option"]=json!("2개 구성");
+        let mut candidates=CommonCandidates::default();
+        let mut quantities=quantity::extract(raw);
+        let q=quantities[0].clone();
+        let _=candidates.register(raw,"quantity",q.start,q.end);
+        validate_sale_unit_quantity(raw,raw,0,&state,&json!({"productId":"pgt"}),&mut quantities,&mut candidates);
+        assert!(quantities.is_empty());
+        assert_eq!(candidates.disposition("quantity",q.start,q.end),Some(CandidateDisposition::SaleUnit));
+        assert!(candidates.excludes("quantity",q.start,q.end));
+        assert!(candidates.entries[&("quantity",q.start,q.end)].selected.is_none());
     }
     #[test]
     fn table_quantity_policy_preserves_unused_explicit_quantity_candidate(){
