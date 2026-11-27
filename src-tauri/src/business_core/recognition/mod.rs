@@ -127,11 +127,15 @@ fn replay_owner_recommendation(payload:&Value)->Result<Value,String>{
     if first.as_object().is_none_or(|o|o.iter().any(|(k,v)|expected.get(k)!=Some(v))){
         return Err("귀속 재계산의 최초 분석 불일치".into());
     }
-    let d=&payload["decision"];
-    let (source,target,old_row,new_row,field)=observations::checked_owner_replay(raw,&first,d)?;
-    let overrides=std::collections::BTreeMap::from([(source,target)]);
+    let decisions=match (payload.get("decisions"),payload.get("decision")){
+        (Some(v),None)=>v.as_array().ok_or("귀속 추천 목록 형식 오류")?.clone(),
+        (None,Some(v))=>vec![v.clone()],
+        _=>return Err("귀속 추천 입력 오류".into())
+    };
+    let transfers=observations::checked_owner_replays(raw,&first,&decisions)?;
+    let overrides=transfers.iter().map(|(source,target,_,_,_)|(*source,*target)).collect();
     let replay=analyze_with_owner_overrides(raw,&reception,client,false,false,&overrides)?;
-    observations::verify_owner_replay(raw,&first,&replay,source,target,old_row,new_row,&field)?;
+    observations::verify_owner_replays(raw,&first,&replay,&transfers)?;
     Ok(json!({"status":"validated_counterfactual","recognition":replay,
         "decisionChanged":false,"eligibleForAutomaticDecision":false}))
 }
@@ -2013,6 +2017,28 @@ mod tests {
         assert_eq!(payload["initialAnalysis"]["recipients"][0]["mobile"],"010-1234-5678");
         assert_eq!(result["decisionChanged"],false);
         payload["initialAnalysis"]["recipients"][1]["mobile"]=json!("010-9999-9999");
+        assert!(execute("replay_owner_recommendation",payload).is_err());
+    }
+    #[test]
+    fn owner_joint_replay_rejects_duplicate_sources_and_preserves_both_transfers(){
+        let raw="수취인: 김가상\n서울특별시 마포구 월드컵로 20\n010-1234-5678\n수취인: 박가상";
+        let catalog=state();
+        let first=execute("analyze_order",json!({"raw":raw,"state":catalog,"collectOwnerTrace":true,"collectCandidateTrace":true})).unwrap();
+        let decisions=first["recipientOwnerTrace"]["decisions"].as_array().unwrap().iter()
+            .filter(|d|matches!(d["source"]["kind"].as_str(),Some("address"|"mobile")))
+            .map(|d|json!({"start":d["source"]["start"],"end":d["source"]["end"],
+                "status":"diagnostic_proposal_only","legacyCandidate":"previous","diagnosticCandidate":"next",
+                "calibrationScope":"conditional_traced_owner_pair_v1","decisionChanged":false,"eligibleForAutomaticDecision":false}))
+            .collect::<Vec<_>>();
+        assert_eq!(decisions.len(),2);
+        let mut payload=json!({"raw":raw,"state":catalog,"initialAnalysis":first,"decisions":decisions});
+        let result=execute("replay_owner_recommendation",payload.clone()).unwrap();
+        assert_eq!(result["recognition"]["recipients"][0]["address"],"");
+        assert_eq!(result["recognition"]["recipients"][0]["mobile"],"");
+        assert_eq!(result["recognition"]["recipients"][1]["address"],first["recipients"][0]["address"]);
+        assert_eq!(result["recognition"]["recipients"][1]["mobile"],"010-1234-5678");
+        assert_eq!(result["decisionChanged"],false);
+        payload["decisions"]=json!([decisions[0],decisions[0]]);
         assert!(execute("replay_owner_recommendation",payload).is_err());
     }
     #[test]
