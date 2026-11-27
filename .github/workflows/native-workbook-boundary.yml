@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'egui-app/src/excel_aggregate.rs'
       - 'egui-app/src/native_workbooks.rs'
       - 'egui-app/src/factory_reply_inbox.rs'
       - 'egui-app/src/excel_manager.rs'
@@ -19,6 +20,7 @@ on:
       - '.github/workflows/native-workbook-boundary.yml'
   pull_request:
     paths:
+      - 'egui-app/src/excel_aggregate.rs'
       - 'egui-app/src/native_workbooks.rs'
       - 'egui-app/src/factory_reply_inbox.rs'
       - 'egui-app/src/excel_manager.rs'
@@ -65,3 +67,9 @@ jobs:
 
       - name: Verify daily aggregate jobs in actual SQLite backup and restore
         run: cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib aggregate_jobs_survive_real_backup_and_restore_with_new_generation -- --nocapture
+
+
+      - name: Benchmark native Rust history projection (10k and 100k prior records)
+        run: cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib scoped_history_benchmark_10000_and_100000_historical_records -- --ignored --nocapture --test-threads=1
+      - name: Benchmark native Rust XLSX publication (10k and 100k prior records)
+        run: cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui accumulated_history_publication_benchmark_10000_and_100000 -- --ignored --nocapture --test-threads=1

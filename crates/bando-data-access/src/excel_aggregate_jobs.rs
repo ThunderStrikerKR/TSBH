@@ -443,21 +443,67 @@ mod tests{
         assert_eq!(a,b);assert_eq!(b[0][16],"00000009");assert_eq!(b[1][16],"00000003");
     }
     #[test]
-    fn scoped_history_benchmark_10000_historical_records(){
-        use std::time::Instant;
-        let c=Connection::open_in_memory().unwrap();let root=root();
-        let p=target(&root,"2026-11-27","STORE").unwrap();
-        let j=Job{date:"2026-11-27".into(),origin:"STORE".into(),path:p.to_str().unwrap().into(),desired:1,saved:0,retries:0,hash:None};
-        let mut exports=(1..=10_000).map(|n|export(&root,"2025-11-27","STORE",n)).collect::<Vec<_>>();
-        exports.extend((1..=100).map(|n|export(&root,"2026-11-27","STORE",n)));
-        metadata(&c,&json!({"revision":1,"exports":exports}));
-        let start=Instant::now();let full=read_history(&c,Some("STORE")).unwrap();
-        let expected=project(&full,&j).unwrap();let full_elapsed=start.elapsed();
-        let start=Instant::now();let actual=daily_rows_with_binding(&c,&j,&[],|_,_|panic!("no reply")).unwrap();
-        let scoped_elapsed=start.elapsed();
-        assert_eq!(expected,actual);assert_eq!(actual.len(),100);
-        assert_eq!(rows(&read_daily_history(&c,&j,&[]).unwrap(),"exports").len(),100);
-        eprintln!("aggregate projection 10100 records: baseline={full_elapsed:?}, scoped={scoped_elapsed:?}; materialized 10100 -> 100 records");
+    #[ignore = "isolated Rust performance comparison; run with --ignored --nocapture --test-threads=1"]
+    fn scoped_history_benchmark_10000_and_100000_historical_records(){
+        use std::time::{Duration,Instant};
+        fn median(samples:&mut [Duration])->f64{
+            samples.sort_unstable();samples[samples.len()/2].as_secs_f64()*1000.
+        }
+        let root=root();
+        eprintln!("AGGREGATE_BENCH profile={} sqlite={} samples=5 daily=100",
+            if cfg!(debug_assertions){"debug"}else{"release"},rusqlite::version());
+        for origin in ["STORE","REPLY"]{
+            for historical in [10_000_u32,100_000]{
+                let c=Connection::open_in_memory().unwrap();
+                let p=target(&root,"2026-11-27",origin).unwrap();
+                let j=Job{date:"2026-11-27".into(),origin:origin.into(),path:p.to_str().unwrap().into(),desired:1,saved:0,retries:0,hash:None};
+                let old=target(&root,"2025-11-27",origin).unwrap();
+                let state=if origin=="STORE"{
+                    let mut records=(1..=historical).map(|n|export(&root,"2025-11-27",origin,n)).collect::<Vec<_>>();
+                    records.extend((1..=100).map(|n|export(&root,"2026-11-27",origin,n)));
+                    json!({"revision":1,"exports":records})
+                }else{
+                    let record=|i:u32,date:&str,path:&Path|json!({"id":format!("reply-{i}"),"businessDate":date,"aggregateTargetPath":path,
+                        "rows":[{"shipmentId":format!("s-{i}"),"applied":true,"actual":3000,
+                        "tracking":format!("{i:012}"),"aggregateValues":vec!["";17]}]});
+                    let mut records=(1..=historical).map(|n|record(n,"2025-11-27",&old)).collect::<Vec<_>>();
+                    records.extend((historical+1..=historical+100).map(|n|record(n,"2026-11-27",&p)));
+                    // One actual cross-day correction reference in the daily
+                    // scope; it cannot supersede the newer accepted source.
+                    records.last_mut().unwrap()["resolves"]=json!({"id":"reply-1","row":2});
+                    json!({"revision":1,"factoryReplies":records})
+                };
+                metadata(&c,&state);drop(state);
+                let bytes:i64=c.query_row("SELECT length(CAST(payload AS BLOB)) FROM app_state WHERE id=1",[],|r|r.get(0)).unwrap();
+                let key=if origin=="REPLY"{"factoryReplies"}else{"exports"};
+                let expected=project(&read_history(&c,Some(origin)).unwrap(),&j).unwrap();
+                assert_eq!(expected.len(),100);
+                assert_eq!(daily_rows_with_binding(&c,&j,&[],|_,_|panic!("unexpected legacy lookup")).unwrap(),expected);
+                let scoped_records=rows(&read_daily_history(&c,&j,&[]).unwrap(),key).len();
+                assert_eq!(scoped_records,if origin=="REPLY"{101}else{100});
+                let mut baseline=Vec::new();let mut scoped=Vec::new();
+                for i in 0..5{
+                    let full=||{
+                        let t=Instant::now();
+                        let data=read_history(&c,Some(origin)).unwrap();
+                        let result=project(&data,&j).unwrap();
+                        let elapsed=t.elapsed();
+                        assert_eq!(result,expected);assert_eq!(rows(&data,key).len(),historical as usize+100);
+                        elapsed
+                    };
+                    let filtered=||{
+                        let t=Instant::now();
+                        let result=daily_rows_with_binding(&c,&j,&[],|_,_|panic!("unexpected legacy lookup")).unwrap();
+                        let elapsed=t.elapsed();assert_eq!(result,expected);elapsed
+                    };
+                    // Alternate order to reduce warm-cache ordering bias.
+                    if i%2==0{baseline.push(full());scoped.push(filtered());}
+                    else{scoped.push(filtered());baseline.push(full());}
+                }
+                eprintln!("AGGREGATE_PROJECTION origin={origin} historical={historical} daily=100 payload_bytes={bytes} full_records={} scoped_records={scoped_records} baseline_median_ms={:.3} scoped_median_ms={:.3}",
+                    historical+100,median(&mut baseline),median(&mut scoped));
+            }
+        }
     }
     #[test]
     fn ten_exports_accumulate_without_cross_origin_or_date(){

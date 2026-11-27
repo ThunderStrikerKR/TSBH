@@ -159,6 +159,7 @@ where F:FnMut(&str)->Result<(),String>{
     tx.commit().map_err(err)?;
     #[cfg(test)]
     crash_checkpoint("after_db_commit");
+    checkpoint("after_projection")?;
     let bytes=encode(&rows,j.origin=="REPLY")?;
     checkpoint("before_target")?;
     let target=checked_target(&j)?;
@@ -754,6 +755,75 @@ mod tests{
         isolated.path=jobs::target(&other,&isolated.date,&isolated.origin).unwrap().to_str().unwrap().into();
         assert!(checked_target_in(&isolated,Some(&other)).is_ok());
         assert!(!Path::new(&f.job.path).parent().unwrap().exists());
+    }
+    #[test]
+    #[ignore = "isolated Rust XLSX performance comparison; run with --ignored --nocapture --test-threads=1"]
+    fn accumulated_history_publication_benchmark_10000_and_100000(){
+        fn median(samples:&mut [Duration])->f64{
+            samples.sort_unstable();samples[samples.len()/2].as_secs_f64()*1000.
+        }
+        eprintln!("AGGREGATE_PUBLISH_BENCH profile={} sqlite={} samples=3 daily=100 disk_sqlite=true",
+            if cfg!(debug_assertions){"debug"}else{"release"},rusqlite::version());
+        for origin in ["STORE","REPLY"]{
+            for historical in [10_000_u32,100_000]{
+                let f=Fixture::new();
+                let target=jobs::target(&f.root,"2026-11-27",origin).unwrap();
+                let old=jobs::target(&f.root,"2025-11-27",origin).unwrap();
+                let mut conn=Connection::open(f.root.join("benchmark.sqlite")).unwrap();
+                conn.execute_batch("CREATE TABLE core_schema(key TEXT PRIMARY KEY,version INTEGER);
+                    INSERT INTO core_schema VALUES('business-core',2);
+                    CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);").unwrap();
+                jobs::initialize(&conn).unwrap();
+                let j=jobs::Job{date:"2026-11-27".into(),origin:origin.into(),path:target.to_str().unwrap().into(),desired:1,saved:0,retries:0,hash:None};
+                let make=|n:u32,day:&str,path:&Path|{
+                    let mut v=vec![String::new();if origin=="REPLY"{17}else{16}];
+                    v[0]=format!("수하인{n}");v[1]="01234".into();
+                    if origin=="STORE"{
+                        serde_json::json!({"id":format!("export-{n}"),"savedPath":path.with_file_name(format!("{}(매장{n}).xlsx",day.replace('-',""))),"outputRows":[{"values":v}]})
+                    }else{
+                        serde_json::json!({"id":format!("reply-{n}"),"businessDate":day,"aggregateTargetPath":path,
+                            "rows":[{"shipmentId":format!("shipment-{n}"),"applied":true,"actual":3000,
+                                "tracking":format!("{n:012}"),"aggregateValues":v}]})
+                    }
+                };
+                let mut records=(1..=historical).map(|n|make(n,"2025-11-27",&old)).collect::<Vec<_>>();
+                records.extend((historical+1..=historical+100).map(|n|make(n,"2026-11-27",&target)));
+                let state=if origin=="STORE"{serde_json::json!({"revision":1,"exports":records})}
+                    else{serde_json::json!({"revision":1,"factoryReplies":records})};
+                conn.execute("INSERT INTO app_state VALUES(1,?1)",[state.to_string()]).unwrap();drop(state);
+                conn.execute("INSERT INTO excel_aggregate_jobs(business_date,origin,target_path,desired_revision) VALUES(?1,?2,?3,1)",
+                    rusqlite::params![j.date,j.origin,j.path]).unwrap();
+                let mut projection=Vec::new();let mut encoding=Vec::new();let mut storage=Vec::new();let mut total=Vec::new();
+                // Warm up once; then requeue exactly the same generation
+                // solely in this isolated fixture for repeatable comparisons.
+                publish(&mut conn,&j,&f.root).unwrap();
+                for _ in 0..3{
+                    conn.execute("UPDATE excel_aggregate_jobs SET saved_revision=0,file_hash=NULL",[]).unwrap();
+                    let start=Instant::now();let mut projected=None;let mut encoded=None;
+                    publish_with(&mut conn,&j,&f.root,|stage|{
+                        if stage=="after_projection"{projected=Some(start.elapsed());}
+                        if stage=="before_target"{encoded=Some(start.elapsed());}
+                        Ok(())
+                    }).unwrap();
+                    let elapsed=start.elapsed();
+                    let p=projected.expect("projection checkpoint");
+                    let e=encoded.expect("encoding checkpoint");
+                    projection.push(p);encoding.push(e.saturating_sub(p));storage.push(elapsed.saturating_sub(e));total.push(elapsed);
+                    let mut book=Xlsx::new(Cursor::new(fs::read(&target).unwrap())).unwrap();
+                    let range=book.worksheet_range("로젠택배").unwrap();
+                    assert_eq!(range.end().unwrap().0,100);
+                    for i in 1..=100_u32{
+                        let n=historical+i;
+                        assert_eq!(range.get_value((i,0)),Some(&Data::String(format!("수하인{n}"))));
+                        assert_eq!(range.get_value((i,1)),Some(&Data::String("01234".into())));
+                        if origin=="REPLY"{assert_eq!(range.get_value((i,16)),Some(&Data::String(format!("{n:012}"))));}
+                    }
+                    assert_eq!(jobs::current(&conn,&j).unwrap().unwrap().saved,1);
+                }
+                eprintln!("AGGREGATE_PUBLICATION origin={origin} historical={historical} daily=100 projection_median_ms={:.3} encoding_verify_median_ms={:.3} write_replace_commit_median_ms={:.3} total_median_ms={:.3}",
+                    median(&mut projection),median(&mut encoding),median(&mut storage),median(&mut total));
+            }
+        }
     }
     #[test]
     fn large_daily_workbook_roundtrip_without_individual_files(){
