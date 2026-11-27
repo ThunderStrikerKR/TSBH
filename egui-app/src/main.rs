@@ -1091,6 +1091,7 @@ struct BandoEgui {
     client_change: Option<PendingClientChange>,
     auto_client_change: Option<PendingAutomaticClient>,
     pricing_basis_check: Option<PendingPricingBasisCheck>,
+    pricing_basis_due: Option<String>,
     working_sync: Option<PendingWorkingSync>,
     working_sync_error: Option<String>,
     analysis: Option<reception_service::ReceptionAnalysis>,
@@ -1231,6 +1232,7 @@ impl BandoEgui {
             client_change: None,
             auto_client_change: None,
             pricing_basis_check: None,
+            pricing_basis_due: None,
             working_sync: None,
             working_sync_error: None,
             analysis: None,
@@ -1625,9 +1627,23 @@ impl BandoEgui {
     /// relevant product/variant and freight masters are compared off-thread.
     /// Unrelated state revisions and contact edits never trigger repricing.
     fn start_pricing_basis_check(&mut self,ctx:&egui::Context){
-        if self.reception_job_admission(
+        // A saved master or a reception visit is an explicit refresh request.
+        // Keep only the current draft's request until the existing job gate
+        // admits it; no background work is launched while editing is blocked.
+        self.pricing_basis_due=self.active_id.clone();
+        self.retry_pricing_basis_check(ctx);
+    }
+
+    fn retry_pricing_basis_check(&mut self,ctx:&egui::Context){
+        if self.pricing_basis_due.is_none(){return;}
+        if self.pricing_basis_due!=self.active_id{
+            self.pricing_basis_due=None;
+            return;
+        }
+        if self.page!=Page::Reception || self.reception_job_admission(
             ReceptionJob::PricingBasis,self.pricing_basis_check.is_some()
         )!=JobAdmission::Start{return;}
+        self.pricing_basis_due=None;
         let Some(row)=self.active_id.as_deref()
             .and_then(|id|self.drafts.iter().find(|row|row.id==id))
             .cloned()
@@ -1684,19 +1700,29 @@ impl BandoEgui {
         if self.active_id.as_deref()!=Some(pending.order_id.as_str()) ||
            self.raw_source!=pending.source_raw ||
            self.order_type.as_str()!=pending.order_type ||
-           latest.is_none_or(|row|
-               row.client_id.as_deref()!=Some(pending.client_id.as_str()) ||
-               row.pricing_preview.as_ref()!=Some(&pending.quote))
+           latest.is_none()
         {return;}
+        if latest.is_some_and(|row|
+            row.client_id.as_deref()!=Some(pending.client_id.as_str()) ||
+            row.pricing_preview.as_ref()!=Some(&pending.quote))
+        {
+            // A newer edit owns the result. Recheck the current quote only,
+            // rather than publishing or repricing the superseded snapshot.
+            self.pricing_basis_due=Some(pending.order_id);
+            return;
+        }
         match received{
             Ok(true)=>{},
             Ok(false)=>{
                 if self.client_change.is_some() || self.auto_client_change.is_some() ||
                    self.inline_change.is_some() || self.vat_change.is_some() ||
                    self.working_sync.is_some() || self.manual_workspace.is_some() ||
-                   self.inline_editor.is_some(){
-                    // Do not race with an employee edit. A later source
-                    // selection/reopen will check the same saved basis.
+                   self.inline_editor.is_some() ||
+                   self.page!=Page::Reception ||
+                   self.reception_job_admission(ReceptionJob::ManualClient,false)!=JobAdmission::Start{
+                    // Keep the request, not the old quote. Once the edit
+                    // finishes, compare the latest selected draft again.
+                    self.pricing_basis_due=Some(pending.order_id);
                     return;
                 }
                 let kind=latest.and_then(|row|row.client_selection.clone());
@@ -4559,6 +4585,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         self.pending_input_guidance=None;
         self.auto_client_change=None;
         self.pricing_basis_check=None;
+        self.pricing_basis_due=None;
         self.remote_recheck=None;
         self.remote_recheck_due=false;
         self.analysis_request = self.analysis_request.wrapping_add(1);
@@ -10472,6 +10499,7 @@ impl eframe::App for BandoEgui {
             self.start_remote_recheck(ctx);
         }
         self.poll_source_saves(ctx);
+        self.retry_pricing_basis_check(ctx);
         self.poll_clipboard_intake(ctx);
         if self.page==Page::Reception &&
             self.client_manager.as_mut().is_some_and(|manager|manager.take_changed()) {
@@ -11896,6 +11924,65 @@ mod reception_workflow_admission_integration_tests {
         fn load_business_state(&self)->Result<serde_json::Value,String>{
             Ok(serde_json::json!({"clients":[{"id":"c","tier":"wholesale"}]}))
         }
+    }
+
+    fn pricing_basis_fixture_app()->BandoEgui{
+        let mut app=app();
+        app.page=Page::Reception;
+        app.gateway=Arc::new(PricingBasisReadFixture);
+        app.drafts[0].client_id=Some("c".into());
+        app.drafts[0].client_selection=Some("MANUAL".into());
+        app.drafts[0].pricing_preview=Some(serde_json::json!({
+            "linePrices":[],"freightLines":[],"pendingRecipients":[],
+            "pricingBasis":{"orderInputs":{"recipients":[]}}
+        }));
+        app
+    }
+
+    #[test]
+    fn pricing_basis_refresh_waits_for_conflict_and_starts_once(){
+        let ctx=egui::Context::default();
+        let mut app=pricing_basis_fixture_app();
+        app.analysis_pending=true;
+        app.start_pricing_basis_check(&ctx);
+        for _ in 0..100{
+            app.retry_pricing_basis_check(&ctx);
+            assert!(app.pricing_basis_check.is_none());
+        }
+        assert_eq!(app.pricing_basis_due.as_deref(),Some("draft-1"));
+        app.analysis_pending=false;
+        app.retry_pricing_basis_check(&ctx);
+        assert!(app.pricing_basis_due.is_none());
+        assert!(app.pricing_basis_check.is_some());
+        app.pricing_basis_check.take();
+        app.retry_pricing_basis_check(&ctx);
+        assert!(app.pricing_basis_check.is_none());
+    }
+
+    #[test]
+    fn pricing_basis_changed_result_waits_for_editor_and_discards_on_source_switch(){
+        let ctx=egui::Context::default();
+        let mut app=pricing_basis_fixture_app();
+        let mut read=screen_refresh::ReadRefresh::default();
+        let finish=read.test_advisory_read();
+        app.pricing_basis_check=Some(PendingPricingBasisCheck{
+            order_id:"draft-1".into(),source_raw:app.raw_source.clone(),
+            order_type:app.order_type.as_str().into(),client_id:"c".into(),
+            quote:app.drafts[0].pricing_preview.clone().unwrap(),read
+        });
+        app.analysis_pending=true;
+        finish(Ok(false));
+        app.poll_pricing_basis_check(&ctx);
+        assert!(app.pricing_basis_check.is_none());
+        assert!(app.client_change.is_none());
+        assert_eq!(app.pricing_basis_due.as_deref(),Some("draft-1"));
+        app.analysis_pending=false;
+        app.select_reception("draft-2",&ctx);
+        app.retry_pricing_basis_check(&ctx);
+        assert!(app.pricing_basis_due.is_none());
+        assert!(app.pricing_basis_check.is_none());
+        assert!(app.client_change.is_none());
+        assert_eq!(app.active_id.as_deref(),Some("draft-2"));
     }
 
     #[test]
