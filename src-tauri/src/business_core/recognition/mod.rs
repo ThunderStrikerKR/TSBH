@@ -2770,7 +2770,9 @@ mod tests {
     }
     #[test]
     fn terminal_local_blocks_can_override_global_leading_within_one_paragraph(){
-        let raw="709 1개\n수취인: 김가상\n010-0000-0001\n709 2개\n수취인: 박가상\n010-0000-0002\nGT-1 3개\n수취인: 이가상\n010-0000-0003\n709 4개";
+        // An independent address in the prefix breaks the global cycle;
+        // P N T P N T P N T P alone is an incomplete leading cycle.
+        let raw="709 1개\n서울특별시 마포구 월드컵로 20\n수취인: 김가상\n010-0000-0001\n709 2개\n수취인: 박가상\n010-0000-0002\nGT-1 3개\n수취인: 이가상\n010-0000-0003\n709 4개";
         let state=state();
         let doc=extract_document(raw,&state,None);
         let hit=doc.product_hits.iter().find(|h|h.decision["productId"]=="pgt").unwrap();
@@ -2782,6 +2784,18 @@ mod tests {
         let result=assign_document(doc,&state,None).unwrap();
         assert!(result["recipients"][1]["items"].as_array().unwrap().iter()
             .any(|it|it["productId"]=="pgt"&&it["quantity"]==3));
+    }
+    #[test]
+    fn incomplete_leading_cycle_is_not_reinterpreted_as_local_trailing(){
+        let raw="709 1개\n수취인: 김가상\n010-0000-0001\nGT-1 2개\n수취인: 박가상\n010-0000-0002\n709 3개\n수취인: 이가상\n010-0000-0003\nGT-1 4개";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        let a=&doc.features.anchors;
+        assert_eq!(doc.features.incomplete_tail,1);
+        let middle=doc.product_hits.iter().find(|h|h.decision["productId"]=="pgt").unwrap();
+        assert_eq!(product_owner_index(a,&doc.events,&doc.features,&doc.exclusions,middle,true),1);
+        let last=doc.product_hits.last().unwrap();
+        assert_eq!(doc.features.structural_ownership_score(last.evidence,a[2],OWNER_WEIGHTS),0);
     }
     #[test]
     fn complete_leading_cycles_support_only_their_own_anchor(){
