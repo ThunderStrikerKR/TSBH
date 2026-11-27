@@ -60,6 +60,10 @@ pub(crate) fn singleline_editor<'a>(
 pub(crate) fn allocate_singleline_field(
     ui:&mut Ui,size:Vec2,edit:egui::TextEdit<'_>,enabled:Option<bool>
 )->Response{
+    // add_sized alone supplies available space, not a native minimum during
+    // content-fitted window sizing passes. Reserve the requested height in
+    // the TextEdit itself, including its margins, without changing width policy.
+    let edit=edit.min_size(Vec2::new(0.0,size.y));
     let place=|slot:&mut Ui|slot.add_sized(size,edit);
     let response=match enabled{
         Some(enabled)=>ui.add_enabled_ui(enabled,place).inner,
@@ -344,6 +348,32 @@ mod shared_singleline_allocation_tests{
             assert_eq!(results[1].1.height(),theme::INPUT_HEIGHT);
             assert_eq!(results[1].2,permission.unwrap_or(true));
             assert_eq!(value,"12,345");
+        }
+    }
+
+    #[test]
+    fn native_minimum_height_survives_content_fitted_window_first_pass(){
+        let ctx=test_context();
+        let mut value=String::new();
+        for enabled in [true,false]{
+            for _ in 0..3{
+                let _=ctx.run(egui::RawInput{
+                    screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(800.0,600.0))),
+                    ..Default::default()
+                },|ctx|{
+                    // No page-size assumptions: use the same compact popup
+                    // form with a horizontal label/input and nested tag entry.
+                    crate::popup::modal_window(ctx,"검증","input-first-pass",
+                        ctx.content_rect()).show(ctx,|ui|{
+                        ui.add_enabled_ui(enabled,|ui|{
+                            let response=crate::popup::modal_compact_text_field(
+                                ui,"검증",&mut value,"입력");
+                            assert!(response.rect.height()+0.5>=theme::INPUT_HEIGHT,
+                                "actual popup input: {:?}",response.rect);
+                        });
+                    });
+                });
+            }
         }
     }
 }

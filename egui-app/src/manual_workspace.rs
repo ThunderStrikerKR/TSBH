@@ -4330,7 +4330,10 @@ mod manual_workspace_layout_tests{
         assert!(render.contains("crate::card::docked_section_body_height(height)"));
         assert!(render.contains("crate::ui_layout::apply_spacing_role(sheet,crate::ui_layout::SpacingRole::DocumentBody);"));
         assert!(render.contains("crate::ui_layout::apply_manual_workspace_spacing(ui,self.direct_input);"));
-        assert!(render.contains("else{theme::MANUAL_COLUMN_GAP}"));
+        let shared_layout=include_str!("ui_layout.rs");
+        let spacing=shared_layout.split("fn apply_manual_workspace_spacing(").nth(1).unwrap()
+            .split("\n}").next().unwrap();
+        assert!(spacing.contains("if direct_input{0.0}else{theme::MANUAL_COLUMN_GAP}"));
         assert!(render.contains("if !self.direct_input{"));
         assert!(render.contains("manual_workspace_content_width_for_mode("));
         assert!(render.contains("manual_workspace_needs_horizontal_scroll(viewport_width,content_width)"));

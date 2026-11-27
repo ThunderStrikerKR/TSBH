@@ -47,6 +47,7 @@ jobs:
           workspaces: egui-app -> target
           key: egui-compile
       - name: Compile current Windows egui source
+        id: compile_source
         run: cargo check --manifest-path egui-app/Cargo.toml
       - name: Mandatory popup geometry and editor placement contracts
         shell: pwsh
@@ -55,6 +56,7 @@ jobs:
             'ui_regressions::notice_no_reflow_contract_tests::guard_detects_direct_feedback_and_multiline_input_hint',
             'ui_regressions::notice_no_reflow_contract_tests::production_screens_reject_direct_inline_transient_notices',
             'brand_manager::modal_lifecycle_tests::actual_brand_popup_feedback_never_moves_controls',
+            'input::shared_singleline_allocation_tests::native_minimum_height_survives_content_fitted_window_first_pass',
             'brand_manager::modal_lifecycle_tests::brand_delete_request_requires_original_entity_and_preserves_draft_on_failure',
             'product_manager::tests::brand_selector_supports_korean_names_and_registered_aliases',
             'freight_manager::group_editor_renames_and_changes_rates_in_one_command',
@@ -81,15 +83,18 @@ jobs:
             'ui_regressions::shared_placeholder_color_contract_tests::actual_dropdown_caption_ink_distinguishes_selection_and_valid_empty_filters',
             'ui_regressions::shared_placeholder_color_contract_tests::production_input_hints_must_use_shared_placeholder_builder'
           )
+          $failed = @()
           foreach ($name in $names) {
             $listed = cargo test --manifest-path egui-app/Cargo.toml $name -- --exact --list
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            if (-not ($listed | Where-Object { $_ -eq "${name}: test" })) { throw "Missing mandatory UI regression: $name" }
+            if ($LASTEXITCODE -ne 0) { $failed += "$name (list/build)"; continue }
+            if (-not ($listed | Where-Object { $_ -eq "${name}: test" })) { $failed += "$name (missing)"; continue }
             cargo test --manifest-path egui-app/Cargo.toml $name -- --exact --nocapture
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if ($LASTEXITCODE -ne 0) { $failed += $name }
           }
+          if ($failed.Count -gt 0) { throw "Mandatory UI regression failures: $($failed -join '; ')" }
 
       - name: Mandatory shared design ownership and rendered control contracts
+        if: ${{ !cancelled() && steps.compile_source.outcome == 'success' }}
         shell: pwsh
         run: |
           $groups = @(
@@ -115,16 +120,19 @@ jobs:
             'ui_test_support::highlight_invariance_detector_tests::',
             'ui_regressions::general_screen_geometry_tests::highlight_invariance_'
           )
+          $failed = @()
           foreach ($group in $groups) {
             $listed = cargo test --manifest-path egui-app/Cargo.toml $group -- --list
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if ($LASTEXITCODE -ne 0) { $failed += "$group (list/build)"; continue }
             $matching = @($listed | Where-Object { $_ -like "$group*" -and $_ -like "*: test" })
-            if ($matching.Count -eq 0) { throw "Missing mandatory design contract group: $group" }
+            if ($matching.Count -eq 0) { $failed += "$group (missing)"; continue }
             cargo test --manifest-path egui-app/Cargo.toml $group -- --nocapture
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if ($LASTEXITCODE -ne 0) { $failed += $group }
           }
+          if ($failed.Count -gt 0) { throw "Mandatory design contract failures: $($failed -join '; ')" }
 
       - name: Mandatory native brand deletion safety
+        if: ${{ !cancelled() && steps.compile_source.outcome == 'success' }}
         shell: pwsh
         run: |
           $filters = @(
