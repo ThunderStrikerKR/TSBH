@@ -7566,7 +7566,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 for message in workflow_board::workflow_review_extra_messages(
                                     group,None
                                 ){
-                                    crate::status_notice::reception_review_status(issues,&message);
+                                    crate::status_notice::reception_review_error(
+                                        issues,"reception.workflow.message",&message
+                                    );
                                 }
                             });
                     });
@@ -8036,13 +8038,21 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Self::section(pane,"확인할 내용",review_height,|ui|{
                         crate::ui_layout::reception_section_scroll(ui,review_height,
                             ("pending-hover-review-issues",draft.id.as_str()),|issues|{
+                                let mut has_notice=false;
                                 if let Some(rows)=recognition.get("issues")
                                     .and_then(serde_json::Value::as_array){
                                     for item in rows{
-                                        if let Some(message)=item.as_str(){
-                                            crate::status_notice::reception_review_status(issues,message);
+                                        if let Some(message)=item.as_str().filter(|s|!s.trim().is_empty()){
+                                            has_notice=true;
+                                            crate::status_notice::reception_preview_status(issues,message);
                                         }
                                     }
+                                }
+                                if !has_notice{
+                                    crate::status_notice::management_body_state_overlay(
+                                        issues,issues.available_rect_before_wrap(),
+                                        Some("미리보기 · 주문을 선택해 확인하세요.")
+                                    );
                                 }
                             });
                     });
@@ -9600,7 +9610,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 if applying{
                                     ui.label(typography::caption("배송 묶음 변경 내용을 저장하는 중입니다."));
                                 }else if let Some(error)=self.workflow_error.as_deref(){
-                                    crate::status_notice::reception_review_status(ui,error);
+                                    crate::status_notice::reception_review_error(
+                                        ui,"reception.workflow",error
+                                    );
                                 }
                             });
                         });
