@@ -259,9 +259,11 @@ fn move_factory_core(before:&mut Value,next:&mut Value)->Result<(),String>{
 /// generic writer; only the old core lookup borrows the new state's trees.
 fn finish_factory_shared_core(tx:&Transaction<'_>,before:&Value,mut next:Value,
     expected_revision:u64)->Result<Value,String>{
-    crate::valid_state(&next)?;
-    crate::validation::validate_unchanged_clients(&next)?;
-    validate_brands(before,&next)?;
+    // The caller has proved all non-workflow fields equal to the
+    // authoritative before-image, and this path writes only the envelope.
+    // Keep structural and workflow integrity checks; unrelated unchanged
+    // brand, account and message-template content is not a reply prerequisite.
+    crate::validation::validate_shape(&next)?;
     if crate::workflow_state::active(tx)?{
         crate::rules::validate_workflow_transition_shared_core(&next,before)?;
     }

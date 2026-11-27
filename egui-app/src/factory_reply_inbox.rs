@@ -12,11 +12,11 @@ use std::{collections::{HashMap,HashSet},fs,io::{Read,Write},path::{Path,PathBuf
     sync::mpsc::{self,Receiver},time::{Duration,Instant,SystemTime}};
 use uuid::Uuid;
 
-const MAX_BYTES:u64=10*1024*1024;
-const INTERVAL:Duration=Duration::from_secs(5);
+const MAX_BYTES:u64=native_workbooks::FACTORY_REPLY_MAX_BYTES as u64;
+const INTERVAL:Duration=Duration::from_secs(1);
 fn id(bytes:&[u8])->String{format!("factory-reply-{:x}",Sha256::digest(bytes))}
 fn text<'a>(v:&'a Value,k:&str)->&'a str{v[k].as_str().unwrap_or("")}
-fn valid_name(n:&str)->bool{!n.is_empty()&&n.len()<=240&&!n.starts_with("~$")&&
+fn valid_name(n:&str)->bool{!n.is_empty()&&!n.starts_with("~$")&&
     !n.contains('/')&&!n.contains('\\')&&!n.contains('\0')&&n.to_ascii_lowercase().ends_with(".xlsx")}
 pub(crate) fn open_db()->Result<(Connection,PathBuf),String>{
     if !excel_service::writable(){return Err(bando_data_access::terminology::FACTORY_REPLY_WRITE_DENIED.into())}
@@ -50,7 +50,7 @@ fn read_bounded(path:&Path)->Result<Vec<u8>,String>{
     let mut bytes=Vec::new();
     fs::File::open(path).map_err(|e|e.to_string())?.take(MAX_BYTES+1)
         .read_to_end(&mut bytes).map_err(|e|e.to_string())?;
-    if bytes.is_empty()||bytes.len() as u64>MAX_BYTES{return Err("10MB 이하 회신 파일만 허용".into())}
+    if bytes.is_empty()||bytes.len() as u64>MAX_BYTES{return Err("50MB 이하 회신 파일만 허용".into())}
     Ok(bytes)
 }
 fn preserve(base:&Path,bytes:&[u8])->Result<PathBuf,String>{
@@ -167,7 +167,7 @@ impl Seen{
     fn observe(&mut self,current:(u64,SystemTime))->bool{
         if self.stamp!=current{*self=Self{stamp:current,observations:0,done:false};}
         self.observations=self.observations.saturating_add(1);
-        self.observations>=3&&!self.done
+        self.observations>=2&&!self.done
     }
 }
 #[derive(Default)]
@@ -183,17 +183,22 @@ fn scan_with_db(cache:&mut Scan,conn:&mut Connection,base:&Path)->Result<Outcome
     let dir=configured(conn)?;
     if cache.directory!=dir{cache.seen.clear();cache.directory=dir.clone();}
     let Some(dir)=dir else{return Ok(Outcome::default())};
-    let mut outcome=Outcome::default();let mut active=HashSet::new();let mut attempted=0;
+    let mut outcome=Outcome::default();let mut active=HashSet::new();
     let mut entries=fs::read_dir(&dir).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
     entries.sort_by_key(|e|e.file_name());
     for entry in entries{
         let path=entry.path();let name=entry.file_name();
         if !name.to_str().is_some_and(valid_name){continue}
+        // Report over-limit files through the existing transient outcome,
+        // rather than silently ignoring them or creating new inbox alerts.
+        if fs::symlink_metadata(&path).is_ok_and(|m|m.file_type().is_file()&&m.len()>MAX_BYTES){
+            outcome.error=Some(format!("{}: 50MB 이하 회신 파일만 허용",name.to_string_lossy()));
+            continue
+        }
         let Ok(current)=stamp(&path)else{continue};
         active.insert(path.clone());
         let seen=cache.seen.entry(path.clone()).or_insert(Seen{stamp:current,observations:0,done:false});
-        if !seen.observe(current)||attempted>=8{continue}
-        attempted+=1;
+        if !seen.observe(current){continue}
         let bytes=match read_bounded(&path){Ok(b)=>b,Err(e)=>{outcome.error=Some(e);continue}};
         if stamp(&path).ok()!=Some(current)||bytes.len() as u64!=current.0{continue}
         let file_id=id(&bytes);
@@ -291,15 +296,13 @@ mod tests{
         let third=(11,second.1);
         let mut seen=Seen{stamp:first,observations:0,done:false};
         assert!(!seen.observe(first));
-        assert!(!seen.observe(first));
-        assert!(!seen.observe(second));
+        assert!(seen.observe(first));
         assert!(!seen.observe(second));
         assert!(seen.observe(second));
         // A failed attempt stays eligible; successful imports stop retrying.
         assert!(seen.observe(second));
         seen.done=true;
         assert!(!seen.observe(second));
-        assert!(!seen.observe(third));
         assert!(!seen.observe(third));
         assert!(seen.observe(third));
     }
@@ -326,6 +329,7 @@ mod tests{
     #[test]
     fn inbox_ignores_temporary_names_and_rejects_empty_or_oversized_files(){
         assert!(valid_name("회신.XLSX"));
+        assert!(valid_name(&format!("{}.xlsx","회".repeat(90))));
         for name in ["~$회신.xlsx","../회신.xlsx","a\\b.xlsx","reply.xls","reply.tmp",""]{
             assert!(!valid_name(name));
         }
@@ -428,12 +432,22 @@ mod tests{
         book.save_to_buffer().unwrap()
     }
     fn scan_ready(cache:&mut Scan,conn:&mut Connection,base:&Path)->Outcome{
-        for _ in 0..2{
-            let out=scan_with_db(cache,conn,base).unwrap();
-            assert_eq!(out.files,0);
-            assert!(out.error.is_none(),"{:?}",out.error);
-        }
+        let out=scan_with_db(cache,conn,base).unwrap();
+        assert_eq!(out.files,0);
+        assert!(out.error.is_none(),"{:?}",out.error);
         scan_with_db(cache,conn,base).unwrap()
+    }
+
+    #[test]
+    fn scanner_processes_more_than_eight_ready_files_in_one_pass(){
+        let base=Temp::new();
+        let (mut conn,inbox)=synthetic_db(&base.0);
+        for n in 0..9 {
+            fs::write(inbox.join(format!("reply-{n}.xlsx")),reply_bytes("001234567890",4000+n)).unwrap();
+        }
+        let result=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert!(result.error.is_none(),"{:?}",result.error);
+        assert_eq!((result.files,result.applied,result.held),(9,9,0));
     }
 
     #[test]

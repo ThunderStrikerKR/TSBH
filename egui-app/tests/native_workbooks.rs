@@ -166,3 +166,17 @@ fn factory_reply_numeric_waybill_precision_and_leading_zero_checks_remain(){
         assert_eq!(result["held"],1);
     }
 }
+
+#[test]
+fn factory_reply_allows_unrelated_merged_cells_and_rows_above_old_limit(){
+    let mut book=Workbook::new();
+    let sheet=book.add_worksheet();
+    sheet.merge_range(0,9,0,12,"참고", &rust_xlsxwriter::Format::new()).unwrap();
+    sheet.write_string(1001,0,"김수취").unwrap();
+    sheet.write_number(1001,6,4000.).unwrap();
+    sheet.write_string(1001,16,"001234567890").unwrap();
+    let bytes=book.save_to_buffer().unwrap();
+    let result=analyze(&bytes);
+    assert_eq!(result["applied"],1);
+    assert_eq!(result["held"],0);
+}

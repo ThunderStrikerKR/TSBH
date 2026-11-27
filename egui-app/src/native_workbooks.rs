@@ -193,24 +193,24 @@ mod client_binary_unit_tests{
 /// Shared instructions for reply review and contextual help.
 pub const FACTORY_REPLY_FORMAT_GUIDANCE:&str="회신 Excel: G열에 출고 운임(0 이상의 정수), Q열에 운송장번호(텍스트 8~30자리)를 입력하세요. A열 수하인명으로 최근 출력 주문을 찾고, 같은 날짜에 이름이 중복되면 I열 품목을 비교합니다. R열 등 다른 열의 운임은 반영되지 않습니다.";
 
+/// Resource ceiling for one incoming workbook, not a document-format rule.
+pub const FACTORY_REPLY_MAX_BYTES:usize=50*1024*1024;
 pub fn read_factory_reply(filename:&str,bytes:&[u8])->Result<Value,String>{
     if !filename.to_ascii_lowercase().ends_with(".xlsx")||
         filename.contains('/')||filename.contains('\\')||filename.contains('\0'){
         return Err("공장 회신 파일명 오류".into());
     }
-    let mut book=open_book(bytes,10*1024*1024)?;
+    let mut book=open_book(bytes,FACTORY_REPLY_MAX_BYTES)?;
     let name=book.sheet_names().first().cloned().ok_or("회신 시트 누락")?;
-    // Preserve the workbook's structural checks, not its choice of formulas.
-    if !book.merge_cells_by_sheet_name(&name).map_err(|e|e.to_string())?.is_empty(){
-        return Err("병합된 회신 셀은 허용되지 않습니다.".into());
-    }
+    // Merged cells outside shipping data are irrelevant. Do not propagate
+    // merged values into another shipment; validate each row's saved values.
     let sheet=book.worksheet_range(&name).map_err(|e|e.to_string())?;
     let last=sheet.end().map(|(r,_)|r).unwrap_or(0);
-    if last>1000{return Err("공장 회신 최대 1,000행".into())}
+    if last>10_000{return Err("공장 회신 최대 10,000행".into())}
     // Read number formats only when numeric waybills require a precision check.
     // A cell's data type is not itself a reason to hold a reply.
     let styles=if (1..=last).any(|r|numeric(sheet.get_value((r,16)).unwrap_or(&Data::Empty))){
-        Some(book.worksheet_style(&name).map_err(|e|e.to_string())?)
+        book.worksheet_style(&name).ok()
     }else{None};
     let mut rows=Vec::new();
     for r in 1..=last{
@@ -224,11 +224,16 @@ pub fn read_factory_reply(filename:&str,bytes:&[u8])->Result<Value,String>{
                 .and_then(|style|style.number_format.as_ref())
                 .map(|format|format.format_code.as_str()).unwrap_or("General")
         }else{""};
-        let row=json!({"row":r+1,"name":value(0),"goods":value(8),
+        let mut row=json!({"row":r+1,"name":value(0),"goods":value(8),
             "address":value(2),"phone":value(3),"mobile":value(4),
             "rawFreight":value(6),"tracking":value(16),
             "trackingNumeric":tracking_numeric,"trackingNumberFormat":tracking_format,
             "reservedJ":false,"extraAfterQ":false});
+        // An unreadable format cannot prove a numeric identifier is exact.
+        // Hold that row only; text waybills do not depend on numeric styles.
+        if tracking_numeric&&styles.is_none(){
+            row["sourceIssue"]=json!("Q열 운송장번호의 앞자리 0 보존 여부를 확인하세요.");
+        }
         rows.push(row);
     }
     Ok(json!({"id":format!("factory-reply-{:x}",Sha256::digest(bytes)),
