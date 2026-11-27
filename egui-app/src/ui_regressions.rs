@@ -823,6 +823,111 @@ mod shared_selection_interaction_tests {
         }
         draw(vec![])
     }
+    // Sample the actual response interior, away from antialiased borders
+    // and rounded corners. Outside probes are deliberately far enough from
+    // the widget that egui's native pointer-radius tolerance cannot snap.
+    fn hit_probes(rect:Rect)->[egui::Pos2;5]{
+        let x=rect.width()*0.2;
+        let y=rect.height()*0.2;
+        [rect.center(),egui::pos2(rect.left()+x,rect.center().y),
+            egui::pos2(rect.right()-x,rect.center().y),
+            egui::pos2(rect.center().x,rect.top()+y),
+            egui::pos2(rect.center().x,rect.bottom()-y)]
+    }
+    #[test]
+    fn actual_action_button_hit_area_edges_disabled_and_neighbor_are_independent(){
+        use theme::ButtonRole;
+        for role in [ButtonRole::Standard,ButtonRole::Primary,ButtonRole::Danger,
+            ButtonRole::Emphasized,ButtonRole::TableSecondary,ButtonRole::Quiet,
+            ButtonRole::Navigation,ButtonRole::ActiveNavigation,
+            ButtonRole::ManagementTab,ButtonRole::ActiveManagementTab,
+            ButtonRole::KakaoControl,ButtonRole::ActiveKakaoControl]{
+            for scale in [1.0_f32,1.25,1.5]{
+                for probe in 0..7{
+                    let ctx=test_context();
+                    ctx.set_pixels_per_point(scale);
+                    let mut actions=0;
+                    let mut neighbors=0;
+                    let mut draw=|enabled,parent,events|{
+                        let mut frame=None;
+                        let _=ctx.run(raw(&ctx,events),|ctx|{
+                            egui::CentralPanel::default().show(ctx,|ui|{
+                                ui.horizontal(|ui|{
+                                    let response=ui.add_enabled_ui(parent,|ui|
+                                        crate::button::action_with_min_width(ui,"적용",role,enabled,120.0)).inner;
+                                    ui.add_space(16.0);
+                                    let neighbor=crate::button::action_with_min_width(ui,"다른 작업",ButtonRole::Standard,true,120.0);
+                                    if response.clicked(){actions+=1;}
+                                    if neighbor.clicked(){neighbors+=1;}
+                                    frame=Some((response.rect,neighbor.rect,response.enabled()));
+                                });
+                            });
+                        });
+                        frame.unwrap()
+                    };
+                    let base=draw(true,true,vec![]);
+                    let (pos,enabled,parent)=match probe{
+                        0..=4=>(hit_probes(base.0)[probe],true,true),
+                        5=>(base.1.center(),true,true),
+                        _=>(base.0.center(),false,true)
+                    };
+                    let current=click(pos,|events|draw(enabled,parent,events));
+                    assert_layout_rects_invariant(&[("action",base.0),("neighbor",base.1)],
+                        &[("action",current.0),("neighbor",current.1)]);
+                    assert_eq!(current.2,enabled&&parent);
+                    if probe==6{
+                        let blocked=click(base.0.center(),|events|draw(true,false,events));
+                        assert!(!blocked.2);
+                    }
+                    drop(draw);
+                    assert_eq!(actions,usize::from(probe<5),"button hit probe {probe} scale {scale}");
+                    assert_eq!(neighbors,usize::from(probe==5),"neighbor hit probe {probe} scale {scale}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn actual_form_input_hit_area_focus_text_and_disabled_permissions(){
+        use crate::input::{field,FieldKind};
+        for kind in [FieldKind::Text,FieldKind::Address,FieldKind::Telephone,
+            FieldKind::Quantity,FieldKind::Money]{
+            for scale in [1.0_f32,1.25,1.5]{
+                for probe in 0..8{
+                    let ctx=test_context();
+                    ctx.set_pixels_per_point(scale);
+                    let mut value=String::new();
+                    let mut draw=|enabled,parent,events|{
+                        let mut frame=None;
+                        let _=ctx.run(raw(&ctx,events),|ctx|{
+                            egui::CentralPanel::default().show(ctx,|ui|{
+                                let response=ui.add_enabled_ui(parent,|ui|field(ui,&mut value,kind,enabled)).inner;
+                                frame=Some((response.rect,response.id,response.has_focus(),response.enabled()));
+                            });
+                        });
+                        frame.unwrap()
+                    };
+                    let base=draw(true,true,vec![]);
+                    let (pos,enabled,parent)=match probe{
+                        0..=4=>(hit_probes(base.0)[probe],true,true),
+                        5=>(egui::pos2(700.0,500.0),true,true),
+                        6=>(base.0.center(),false,true),
+                        _=>(base.0.center(),true,false)
+                    };
+                    let clicked=click(pos,|events|draw(enabled,parent,events));
+                    let typed=draw(enabled,parent,vec![egui::Event::Text("7".into())]);
+                    assert_layout_rects_invariant(&[("input",base.0)],&[("input",typed.0)]);
+                    assert_eq!(clicked.1,typed.1);
+                    assert_eq!(clicked.2,probe<5,"{kind:?} focus probe {probe} scale {scale}");
+                    assert_eq!(typed.3,enabled&&parent);
+                    drop(draw);
+                    assert_eq!(value,if probe<5{"7"}else{""},
+                        "{kind:?} text probe {probe} scale {scale}");
+                }
+            }
+        }
+    }
+
     #[derive(Clone,Copy,Debug)]
     enum Selector { Ordinary,Compact,Status }
     struct SelectFrame {
