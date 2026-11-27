@@ -35,7 +35,8 @@ pub(crate) fn record_factory_reply(conn:&Connection,state:&Value)->Result<(),Str
         insert(conn,&json!({"id":id,"at":record["at"],"source":"공장 회신",
             "tone":if applied{"info"}else{"error"},"title":title,"detail":detail.join("\n"),
             "filename":record["filename"],"orderId":row["orderId"],"shipmentId":row["shipmentId"],
-            "replyId":record["id"],"row":row["row"],"changes":changes,"applied":applied}))?;
+            "replyId":record["id"],"row":row["row"],"changes":changes,"applied":applied,
+            "issueCode":row["issueCode"]}))?;
     }
     Ok(())
 }
@@ -71,6 +72,46 @@ pub fn dismiss(conn:&Connection,id:Option<&str>)->Result<(),String>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn every_business_hold_is_visible_unread_and_deduplicated(){
+        let conn=Connection::open_in_memory().unwrap();
+        let cases=[
+            ("NO_MATCH","일치하는 공장 발송 배송 건이 없습니다."),
+            ("AMBIGUOUS_TARGET","배송 건이 여러 개입니다. 연결 대상 확인 필요"),
+            ("INVALID_TRACKING","Q열 운송장번호가 없거나 올바르지 않습니다."),
+            ("INVALID_FREIGHT","G열 출고 운임은 0 이상의 정수로 입력하세요."),
+            ("DUPLICATE_TRACKING","운송장번호가 다른 배송 건에 이미 연결되어 있습니다."),
+        ];
+        let mut entries=vec![json!({"row":2,"applied":true})];
+        for (i,(code,issue)) in cases.iter().enumerate(){
+            entries.push(json!({"row":i+3,"name":"합성 수하인","applied":false,
+                "issueCode":code,"issue":issue}));
+        }
+        let state=json!({"factoryReplies":[{"id":"five-holds","at":"2026-11-27",
+            "filename":"reply.xlsx","rows":entries}]});
+        record_factory_reply(&conn,&state).unwrap();
+        record_factory_reply(&conn,&state).unwrap();
+        let notices=load(&conn).unwrap();
+        assert_eq!(notices.len(),cases.len());
+        for (i,(code,issue)) in cases.iter().enumerate(){
+            let id=format!("five-holds:{}",i+3);
+            let notice=notices.iter().find(|n|n["id"].as_str()==Some(id.as_str())).unwrap();
+            assert_eq!(notice["issueCode"].as_str(),Some(*code));
+            assert_eq!(notice["read"],false);
+            assert_eq!(notice["applied"],false);
+            assert_eq!(notice["tone"],"error");
+            assert_eq!(notice["title"],crate::terminology::display_factory_issue(issue));
+            assert_eq!(notice["filename"],"reply.xlsx");
+            assert_eq!(notice["row"],json!(i+3));
+        }
+        mark_read(&conn,Some("five-holds:3")).unwrap();
+        dismiss(&conn,Some("five-holds:4")).unwrap();
+        record_factory_reply(&conn,&state).unwrap();
+        let notices=load(&conn).unwrap();
+        assert_eq!(notices.len(),4);
+        assert!(notices.iter().any(|n|n["id"]=="five-holds:3"&&n["read"]==true));
+        assert!(!notices.iter().any(|n|n["id"]=="five-holds:4"));
+    }
     #[test]
     fn normal_replies_are_silent_and_changes_and_holds_are_persistent_and_deduplicated(){
         let conn=Connection::open_in_memory().unwrap();
