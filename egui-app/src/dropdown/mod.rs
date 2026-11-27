@@ -107,10 +107,11 @@ fn management_dropdown_trigger_inner(
     crate::ui_test_support::record_component_geometry("dropdown",rect,ui.clip_rect(),Some(height));
     let painter=ui.painter().with_clip_rect(rect);
     let arrow_left=rect.right()-30.0;
+    let caption_ink=if interactive{indicator.unwrap_or(ink)}else{ink};
     let caption=if let Some(values)=values{
-        ui.fonts_mut(|fonts|fonts.layout_job(typography::dropdown_value_job(values,false,ink)))
+        ui.fonts_mut(|fonts|fonts.layout_job(typography::dropdown_value_job(values,false,caption_ink)))
     }else{
-        typography::management_control_text_galley(ui,label,ink)
+        typography::management_control_text_galley(ui,label,caption_ink)
     };
     // Sales status selectors sit in a narrow price column. Reserve the
     // indicator without clipping the longest label ("판매준비중").
@@ -132,7 +133,7 @@ fn management_dropdown_trigger_inner(
         egui::pos2(caption_x,
             rect.center().y-caption.size().y/2.0
                 +typography::MANAGEMENT_DROPDOWN_TEXT_OPTICAL_Y),
-        caption,ink
+        caption,caption_ink
     );
     painter.line_segment(
         [egui::pos2(arrow_left,rect.top()+5.0),
@@ -305,13 +306,17 @@ fn management_dropdown_option_inner<T:PartialEq>(
     };
     let row=response.rect;
     let painter=ui.painter().with_clip_rect(row.shrink(2.0));
+    let caption_ink=match style{
+        ManagementDropdownOptionStyle::Status(color)=>color,
+        _=>theme::TEXT,
+    };
     let galley=if let Some(values)=values{
-        ui.fonts_mut(|fonts|fonts.layout_job(typography::dropdown_value_job(values,true,theme::TEXT)))
+        ui.fonts_mut(|fonts|fonts.layout_job(typography::dropdown_value_job(values,true,caption_ink)))
     }else{
         ui.painter().layout_no_wrap(
             label.to_owned(),
             egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
-            theme::TEXT,
+            caption_ink,
         )
     };
     let x=match style{
@@ -330,7 +335,7 @@ fn management_dropdown_option_inner<T:PartialEq>(
                 row.height(),galley.size().y
             ),
         ),
-        galley,theme::TEXT,
+        galley,caption_ink,
     );
     if response.clicked(){
         crate::floating_notice::dropdown_option_selected(ui.ctx());

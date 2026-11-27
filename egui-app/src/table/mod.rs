@@ -962,6 +962,23 @@ pub(crate) fn paint_management_text_cell(
     if visible.width()<=0.0||visible.height()<=0.0{return;}
     let color=typography::management_table_cell_color(role);
     let galley=typography::management_table_cell_galley(ui,text,role);
+    paint_management_caption(ui,content,visible,full,galley,color,align,id,shortened);
+}
+
+/// Semantic status labels use the same text size, alignment, clipping and
+/// overflow policy as normal cells. Only the supplied status ink changes.
+pub(crate) fn paint_management_status_cell(
+    ui:&Ui,content:Rect,text:&str,color:Color32,align:egui::Align2,id:impl std::hash::Hash
+){
+    let visible=content.intersect(ui.clip_rect());
+    if !visible.is_positive(){return;}
+    let galley=typography::management_control_text_galley(ui,text,color);
+    paint_management_caption(ui,content,visible,text,galley,color,align,id,false);
+}
+fn paint_management_caption(
+    ui:&Ui,content:Rect,visible:Rect,full:&str,galley:std::sync::Arc<egui::Galley>,
+    color:Color32,align:egui::Align2,id:impl std::hash::Hash,shortened:bool
+){
     let x=if align==egui::Align2::RIGHT_CENTER{
         content.right()-galley.size().x
     }else if align==egui::Align2::CENTER_CENTER{

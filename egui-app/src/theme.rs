@@ -198,7 +198,7 @@ pub const SUCCESS: Color32 = Color32::from_rgb(169, 218, 181);
 pub const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
 pub const REQUIRED_INPUT_BORDER:Color32=ERROR_BORDER;
 pub const REQUIRED_INPUT_TINT:Color32=Color32::from_rgba_unmultiplied_const(199,107,107,18);
-// Product sales status (management dropdown only): same four values as React.
+// Product sales status: one palette for dropdown captions, options and table cells.
 pub const SALE_STATUS_SELLING: Color32 = Color32::from_rgb(123, 207, 148);
 pub const SALE_STATUS_SOLD_OUT: Color32 = Color32::from_rgb(231, 122, 120);
 pub const SALE_STATUS_PREPARING: Color32 = Color32::from_rgb(228, 195, 104);

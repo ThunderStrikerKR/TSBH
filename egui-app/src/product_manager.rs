@@ -1738,8 +1738,12 @@ impl ProductManager {
                                     }
                                 );
                                 }else{
-                                    product_table_text(row,cells[5],displayed_sale_status(product),
-                                        typography::ManagementTableCellRole::Option,(product_id,5));
+                                    let status=displayed_sale_status(product);
+                                    crate::table::paint_management_status_cell(
+                                        row,cells[5].shrink2(Vec2::new(theme::SPACE_8,0.0)),
+                                        status,sale_status_color(status),egui::Align2::LEFT_CENTER,
+                                        ("product-table-text",(product_id,5))
+                                    );
                                 }
                                 
                             }
@@ -2599,6 +2603,41 @@ mod tests {
         }
         assert_ne!(sale_status_color("품절"),sale_status_color("판매중"));
         assert_ne!(sale_status_color("판매준비중"),sale_status_color("판매중지"));
+    }
+    #[test]
+    fn sales_status_colors_are_painted_in_trigger_options_and_table(){
+        fn count_color(shape:&egui::Shape,label:&str,color:egui::Color32)->usize{
+            match shape{
+                egui::Shape::Text(text) if text.galley.text()==label
+                    && text.galley.job.sections.iter().all(|section|section.format.color==color)=>1,
+                egui::Shape::Vec(shapes)=>shapes.iter().map(|s|count_color(s,label,color)).sum(),
+                _=>0,
+            }
+        }
+        let ctx=crate::ui_test_support::test_context();
+        for state in SALE_STATES{
+            let color=sale_status_color(state);
+            let mut selected=state.to_owned();
+            let output=ctx.run(egui::RawInput{
+                screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,600.0))),
+                ..Default::default()
+            },|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    crate::dropdown::management_status_dropdown(ui,state,220.0,true,color,|_|{});
+                    crate::dropdown::management_status_dropdown_option(
+                        ui,&mut selected,state.to_owned(),state,color);
+                    let cell=ui.allocate_exact_size(Vec2::new(220.0,42.0),Sense::hover()).0;
+                    crate::table::paint_management_status_cell(ui,cell,state,color,
+                        egui::Align2::LEFT_CENTER,("status-test",state));
+                });
+            });
+            let count:usize=output.shapes.iter().map(|s|count_color(&s.shape,state,color)).sum();
+            assert_eq!(count,3,"{state}: trigger, option and table must paint the same ink");
+        }
+        let source=include_str!("product_manager.rs");
+        let list=source.split("let status=displayed_sale_status(product);").nth(1).unwrap();
+        assert!(list.contains("crate::table::paint_management_status_cell("));
+        assert!(list.contains("status,sale_status_color(status)"));
     }
     #[test]
     fn product_status_edit_persists_without_price_or_variant_loss(){
