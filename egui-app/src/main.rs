@@ -95,6 +95,7 @@ mod excel_manager;
 mod excel_service;
 mod management_queries;
 
+use crate::ui_layout::SharedUiClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self, Align, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
@@ -5305,7 +5306,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             .aligned_max_rect(left_header)
                             .layout(Layout::left_to_right(Align::Center)),
                         |toolbar|{
-                            toolbar.set_clip_rect(left_clip);
+                            toolbar.restrict_shared_clip(left_clip);
                             toolbar.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,left_header.width());
                             toolbar.label(
                                 typography::subsection_heading("원본 이미지")
@@ -5330,7 +5331,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             .aligned_max_rect(right_header)
                             .layout(Layout::left_to_right(Align::Center)),
                         |toolbar|{
-                            toolbar.set_clip_rect(right_clip);
+                            toolbar.restrict_shared_clip(right_clip);
                             toolbar.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,right_header.width());
                             // Keep the section heading LEFT and put the
                             // experimental option in a distinct RIGHT-anchored
@@ -5455,7 +5456,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             .aligned_max_rect(image_scroll_rect)
                             .layout(Layout::top_down(Align::Min)),
                         |viewport|{
-                            viewport.set_clip_rect(image_clip);
+                            viewport.restrict_shared_clip(image_clip);
                             viewport.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,image_scroll_rect.width());
                             crate::ui_layout::set_fixed_height(viewport,image_scroll_rect.height());
                             let image_scroll=crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Both)
@@ -5514,7 +5515,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             .aligned_max_rect(text_view_rect)
                             .layout(Layout::top_down(Align::Min)),
                         |editor|{
-                            editor.set_clip_rect(text_clip);
+                            editor.restrict_shared_clip(text_clip);
                             editor.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,text_view_rect.width());
                             crate::ui_layout::set_fixed_height(editor,text_view_rect.height());
                             crate::input::multiline_text_field_sized(
@@ -5568,7 +5569,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             UiBuilder::new().id_salt("ocr-review-footer-error")
                                 .aligned_max_rect(hint_rect),
                             |hint|{
-                                hint.set_clip_rect(clip);
+                                hint.restrict_shared_clip(clip);
                                 hint.label(typography::ocr_validation_hint(
                                     "인식된 텍스트는 1~20,000자로 수정해 주세요."
                                 ));
@@ -6026,7 +6027,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .aligned_max_rect(toolbar_rect)
                         .layout(Layout::left_to_right(Align::Center)),
                     |toolbar|{
-                        toolbar.set_clip_rect(toolbar_rect);
+                        toolbar.restrict_shared_clip(toolbar_rect);
                         crate::ui_layout::apply_spacing_role(toolbar,crate::ui_layout::SpacingRole::CompactActions);
                         toolbar.add_space(theme::KAKAO_TOOLBAR_PAD_X);
                         // Left: Kakao identity icon + one two-option mode
@@ -6068,7 +6069,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .aligned_max_rect(slot)
                         .layout(Layout::top_down(Align::Center)),
                     |center|{
-                        center.set_clip_rect(slot);
+                        center.restrict_shared_clip(slot);
                         center.add_space(
                             ((slot.height()-theme::ACTION_EMPHASIZED_HEIGHT)/2.0)
                                 .max(0.0)
@@ -6155,7 +6156,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     .aligned_max_rect(rect)
                                     .layout(Layout::top_down(Align::Min)),
                                 |pane| {
-                                    pane.set_clip_rect(rect);
+                                    pane.restrict_shared_clip(rect);
                                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());
                                     crate::ui_layout::set_fixed_height(pane,rect.height());
                                     match index {
@@ -6289,7 +6290,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         ui.scope_builder(
             UiBuilder::new().id_salt("source-top").aligned_max_rect(source_rect),
             |child| {
-                child.set_clip_rect(source_rect);
+                child.restrict_shared_clip(source_rect);
                 child.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,source_rect.width());
                 crate::ui_layout::set_fixed_height(child,source_rect.height());
                 self.source_section(child, source_height);
@@ -6334,7 +6335,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         ui.scope_builder(
             UiBuilder::new().id_salt("message-bottom").aligned_max_rect(message_rect),
             |child| {
-                child.set_clip_rect(message_rect);
+                child.restrict_shared_clip(message_rect);
                 child.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,message_rect.width());
                 crate::ui_layout::set_fixed_height(child,message_rect.height());
                 self.message_section(child, message_height);
@@ -6669,7 +6670,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .aligned_max_rect(body_rect)
                         .layout(Layout::top_down(Align::Center)),
                     |progress| {
-                        progress.set_clip_rect(clip);
+                        progress.restrict_shared_clip(clip);
                         // The original clipboard image is downsampled on
                         // the OCR worker and received independently, before
                         // recognition completes. The employee sees it right
@@ -6767,7 +6768,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .aligned_max_rect(actions_rect)
                         .layout(Layout::right_to_left(Align::Center)),
                     |actions|{
-                        actions.set_clip_rect(actions_rect);
+                        actions.restrict_shared_clip(actions_rect);
                         if crate::button::action(actions,"직접 입력 수정",ButtonRole::Emphasized,
                             self.manual_workspace.is_none() && self.client_change.is_none()
                                 && self.working_sync.is_none()
@@ -7042,7 +7043,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             .aligned_max_rect(actions_rect)
                             .layout(Layout::right_to_left(Align::Center)),
                         |actions| {
-                            actions.set_clip_rect(actions_rect);
+                            actions.restrict_shared_clip(actions_rect);
                             if crate::button::action(actions,"수동 분류",ButtonRole::Standard,
                                 ready && self.manual_workspace.is_none() &&
                                 self.client_change.is_none() && self.working_sync.is_none()
@@ -7525,7 +7526,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 UiBuilder::new().id_salt("native-workflow-review")
                     .aligned_max_rect(review_rect).layout(Layout::top_down(Align::Min)),
                 |pane|{
-                    pane.set_clip_rect(review_rect);
+                    pane.restrict_shared_clip(review_rect);
                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,review_rect.width());
                     crate::ui_layout::set_fixed_height(pane,review_rect.height());
                     Self::section(pane,"확인할 내용",review_height,|ui|{
@@ -7631,7 +7632,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 UiBuilder::new().id_salt("native-workflow-recipient")
                     .aligned_max_rect(recipient_rect).layout(Layout::top_down(Align::Min)),
                 |pane|{
-                    pane.set_clip_rect(recipient_rect);
+                    pane.restrict_shared_clip(recipient_rect);
                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,recipient_rect.width());
                     crate::ui_layout::set_fixed_height(pane,recipient_rect.height());
                     let mut next_ship=None;
@@ -7724,7 +7725,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 UiBuilder::new().id_salt("native-workflow-items")
                     .aligned_max_rect(bottom_rect).layout(Layout::top_down(Align::Min)),
                 |pane|{
-                    pane.set_clip_rect(bottom_rect);
+                    pane.restrict_shared_clip(bottom_rect);
                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,bottom_rect.width());
                     crate::ui_layout::set_fixed_height(pane,bottom_rect.height());
                     Self::section_with_header(pane,"품목 및 운임",bottom_rect.height(),
@@ -7930,7 +7931,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 UiBuilder::new().id_salt("native-workflow-order-total")
                     .aligned_max_rect(summary_rect).layout(Layout::top_down(Align::Min)),
                 |pane|{
-                    pane.set_clip_rect(summary_rect);
+                    pane.restrict_shared_clip(summary_rect);
                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,summary_rect.width());
                     crate::ui_layout::set_fixed_height(pane,summary_rect.height());
                     Self::section_with_header(
@@ -8115,7 +8116,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 UiBuilder::new().id_salt("pending-hover-review")
                     .aligned_max_rect(review_rect).layout(Layout::top_down(Align::Min)),
                 |pane|{
-                    pane.set_clip_rect(review_rect);
+                    pane.restrict_shared_clip(review_rect);
                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,review_rect.width());
                     crate::ui_layout::set_fixed_height(pane,review_rect.height());
                     Self::section(pane,"확인할 내용",review_height,|ui|{
@@ -8137,7 +8138,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 UiBuilder::new().id_salt("pending-hover-recipient")
                     .aligned_max_rect(recipient_rect).layout(Layout::top_down(Align::Min)),
                 |pane|{
-                    pane.set_clip_rect(recipient_rect);
+                    pane.restrict_shared_clip(recipient_rect);
                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,recipient_rect.width());
                     crate::ui_layout::set_fixed_height(pane,recipient_rect.height());
                     Self::section_with_header(
@@ -8189,7 +8190,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 UiBuilder::new().id_salt("pending-hover-goods")
                     .aligned_max_rect(bottom_rect).layout(Layout::top_down(Align::Min)),
                 |pane|{
-                    pane.set_clip_rect(bottom_rect);
+                    pane.restrict_shared_clip(bottom_rect);
                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,bottom_rect.width());
                     crate::ui_layout::set_fixed_height(pane,bottom_rect.height());
                     Self::section_with_header(
@@ -8267,7 +8268,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 UiBuilder::new().id_salt("pending-hover-total")
                     .aligned_max_rect(summary_rect).layout(Layout::top_down(Align::Min)),
                 |pane|{
-                    pane.set_clip_rect(summary_rect);
+                    pane.restrict_shared_clip(summary_rect);
                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,summary_rect.width());
                     crate::ui_layout::set_fixed_height(pane,summary_rect.height());
                     Self::section_with_header(
@@ -8334,7 +8335,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             UiBuilder::new().id_salt("details-review").aligned_max_rect(review_rect)
                 .layout(Layout::top_down(Align::Min)),
             |pane| {
-                pane.set_clip_rect(review_rect);
+                pane.restrict_shared_clip(review_rect);
                 pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,review_rect.width());
                 crate::ui_layout::set_fixed_height(pane,review_rect.height());
                 Self::section_with_header(pane, "확인할 내용", review_height, |header| {
@@ -8415,7 +8416,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             UiBuilder::new().id_salt("details-recipient")
                 .aligned_max_rect(recipient_rect).layout(Layout::top_down(Align::Min)),
             |pane| {
-                pane.set_clip_rect(recipient_rect);
+                pane.restrict_shared_clip(recipient_rect);
                 pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,recipient_rect.width());
                 crate::ui_layout::set_fixed_height(pane,recipient_rect.height());
                 Self::section_with_header(
@@ -8542,7 +8543,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             UiBuilder::new().id_salt("details-items").aligned_max_rect(bottom_rect)
                 .layout(Layout::top_down(Align::Min)),
             |pane| {
-                pane.set_clip_rect(bottom_rect);
+                pane.restrict_shared_clip(bottom_rect);
                 pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,bottom_rect.width());
                 crate::ui_layout::set_fixed_height(pane,bottom_rect.height());
                 let mut header_add_item=false;
@@ -8824,7 +8825,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             UiBuilder::new().id_salt("details-order-total")
                 .aligned_max_rect(summary_rect).layout(Layout::top_down(Align::Min)),
             |pane|{
-                pane.set_clip_rect(summary_rect);
+                pane.restrict_shared_clip(summary_rect);
                 pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,summary_rect.width());
                 crate::ui_layout::set_fixed_height(pane,summary_rect.height());
                 let mut edit_vat=false;
@@ -10235,7 +10236,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             UiBuilder::new().id_salt("management-kakao-pane")
                                 .aligned_max_rect(left).layout(Layout::top_down(Align::Min)),
                             |pane|{
-                                pane.set_clip_rect(left);
+                                pane.restrict_shared_clip(left);
                                 pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,left.width());
                                 crate::ui_layout::set_fixed_height(pane,left.height());
                                 self.kakao_pane(pane);
@@ -10285,7 +10286,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             UiBuilder::new().id_salt(("management-page",self.page.label(),self.navigation_snapshots.epoch(self.page as usize)))
                                 .aligned_max_rect(right).layout(Layout::top_down(Align::Min)),
                             |main|{
-                                main.set_clip_rect(right);
+                                main.restrict_shared_clip(right);
                                 main.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,right.width());
                                 crate::ui_layout::set_fixed_height(main,right.height());
                                 // The shared workspace frame already owns the
