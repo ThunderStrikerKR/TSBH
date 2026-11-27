@@ -863,6 +863,65 @@ fn recipient_owner_index(
     // deterministic fallback, not as a purported calibrated weight.
     previous+1
 }
+// Provisional fixed weights for individual product ownership. These are
+// not probabilities or calibrated final weights (stage 05 must validate).
+// Restrict the first operational comparison to distinct paragraph evidence;
+// ambiguous same-paragraph layouts keep the legacy assignment.
+#[derive(Clone, Copy)]
+struct ProductOwnerWeights {
+    paragraph:i64,
+    line:i64,
+    scalar:i64,
+    rank:i64,
+    legacy:i64,
+    margin:i64,
+}
+const PRODUCT_OWNER_WEIGHTS:ProductOwnerWeights=ProductOwnerWeights{
+    paragraph:36,line:18,scalar:12,rank:12,legacy:12,margin:10,
+};
+fn product_owner_score(events:&[Evidence],features:&DocumentFeatures,
+    product:usize,anchor:usize,legacy:bool,w:ProductOwnerWeights)->i64{
+    let (line,rank,same_paragraph)=features.relation(events,product,anchor);
+    let p=features.positions[product];
+    let a=features.positions[anchor];
+    // Distance between the nearest field endpoints, not between UTF-8 bytes.
+    let gap=if p[1].0<=a[0].0{a[0].0-p[1].0}
+        else if a[1].0<=p[0].0{p[0].0-a[1].0}else{0};
+    let decay=|weight:i64,distance:u64,scale:u64|
+        weight/(1+distance.saturating_div(scale).min(1024) as i64);
+    i64::from(same_paragraph)*w.paragraph
+        +decay(w.line,line.unsigned_abs(),1)
+        +decay(w.scalar,gap as u64,24)
+        +decay(w.rank,rank.unsigned_abs(),1)
+        +i64::from(legacy)*w.legacy
+}
+fn product_owner_index(anchors:&[usize],events:&[Evidence],features:&DocumentFeatures,
+    candidates:&CommonCandidates,hit:&ProductHit,has_leading:bool)->usize{
+    let e=&events[hit.evidence];
+    let next=anchors.partition_point(|&a|events[a].start<=e.start);
+    let previous=next.saturating_sub(1);
+    let legacy=if has_leading&&!anchors.is_empty(){next.min(anchors.len()-1)}else{previous};
+    if hit.common||next==0||next>=anchors.len()||candidates.truncated||!features.positions_valid{
+        return legacy;
+    }
+    // The common candidate index is the admission boundary. Never promote
+    // an excluded alternative or create a recipient by scoring a span.
+    if !candidates.entries.get(&(e.kind,e.start,e.end)).is_some_and(|r|
+        r.selected==Some(hit.evidence)&&!r.disposition.is_some_and(CandidateDisposition::hard)){
+        return legacy;
+    }
+    let a=anchors[previous];let b=anchors[next];
+    if events[a].kind!="name"||events[b].kind!="name"{return legacy;}
+    let (_,_,same_a)=features.relation(events,hit.evidence,a);
+    let (_,_,same_b)=features.relation(events,hit.evidence,b);
+    if same_a==same_b{return legacy;}
+    let w=PRODUCT_OWNER_WEIGHTS;
+    let score_a=product_owner_score(events,features,hit.evidence,a,legacy==previous,w);
+    let score_b=product_owner_score(events,features,hit.evidence,b,legacy==next,w);
+    if score_a-score_b>=w.margin&&same_a{previous}
+    else if score_b-score_a>=w.margin&&same_b{next}
+    else{legacy}
+}
 /// Original TypeScript resolvePrice for the recognition Item shape.
 /// The separate pricing migration remains authoritative for business rules.
 fn legacy_recognition_price(v: &Value,client: Option<&Value>) -> Value {
@@ -1800,9 +1859,9 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
             row["addressParts"] = parts;
         }
     }
-    // Keep the current ownership policy until independently measured
-    // alternatives are validated. Build the eligible detached-quantity
-    // groups once; mutable assignments are checked when consumed.
+    // Build eligible detached-quantity groups once; mutable assignments
+    // are checked when consumed. Individual product ownership is scored
+    // separately; common quantity semantics remain unchanged.
     let product_lines:HashSet<_>=product_hits.iter().map(|h|h.line).collect();
     let mut detached=vec![Vec::<usize>::new();recipients.len()];
     for (i,e) in events.iter().enumerate(){
@@ -1813,11 +1872,7 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     let has_leading = anchors.first().map_or(false, |a| product_hits.iter().any(|h|
         !h.common && events[h.evidence].start < events[*a].start));
     for hit in &product_hits {
-        let anchor_index = owner_index(anchors,&events,events[hit.evidence].start);
-        let owner = if has_leading && !anchors.is_empty() {
-            anchors.partition_point(|a|events[*a].start<=events[hit.evidence].start)
-                .min(anchors.len()-1)
-        } else { anchor_index };
+        let owner=product_owner_index(anchors,&events,&features,&exclusions,hit,has_leading);
         let attach_to: Vec<usize> = if hit.common {
             (0..recipients.len()).filter(|idx| recipients[*idx]["items"]
                 .as_array().map_or(true,|xs|xs.is_empty())).collect()
@@ -2531,6 +2586,30 @@ mod tests {
             &&e.start<e.end&&raw.get(e.start..e.end).is_some()));
         assert!(!document.product_hits.is_empty());
         assert_eq!(assign_document(document,&state,None).unwrap(),analyze(raw,&state,None).unwrap());
+    }
+    #[test]
+    fn product_ownership_uses_local_paragraph_instead_of_global_leading_direction(){
+        let raw="709 1개\n수취인: 김가상\n010-0000-0001\n\n수취인: 박가상\n010-0000-0002\nGT-1 2개\n\n수취인: 이가상\n010-0000-0003";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        let hit=doc.product_hits.iter().find(|h|h.decision["productId"]=="pgt").unwrap();
+        assert_eq!(doc.features.anchors.len(),3);
+        let anchors=&doc.features.anchors;
+        assert_eq!(product_owner_index(anchors,&doc.events,&doc.features,&doc.exclusions,hit,true),1);
+        let result=assign_document(doc,&state,None).unwrap();
+        assert_eq!(result["recipients"][0]["items"][0]["productId"],"p709");
+        assert_eq!(result["recipients"][1]["items"][0]["productId"],"pgt");
+        assert_eq!(result["recipients"][1]["items"][0]["quantity"],2);
+        assert!(result["recipients"][2]["items"].as_array().unwrap().is_empty());
+    }
+    #[test]
+    fn product_ownership_preserves_legacy_for_incomplete_candidates(){
+        let raw="709 1개\n수취인: 김가상\n010-0000-0001\n\n수취인: 박가상\n010-0000-0002\nGT-1 2개\n\n수취인: 이가상\n010-0000-0003";
+        let state=state();
+        let mut doc=extract_document(raw,&state,None);
+        doc.exclusions.truncated=true;
+        let hit=doc.product_hits.iter().find(|h|h.decision["productId"]=="pgt").unwrap();
+        assert_eq!(product_owner_index(&doc.features.anchors,&doc.events,&doc.features,&doc.exclusions,hit,true),2);
     }
     #[test]
     fn common_candidate_index_preserves_selected_and_excluded_roles(){
