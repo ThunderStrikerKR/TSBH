@@ -411,10 +411,11 @@ struct ProductSearch<'a,'s>{
     state:&'s Value,
     client_id:&'s str,
     decisions:HashMap<&'a str,Value>,
+    quantities:HashMap<&'a str,Vec<quantity::Quantity>>,
 }
 impl<'a,'s> ProductSearch<'a,'s>{
     fn new(state:&'s Value,client_id:&'s str)->Self{
-        Self{state,client_id,decisions:HashMap::new()}
+        Self{state,client_id,decisions:HashMap::new(),quantities:HashMap::new()}
     }
     fn decision(&mut self,text:&'a str)->&Value{
         let state=self.state;
@@ -424,6 +425,12 @@ impl<'a,'s> ProductSearch<'a,'s>{
             self.decisions.clear();
         }
         self.decisions.entry(text).or_insert_with(||model::decision_json(&model::decide(text,state,client)))
+    }
+    fn quantities(&mut self,text:&'a str)->&[quantity::Quantity]{
+        if self.quantities.len()>=512&&!self.quantities.contains_key(text){
+            self.quantities.clear();
+        }
+        self.quantities.entry(text).or_insert_with(||quantity::extract(text))
     }
 }
 // Split only independently bounded, explicitly labelled delivery records.
@@ -470,10 +477,10 @@ fn split_product_records<'a>(lines:Vec<Line<'a>>,label:&Regex,phone:&Regex,
         if label.is_match(t)||phone.is_match(t)||address_begin(t).is_some()||
             t.contains('|')||is_money_or_header(t)||
             ["공통","모두","전부","전원","각각","씩","메모","메시지","메세지","요청","구성","포함","송하인","보내는"]
-                .iter().any(|word|t.contains(word)){
+                .iter().any(|word|t.contains(*word)){
             out.push(line);continue;
         }
-        let quantities=quantity::extract(t);
+        let quantities=search.quantities(t).to_vec();
         if quantities.len()<2||quantities.len()>16||
             !t[quantities.last().unwrap().end..].trim().is_empty(){
             out.push(line);continue;
@@ -535,7 +542,7 @@ fn unlabelled_recipient_span<'a>(
     }
     // A known product followed by an explicit quantity is a separate field.
     // Preserve the ENTIRE suffix, including company and English names.
-    for q in quantity::extract(prefix).into_iter().rev(){
+    for q in search.quantities(prefix).to_vec().into_iter().rev(){
         let before=&prefix[..q.end];
         if !product_signal(before,search.decision(before),state){continue;}
         let tail=&prefix[q.end..];
@@ -558,7 +565,7 @@ fn unlabelled_recipient_span<'a>(
     }
     let (a,b)=trim_span(line,0,line.len())?;
     let candidate=&line[a..b];
-    if other_recipient_field(candidate) || !quantity::extract(candidate).is_empty(){return None;}
+    if other_recipient_field(candidate) || !search.quantities(candidate).is_empty(){return None;}
     if !near_delivery && !weak_recipient_hint(candidate){return None;}
     if product_signal(candidate,search.decision(candidate),state){return None;}
     Some((a,b))
@@ -945,6 +952,7 @@ struct ExtractedDocument<'a>{
     events:Vec<Evidence>,
     product_hits:Vec<ProductHit>,
     geometry:SourceGeometry,
+    delivery:DeliveryGeometry,
 }
 fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->ExtractedDocument<'a>{
     let client_id = client_id(client);
@@ -1004,7 +1012,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
                 || phone.is_match(line.text)
                 || (near_delivery && !other_recipient_field(text))
                 || weak_recipient_hint(text)
-                || (quantity::extract(line.text).len()>0
+                || (!search.quantities(line.text).is_empty()
                     && model::category(line.text).is_some())
                 || product_signal(line.text,
                     search.decision(line.text),state);
@@ -1134,12 +1142,13 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         // create a product even when its digits match a generic model regex.
         let trim_phones: Vec<(usize,usize)> = phone.find_iter(trimmed)
             .map(|m|(m.start(),m.end())).collect();
+        let contact_only=ts_semantics::only_contact_or_identity(trimmed,&trim_phones)
+            && search.quantities(trimmed).is_empty();
         let decision = search.decision(trimmed);
         // parser.ts::parseLegacy: a full contact may share the same physical
         // line with a valid product and quantity; filter contact-only rows,
         // not valid joint records such as "709 민판 한개 이가상 010-...".
-        if ts_semantics::only_contact_or_identity(trimmed,&trim_phones)
-            && quantity::extract(trimmed).is_empty()
+        if contact_only
             && decision.pointer("/match/kind").and_then(Value::as_str)==Some("UNKNOWN") {
             continue;
         }
@@ -1157,9 +1166,12 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
             ts_semantics::table_quantity(trimmed,model_end).map_or_else(Vec::new,
                 |(value,start,end)|vec![quantity::Quantity{value,start,end}])
         } else {
-            quantity::for_product(skip_until,false,
-                model::products(state).iter().any(|p|model::model_names(p).iter()
-                    .any(|name|model::find_term(skip_until,name,true).is_some())))
+            let explicit=search.quantities(skip_until).to_vec();
+            if !explicit.is_empty(){explicit}else{
+                quantity::for_product(skip_until,false,
+                    model::products(state).iter().any(|p|model::model_names(p).iter()
+                        .any(|name|model::find_term(skip_until,name,true).is_some())))
+            }
         };
         // parser.ts:537-552: a compound sale-unit phrase containing
         // "2개" is part of the option name, not an order quantity.
@@ -1228,7 +1240,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         if events.iter().any(|e| e.kind == "quantity" && e.line == line.number) { continue; }
         if is_money_or_header(line.text) { continue; }
         if product_hits.iter().any(|h| h.line == line.number) { continue; }
-        for q in quantity::extract(line.text) {
+        for q in search.quantities(line.text) {
             // An independently scanned quantity must not reuse characters
             // already owned by a recognized address/name/contact/memo span.
             // Preserve separately positioned quantities in mixed-field rows.
@@ -1243,13 +1255,14 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         }
     }
 
-    ExtractedDocument{raw,lines,events,product_hits,geometry}
+    let delivery=DeliveryGeometry::new(&events);
+    ExtractedDocument{raw,lines,events,product_hits,geometry,delivery}
 }
 fn analyze(raw:&str,state:&Value,client:Option<&Value>)->Result<Value,String>{
     assign_document(extract_document(raw,state,client),state,client)
 }
 fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Value>)->Result<Value,String>{
-    let ExtractedDocument{raw,lines,mut events,product_hits,geometry}=document;
+    let ExtractedDocument{raw,lines,mut events,product_hits,geometry,delivery}=document;
     let mut anchors: Vec<usize> = events.iter().enumerate()
         .filter_map(|(i,e)| (e.kind == "name").then_some(i)).collect();
     anchors.sort_by_key(|i| events[*i].start);
@@ -1260,7 +1273,6 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     }
     // Address fallback anchors must obey the same sorted-offset contract.
     anchors.sort_by_key(|i|events[*i].start);
-    let delivery=DeliveryGeometry::new(&events);
     // If a document has only one unnamed destination, keep exactly one row.
     if anchors.is_empty() && raw.trim().is_empty() {
         return Ok(json!({"recipients":[],"candidates":[],"unassigned":[]}));
@@ -1979,7 +1991,7 @@ mod tests {
         let raw="김가상\n010-0000-0001\n서울특별시 중구 가상로 1\n\n박가상\n010-0000-0002";
         let state=state();
         let doc=extract_document(raw,&state,None);
-        let index=DeliveryGeometry::new(&doc.events);
+        let index=&doc.delivery;
         for paragraph in 0..3{
             for after in 0..raw.len(){
                 for before in [after,after+1,raw.len()]{
@@ -2025,6 +2037,9 @@ mod tests {
         assert_eq!(search.decision("GT-1 2개")["productId"],"pgt");
         assert_eq!(search.decisions.len(),2);
         assert_eq!(search.decision(raw)["productId"],"p709");
+        assert_eq!(search.quantities(raw)[0].value,2);
+        assert_eq!(search.quantities(raw)[0].value,2);
+        assert_eq!(search.quantities.len(),1);
     }
     #[test]
     fn extracted_document_is_pre_assignment_and_reused_by_normal_analysis(){
