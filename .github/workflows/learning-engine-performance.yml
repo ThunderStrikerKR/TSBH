@@ -47,7 +47,10 @@ jobs:
             'shared_local_features_keep_legacy_context_keys_and_cache_once',
             'legacy_owner_margin_is_redundant_after_gates',
             'symmetric_owner_comparison_can_choose_either_candidate_or_abstain',
-            'owner_order_evidence_excludes_target_and_conflicting_paragraphs'
+            'owner_order_evidence_excludes_target_and_conflicting_paragraphs',
+            'common_quantity_never_selects_first_of_multiple_local_candidates',
+            'conflicting_explicit_qualifiers_cannot_qualify_any_product',
+            'delivery_link_validation_detects_invalid_and_shared_spans'
           )
           foreach ($test in $expected) {
             $pattern = '(^|::)' + [regex]::Escape($test) + ': test$'
@@ -131,5 +134,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml symmetric_owner_comparison_can_choose_either_candidate_or_abstain -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($test in @('common_quantity_never_selects_first_of_multiple_local_candidates','conflicting_explicit_qualifiers_cannot_qualify_any_product','delivery_link_validation_detects_invalid_and_shared_spans')) {
+            cargo test --manifest-path egui-app/Cargo.toml $test -- --nocapture
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
           cargo test --manifest-path egui-app/Cargo.toml learning_lifecycle_excludes_cancelled_deleted_and_partial_orders -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
