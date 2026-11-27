@@ -400,7 +400,7 @@ pub fn icon(heading:&mut Ui,title:&str){
                     crate::overlay::attach_popup(popup.ctx(),response.layer_id,popup.layer_id());
                     crate::card::settings_help_surface_frame()
                         .show(popup,|panel|{
-                            crate::ui_layout::geometry::apply_width_policy(panel,crate::ui_layout::geometry::CardWidthPolicy::Fixed,width-theme::SPACE_24);
+                            panel.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,width-theme::SPACE_24);
                             crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                 .max_height(viewport.height().min(500.0)*0.7)
                                 .show(panel,|details|{

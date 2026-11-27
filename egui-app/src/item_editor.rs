@@ -2,6 +2,7 @@
 //! The dialog only stages employee intent. Catalog search is Rust-backed;
 //! the native manual reducer validates the actual item and recalculates price.
 
+use crate::ui_layout::geometry::UiWidthPolicyExt as _;
 use crate::ui_layout::geometry::SharedAllocationExt as _;
 use std::sync::Arc;
 use eframe::egui::{self,Context,Vec2};
@@ -309,7 +310,7 @@ impl ItemEditor{
                             content_width,work_area.height()
                         );
                         crate::popup::modal_nested_role_frame(crate::popup::ModalNestedRole::Standard).show(ui,|body|{
-                            crate::ui_layout::geometry::apply_width_policy(body,crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,content_width);
+                            body.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,content_width);
                             // Own the display snapshot so search and selection
                             // actions can mutate ItemEditor during this same frame.
                             let product=self.replacement.as_ref()
@@ -341,7 +342,7 @@ impl ItemEditor{
                                     let detail_width=(content_width-photo_side
                                         -ITEM_DETAIL_PANEL_GAP).max(1.0);
                                     line.vertical(|details|{
-                                        crate::ui_layout::geometry::apply_width_policy(details,crate::ui_layout::geometry::CardWidthPolicy::Fixed,detail_width);
+                                        details.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,detail_width);
                                         crate::card::apply_height_policy(
                                             details,crate::card::CardHeightPolicy::MatchTallest,photo_side
                                         );
@@ -483,7 +484,7 @@ mod tests{
         let source=include_str!("item_editor.rs");
         let modal=source.split("    pub fn show(").nth(1).unwrap()
             .split("        if delete_clicked{").next().unwrap();
-        assert!(modal.contains("crate::ui_layout::geometry::apply_width_policy(body,crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,content_width)"));
+        assert!(modal.contains("body.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,content_width)"));
         assert!(modal.contains("line.add_space(ITEM_DETAIL_PANEL_GAP)"));
         assert!(modal.contains("Vec2::splat(photo_side)"));
         assert!(modal.contains("self.detail_information("));

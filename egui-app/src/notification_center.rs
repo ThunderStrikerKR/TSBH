@@ -1,4 +1,5 @@
 //! Global explicit-open factory-reply notification center.
+use crate::ui_layout::geometry::UiWidthPolicyExt as _;
 use eframe::egui::{self,Context,Rect,Ui};
 use serde_json::Value;
 use std::{sync::mpsc::{self,Receiver},time::{Duration,Instant}};
@@ -79,7 +80,7 @@ impl Center{
                                 let text=|k:&str|n[k].as_str().unwrap_or("");
                                 crate::card::section_frame().show(list,|card|{
                                     let width=card.available_width();
-                                    crate::ui_layout::geometry::apply_width_policy(card,crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,width);
+                                    card.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,width);
                                     // The action column has a stable width for both read states.
                                     card.horizontal(|row|{
                                         row.with_layout(egui::Layout::right_to_left(egui::Align::Center),|bar|{
@@ -91,7 +92,7 @@ impl Center{
                                     card.label(typography::caption(text("at")));
                                     crate::card::preview_surface_frame().show(card,|detail|{
                                         let width=detail.available_width();
-                                        crate::ui_layout::geometry::apply_width_policy(detail,crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,width);
+                                        detail.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,width);
                                         detail.add(egui::Label::new(typography::body(text("detail"))).wrap());
                                     });
                                 });

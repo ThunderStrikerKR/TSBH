@@ -577,13 +577,13 @@ impl SettingsView{
             ui.horizontal(|row|{
                 crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
                 row.vertical(|left|{
-                    crate::ui_layout::geometry::apply_width_policy(left,crate::ui_layout::geometry::CardWidthPolicy::Fixed,left_width);
+                    left.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,left_width);
                     self.show_work_settings(left,editable,Arc::clone(&gateway));
                     left.add_space(theme::SPACE_12);
                     self.show_sender_settings(left,editable);
                 });
                 row.vertical(|right|{
-                    crate::ui_layout::geometry::apply_width_policy(right,crate::ui_layout::geometry::CardWidthPolicy::Fixed,right_width);
+                    right.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,right_width);
                     self.show_accounts(
                         right,editable,
                         (available_height-theme::SETTINGS_BASIC_SAVE_RESERVE).max(0.0)

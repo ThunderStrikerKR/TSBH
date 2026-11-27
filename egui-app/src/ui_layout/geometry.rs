@@ -114,18 +114,6 @@ pub(crate) enum CardWidthPolicy {
     /// Upper bound only: preserve the content's natural minimum width.
     UpperLimit,
 }
-pub(crate) fn apply_width_policy(ui:&mut Ui,policy:CardWidthPolicy,target:f32){
-    if !target.is_finite(){return;}
-    let width=aligned_extent(target.max(0.0));
-    match policy{
-        CardWidthPolicy::FitContent=>{},
-        CardWidthPolicy::FillAvailable=>ui.set_min_width(width),
-        // egui set_width already applies both min and max constraints.
-        // Retain the distinct semantic roles for screen callers.
-        CardWidthPolicy::Fixed|CardWidthPolicy::Bounded=>ui.set_width(width),
-        CardWidthPolicy::UpperLimit=>ui.set_max_width(width),
-    }
-}
 
 /// Same policy for owned Ui and borrowed Ui receivers.
 pub(crate) trait UiWidthPolicyExt {
@@ -133,7 +121,16 @@ pub(crate) trait UiWidthPolicyExt {
 }
 impl UiWidthPolicyExt for Ui {
     fn apply_shared_width(&mut self,policy:CardWidthPolicy,target:f32){
-        apply_width_policy(self,policy,target);
+        if !target.is_finite(){return;}
+        let width=aligned_extent(target.max(0.0));
+        match policy{
+            CardWidthPolicy::FitContent=>{},
+            CardWidthPolicy::FillAvailable=>self.set_min_width(width),
+            // egui set_width already applies both min and max constraints.
+            // Retain the distinct semantic roles for screen callers.
+            CardWidthPolicy::Fixed|CardWidthPolicy::Bounded=>self.set_width(width),
+            CardWidthPolicy::UpperLimit=>self.set_max_width(width),
+        }
     }
 }
 

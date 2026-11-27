@@ -79,7 +79,7 @@ RULES = (
 
 # Pixel paint has a single owner. Removed forwarding APIs must not return.
 PIXEL_OWNER = "popup/mod.rs"
-RETIRED_APIS = re.compile(r"\b(?:modal_master_(?:pixel_aligned_rect|rule_rect|toolbar_rule_rect))\b")
+RETIRED_APIS = re.compile(r"\b(?:modal_master_(?:pixel_aligned_rect|rule_rect|toolbar_rule_rect)|apply_width_policy)\b")
 PIXEL_MIXED = {
     "modal_master_workspace_background",
     "modal_master_header_in_rect",
@@ -317,7 +317,7 @@ def self_test():
     ):
         assert violations(PIXEL_OWNER, mixed(good + bad)), bad
     for retired in ("modal_master_pixel_aligned_rect", "modal_master_rule_rect",
-                    "modal_master_toolbar_rule_rect"):
+                    "modal_master_toolbar_rule_rect", "apply_width_policy"):
         assert violations("screen.rs", f"fn {retired}() {{}}")
         assert violations(PIXEL_OWNER, f"{retired}(rect);")
     paint = "fn paint_modal_master_footer_surface(ui:&Ui,rect:Rect) { let ppp=ui.ctx().pixels_per_point(); let rect=crate::ui_layout::pixel_paint::snap_paint_rect(rect,ppp); rect.fill(ui.painter(),0.0,color);"

@@ -384,7 +384,7 @@ mod shared_card_rendered_geometry_tests {
                 egui::CentralPanel::default().show(ctx,|ui|{
                     ui.spacing_mut().item_spacing.y=0.0;
                     let measured=measured_management_section_card(ui,|body|{
-                        apply_width_policy(body,CardWidthPolicy::FitContent,400.0);
+                        body.apply_shared_width(CardWidthPolicy::FitContent,400.0);
                         let content=probe(body,w,h);
                         apply_height_policy(body,CardHeightPolicy::FitContent,400.0);
                         content

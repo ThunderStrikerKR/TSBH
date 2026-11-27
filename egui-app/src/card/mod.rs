@@ -54,7 +54,7 @@ pub(crate) fn apply_height_policy(ui:&mut Ui,policy:CardHeightPolicy,target:f32)
     }
 }
 
-use crate::ui_layout::geometry::{CardWidthPolicy,UiWidthPolicyExt,apply_width_policy};
+use crate::ui_layout::geometry::{CardWidthPolicy,UiWidthPolicyExt};
 
 /// Width arithmetic for the outer card, its horizontal frame insets and
 /// optional scrollbar reservation. Preserve caller-approved minimum widths.
@@ -96,10 +96,10 @@ pub(crate) fn parallel_frames(
             .aligned_max_rect(rect)
             .layout(Layout::top_down(Align::Min)));
         column.spacing_mut().item_spacing.y=0.0;
-        apply_width_policy(&mut column,CardWidthPolicy::Fixed,rect.width());
+        column.apply_shared_width(CardWidthPolicy::Fixed,rect.width());
         let mut card=frame.clone().begin(&mut column);
         let inner_width=card.content_ui.available_width().max(1.0);
-        apply_width_policy(&mut card.content_ui,CardWidthPolicy::FillAvailable,inner_width);
+        card.content_ui.apply_shared_width(CardWidthPolicy::FillAvailable,inner_width);
         contents(index,&mut card.content_ui);
         let natural=card.content_ui.min_rect().height();
         prepared.push((column,card,natural));
@@ -184,7 +184,7 @@ pub(crate) fn review_issue_frame(tone: ReviewTone) -> Frame {
 pub(crate) fn review_issue_card(ui: &mut Ui, tone: ReviewTone, add_contents: impl FnOnce(&mut Ui)) {
     review_issue_frame(tone).show(ui, |content| {
         let width=content.available_width().max(0.0);
-        apply_width_policy(content,CardWidthPolicy::FillAvailable,width);
+        content.apply_shared_width(CardWidthPolicy::FillAvailable,width);
         add_contents(content);
     });
 }
@@ -300,7 +300,7 @@ pub(crate) fn management_summary_card_with_role_and_state(
         egui::vec2(card_width,theme::FREIGHT_SUMMARY_CARD_HEIGHT),
         egui::Layout::top_down(egui::Align::Min),
         |slot|{
-            apply_width_policy(slot,CardWidthPolicy::Fixed,card_width);
+            slot.apply_shared_width(CardWidthPolicy::Fixed,card_width);
             crate::card::freight_summary_frame().show(slot,|cell|{
                 cell.spacing_mut().item_spacing.y=0.0;
                 let content_width=card_width-2.0*theme::FREIGHT_SUMMARY_PADDING_X
@@ -398,7 +398,7 @@ pub(crate) fn management_master_table_card_min_inner_height(ui:&Ui)->f32{
 }
 pub(crate) fn fill_management_primary_card(ui: &mut Ui, min_inner_height: f32) {
     let width=ui.available_width().max(1.0);
-    apply_width_policy(ui,CardWidthPolicy::FillAvailable,width);
+    ui.apply_shared_width(CardWidthPolicy::FillAvailable,width);
     apply_height_policy(ui,CardHeightPolicy::FillAvailable,min_inner_height);
 }
 
@@ -444,7 +444,7 @@ pub(crate) fn reception_section_with_header(
         let height_inset=2.0*theme::RECEPTION_PANE_PADDING_Y;
         let inner_width=inner_width_for_insets(width,theme::SECTION_PADDING,
             theme::SECTION_PADDING,0.0,0.0,60.0);
-        apply_width_policy(ui,CardWidthPolicy::FillAvailable,inner_width);
+        ui.apply_shared_width(CardWidthPolicy::FillAvailable,inner_width);
         // Docked panes have an explicit viewport budget; zero requests a natural card.
         let policy=if minimum_height>0.0{CardHeightPolicy::FillAvailable}
             else{CardHeightPolicy::FitContent};
@@ -552,7 +552,7 @@ pub(crate) fn workflow_group_card<R>(
         // spacing. No additional automatic gap between the compact rows.
         crate::ui_primitives::apply_explicit_vertical_spacing(card);
         let width=crate::card::inner_width_for_insets(outer,0.0,0.0,theme::SOFT_DIVIDER_WIDTH,0.0,0.0);
-        crate::ui_layout::geometry::apply_width_policy(card,crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,width);
+        card.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,width);
         body(card)
     });
     #[cfg(test)]

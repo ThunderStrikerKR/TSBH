@@ -20,7 +20,6 @@ mod logical_alignment_tests{
 
     #[test]
     fn shared_size_constraints_preserve_native_layout_semantics(){
-        use super::geometry::apply_width_policy;
         let ctx=crate::ui_test_support::test_context();
         let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(600.0,500.0));
         let _=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
@@ -50,13 +49,13 @@ mod logical_alignment_tests{
                     assert_eq!(sized.max_rect(),reference.max_rect());
                     let mut width=child(root,"width");
                     let mut reference=child(root,"native width");
-                    apply_width_policy(&mut width,CardWidthPolicy::Fixed,target);
+                    width.apply_shared_width(CardWidthPolicy::Fixed,target);
                     reference.set_width(target.round_ui());
                     assert_eq!(width.min_rect(),reference.min_rect());
                     assert_eq!(width.max_rect(),reference.max_rect());
                     let mut bounded=child(root,"bounded width");
                     let mut old_bounded=child(root,"previous bounded width");
-                    apply_width_policy(&mut bounded,CardWidthPolicy::Bounded,target);
+                    bounded.apply_shared_width(CardWidthPolicy::Bounded,target);
                     old_bounded.set_width(target.round_ui());
                     old_bounded.set_max_width(target.round_ui());
                     assert_eq!(bounded.min_rect(),old_bounded.min_rect());

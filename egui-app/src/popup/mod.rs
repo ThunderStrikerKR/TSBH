@@ -854,7 +854,7 @@ pub(crate) fn show_management_menu<R>(
                 (menu.ctx().content_rect().width()-theme::SPACE_24).max(1.0)
             ),theme::SPACE_4),
         };
-        crate::ui_layout::geometry::apply_width_policy(menu,crate::ui_layout::geometry::CardWidthPolicy::Bounded,width);
+        menu.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Bounded,width);
         menu.spacing_mut().item_spacing.y=gap;
         content(&mut ManagementMenu{ui:menu})
     })
@@ -929,7 +929,7 @@ pub(crate) fn modal_section_measured<R>(
         theme::MODAL_SECTION_PADDING,theme::MODAL_SECTION_PADDING,
         theme::FRAME_STROKE_WIDTH,0.0,1.0);
     modal_section_frame().show(ui,|section|{
-            crate::ui_layout::geometry::apply_width_policy(section,crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,inner_width);
+            section.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,inner_width);
             modal_section_heading_with_rule(section,title);
             section.scope(|body|{
                 modal_form_row_spacing(body);

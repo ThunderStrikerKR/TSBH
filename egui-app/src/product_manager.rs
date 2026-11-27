@@ -1250,7 +1250,7 @@ impl ProductManager {
         crate::card::measured_management_master_card(ui,|panel|{
             if selecting{
                 let width=panel.available_width().max(1.0);
-                crate::ui_layout::geometry::apply_width_policy(panel,crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,width);
+                panel.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,width);
                 crate::card::apply_height_policy(panel,crate::card::CardHeightPolicy::FillAvailable,card_min_height);
             }else{
                 crate::card::fill_management_primary_card(panel,card_min_height);
