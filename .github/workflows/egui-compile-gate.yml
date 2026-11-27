@@ -117,6 +117,9 @@ jobs:
             'typography::shared_text_hierarchy_contract_tests::',
             'theme::shared_visual_role_contract_tests::',
             'highlight::rendered_geometry_tests::',
+            'ui_test_support::unaligned_detector_tests::',
+            'ui_layout::logical_alignment_tests::',
+            'ui_regressions::general_screen_geometry_tests::unaligned_',
             'ui_test_support::highlight_invariance_detector_tests::',
             'ui_regressions::general_screen_geometry_tests::highlight_invariance_'
           )
