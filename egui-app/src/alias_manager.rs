@@ -274,12 +274,6 @@ impl AliasManager {
                 crate::popup::modal_flow_workspace(modal,|workspace|{
                     close=workspace.header(title,"닫기",!busy&&!nested);
                     workspace.scroll_region("alias-editor-body",crate::popup::modal_editor_body_max_height(work_area.height()),|body|{
-                        if self.form.editing.is_some(){
-                            body.horizontal(|toolbar|toolbar.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                                if crate::button::action(actions,"별칭 삭제",theme::ButtonRole::Danger,
-                                    editable&&!busy&&!nested).clicked(){self.confirm_delete=true;}
-                            }));
-                        }
                         body.add_enabled_ui(editable&&!busy&&!nested&&!self.confirm_delete,|body|{
                             crate::popup::modal_form_row_spacing(body);
                             crate::popup::modal_compact_text_field(body,"별칭",&mut self.form.text,"관리 별칭");
@@ -305,11 +299,21 @@ impl AliasManager {
                             });
                         });
                     });
-                    workspace.footer_single(|actions|{
-                        save=crate::button::action(actions,"별칭 저장",theme::ButtonRole::Primary,
-                            editable&&!busy&&!nested&&!self.confirm_delete&&self.dirty()).clicked();
-                        if save{crate::floating_notice::dispatch_pointer(ctx,"aliases.save");}
-                    });
+                    let mut request_delete=false;
+                    workspace.footer(
+                        |left|{
+                            if self.form.editing.is_some(){
+                                request_delete=crate::button::action(left,"별칭 삭제",theme::ButtonRole::Danger,
+                                    editable&&!busy&&!nested).clicked();
+                            }
+                        },
+                        |right|{
+                            save=crate::button::action(right,"별칭 저장",theme::ButtonRole::Primary,
+                                editable&&!busy&&!nested&&!self.confirm_delete&&self.dirty()).clicked();
+                            if save{crate::floating_notice::dispatch_pointer(ctx,"aliases.save");}
+                        }
+                    );
+                    if request_delete{self.confirm_delete=true;save=false;}
                     crate::floating_notice::sync(ctx,"aliases.save.error","aliases.save",
                         crate::floating_notice::Tone::Error,self.error.as_deref());
                 });
