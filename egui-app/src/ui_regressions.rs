@@ -2297,3 +2297,68 @@ mod shared_composite_layout_contract_tests{
         });
     }
 }
+
+
+// Transient feedback is not document data. Screen-local inline labels must
+// not allocate new rows for validation/error/notice signals. Permanent
+// labels, explicit decision-dialog bodies and actual review/data rows remain
+// outside this lexical check; their geometry requires rendered transitions.
+#[cfg(test)]
+mod notice_no_reflow_contract_tests {
+    use regex::Regex;
+    use std::path::Path;
+
+    fn violations(file:&str,source:&str)->Vec<String>{
+        let direct=Regex::new(r"\.\s*label\s*\(\s*(?:(?:crate\s*::\s*)?typography\s*::\s*(?:caption|body|status)\s*\(\s*)?&?\s*(?:self\s*\.\s*)?(?:[A-Za-z_][A-Za-z_0-9]*_)?(?:notice|error)\b").unwrap();
+        let constructor=Regex::new(r"Label\s*::\s*new\s*\(\s*(?:typography\s*::\s*(?:caption|body|status)\s*\(\s*)?&?\s*(?:self\s*\.\s*)?(?:[A-Za-z_][A-Za-z_0-9]*_)?(?:notice|error)\b").unwrap();
+        let input_hint=Regex::new(r"\bif\s+[^{};\n]*(?:alias_input|tag_input|search_tag_input|draft_input)\b[^{};\n]*\{\s*[A-Za-z_][A-Za-z_0-9]*\s*\.\s*label\s*\(").unwrap();
+        let mut hits=Vec::new();
+        for rule in [&direct,&constructor,&input_hint]{
+            for m in rule.find_iter(source){
+                let line=source[..m.start()].bytes().filter(|&b|b==b'\n').count()+1;
+                let line_start=source[..m.start()].rfind('\n').map_or(0,|i|i+1);
+                if source[line_start..m.start()].trim_start().starts_with("//"){continue;}
+                hits.push(format!("{file}:{line}: transient notice allocates an inline widget; use floating_notice or a stable overlay"));
+            }
+        }
+        hits.sort();hits.dedup();hits
+    }
+
+    fn scan(root:&Path,path:&Path,hits:&mut Vec<String>){
+        for entry in std::fs::read_dir(path).expect("read egui production sources"){
+            let p=entry.expect("source entry").path();
+            if p.is_dir(){scan(root,&p,hits);continue;}
+            if p.extension().and_then(|v|v.to_str())!=Some("rs"){continue;}
+            let name=p.strip_prefix(root).unwrap().to_string_lossy().replace('\\',"/");
+            if name.ends_with("regression_tests.rs")||name=="ui_regressions.rs"||name=="ui_test_support.rs"{continue;}
+            let source=std::fs::read_to_string(&p).expect("read Rust source");
+            if source.starts_with("#![cfg(test)]"){continue;}
+            let production=crate::ui_test_support::production_source_for_contract(&source);
+            hits.extend(violations(&name,&production));
+        }
+    }
+
+    #[test]
+    fn guard_detects_direct_feedback_and_multiline_input_hint(){
+        for bad in [
+            "if let Some(notice)=self.alias_notice.as_deref(){body.label(typography::caption(notice));}",
+            "if let Some(error)=self.error.as_deref(){body.label(typography::caption(error));}",
+            "ui.add(egui::Label::new(typography::body(save_error)));",
+            "if !self.alias_input.trim().is_empty(){\n body.label(typography::caption(\"hint\"));\n}",
+        ]{assert!(!violations("synthetic.rs",bad).is_empty(),"missed: {bad}");}
+        for good in [
+            "crate::floating_notice::sync(ctx,signal,source,tone,error);",
+            "body.label(typography::field_label(\"검색 별칭\"));",
+            "for row in review_data { body.label(typography::body(row)); }",
+        ]{assert!(violations("synthetic.rs",good).is_empty(),"false positive: {good}");}
+    }
+
+    #[test]
+    fn production_screens_reject_direct_inline_transient_notices(){
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut hits=Vec::new();
+        scan(&root,&root,&mut hits);
+        hits.sort();
+        assert!(hits.is_empty(),"UI notice reflow violations:\n{}",hits.join("\n"));
+    }
+}
