@@ -354,8 +354,39 @@ fn type_comparison(location:&Value,selection:&Value)->Value{
         "selectedContextKey":selection["selectedContextKey"],"blendWeight":null,"calibratedProbability":null,
         "eligibleForAutomaticDecision":false,"decisionChanged":false})
 }
+// R05/R07: independent recommendations do not establish a safe joint
+// edit. Report dependencies, but never mutate the original parser output.
+fn field_dependency_contract(locations:&[Value],selections:&mut [Value]){
+    let spans=locations.iter().map(|v|v["start"].as_u64().zip(v["end"].as_u64())
+        .filter(|(a,b)|a<b)).collect::<Vec<_>>();
+    for (i,selection) in selections.iter_mut().enumerate(){
+        let task=locations[i]["task"].as_str().unwrap_or("");
+        if !matches!(task,"type"|"product"|"variant"|"quantity"){continue;}
+        let mut dependencies=BTreeSet::new();
+        let mut ambiguous=spans[i].is_none();
+        for (j,other) in locations.iter().enumerate(){
+            if i==j{continue;}
+            let Some(((a,b),(c,d)))=spans[i].zip(spans[j])else{continue;};
+            if a<d&&c<b{
+                if other["task"]==task{ambiguous=true;}
+                else if let Some(t)=other["task"].as_str(){dependencies.insert(t);}
+            }
+        }
+        let required=match task{
+            "type"=>vec!["source_reclassification","recipient_ownership","dependent_item_revalidation"],
+            "product"=>vec!["catalog_eligibility","variant_revalidation","quantity_binding"],
+            "variant"=>vec!["same_product","written_option_evidence","catalog_eligibility"],
+            "quantity"=>vec!["literal_quantity_evidence","same_item_binding"],
+            _=>Vec::new()
+        };
+        selection["fieldDependencyContract"]=json!({"schemaVersion":1,
+            "overlappingTasks":dependencies,"ambiguousSource":ambiguous,"requiredChecks":required,
+            "status":if ambiguous{"ambiguous_source_blocked"}else{"joint_validation_required"},
+            "operationalMutationAuthorized":false,"manualCorrectionProtected":true});
+    }
+}
 pub(super) fn select_contexts(locations:&[Value],reports:&[Value])->Vec<Value>{
-    locations.iter().map(|loc|{
+    let mut selections=locations.iter().map(|loc|{
         let mut levels=Vec::new();let mut passed=Vec::new();let mut seen=BTreeSet::new();
         let task=&loc["task"];
         let mut invalid=false;
@@ -386,7 +417,9 @@ pub(super) fn select_contexts(locations:&[Value],reports:&[Value])->Vec<Value>{
             result["typeComparison"]=type_comparison(loc,&result);
         }
         result
-    }).collect()
+    }).collect::<Vec<_>>();
+    field_dependency_contract(locations,&mut selections);
+    selections
 }
 
 fn request(input:&Value)->Result<(&str,&str,&str,BTreeSet<String>,f64),String>{
@@ -732,6 +765,24 @@ mod recognition_support_tests{
         loc["candidates"]=json!(["mobile","phone"]);loc["legacyTypeCandidate"]=json!("mobile");
         report["candidateIds"]=loc["candidates"].clone();report["contextQuality"]["topCandidate"]=json!("phone");
         assert_eq!(check(&loc,&report)["status"],"contact_slot_not_type_change");
+    }
+    #[test]
+    fn field_dependency_contract_blocks_joint_edits_and_preserves_owner_selection(){
+        let locations=vec![json!({"start":0,"end":3,"task":"type"}),
+            json!({"start":0,"end":3,"task":"product"}),json!({"start":0,"end":3,"task":"variant"}),
+            json!({"start":2,"end":5,"task":"recipient_ownership"}),json!({"start":6,"end":7,"task":"quantity"})];
+        let mut selections=vec![json!({"decisionChanged":false});locations.len()];
+        field_dependency_contract(&locations,&mut selections);
+        let type_gate=&selections[0]["fieldDependencyContract"];
+        assert_eq!(type_gate["overlappingTasks"],json!(["product","recipient_ownership","variant"]));
+        assert_eq!(type_gate["operationalMutationAuthorized"],false);
+        assert!(selections[3]["fieldDependencyContract"].is_null());
+        assert_eq!(selections[4]["fieldDependencyContract"]["overlappingTasks"],json!([]));
+        assert_eq!(selections[4]["fieldDependencyContract"]["operationalMutationAuthorized"],false);
+        let mut duplicate=locations.clone();duplicate.push(locations[0].clone());
+        let mut result=vec![json!({});duplicate.len()];
+        field_dependency_contract(&duplicate,&mut result);
+        assert_eq!(result[0]["fieldDependencyContract"]["status"],"ambiguous_source_blocked");
     }
     fn evidence(weak:&[(&str,u64)],positive:&[(&str,u64)],negative:&[(&str,u64)])->Evidence{
         let map=|x:&[(&str,u64)]|x.iter().map(|(k,n)|(k.to_string(),*n)).collect();
