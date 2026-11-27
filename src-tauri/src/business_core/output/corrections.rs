@@ -52,21 +52,17 @@ fn message(state:&Value,request:&Value)->Result<String,String> {
     let (Some(before),Some(after))=(before,after) else {
         return Err("구조화된 정정 요청을 선택하세요.".into());
     };
-    let mut lines=vec![
-        "기존 출고 건 정정 요청입니다.".to_string(),
-        format!("배송 ID: {}",js_field(request,"shipmentId")),
-        "새 출고 주문이 아닙니다.".to_string(),
-    ];
+    let mut lines=super::super::rules::correction_message_header(&js_field(request,"shipmentId"));
     for (field,label) in [
         ("name","수취인"),("address","주소"),("mobile","휴대폰"),
         ("phone","전화"),("note","요청사항"),
     ] {
         if before.get(field)!=after.get(field) {
-            lines.push(format!("{}: {} → {}",label,js_field(before,field),js_field(after,field)));
+            lines.push(super::super::rules::correction_change_line(label,&js_field(before,field),&js_field(after,field)));
         }
     }
     if before.get("items")!=after.get("items") {
-        lines.push(format!("품목: {} → {}",item_line(before),item_line(after)));
+        lines.push(super::super::rules::correction_change_line("품목",&item_line(before),&item_line(after)));
     }
     let shipment=list(&state["workflow"],"shipments").iter()
         .find(|ship|s(ship,"id")==s(request,"shipmentId"));
@@ -76,13 +72,13 @@ fn message(state:&Value,request:&Value)->Result<String,String> {
         let new=optional_fee(after.get("shippingCharges").and_then(|v|v.get(origin)))
             .or(old);
         if old!=new {
-            lines.push(format!("{} 운임: {} → {}",label,super::super::rules::correction_fee_text(old),super::super::rules::correction_fee_text(new)));
+            lines.push(super::super::rules::correction_change_line(&format!("{label} 운임"),&super::super::rules::correction_fee_text(old),&super::super::rules::correction_fee_text(new)));
         }
     }
     if before.get("freightCode")!=after.get("freightCode") {
         let before_code=before.get("freightCode").and_then(Value::as_str).unwrap_or("010");
         let after_code=after.get("freightCode").and_then(Value::as_str).unwrap_or("010");
-        lines.push(format!("운임 방식: {} → {}",before_code,after_code));
+        lines.push(super::super::rules::correction_change_line("운임 방식",before_code,after_code));
     }
     Ok(lines.join("\n"))
 }
