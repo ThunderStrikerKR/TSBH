@@ -1924,7 +1924,6 @@ impl ManualWorkspace {
         let drag_pointer=ctx.input(|i|i.pointer.interact_pos());
         let drag_released=ctx.input(|i|i.pointer.button_released(egui::PointerButton::Primary));
         let mut apply=false;
-        let mut discard_confirmed=false;
         let mut submit_direct=false;
         let mut blur_commit=false;
         let mut lookup:Option<(String,String)>=None;
@@ -2916,26 +2915,14 @@ impl ManualWorkspace {
             }
         }
         if self.confirm_discard {
-            let mut keep_editing=false;
             let discard_title=if self.direct_input{"직접 입력 나가기"}else{"수동 분류 나가기"};
-            crate::popup::show_decision_window(ctx,discard_title,"manual-discard-prompt",work_area,|ui|{
-                    crate::popup::decision_workspace(ui,|decision|{
-                        keep_editing=decision.header(discard_title,"계속 편집",true
-                        );
-                        decision.body(|ui|{
-                            ui.label("초안에 반영하지 않은 변경사항이 있습니다. 변경사항을 버리고 닫을까요?");
-                        });
-                        decision.actions(|actions|{
-                            if crate::button::action(
-                                actions,"변경사항 버리고 닫기",ButtonRole::Danger,true
-                            ).clicked(){
-                                discard_confirmed=true;
-                            }
-                        });
-                    });
-                });
-            if discard_confirmed {return Some(Event::Closed);}
-            if keep_editing {self.confirm_discard=false;}
+            let decision=crate::popup::show_discard_confirmation(
+                ctx,work_area,"manual-discard-prompt",discard_title,
+                "초안에 반영하지 않은 변경사항이 있습니다. 변경사항을 버리고 닫을까요?",
+                "계속 편집","변경사항 버리고 닫기",true
+            );
+            if decision==crate::popup::ChangeDecision::Discard{return Some(Event::Closed);}
+            if decision==crate::popup::ChangeDecision::Cancel{self.confirm_discard=false;}
         }
         if apply {
             if self.edit_text!=self.current_value() {
