@@ -342,7 +342,7 @@ fn menu_body(
     ).inner;
     let list_height=theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT
         .min((menu.ctx().content_rect().height()-270.0).max(100.0));
-    let _=explorer_body(menu,nodes,index,state,enabled,list_height,search_response.has_focus(),None,None,false);
+    let _=explorer_body(menu,nodes,index,state,enabled,list_height,search_response.has_focus(),None,None,false,None);
     let busy=state.moving();
     crate::ui_primitives::soft_divider(menu);
     let mut applied=false;
@@ -360,7 +360,8 @@ fn menu_body(
 /// Shared focused explorer: the manager uses this without an Apply footer.
 pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&str,&CategoryNode>,
     state:&mut ExplorerState,enabled:bool,list_height:f32,search_focused:bool,
-    totals:Option<&HashMap<String,usize>>,products:Option<&HashMap<String,Vec<(String,String)>>>,move_enabled:bool)
+    totals:Option<&HashMap<String,usize>>,products:Option<&HashMap<String,Vec<(String,String)>>>,move_enabled:bool,
+    mut drag_hover:Option<&mut category_tree::ProductDragHover>)
     ->(Option<String>,Option<category_tree::ProductMove>){
     let mut product_request=None;
     let mut product_move=None;
@@ -370,6 +371,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
     let motion=state.motion.clone();
     let busy=motion.is_some();
     let mut next_path=None;
+    let mut hover_path=None;
     let mut source=None;
     if !search_focused&&enabled&&!busy&&menu.input(|i|i.key_pressed(egui::Key::ArrowLeft)){
         let mut p=state.path.clone();p.pop();next_path=Some(p);
@@ -447,8 +449,14 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                         }else{category_option_row(row,name,depth,last,has_children,open,path==visual_path)}
                     }).inner;
                     if let Some(target)=path.last(){
+                        let allow_drop=move_enabled&&enabled&&!busy&&!hide;
                         if let Some(request)=category_tree::product_drop_target(list,&response,target,
-                            move_enabled&&enabled&&!busy&&!hide){product_move=Some(request);}
+                            allow_drop){product_move=Some(request);}
+                        else if let Some(hover)=drag_hover.as_deref_mut(){
+                            if hover.observe(list,&response,target,allow_drop&&has_children&&!open&&path!=context){
+                                hover_path=Some(path.clone());
+                            }
+                        }
                     }
                     if enabled&&!busy&&response.clicked()&&product_move.is_none(){
                         source=Some((response.rect.top()-clip.top(),(clip.top()-top).max(0.0)));
@@ -474,7 +482,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                     paint_row(list,&label,path,usize::from(!searching),i+1==items.len()&&product_rows.is_empty(),has_children,false);
                 }
                 for (i,(id,name)) in product_rows.iter().enumerate(){
-                    list.scope(|row|{
+                    list.push_id(("category-product",current,id),|row|{
                         if alpha<1.0{row.set_opacity(alpha);}
                         let active=enabled&&!busy&&!id.is_empty();
                         let response=category_tree::product_tree_row(row,name,1,&[],i+1==product_rows.len(),
@@ -501,9 +509,17 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                 category_option_row(&mut ghost,&m.ghost_name,0,true,true,!m.reverse&&final_phase,true);
             }
     });
-    if let Some(path)=next_path{
-        begin_move(state,path,nodes,index,now,source,list_height);
-        menu.ctx().request_repaint();
+    if product_move.is_none(){
+        if let Some(path)=hover_path{
+            // Keep the payload alive; a drag-driven descent must not enter
+            // the ordinary 450ms interaction-locking navigation animation.
+            navigate(state,path);
+            state.restore_scroll=Some(0.0);
+            menu.ctx().request_repaint();
+        }else if let Some(path)=next_path{
+            begin_move(state,path,nodes,index,now,source,list_height);
+            menu.ctx().request_repaint();
+        }
     }
     (product_request,product_move)
 }

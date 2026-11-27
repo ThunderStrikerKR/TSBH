@@ -65,6 +65,7 @@ pub struct CategoryManager {
     scroll_to:Option<String>,
     product_request:Option<String>,
     product_move:Option<category_tree::ProductMove>,
+    drag_hover:category_tree::ProductDragHover,
     name:String,
     editor:bool,
     expected_scope:Option<String>,
@@ -86,7 +87,7 @@ impl Default for CategoryManager {
             expanded:ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect(),
             query:String::new(),focused:false,focus:Default::default(),crumbs:Default::default(),
             tree_motion:None,nav_motion:None,mode_motion:None,map_cache:None,node_cache:Default::default(),scroll_epoch:0,scroll_to:None,
-            product_request:None,product_move:None,
+            product_request:None,product_move:None,drag_hover:Default::default(),
             name:String::new(),editor:false,expected_scope:None,
             operation:None,new_name:String::new(),target:String::new(),
             transfer:false,confirm:None,after_save:None,
@@ -341,6 +342,7 @@ impl CategoryManager {
     pub fn report_error(&mut self,message:String){self.error=Some(message);}
 
     pub fn clear_for_leave(&mut self){
+        self.drag_hover=Default::default();
         if self.focused&&self.focus.moving(){
             self.focus.finish_motion();self.selected=self.focus.path.last().cloned().unwrap_or_default();
         }
@@ -504,6 +506,7 @@ impl CategoryManager {
         self.confirm=None;
     }
     pub(crate) fn reset_navigation(&mut self){
+        self.drag_hover=Default::default();
         let epoch=self.scroll_epoch.wrapping_add(1);
         self.selected=ROOTS[0].0.to_owned();
         self.expanded=ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect();
@@ -580,9 +583,14 @@ impl CategoryManager {
         if self.scroll_to.as_deref()==Some(item.id.as_str()){
             response.scroll_to_me(None);self.scroll_to=None;
         }
-        if let Some(request)=category_tree::product_drop_target(ui,&response,&item.id,
-            move_enabled&&product_enabled&&!locked&&item.active){
+        let allow_drop=move_enabled&&product_enabled&&!locked&&item.active;
+        if let Some(request)=category_tree::product_drop_target(ui,&response,&item.id,allow_drop){
             self.product_move=Some(request);
+        }else if self.drag_hover.observe(ui,&response,&item.id,allow_drop&&has_children&&!open){
+            // Expand on the next frame without a disabling fold animation.
+            // The native product drag must remain active across the change.
+            self.expanded.insert(item.id.clone());
+            ui.ctx().request_repaint();
         }
         if response.clicked()&&!locked&&self.product_move.is_none(){
             self.select_map(cats,&item.id,ui.input(|i|i.time));
@@ -605,8 +613,9 @@ impl CategoryManager {
                 }
                 for (position,(id,name)) in products.iter().enumerate(){
                     let enabled=product_enabled&&!locked&&!id.is_empty();
-                    let response=category_tree::product_tree_row(rows,name,depth+1,&child_guides,
-                        position+1==products.len(),enabled,move_enabled);
+                    let response=rows.push_id(("category-product",&item.id,id),|row|
+                        category_tree::product_tree_row(row,name,depth+1,&child_guides,
+                            position+1==products.len(),enabled,move_enabled)).inner;
                     category_tree::start_product_drag(rows,&response,id,&item.id,enabled&&move_enabled);
                     if response.clicked(){this.product_request=Some(id.clone());}
                 }
@@ -659,6 +668,7 @@ impl CategoryManager {
     pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,editable:bool,busy:bool){
         self.product_request=None;
         self.product_move=None;
+        self.drag_hover.begin_frame();
         let revision=catalog["revision"].as_u64();
         if revision.is_none(){self.node_cache.invalidate();}
         let projection=self.node_cache.get(revision,||{
@@ -737,7 +747,8 @@ impl CategoryManager {
                     .max(theme::CATALOG_TREE_ROW_HEIGHT);
                 let search_focused=panel.ctx().memory(|mem|mem.focused().is_some());
                 let (request,product_move)=category_dropdown::explorer_body(panel,&nodes,&node_index,&mut self.focus,
-                    !busy,height,search_focused,Some(&index.totals),Some(&index.products),editable);
+                    !busy,height,search_focused,Some(&index.totals),Some(&index.products),editable,
+                    Some(&mut self.drag_hover));
                 self.product_request=request;
                 self.product_move=product_move;
                 if !self.focus.moving(){
@@ -809,6 +820,7 @@ impl CategoryManager {
             crate::scrollbar::track_native(panel,&output);
             }
         });
+        self.drag_hover.end_frame();
     }
     pub fn show_overlays(&mut self,ctx:&Context,work_area:Rect,
         catalog:&Value,editable:bool,busy:bool)->Option<CategoryWrite>{

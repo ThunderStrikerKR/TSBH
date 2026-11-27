@@ -125,6 +125,47 @@ pub(crate) fn product_tree_row(ui:&mut Ui,name:&str,depth:usize,ancestor_guides:
 #[derive(Clone)]
 struct ProductDrag { id:String, source:String }
 
+const PRODUCT_DRAG_OPEN_DELAY:f64=0.65;
+
+/// One continuous hover per product/source/target, scoped to a tree view.
+#[derive(Clone,Debug,Default)]
+pub(crate) struct ProductDragHover {
+    pending:Option<(String,String,String,f64)>,
+    seen:bool,
+}
+impl ProductDragHover {
+    pub(crate) fn begin_frame(&mut self){self.seen=false;}
+    pub(crate) fn end_frame(&mut self){
+        if !self.seen{self.pending=None;}
+    }
+    fn advance(&mut self,id:&str,source:&str,target:&str,now:f64)->bool{
+        self.seen=true;
+        if !self.pending.as_ref().is_some_and(|(p,s,t,_)|
+            p==id&&s==source&&t==target){
+            self.pending=Some((id.to_owned(),source.to_owned(),target.to_owned(),now));
+        }
+        let elapsed=self.pending.as_ref().map(|(_,_,_,start)|now-*start).unwrap_or(0.0);
+        if elapsed>=PRODUCT_DRAG_OPEN_DELAY{
+            self.pending=None;
+            true
+        }else{false}
+    }
+    pub(crate) fn observe(&mut self,ui:&Ui,response:&Response,target:&str,enabled:bool)->bool{
+        if !enabled||!ui.is_enabled()||target.is_empty()||
+            !ui.input(|i|i.pointer.primary_down())||
+            !response.rect.intersect(ui.clip_rect()).is_positive(){return false;}
+        let Some(drag)=response.dnd_hover_payload::<ProductDrag>()else{return false;};
+        if drag.source==target{return false;}
+        let now=ui.input(|i|i.time);
+        if self.advance(&drag.id,&drag.source,target,now){return true;}
+        if let Some((_,_,_,start))=&self.pending{
+            ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(
+                (PRODUCT_DRAG_OPEN_DELAY-(now-*start)).max(0.0)));
+        }
+        false
+    }
+}
+
 pub(crate) struct ProductMove {
     pub(crate) id:String,
     pub(crate) source:String,
@@ -224,6 +265,26 @@ mod category_tree_geometry_tests{
     fn row(depth:usize)->CategoryTreeGeometry{
         CategoryTreeGeometry::new(Rect::from_min_size(egui::pos2(0.0,0.0),
             Vec2::new(500.0,theme::CATALOG_TREE_ROW_HEIGHT)),depth)
+    }
+    #[test]
+    fn product_drag_hover_requires_continuous_target_and_resets_after_leave(){
+        let mut hover=ProductDragHover::default();
+        hover.begin_frame();
+        assert!(!hover.advance("p","source","a",0.0));
+        hover.end_frame();
+        hover.begin_frame();
+        assert!(!hover.advance("p","source","a",0.64));
+        hover.end_frame();
+        hover.begin_frame();
+        assert!(!hover.advance("p","source","b",0.65));
+        hover.end_frame();
+        hover.begin_frame();
+        hover.end_frame();
+        hover.begin_frame();
+        assert!(!hover.advance("p","source","b",2.0));
+        hover.end_frame();
+        hover.begin_frame();
+        assert!(hover.advance("p","source","b",2.66));
     }
     #[test]
     fn category_tree_slots_share_depth_and_center(){

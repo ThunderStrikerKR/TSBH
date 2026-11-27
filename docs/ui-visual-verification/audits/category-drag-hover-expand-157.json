@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "category-drag-hover-expand-157",
+  "screen": "상품 관리 / 카테고리 관리 / 드래그 중 폴더 자동 펼침",
+  "files": [
+    "egui-app/src/category_manager.rs",
+    "egui-app/src/category_tree/mod.rs",
+    "egui-app/src/category_dropdown.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "650ms 연속 호버 기준, 대상/상품 변경 및 이탈 시 초기화, 일반 탐색 자동 펼침과 집중 탐색 자동 진입. 드래그 중 애니메이션 잠금 우회 및 상품 ID 고정. 단위 테스트 작성, 실제 Rust 컴파일·CI·Windows 드래그 검증 미실시.",
+  "defects": [],
+  "releaseDecision": "NOT_APPROVED",
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "noClipping",
+      "footerVisible",
+      "scrollReachable",
+      "inputReadable",
+      "alignment",
+      "interaction",
+      "hoverAndFocus"
+    ]
+  }
+}
