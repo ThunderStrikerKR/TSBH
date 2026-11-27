@@ -7,6 +7,7 @@ on:
       - scripts/check-egui-layout-placement.py
       - scripts/check-egui-drag-drop.py
       - scripts/check-category-assignment-gate.py
+      - '**/*.rs'
       - scripts/audit-egui-design-api.py
       - 'scripts/egui-design-api-contract*.json'
       - scripts/egui-design-constant-access.json
@@ -36,6 +37,7 @@ on:
       - scripts/check-egui-layout-placement.py
       - scripts/check-egui-drag-drop.py
       - scripts/check-category-assignment-gate.py
+      - '**/*.rs'
       - scripts/audit-egui-design-api.py
       - 'scripts/egui-design-api-contract*.json'
       - scripts/egui-design-constant-access.json

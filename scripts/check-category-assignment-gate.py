@@ -2,8 +2,9 @@
 
 Lexical source guard, not a Rust call-graph/type checker. Enforce the
 unconditional first check at the authoritative writer and editor, reviewed
-delegations, and reject new references to the narrow low-level writers.
-Bootstrap/migration full sync is a separate audit.
+delegations, and reject new references to the reviewed low-level writers.
+Existing bootstrap/migration call sites are count-limited; their internal
+validation semantics are a separate audit.
 """
 from collections import Counter
 from pathlib import Path
@@ -41,17 +42,27 @@ REQUIRED = {
     (PRODUCT, "patch_product_v2"): ["crate::storage::update_v2_reviewed_workbook(conn,mutate)",
         "crate::storage::update_v2_category_change(conn,mutate)",
         "crate::storage::update_v2_entity_if_changed(conn,true,mutate)"],
-    (RELATIONAL, "store_single_order_delta"): ["before[]!=state[]"],
+    (RELATIONAL, "store_v2_relational_delta"): ["store_relational(tx,state,Some(before),None)"],
+    (RELATIONAL, "store_v2_relational"): ["store_relational(tx,state,None,None)"],
+    (RELATIONAL, "store_single_order_delta"): ["store_relational(tx,state,Some(before),Some(position))"],
 }
-# For the single-order contract compare the exact indexed fields before
-# literal masking; use a dedicated exact check in addition to call checks.
-REQUIRED.pop((RELATIONAL,"store_single_order_delta"))
-NARROW = re.compile(r"\b(?:store_v2_relational_delta|store_single_order_delta)\b")
+# Include the bootstrap full-sync API and its private shared implementation.
+# Existing migration entry points are allowed, not their use by new screens.
+NARROW = re.compile(r"\b(?:store_v2_relational_delta|store_single_order_delta|store_v2_relational|store_relational)\b|\brelational_store\s*::\s*store\b")
 ALLOWED = {
     (RELATIONAL,"store_v2_relational_delta","store_v2_relational_delta"): 1,
     (RELATIONAL,"store_single_order_delta","store_single_order_delta"): 1,
     (STORAGE,"write_validated","store_v2_relational_delta"): 1,
     (STORAGE,"finish_stable_freight","store_single_order_delta"): 1,
+    (RELATIONAL,"store_v2_relational","store_v2_relational"): 1,
+    (RELATIONAL,"store_v2_relational","store_relational"): 1,
+    (RELATIONAL,"store_v2_relational_delta","store_relational"): 1,
+    (RELATIONAL,"store_single_order_delta","store_relational"): 1,
+    (RELATIONAL,"store_relational","store_relational"): 1,
+    ("crates/bando-data-access/src/lib.rs",None,"store_v2_relational"): 1,
+    ("crates/bando-data-access/src/recovery.rs","migrate","store_v2_relational"): 1,
+    ("src-tauri/src/relational_store.rs","store","store_v2_relational"): 1,
+    (TAURI,"write_snapshot","relational_store::store"): 1,
 }
 
 def compact(source):
@@ -97,12 +108,19 @@ def check_contract(path, source):
 
 def ownership(path, source):
     code=production(source)
-    regions=list(function_regions(code,{fn for owner,fn,_ in ALLOWED if owner==path}))
+    regions=list(function_regions(code,{fn for owner,fn,_ in ALLOWED if owner==path and fn is not None}))
     counts=Counter()
     failures=[]
     for match in NARROW.finditer(code):
         fn=next((name for name,start,_,end in regions if start<=match.start()<end),None)
-        key=(path,fn,match.group())
+        token=compact(match.group())
+        key=(path,fn,token)
+        if key==("crates/bando-data-access/src/lib.rs",None,"store_v2_relational"):
+            # Permit only the existing public re-export, never a module-level alias.
+            line=code[code.rfind("\n",0,match.start())+1:code.find("\n",match.end()) if code.find("\n",match.end())!=-1 else len(code)]
+            if compact(line)!="pubuserelational_write::store_v2_relational;":
+                failures.append(f"{code.count(chr(10),0,match.start())+1}: unauthorized full-sync re-export")
+                continue
         counts[key]+=1
         if counts[key]>ALLOWED.get(key,0):
             line=code.count("\n",0,match.start())+1
@@ -128,6 +146,11 @@ def self_test():
     assert not ownership(STORAGE,"fn write_validated(){store_v2_relational_delta();}")
     assert ownership(STORAGE,"fn write_validated(){store_v2_relational_delta();store_v2_relational_delta();}")
     assert ownership(STORAGE,"fn new_write(){store_v2_relational_delta();}")
+    assert ownership("egui-app/src/new.rs","fn write(){bando_data_access::store_v2_relational(tx,state);}")
+    assert ownership("egui-app/src/new.rs","use bando_data_access::store_v2_relational as raw;")
+    assert ownership("src-tauri/src/new.rs","fn write(){relational_store :: store(tx,state);}")
+    assert not ownership("crates/bando-data-access/src/recovery.rs","fn migrate(){crate::store_v2_relational(tx,state)?;}")
+    assert not ownership("crates/bando-data-access/src/lib.rs","pub use relational_write::store_v2_relational;")
 
 def main():
     self_test()
