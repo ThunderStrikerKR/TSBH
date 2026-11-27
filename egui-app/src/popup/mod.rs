@@ -1,4 +1,5 @@
 //! Modal presentation and geometry. Overlay owns window layers, input priority and lifetime.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Frame,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::ui_primitives::UiWidthPolicyExt;
@@ -219,7 +220,7 @@ pub(crate) struct ModalEditorWorkspace<'a> {
 }
 impl ModalEditorWorkspace<'_> {
     pub(crate) fn header(&mut self,title:&str,close_label:&str,enabled:bool)->bool{
-        let (header,_)=self.ui.allocate_exact_size(
+        let (header,_)=self.ui.shared_allocate_exact_size(
             Vec2::new(self.ui.available_width(),theme::MODAL_HEADER_HEIGHT),
             Sense::hover()
         );
@@ -235,7 +236,7 @@ impl ModalEditorWorkspace<'_> {
         toolbar:impl FnOnce(&mut Ui)->R,
     )->(bool,R){
         let header_height=modal_master_header_with_toolbar_height();
-        let (header,_)=self.ui.allocate_exact_size(
+        let (header,_)=self.ui.shared_allocate_exact_size(
             Vec2::new(self.ui.available_width(),header_height),
             Sense::hover()
         );
@@ -376,7 +377,7 @@ pub(crate) fn modal_editor_workspace<R>(
     contents:impl FnOnce(&mut ModalEditorWorkspace<'_>)->R,
 )->(bool,R,ModalEditorGeometry){
     modal_master_controlled_spacing(ui);
-    let (header,_)=ui.allocate_exact_size(
+    let (header,_)=ui.shared_allocate_exact_size(
         Vec2::new(ui.available_width(),theme::MODAL_HEADER_HEIGHT),
         Sense::hover()
     );
@@ -745,7 +746,7 @@ pub(crate) fn modal_action_row<R>(
 fn modal_action_row_measured<R>(
     ui:&mut Ui,actions:impl FnOnce(&mut Ui)->R
 )->(egui::InnerResponse<R>,Rect) {
-    let (rect,_)=ui.allocate_exact_size(
+    let (rect,_)=ui.shared_allocate_exact_size(
         Vec2::new(ui.available_width(),theme::MODAL_FOOTER_HEIGHT),
         Sense::hover()
     );
@@ -1044,7 +1045,7 @@ pub(crate) struct DecisionWorkspace<'a>{
 
 impl DecisionWorkspace<'_>{
     pub(crate) fn header(&mut self,title:&str,cancel_label:&str,enabled:bool)->bool{
-        let (rect,_)=self.ui.allocate_exact_size(
+        let (rect,_)=self.ui.shared_allocate_exact_size(
             Vec2::new(self.ui.available_width(),theme::MODAL_HEADER_HEIGHT),
             Sense::hover()
         );
@@ -1275,7 +1276,7 @@ pub(crate) fn modal_backdrop(
     let layer=area.layer();
     crate::overlay::activate_modal(ctx,layer,false);
     area.show(ctx,|ui|{
-        let (rect,_)=ui.allocate_exact_size(
+        let (rect,_)=ui.shared_allocate_exact_size(
             viewport.size(),egui::Sense::hover()
         );
         ui.painter().rect_filled(
