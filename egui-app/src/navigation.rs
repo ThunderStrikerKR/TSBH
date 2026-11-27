@@ -1,4 +1,6 @@
 //! Shared date selection, segmented navigation and recipient/count traversal.
+use crate::ui_layout::SharedUiClipExt as _;
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use chrono::{Datelike,Duration as Days,Months,NaiveDate};
@@ -299,7 +301,7 @@ fn calendar_nav_button(
     ui:&mut Ui,direction:ManagementChevronDirection,
     year:bool)->bool{
     let (response,ink)=date_navigation_button_surface(ui,true);
-    let painter=ui.painter().with_clip_rect(response.rect);
+    let painter=ui.painter().with_shared_clip(response.rect);
     if year{
         for offset in [-3.8,3.8]{
             paint_management_chevron_with_color(
@@ -413,7 +415,7 @@ mod date_navigation_segmented_control_tests{
                     }else{
                         let mut child=ui.new_child(UiBuilder::new().id_salt("geometry")
                             .aligned_max_rect(slot).layout(Layout::top_down(Align::Center)));
-                        child.set_clip_rect(slot.intersect(ui.clip_rect()));
+                        child.restrict_shared_clip(slot.intersect(ui.clip_rect()));
                         child
                     };
                     observed.push((child.id(),child.max_rect(),child.clip_rect(),before,
