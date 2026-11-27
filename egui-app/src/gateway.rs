@@ -209,7 +209,7 @@ pub trait BandoGateway: Send + Sync {
     /// Full v2 business snapshot for native rules only, from an explicitly
     /// configured read-only operational DB. This must never mutate SQLite.
     fn load_business_state(&self) -> Result<Value, String> {
-        Err("서버에는 실제 주문 수정 미리보기 계약이 아직 없습니다.".into())
+        Err("서버에는 주문 수정 미리보기 계약이 아직 없습니다.".into())
     }
     /// Explicit client ID selection may be persisted in the isolated egui
     /// receipt when no business DB is configured; it is NOT native pricing,

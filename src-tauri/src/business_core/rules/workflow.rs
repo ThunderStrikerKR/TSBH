@@ -1302,7 +1302,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             for q in rows(field(&state["workflow"],"queue"))
                 .iter().filter(|q|str_field(q,"shipmentId")==shipment_id) {
                 if str_field(q,"status")=="EXPORTED" && flag(q,"fileOnly") {
-                    return Err("실제 공장 전달 확인 후 배송 완료를 처리하세요.".into());
+                    return Err("공장 전달 확인 후 배송 완료를 처리하세요.".into());
                 }
                 if str_field(q,"status")=="QUEUED" {
                     return Err("공장 전달 또는 매장 발송 확인 후 배송 완료를 기록하세요.".into());

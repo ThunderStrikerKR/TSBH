@@ -188,7 +188,7 @@ pub fn bind_existing_tauri_database() -> Result<Option<PathBuf>,String>{
 pub fn authorized_business_write_path() -> Result<PathBuf,String> {
     let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
         .filter(|v|!v.is_empty()).map(PathBuf::from)
-        .ok_or("실제 업무 DB가 연결되지 않았습니다.")?;
+        .ok_or("운영 DB가 연결되지 않았습니다.")?;
     if std::env::var_os("BANDO_EGUI_CLIENT_INDEX").is_some_and(|v|!v.is_empty()){
         return Err("거래처 JSON 인덱스를 운영 DB 저장과 함께 사용할 수 없습니다.".into());
     }
@@ -262,7 +262,7 @@ fn load_projection(scope:ReadScope) -> Result<Value,String> {
         }
     }else{reject_retired_workspace(&path)?;}
     if std::env::var_os("BANDO_EGUI_CLIENT_INDEX").is_some_and(|p|!p.is_empty()) {
-        return Err("JSON 거래처 인덱스는 실제 주문 가격 변경의 근거가 될 수 없습니다. 운영 DB 읽기 전용 연결을 사용하세요.".into());
+        return Err("JSON 거래처 인덱스는 주문 가격 변경의 근거가 될 수 없습니다. 운영 DB 읽기 전용 연결을 사용하세요.".into());
     }
     if !path.is_file() {return Err("연결한 운영 DB 파일을 찾지 못했습니다.".into());}
     let conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_ONLY)

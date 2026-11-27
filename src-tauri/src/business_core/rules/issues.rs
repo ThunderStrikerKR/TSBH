@@ -784,7 +784,7 @@ pub(super) fn issue_action(payload:&Value)->Result<Value,String> {
                 .iter().position(|i|str_field(i,"id")==iid));
             let bad=ri.zip(ii).is_none_or(|(ri,ii)|
                 !can_approve_missing_quantity(&order["recipients"][ri]["items"][ii]));
-            if bad{return Err("수량 미기재로 확인된 실제 상품만 1개 잠정 처리할 수 있습니다.".into());}
+            if bad{return Err("수량 미기재로 확인된 주문 상품만 1개 잠정 처리할 수 있습니다.".into());}
             let ri=ri.unwrap();
             let ii=ii.unwrap();
             let now=required_str(payload,"now")?;

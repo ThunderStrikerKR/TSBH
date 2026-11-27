@@ -2225,7 +2225,7 @@ pub(crate) mod general_screen_geometry_tests {
             app.analysis=Some(crate::reception_service::ReceptionAnalysis{
                 recognition:serde_json::json!({"recipients":[
                     {"id":"geometry-r1","name":"짧은 이름","address":"합성 주소","mobile":"010-0000-0000","phone":"","note":"","freightCode":"010","items":[{"id":"geometry-i1","name":"검증 상품","quantity":1}]},
-                    {"id":"geometry-r2","name":"긴 합성 수취인 이름과 추가 정보","address":"긴 합성 주소 — 실제 주소 아님","mobile":"010-0000-0000","phone":"02-0000-0000","note":"긴 합성 배송 메시지","freightCode":"020","items":[{"id":"geometry-i2","name":"아주 긴 합성 상품명과 옵션 색상","quantity":64}]}
+                    {"id":"geometry-r2","name":"긴 합성 수취인 이름과 추가 정보","address":"긴 검증용 합성 주소","mobile":"010-0000-0000","phone":"02-0000-0000","note":"긴 합성 배송 메시지","freightCode":"020","items":[{"id":"geometry-i2","name":"아주 긴 합성 상품명과 옵션 색상","quantity":64}]}
                 ]}),
                 reference:vec![],client_match:Value::Null,client_candidates:vec![],
                 matched_client_name:None,chosen_client_name:None,directory_count:0,linked_spans:vec![]

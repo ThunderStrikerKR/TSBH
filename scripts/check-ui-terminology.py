@@ -22,7 +22,7 @@ EXTENSIONS = {
     ".js", ".jsx", ".mjs", ".cjs", ".html", ".css", ".scss", ".txt",
     ".yaml", ".yml", ".xml", ".svg", ".csv", ".properties", ".ftl",
 }
-FORBIDDEN = "직원"
+FORBIDDEN = ("직원", "실제")
 ESCAPE = re.compile(r"\\u(?:\{([0-9a-fA-F_]{1,8})\}|([0-9a-fA-F]{4}))")
 
 
@@ -38,7 +38,7 @@ def normalize(line):
 def violations(path, source, allowed):
     errors = []
     for number, line in enumerate(source.splitlines(), 1):
-        if FORBIDDEN not in normalize(line):
+        if not any(word in normalize(line) for word in FORBIDDEN):
             continue
         key = (path, line.strip())
         if allowed[key] > 0:
@@ -53,7 +53,7 @@ def load_exceptions():
     allowed = Counter()
     for row in rows:
         key = (row["path"], row["line"])
-        if not row["reason"].strip() or FORBIDDEN not in row["line"]:
+        if not row["reason"].strip() or not any(word in normalize(row["line"]) for word in FORBIDDEN):
             raise ValueError(f"Invalid terminology exception: {key!r}")
         if allowed[key]:
             raise ValueError(f"Duplicate terminology exception: {key!r}")
@@ -68,6 +68,9 @@ def self_test():
     assert not violations(path, legacy, allowed)
     assert violations(path, legacy, allowed), "duplicated legacy line must fail"
     assert violations(path, 'ui.label("직원 확인");', Counter())
+    assert violations(path, 'ui.label("실제 입금");', Counter())
+    assert not violations(path, 'ui.label("출고 운임");', Counter())
+    assert violations(path, r'ui.label("\u{C2E4}\u{C81C}");', Counter())
     assert violations(path, r'ui.label("\u{C9C1}\u{C6D0}");', Counter())
     assert violations(path, r'{"label":"\uc9c1\uc6d0"}', Counter())
     assert violations("other.rs", legacy, Counter({(path, legacy): 1}))

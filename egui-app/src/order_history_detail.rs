@@ -373,7 +373,7 @@ fn change_entries(order:&Value,state:&Value,shipment_ids:&HashSet<&str>)->Vec<Au
             .collect::<Vec<_>>().join(" · ");
         output.push(AuditEntry{
             at:field(event,"at").to_owned(),
-            title:display_or(bando_data_access::terminology::canonical_event_action(field(event,"action")),"업무 기록").to_owned(),
+            title:display_or(bando_data_access::terminology::display_event_action(field(event,"action")),"업무 기록").to_owned(),
             detail:details
         });
     }

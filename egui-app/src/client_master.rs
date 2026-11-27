@@ -72,7 +72,7 @@ pub fn load()->Result<Value,String>{
 /// authoritative SQLite values and checks revision again inside the transaction.
 pub fn mutate(expected:Value,action:&str,client:Value)->Result<Value,String>{
     if !editable(){
-        return Err("거래처 저장 권한이 없거나 실제 업무 DB가 연결되지 않았습니다.".into());
+        return Err("거래처 저장 권한이 없거나 운영 DB가 연결되지 않았습니다.".into());
     }
     let path=crate::business_state::authorized_client_write_path()?;
     let mut conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE)

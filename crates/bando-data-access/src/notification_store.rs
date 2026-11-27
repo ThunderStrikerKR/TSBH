@@ -22,15 +22,15 @@ pub(crate) fn record_factory_reply(conn:&Connection,state:&Value)->Result<(),Str
         let applied=row["applied"]==true;
         let changes=rows(&row["notificationChanges"]);
         if applied&&changes.is_empty(){continue;}
-        let issue=text(row,"issue").replace("직원 확인 필요","확인 필요");
+        let issue=crate::terminology::display_factory_issue(text(row,"issue"));
         let id=format!("{}:{}",text(record,"id"),row["row"]);
-        let title=if applied{changes.iter().map(|c|text(c,"field")).collect::<Vec<_>>().join(" / ")}
+        let title=if applied{changes.iter().map(|c|crate::terminology::display_factory_field(text(c,"field"))).collect::<Vec<_>>().join(" / ")}
             else if issue.is_empty(){"공장 회신 반영 보류".into()}else{issue.clone()};
         let mut detail=vec![format!("수하인: {}",text(row,"name")),
             format!("{} / {}행",text(record,"filename"),row["row"]),
             format!("운송장번호: {}",text(row,"tracking")),
             if applied{"자동 반영 완료".into()}else{"반영 보류".into()}];
-        for c in changes{detail.push(format!("{}: {} → {}",text(c,"field"),text(c,"before"),text(c,"after")));}
+        for c in changes{detail.push(format!("{}: {} → {}",crate::terminology::display_factory_field(text(c,"field")),text(c,"before"),text(c,"after")));}
         if !issue.is_empty(){detail.push(issue);}
         insert(conn,&json!({"id":id,"at":record["at"],"source":"공장 회신",
             "tone":if applied{"info"}else{"error"},"title":title,"detail":detail.join("\n"),
@@ -79,6 +79,7 @@ mod tests{
             {"row":4,"issue":"일치하는 공장 발송 배송 건이 없습니다."},{"row":5,"issue":"운송장번호가 다른 배송 건에 이미 연결되어 있습니다."}]}]});
         record_factory_reply(&conn,&state).unwrap();record_factory_reply(&conn,&state).unwrap();
         assert_eq!(load(&conn).unwrap().len(),3);
+        assert!(load(&conn).unwrap().iter().any(|n|n["id"]=="reply:3"&&n["title"]=="출고 운임 변경"));
         mark_read(&conn,Some("reply:3")).unwrap();
         assert!(load(&conn).unwrap().iter().any(|n|n["id"]=="reply:3"&&n["read"]==true));
         dismiss(&conn,Some("reply:3")).unwrap();

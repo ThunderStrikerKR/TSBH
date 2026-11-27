@@ -31,7 +31,7 @@ fn validate_new_correction(old: &Value, next: &Value, correction: &Value) -> Res
         || correction["before"].as_str() != Some(before)
         || correction["after"].as_str() != Some(after)
     {
-        return Err("접수 정정의 전후 원문이 실제 변경과 일치하지 않습니다.".into());
+        return Err("접수 정정의 전후 원문이 변경 내용과 일치하지 않습니다.".into());
     }
     for key in ["at", "actor", "reason"] {
         if !correction[key].as_str().is_some_and(|s| !s.trim().is_empty()) {

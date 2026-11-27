@@ -232,7 +232,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String>{
             let current_status=status(&state,request_id);
             if current_status=="CONFIRMED"{return Ok(json!({"state":state}));}
             if current_status!="PENDING_FACTORY"{
-                return Err("변경 문구 복사 후 실제 공장 반영을 확인하세요.".into());
+                return Err("변경 문구 복사 후 공장 반영 여부를 확인하세요.".into());
             }
             let sid=str_field(&request,"shipmentId").to_string();
             let si=ship_idx(&state,&sid)

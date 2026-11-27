@@ -99,7 +99,7 @@ pub(super) fn validate_with_prior_core(state:&Value,before:Option<&Value>,
             }
         }
         for v in field(s,"actualFreight").as_object().into_iter().flat_map(|m|m.values()) {
-            if !v.is_null() && safe(v).is_none() {return Err("실제 출고 운임 금액 오류".into());}
+            if !v.is_null() && safe(v).is_none() {return Err("출고 운임 금액 오류".into());}
         }
         for v in field(s,"charges").as_object().into_iter().flat_map(|m|m.values()) {
             if !v.is_null() && safe(v).is_none() {return Err("운임 금액 오류".into());}
@@ -249,7 +249,7 @@ pub(super) fn validate_with_prior_core(state:&Value,before:Option<&Value>,
                             field(field(event,"after"),"amount")==current_freight
                         });
                     if !has_evidence {
-                        return Err("실제 출고 운임의 수정 근거를 확인하세요.".into());
+                        return Err("출고 운임의 수정 근거를 확인하세요.".into());
                     }
                 }
                 if has_value(field(old,"delivery")) &&
@@ -352,7 +352,7 @@ pub(super) fn retail_issues(order:&Value,state:&Value)->Vec<String>{
         }
         let actual=field(row,"actualFreight");
         if !actual.is_null()&&safe(actual).is_none(){
-            issues.push("실제 출고 운임을 확인하세요.".into());
+            issues.push("출고 운임을 확인하세요.".into());
         }
         for item in rows(field(row,"items")){
             let found=rows(field(state,"products")).iter().any(|p|

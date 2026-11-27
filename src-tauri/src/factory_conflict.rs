@@ -81,7 +81,7 @@ fn correct_state(
     }
     let actual = target["actual"].as_u64()
         .filter(|n| *n <= MAX_JS_INT)
-        .ok_or("회신 실제 운임을 확인하세요.")?;
+        .ok_or("회신된 출고 운임을 확인하세요.")?;
     let contacts = target["contacts"].as_array()
         .ok_or("회신 연락처가 없습니다.")?;
     let matching_queue: HashSet<String> = state["workflow"]["queue"].as_array()
@@ -229,7 +229,7 @@ mod tests {
                     "row":2,"name":"김수취","address":"서울 강남구 123",
                     "contacts":["010-1234-5678"],"tracking":"009988776655",
                     "actual":4000,"shipmentId":"ship-1","orderId":"order-1",
-                    "issue":"기존 송장 / 실제 운임과 충돌합니다. 확인 필요"
+                    "issue":"기존 송장 / 출고 운임과 충돌합니다. 확인 필요"
                 }]
             }]
         });
