@@ -107,7 +107,8 @@ pub fn mark_saved(conn:&Connection,j:&Job,hash:&str)->Result<(),String>{
 pub fn mark_failed(conn:&Connection,j:&Job,now:i64,error:&str)->Result<(),String>{
     let delay=match j.retries{0=>5,1=>15,2=>30,_=>60};
     conn.execute("UPDATE excel_aggregate_jobs SET retry_count=retry_count+1,next_retry_at=?5,last_error=?6
-        WHERE business_date=?1 AND origin=?2 AND target_path=?3 AND desired_revision=?4",
+        WHERE business_date=?1 AND origin=?2 AND target_path=?3 AND desired_revision=?4
+        AND desired_revision>saved_revision",
         params![j.date,j.origin,j.path,j.desired,now+delay,error]).map_err(err)?;
     Ok(())
 }

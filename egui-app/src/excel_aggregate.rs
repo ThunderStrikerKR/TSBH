@@ -149,7 +149,8 @@ where F:FnMut(&str)->Result<(),String>{
         tx.commit().map_err(err)?;
         // Retained bytes are never trusted without rechecking the hash and
         // destination. A missing/damaged temp is discarded on this attempt.
-        if checked_target(&j)?!=p.target||file_hash(&p.temp.0)?!=p.hash{return Err("재시도 임시 Excel 검증 실패".into())}
+        if checked_target(&j)?!=p.target||!fs::symlink_metadata(&p.temp.0).map_err(err)?.file_type().is_file()
+            ||file_hash(&p.temp.0)?!=p.hash{return Err("재시도 임시 Excel 검증 실패".into())}
         checkpoint("reuse_prepared")?;
         p
     }else{
@@ -212,18 +213,17 @@ where F:FnMut(&str)->Result<(),String>{
     tx.commit().map_err(err)?;
     Ok(())
 }
-fn verify_completed(conn:&Connection)->Result<(),String>{
+// Reconciliation happens only on explicit wakeups, not a timer.
+// Share path validation and the single job-list scan between integrity
+// checking and stale temp cleanup; no writer lock during filesystem I/O.
+fn reconcile_files(conn:&Connection,verify:bool,cleanup:Option<Duration>)->Result<(),String>{
     for j in jobs::all_initialized(conn)?{
-        if j.saved!=j.desired{continue}
-        let valid=checked_target(&j).and_then(|p|file_hash(&p)).ok().as_ref()==j.hash.as_ref()&&j.hash.is_some();
-        if !valid{jobs::invalidate(conn,&j)?;}
-    }
-    Ok(())
-}
-fn clean_stale_temps(conn:&mut Connection,min_age:Duration)->Result<(),String>{
-    // Do not hold the business writer lock while scanning archive directories.
-    for j in jobs::all_initialized(conn)?{
-        let Ok(target)=checked_target(&j)else{continue};
+        let target=checked_target(&j);
+        if verify&&j.saved==j.desired{
+            let valid=target.as_ref().ok().and_then(|p|file_hash(p).ok()).as_ref()==j.hash.as_ref()&&j.hash.is_some();
+            if !valid{jobs::invalidate(conn,&j)?;}
+        }
+        let (Ok(target),Some(min_age))=(target,cleanup)else{continue};
         let Some(dir)=target.parent()else{continue};
         let Ok(entries)=fs::read_dir(dir)else{continue};
         for entry in entries.flatten(){
@@ -238,19 +238,26 @@ fn clean_stale_temps(conn:&mut Connection,min_age:Duration)->Result<(),String>{
     }
     Ok(())
 }
+#[cfg(test)]
+fn verify_completed(conn:&Connection)->Result<(),String>{reconcile_files(conn,true,None)}
+#[cfg(test)]
+fn clean_stale_temps(conn:&mut Connection,min_age:Duration)->Result<(),String>{reconcile_files(conn,false,Some(min_age))}
 fn run(reconcile:bool,prepared:&mut PreparedCache)->Result<Option<Duration>,String>{
     let (mut conn,base)=crate::factory_reply_inbox::open_db()?;
     if reconcile{
         prepared.clear();
-        let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(err)?;
-        let configured=jobs::archive_directory_v2(&tx)?.filter(|p|!p.trim().is_empty()).map(PathBuf::from);
+        // Network/path normalization can block. Do it before taking the
+        // writer lock, then recheck the raw setting in the transaction.
+        let configured=jobs::archive_directory_v2(&conn)?;
         let root=if crate::business_state::test_launch(){Some(crate::business_state::test_directory("Excel")?)}else{
-            configured.filter(|p|p.is_absolute()).map(|p|p.canonicalize().unwrap_or(p))
+            configured.as_deref().filter(|p|!p.trim().is_empty()).map(PathBuf::from)
+                .filter(|p|p.is_absolute()).map(|p|p.canonicalize().unwrap_or(p))
         };
+        let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(err)?;
+        if jobs::archive_directory_v2(&tx)?!=configured{return Err("취합 보관함 설정 변경".into())}
         jobs::recover_history(&tx,root.as_deref())?;
         tx.commit().map_err(err)?;
-        verify_completed(&conn)?;
-        clean_stale_temps(&mut conn,Duration::from_secs(24*3600))?;
+        reconcile_files(&conn,true,Some(Duration::from_secs(24*3600)))?;
     }else{jobs::initialize(&conn)?;}
     let now=Utc::now().timestamp();
     for job in jobs::pending_initialized(&conn,now,16)?{
