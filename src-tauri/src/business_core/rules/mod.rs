@@ -14,10 +14,6 @@ pub(crate) fn correction_message_header(shipment_id:&str)->Vec<String>{
 pub(crate) fn correction_change_line(label:&str,before:&str,after:&str)->String{
     format!("{label}: {before} → {after}")
 }
-pub(crate) fn factory_conflict_message(row:&str,name:&str,current_tracking:&str,
-    current_fee:&str,reply_tracking:&str,reply_fee:&str)->String{
-    format!("{row}행 / {name}\n기존: {current_tracking} / 운임 {current_fee}\n회신: {reply_tracking} / 운임 {reply_fee}\n이 한 행만 정정할까요? 기존 값과 원본 파일은 보존됩니다.")
-}
 #[cfg(test)]
 #[test]
 fn shared_correction_copy_retains_scope_and_before_after_values(){
@@ -168,6 +164,7 @@ mod reply_rules;
 mod shipping_read;
 mod client_change;
 mod factory_reply;
+pub(crate) use factory_reply::factory_conflict_message;
 pub(crate) use factory_reply::ensure_customer_payment_unchanged;
 pub(crate) use factory_reply::{factory_reply_matches_shipment,import_automatic_factory_reply,prepare_automatic_factory_reply,apply_prepared_factory_reply,factory_correction_order_scope,approve_factory_conflict_for_state};
 mod legacy_migration;
