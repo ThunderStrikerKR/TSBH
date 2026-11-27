@@ -2,6 +2,7 @@
 //! decisions are all projected by existing native Rust rules::history::list_view.
 //! The native egui view owns only date/search presentation, sort, expansion,
 //! clipboard copy and virtualized fixed-height rows.
+use crate::ui_layout::AlignedUiBuilderExt as _;
 use crate::{
     navigation::calendar_month_start as month_start,
     gateway::{BandoGateway, ReadOperation},
@@ -596,7 +597,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let action_width=(control.width()-action_gap)/2.0;
             ui.scope_builder(UiBuilder::new()
                 .id_salt(("order-history-actions",id))
-                .max_rect(control)
+                .aligned_max_rect(control)
                 .layout(egui::Layout::left_to_right(Align::Center)),|actions|{
                     actions.set_clip_rect(control.intersect(area));
                     actions.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,control.width());
@@ -661,7 +662,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let memo_text=shipment.map(|s|field(s,"managementMemo")).unwrap_or("");
             ui.scope_builder(UiBuilder::new()
                 .id_salt(("history-shipment-actions",id,recipient_index,shipment_index))
-                .max_rect(actions_rect)
+                .aligned_max_rect(actions_rect)
                 .layout(egui::Layout::left_to_right(Align::Center)),|actions|{
                     actions.set_clip_rect(actions_rect.intersect(area));
                     crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::Toolbar);
@@ -772,7 +773,7 @@ fn history_date_controls(
         let second=crate::ui_layout::aligned_rect(second);
         ui.scope_builder(UiBuilder::new()
             .id_salt("history-range-start-line")
-            .max_rect(first)
+            .aligned_max_rect(first)
             // Anchor the visible controls to the right, while preserving
             // their left-to-right order inside this compact row.
             .layout(egui::Layout::left_to_right(Align::Center)
@@ -787,7 +788,7 @@ fn history_date_controls(
             });
         ui.scope_builder(UiBuilder::new()
             .id_salt("history-range-end-line")
-            .max_rect(second)
+            .aligned_max_rect(second)
             .layout(egui::Layout::left_to_right(Align::Center)
                 .with_main_align(Align::Max)),
             |line|{
