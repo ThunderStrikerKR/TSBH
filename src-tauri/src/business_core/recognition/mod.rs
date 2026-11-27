@@ -976,7 +976,7 @@ fn conflicting_inline_quantities(hits:&[ProductHit])->HashSet<usize>{
     conflicts
 }
 fn ordered_quantity_pairs(events:&[Evidence],features:&DocumentFeatures,candidates:&CommonCandidates,
-    mut products:Vec<(usize,usize)>,mut quantities:Vec<usize>)->Vec<(usize,usize)>{
+    mut products:Vec<(usize,usize)>,mut quantities:Vec<usize>,trace:&mut Option<Vec<Value>>)->Vec<(usize,usize)>{
     if candidates.truncated||!features.positions_valid||products.len()<2||
         products.len()!=quantities.len()||products.len()>32{return vec![];}
     products.sort_unstable_by_key(|&(_,p)|events[p].start);
@@ -995,10 +995,15 @@ fn ordered_quantity_pairs(events:&[Evidence],features:&DocumentFeatures,candidat
         // Compare both adjacent rivals in each direction; never enumerate
         // the Cartesian product of all document candidates.
         for j in [i.checked_sub(1),i.checked_add(1).filter(|&j|j<products.len())].into_iter().flatten(){
-            if !exceeds_margin(score,quantity_link_score(events,features,products[j].1,q),OWNER_WEIGHTS.margin)
-                ||!exceeds_margin(score,quantity_link_score(events,features,p,quantities[j]),OWNER_WEIGHTS.margin){
-                return vec![];
-            }
+            let rival_product=quantity_link_score(events,features,products[j].1,q);
+            let rival_quantity=quantity_link_score(events,features,p,quantities[j]);
+            let wins=exceeds_margin(score,rival_product,OWNER_WEIGHTS.margin)
+                &&exceeds_margin(score,rival_quantity,OWNER_WEIGHTS.margin);
+            if let Some(rows)=trace.as_mut(){rows.push(json!({"event":q,"productEvent":p,
+                "rivalProductEvent":products[j].1,"rivalQuantityEvent":quantities[j],
+                "score":score,"rivalProductScore":rival_product,"rivalQuantityScore":rival_quantity,
+                "margin":OWNER_WEIGHTS.margin,"reason":if wins{"pair_comparison_pass"}else{"pair_comparison_failed"}}));}
+            if !wins{return vec![];}
         }
     }
     products.into_iter().zip(quantities).map(|((item,_),q)|(item,q)).collect()
@@ -2246,6 +2251,12 @@ fn assign_document_with_trace(document:ExtractedDocument<'_>,state:&Value,client
     }
     // Index unresolved individual products once. Common totals and items
     // with ambiguous inline quantities are ineligible for new pairing.
+    let mut blocked_items=HashSet::new();
+    for hit in &product_hits{
+        if hit.quantities.iter().any(|q|conflicting_quantities.contains(q)){
+            if let Some(id)=events[hit.evidence].item_id.as_ref(){blocked_items.insert(id.clone());}
+        }
+    }
     let mut pending_hits=vec![HashMap::<String,usize>::new();recipients.len()];
     for hit in &product_hits{
         if hit.common||!hit.quantities.is_empty(){continue;}
@@ -2269,11 +2280,12 @@ fn assign_document_with_trace(document:ExtractedDocument<'_>,state:&Value,client
                 items[i]["id"].as_str().and_then(|id|pending_hits[idx].get(id)).map(|&p|(i,p)))
                 .collect::<Vec<_>>();
             if products.len()==pending.len(){
-                ordered_quantity_pairs(&events,&features,&exclusions,products,standalone)
+                ordered_quantity_pairs(&events,&features,&exclusions,products,standalone,&mut trace)
             }else{vec![]}
         }else{vec![]};
         for (item_idx,q) in pairs{
-            if events[q].item_id.is_some()||conflicting_quantities.contains(&q){continue;}
+            if events[q].item_id.is_some()||conflicting_quantities.contains(&q)
+                ||recipients[idx]["items"][item_idx]["id"].as_str().is_some_and(|id|blocked_items.contains(id)){continue;}
             if let Some(rows)=trace.as_mut(){rows.push(json!({"event":q,"owner":idx,
                 "itemIndex":item_idx,"reason":"detached_quantity_accepted"}));}
             let rid = recipients[idx]["id"].as_str().unwrap_or("").to_owned();
@@ -2879,6 +2891,20 @@ mod tests {
         let hits=vec![hit(0,vec![2,2]),hit(1,vec![2,3])];
         assert_eq!(conflicting_inline_quantities(&hits),HashSet::from([2]));
         assert!(conflicting_inline_quantities(&[hit(0,vec![2,2])]).is_empty());
+    }
+    #[test]
+    fn contested_inline_quantity_is_not_confirmed_for_either_item(){
+        let raw="수취인: 김가상\n010-0000-0001\n709 2개\nGT-1 3개";
+        let state=state();
+        let mut doc=extract_document(raw,&state,None);
+        assert_eq!(doc.product_hits.len(),2);
+        let q=doc.product_hits[0].quantities[0];
+        doc.product_hits[1].quantities=vec![q];
+        let result=assign_document(doc,&state,None).unwrap();
+        let items=result["recipients"][0]["items"].as_array().unwrap();
+        assert_eq!(items.len(),2);
+        assert!(items.iter().all(|it|it["quantity"].is_null()&&it["quantityConfirmed"]==false));
+        assert!(!result["unassigned"].as_array().unwrap().is_empty());
     }
     #[test]
     fn trace_is_opt_in_and_records_the_operational_decision(){
