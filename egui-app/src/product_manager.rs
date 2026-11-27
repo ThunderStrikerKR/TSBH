@@ -894,7 +894,7 @@ impl ProductManager {
                         None
                     }else{
                         Some(category_notice.unwrap_or(match job.kind.as_str(){
-                            "upsert_product"=>"상품 상세 정보를 저장했습니다.",
+                            "upsert_product"=>"상품 정보를 저장했습니다.",
                             "move_products_to_category"=>"선택 상품의 카테고리를 변경했습니다.",
                             "archive_product"=>"상품을 삭제하고 과거 기록을 보존했습니다.",
                             "change_category"=>"카테고리 변경사항을 저장했습니다.",

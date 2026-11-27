@@ -136,7 +136,7 @@ fn payment_panel(
         display_or(field(staff,"date"),"미확인")));
     ui.add_space(theme::SPACE_4);
     if payments.is_empty(){
-        crate::ui_primitives::management_body_state_inline(ui,"해당 주문에 연결된 입금 기록이 없습니다.");
+        crate::ui_primitives::management_body_state_inline(ui,"이 주문의 입금 기록이 없습니다.");
     }
     for (i,payment) in payments.iter().enumerate(){
         if i>0{crate::ui_primitives::soft_divider(ui);}

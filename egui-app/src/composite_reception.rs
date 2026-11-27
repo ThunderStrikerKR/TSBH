@@ -308,7 +308,7 @@ pub fn reception_item_delete_confirmation(
         ctx,work_area,"reception-item-delete-confirm","품목 삭제 확인","삭제",
         !busy,!busy,crate::popup::DeleteBody::Plain,|body|{
             body.add(egui::Label::new(typography::body(
-                &format!("{} 품목을 발주서에서 삭제할까요?",name)
+                &format!("발주서에서 ‘{}’ 상품을 삭제할까요?",name)
             )).wrap());
             let width=body.available_width();
             fixed_status_slot(body,width,typography::METADATA_LINE_HEIGHT,

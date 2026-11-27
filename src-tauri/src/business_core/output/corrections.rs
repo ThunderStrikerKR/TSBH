@@ -40,10 +40,6 @@ fn item_line(recipient:&Value)->String {
 fn optional_fee(value:Option<&Value>)->Option<&Value> {
     value.filter(|v|!v.is_null())
 }
-fn fee_text(value:Option<&Value>)->String {
-    optional_fee(value).map(|v|printable(Some(v)))
-        .unwrap_or_else(||"미확정".into())
-}
 fn status(state:&Value,id:&str)->String {
     list(&state["workflow"],"events").iter().rev()
         .find(|event|s(event,"action")=="정정 요청 상태" && s(event,"before")==id)
@@ -80,7 +76,7 @@ fn message(state:&Value,request:&Value)->Result<String,String> {
         let new=optional_fee(after.get("shippingCharges").and_then(|v|v.get(origin)))
             .or(old);
         if old!=new {
-            lines.push(format!("{} 운임: {} → {}원",label,fee_text(old),fee_text(new)));
+            lines.push(format!("{} 운임: {} → {}",label,super::super::rules::correction_fee_text(old),super::super::rules::correction_fee_text(new)));
         }
     }
     if before.get("freightCode")!=after.get("freightCode") {
@@ -124,6 +120,6 @@ mod tests {
         }});
         let r=summaries(&json!({"state":state,"shipmentId":"s1"})).unwrap();
         assert_eq!(r["records"][0]["status"],"PENDING_FACTORY");
-        assert_eq!(r["records"][0]["text"],"기존 출고 건 정정 요청입니다.\n배송 ID: s1\n새 출고 주문이 아닙니다.\n주소: 서울 → 경기\n공장 운임: 3000 → 4000원\n운임 방식: 010 → 020");
+        assert_eq!(r["records"][0]["text"],"기존 출고 건 정정 요청입니다.\n배송 ID: s1\n새 출고 주문이 아닙니다.\n주소: 서울 → 경기\n공장 운임: 3,000원 → 4,000원\n운임 방식: 010 → 020");
     }
 }

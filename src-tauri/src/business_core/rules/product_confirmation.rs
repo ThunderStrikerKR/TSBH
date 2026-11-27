@@ -152,16 +152,16 @@ fn registered_independent<'a>(state:&'a Value,id:&str,exclude_demo:bool)->Option
 }
 fn validate_model_group(state:&Value,ids:&Value,representative:&str)->Result<(),String>{
     let all=rows(ids);
-    if all.len()<2{return Err("모델군에는 등록된 상품이 2개 이상 있어야 합니다.".into());}
+    if all.len()<2{return Err("모델군에는 상품을 2개 이상 등록하세요.".into());}
     let names=all.iter().filter_map(Value::as_str).collect::<Vec<_>>();
     if names.iter().collect::<HashSet<_>>().len()!=all.len(){
-        return Err("모델군에 같은 상품을 중복 등록할 수 없습니다.".into());
+        return Err("모델군에 상품을 중복 등록할 수 없습니다.".into());
     }
     if names.iter().any(|id|registered_independent(state,id,true).is_none()){
         return Err("등록된 독립 판매 상품만 모델군에 추가할 수 있습니다.".into());
     }
     if representative.is_empty()||!names.contains(&representative){
-        return Err("모델군에 등록된 상품 중 하나를 대표모델로 지정하세요.".into());
+        return Err("모델군에 속한 상품을 대표모델로 선택하세요.".into());
     }
     Ok(())
 }
@@ -183,7 +183,7 @@ fn validate_color_group(state:&Value,ids:&Value,representative:&str)->Result<(),
         return Err("색상이 등록된 상품만 그룹에 추가하세요.".into());
     }
     if colors.iter().collect::<HashSet<_>>().len()!=colors.len(){
-        return Err("같은 색상 상품이 중복됐습니다. 다른 규격은 별도 그룹으로 관리하세요.".into());
+        return Err("색상이 중복됩니다. 다른 규격은 별도 그룹으로 관리하세요.".into());
     }
     let first=variants[0];
     if ["wholesale","semi","retail"].iter().all(|k|field(first,k).is_null()){

@@ -374,7 +374,7 @@ fn validate_color_guidance(state: &Value) -> Result<(), String> {
             for member in members {
                 let pid = member.as_str().ok_or("상품 ID 오류")?;
                 if !local.insert(pid.to_owned()) || !assigned.insert(pid.to_owned()) {
-                    return Err("같은 상품을 중복하거나 여러 모델군에 등록할 수 없습니다.".into());
+                    return Err("상품은 한 모델군에 한 번만 등록할 수 있습니다.".into());
                 }
                 products.iter().find(|p|
                     p["id"].as_str() == Some(pid)
@@ -416,7 +416,7 @@ fn validate_color_guidance(state: &Value) -> Result<(), String> {
             if color.is_empty() || color=="단일" || color=="색상 미표기" {
                 return Err("색상이 지정된 상품만 그룹에 등록하세요.".into());
             }
-            if !colors.insert(color) { return Err("같은 색상이 중복됐습니다. 규격을 확인하세요.".into()); }
+            if !colors.insert(color) { return Err("색상이 중복됩니다. 규격을 확인하세요.".into()); }
             let price=(v["wholesale"].clone(),v["semi"].clone(),v["retail"].clone());
             price_known |= !price.0.is_null() || !price.1.is_null() || !price.2.is_null();
             if let Some(reference)=&price_reference {

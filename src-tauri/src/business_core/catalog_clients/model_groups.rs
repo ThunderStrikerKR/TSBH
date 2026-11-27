@@ -20,7 +20,7 @@ fn validate_product_ids(state:&Value,ids:&[Value],rep:&str)->Result<(),String>{
     }
     let unique=ids.iter().filter_map(Value::as_str).collect::<HashSet<_>>();
     if unique.len()!=ids.len(){
-        return Err("모델군에 같은 상품을 중복 등록할 수 없습니다.".into())
+        return Err("모델군에 상품을 중복 등록할 수 없습니다.".into())
     }
     let all=items(state,"products");
     if ids.iter().any(|id|{
@@ -68,7 +68,7 @@ pub(super) fn diagnostics(state:&Value)->Vec<Finding>{
                 out.push((key("member-count"),group["productIds"].clone(),"모델군에는 등록된 상품이 2개 이상 있어야 합니다.".into()));
             }
             if unique.len()!=members.len(){
-                out.push((key("member-identity"),group["productIds"].clone(),"모델군에 같은 상품을 중복 등록할 수 없습니다.".into()));
+                out.push((key("member-identity"),group["productIds"].clone(),"모델군에 상품을 중복 등록할 수 없습니다.".into()));
             }
             for member in members{
                 let Some(pid)=member.as_str()else{

@@ -2,6 +2,27 @@
 //! Every mutation returns a new JSON value; persistence belongs to the integrator.
 use serde_json::{json, Value};
 
+/// Display each correction amount independently, including missing values.
+pub(crate) fn correction_fee_text(value:Option<&Value>)->String {
+    let Some(v)=value.filter(|v|!v.is_null()) else {return "미확정".into();};
+    let Some(n)=v.as_i64() else {return "확인 필요".into();};
+    let digits=n.unsigned_abs().to_string();
+    let groups=digits.as_bytes().rchunks(3).rev()
+        .map(|part|std::str::from_utf8(part).expect("ASCII digits"))
+        .collect::<Vec<_>>().join(",");
+    format!("{}{}원",if n<0{"-"}else{""},groups)
+}
+#[cfg(test)]
+#[test]
+fn correction_fee_display_preserves_missing_zero_and_units(){
+    assert_eq!(correction_fee_text(None),"미확정");
+    assert_eq!(correction_fee_text(Some(&Value::Null)),"미확정");
+    assert_eq!(correction_fee_text(Some(&json!(0))),"0원");
+    assert_eq!(correction_fee_text(Some(&json!(3000))),"3,000원");
+    assert_eq!(correction_fee_text(Some(&json!(1234567))),"1,234,567원");
+    assert_eq!(correction_fee_text(Some(&json!("invalid"))),"확인 필요");
+}
+
 mod pricing;
 /// Common business terminology, including the legacy read compatibility.
 pub mod terminology {

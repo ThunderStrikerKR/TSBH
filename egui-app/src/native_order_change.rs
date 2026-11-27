@@ -42,14 +42,14 @@ fn rebind_manual_model(order_id:&str,saved:&Value,client_id:&str,
     let mut updated=saved.clone();
     {
         let model=updated.get_mut("model").and_then(Value::as_object_mut)
-            .ok_or("저장된 수동 수정 작업본이 올바르지 않습니다.")?;
+            .ok_or("저장된 수동 수정본이 올바르지 않습니다.")?;
         if !rows.is_array(){
             return Err("수동 수정 배송 목록이 올바르지 않습니다.".into());
         }
         model.insert("rows".into(),rows.clone());
     }
     scope_manual_model_ids(order_id,updated.get_mut("model")
-        .ok_or("저장된 수동 수정 작업본이 올바르지 않습니다.")?)?;
+        .ok_or("저장된 수동 수정본이 올바르지 않습니다.")?)?;
     updated["clientId"]=json!(client_id);
     Ok(updated)
 }
@@ -324,7 +324,7 @@ pub fn prepare_cancellable(
     // non-overridden lines, freight and VAT with the selected client.
     if let Some(saved)=source.manual_model.as_ref(){
         let mut model=saved.get("model").filter(|value|value.is_object())
-            .cloned().ok_or("저장된 수동 수정 작업본이 올바르지 않습니다.")?;
+            .cloned().ok_or("저장된 수동 수정본이 올바르지 않습니다.")?;
         scope_manual_model_ids(&source.id,&mut model)?;
         let keys=saved.get("assignmentOrder").filter(|value|value.is_array())
             .ok_or("수동 수정 원문 연결 순서가 없습니다.")?;

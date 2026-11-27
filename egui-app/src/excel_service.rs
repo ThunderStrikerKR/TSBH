@@ -191,7 +191,7 @@ pub fn create(origin:&str,ids:&[String])->Result<Value,String>{
             "count":preview["rows"].as_array().map_or(0,Vec::len),"origin":origin}))
     };
     outcome().map_err(|e|format!(
-        "Excel 파일은 저장됐지만 출력 이력 기록에 실패했습니다. 이 파일을 사용하지 마세요: {saved} / {e}"
+        "Excel 파일은 저장됐지만 출력 이력을 저장하지 못했습니다. 이 파일을 사용하지 마세요: {saved} / {e}"
     ))
 }
 /// Only actions exposed by the original React Excel queue/history are

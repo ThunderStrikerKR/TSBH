@@ -30,9 +30,9 @@ fn verified_original(base: &Path, id: &str, reply: &Value) -> Result<(), String>
     let digest = reply_digest(id)?;
     let file = base.join("factory-replies").join(format!("{digest}.xlsx"));
     let saved = reply["archivedPath"].as_str()
-        .ok_or("공장 회신 원본 보관 경로가 없어 정정을 진행할 수 없습니다.")?;
+        .ok_or("공장 회신 원본 보관 경로가 없어 정정할 수 없습니다.")?;
     let canonical_file = fs::canonicalize(&file)
-        .map_err(|_| "공장 회신 원본 파일이 없어 정정을 진행할 수 없습니다.".to_owned())?;
+        .map_err(|_| "공장 회신 원본 파일이 없어 정정할 수 없습니다.".to_owned())?;
     let canonical_saved = fs::canonicalize(saved)
         .map_err(|_| "공장 회신 원본 보관 경로를 확인할 수 없습니다.".to_owned())?;
     if canonical_saved != canonical_file {

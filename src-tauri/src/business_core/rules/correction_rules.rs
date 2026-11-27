@@ -102,11 +102,8 @@ fn message(state:&Value,request:&Value)->Result<String,String>{
         let new_fee=after.get("shippingCharges").and_then(|v|v.get(origin))
             .filter(|v|!v.is_null()).or(old_fee);
         if old_fee!=new_fee {
-            let display=|value:Option<&Value>| if value.is_none_or(Value::is_null) {
-                "미확정".into()
-            }else{js_display(value)};
-            lines.push(format!("{title} 운임: {} → {}원",
-                display(old_fee),display(new_fee)));
+            lines.push(format!("{title} 운임: {} → {}",
+                super::correction_fee_text(old_fee),super::correction_fee_text(new_fee)));
         }
     }
     if before.get("freightCode")!=after.get("freightCode"){

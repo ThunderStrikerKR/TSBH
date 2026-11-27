@@ -121,7 +121,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String>{
     if items(state,"products").iter().any(|p|active(p)&&catalog(p)==cat&&
         registry_key(field(p,"name"))==registry_key(field(imported,"name")))
     {
-        return Err("같은 상품명으로 등록된 상품이 존재합니다. 자동 중복 등록을 막았습니다.".into())
+        return Err("같은 이름의 상품이 있어 자동 등록을 중단했습니다.".into())
     }
     if items(state,"products").iter().any(|p|{
         !field(p,"deletedAt").is_empty() &&

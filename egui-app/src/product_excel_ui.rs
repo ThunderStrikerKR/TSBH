@@ -189,7 +189,7 @@ impl ProductExcelUi {
             }
             Some(Err(TryRecvError::Disconnected))=>{
                 self.job=None;
-                self.error=Some(format!("{} Excel 작업 응답이 중단됐습니다. 다시 조회하세요.",self.entity()));
+                self.error=Some(format!("{} Excel 응답이 중단됐습니다. 다시 조회하세요.",self.entity()));
             }
             // The Excel worker wakes egui as soon as the channel is ready.
             Some(Err(TryRecvError::Empty))=>{},
@@ -295,7 +295,7 @@ impl ProductExcelUi {
                             }
                         });
                         let missing_note=(missing>0).then(||format!(
-                            "Excel에서 누락된 기존 {entity} {missing}개는 삭제하거나 중지하지 않고 그대로 유지합니다."
+                            "Excel에 없는 기존 {entity} {missing}개는 삭제·중지하지 않습니다."
                         ));
                         let missing_width=ui.available_width();
                         crate::ui_layout::fixed_status_slot(

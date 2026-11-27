@@ -165,7 +165,7 @@ pub(super) async fn retry_startup(
     let target = app.clone();
     let began = Instant::now();
     let attempt = tauri::async_runtime::spawn_blocking(move || open_database(&target))
-        .await.map_err(|error| format!("초기화 재시도 작업 실패: {error}"));
+        .await.map_err(|error| format!("초기화 재시도 실패: {error}"));
     match attempt {
         Ok(Ok(db)) => {
             if !app.manage(db) {
