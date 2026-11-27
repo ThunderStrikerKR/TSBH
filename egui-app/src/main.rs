@@ -6145,6 +6145,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 egui::pos2(x, all.top()),
                                 Vec2::new(widths[index], all.height()),
                             );
+                            let rect=crate::ui_layout::aligned_rect(rect);
                             // Each pane has a stable independent rectangle.
                             let _pane_output=ui.scope_builder(
                                 UiBuilder::new()
@@ -6179,6 +6180,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     egui::pos2(x, all.top()),
                                     Vec2::new(layout::SPLITTER, all.height()),
                                 );
+                                let splitter=crate::ui_layout::aligned_rect(splitter);
                                 let id = ui.make_persistent_id(("horizontal-splitter", index));
                                 let response = ui.interact(splitter, id, Sense::click_and_drag());
                                 #[cfg(test)]
@@ -6277,6 +6279,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             Vec2::new(width, message_height),
         );
 
+        let source_rect=crate::ui_layout::aligned_rect(source_rect);
+        let splitter_rect=crate::ui_layout::aligned_rect(splitter_rect);
+        let message_rect=crate::ui_layout::aligned_rect(message_rect);
+        let source_height=source_rect.height();
+        let message_height=message_rect.height();
         ui.scope_builder(
             UiBuilder::new().id_salt("source-top").max_rect(source_rect),
             |child| {
@@ -7456,6 +7463,18 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             egui::pos2(bounds.left(),bottom_rect.bottom()+summary_gap),
             Vec2::new(full_width,summary_height)
         );
+
+        // Snap absolute shared edges once, before deriving the child size,
+        // clip rectangle or card height. All three reception states reuse
+        // the same geometry and the final edge remains the workspace edge.
+        let review_rect=crate::ui_layout::aligned_rect(review_rect);
+        let first_sep=crate::ui_layout::aligned_rect(first_sep);
+        let recipient_rect=crate::ui_layout::aligned_rect(recipient_rect);
+        let second_sep=crate::ui_layout::aligned_rect(second_sep);
+        let bottom_rect=crate::ui_layout::aligned_rect(bottom_rect);
+        let summary_rect=crate::ui_layout::aligned_rect(summary_rect);
+        let review_height=review_rect.height();
+        let recipient_height=recipient_rect.height();
 
         // Keep the established gutter appearance without resize hit targets.
         for gutter in [first_sep,second_sep] {
