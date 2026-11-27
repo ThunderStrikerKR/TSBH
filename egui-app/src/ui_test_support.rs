@@ -212,8 +212,25 @@ pub(crate) fn assert_caption_visibility(output:&egui::FullOutput,label:&str,widg
             rect.left()<widget.left()-1.0||rect.right()>widget.right()+1.0){
             failure="horizontally clipped or elided required caption";continue;
         }
-        if paint[index+1..].iter().any(|entry|matches!(entry,CaptionPaint::OpaqueRect(cover)
-            if cover.contains_rect(visible))){
+        // A union of later opaque fills can hide the entire caption even
+        // when no individual fill covers it. Subtract only proven opaque
+        // rectangles; partial coverage alone is not a failure in this policy.
+        let mut remaining=vec![visible];
+        for entry in &paint[index+1..]{
+            let CaptionPaint::OpaqueRect(cover)=*entry else{continue};
+            remaining=remaining.into_iter().flat_map(|part|{
+                let hit=part.intersect(cover);
+                if !hit.is_positive(){return vec![part];}
+                [
+                    Rect::from_min_max(part.min,egui::pos2(part.right(),hit.top())),
+                    Rect::from_min_max(egui::pos2(part.left(),hit.bottom()),part.max),
+                    Rect::from_min_max(egui::pos2(part.left(),hit.top()),egui::pos2(hit.left(),hit.bottom())),
+                    Rect::from_min_max(egui::pos2(hit.right(),hit.top()),egui::pos2(part.right(),hit.bottom())),
+                ].into_iter().filter(|rect|rect.is_positive()).collect::<Vec<_>>()
+            }).collect();
+            if remaining.is_empty(){break;}
+        }
+        if remaining.is_empty(){
             failure="fully occluded caption";continue;
         }
         return rect;
@@ -295,6 +312,13 @@ mod shared_component_screen_trace_tests{
                 if mode=="background"{painter.rect_filled(widget,0.0,egui::Color32::BLACK);}
                 painter.with_clip_rect(clip).galley(pos,galley,egui::Color32::WHITE);
                 if mode=="covered"{painter.rect_filled(widget,0.0,egui::Color32::BLACK);}
+                if mode=="covered-split"||mode=="partial-cover"{
+                    let middle=widget.center().x;
+                    let left=Rect::from_min_max(widget.min,egui::pos2(middle,widget.bottom()));
+                    let right=Rect::from_min_max(egui::pos2(middle,widget.top()),widget.max);
+                    painter.rect_filled(left,0.0,egui::Color32::BLACK);
+                    if mode=="covered-split"{painter.rect_filled(right,0.0,egui::Color32::BLACK);}
+                }
                 if mode=="translucent"{painter.rect_filled(widget,0.0,egui::Color32::from_black_alpha(80));}
             });
         });
@@ -302,7 +326,7 @@ mod shared_component_screen_trace_tests{
     }
     #[test]
     fn caption_detector_accepts_visible_background_and_explicit_horizontal_overflow(){
-        for mode in ["normal","background","translucent","horizontal"]{
+        for mode in ["normal","background","translucent","horizontal","partial-cover"]{
             let (output,widget)=paint_case(mode);
             assert_caption_visibility(&output,"검증 라벨",widget,mode=="horizontal");
         }
@@ -314,6 +338,7 @@ mod shared_component_screen_trace_tests{
             ("horizontal",false,"horizontally clipped"),
             ("hidden",true,"fully clipped"),
             ("covered",true,"fully occluded"),
+            ("covered-split",true,"fully occluded"),
         ]{
             let (output,widget)=paint_case(mode);
             let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
