@@ -1033,6 +1033,20 @@ mod current_information_approval_tests {
         assert!(!order_issues(&o).iter().any(|i|i["itemId"]=="i"&&i["canApproveCurrent"]==true));
     }
     #[test]
+    fn excluded_source_is_preserved_and_can_be_reopened(){
+        let mut o=sample();
+        o["raw"]=json!("지난 주문 709");
+        o["recipients"][0]["unassignedEvidence"]=json!([
+            {"kind":"product","text":"지난 주문 709","start":0,"end":9}]);
+        let mut o=action(&o,"UNASSIGNED_EVIDENCE","approve_current_information").unwrap();
+        assert_eq!(o["raw"],"지난 주문 709");
+        assert_eq!(o["recipients"][0]["unassignedEvidence"].as_array().unwrap().len(),1);
+        assert!(order_issues(&o).iter().any(|i|i["kind"]=="UNASSIGNED_EVIDENCE"&&i["resolution"]=="USER_APPROVED"));
+        o=action(&o,"UNASSIGNED_EVIDENCE","cancel_current_information").unwrap();
+        assert!(order_issues(&o).iter().any(|i|i["kind"]=="UNASSIGNED_EVIDENCE"&&i["severity"]=="ACTION"));
+        assert_eq!(o["recipients"][0]["unassignedReviewRetained"],true);
+    }
+    #[test]
     fn missing_data_and_stale_basis_cannot_be_approved(){
         let mut o=sample();
         let issue=order_issues(&o).into_iter().find(|i|i["kind"]=="ADDRESS").unwrap();

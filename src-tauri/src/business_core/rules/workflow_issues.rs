@@ -254,7 +254,20 @@ pub(super) fn renotice_approval_basis(state:&Value,group_id:&str)->Result<Option
         let Some(amount)=super::safe(field(&total,"total"))else{return Ok(None);};
         amounts.insert(sid.to_owned(),json!(amount));
     }
+    // A previous approval must not become valid again just because an
+    // edited amount was later restored. Bind to the latest relevant edit,
+    // not routine stage completion or the approval event itself.
+    let last_edit=rows(field(field(state,"workflow"),"events")).iter().rev().find(|e|{
+        let action=str_field(e,"action");
+        let related=str_field(e,"groupId")==group_id ||
+            rows(field(e,"shipmentIds")).iter().any(|id|id.as_str().is_some_and(|id|amounts.contains_key(id)));
+        related && (["배송 건 운임 수정","묶음 입금 계좌 변경","묶음 해제","다시 묶기",
+            "거래처 변경","부가세 설정 변경","발송지 변경","배송 건 제외"].contains(&action) ||
+            (action=="확정 주문 수정" && ["quantity","unitPrice","product","addItem","removeItem","address"]
+                .contains(&str_field(e,"reason"))))
+    });
     Ok(Some(json!({"groupId":group_id,"dealerId":field(group,"dealerId"),
+        "billingEditEventId":last_edit.map(|e|field(e,"id")).unwrap_or(&Value::Null),
         "copyEventId":field(event,"id"),"currentTotal":field(&current,"total"),
         "account":{"id":field(account,"id"),"bank":field(account,"bank"),
             "number":field(account,"number"),"holder":field(account,"holder")},
@@ -590,6 +603,61 @@ mod freight_issue_tests {
 #[cfg(test)]
 mod copied_payment_notice_tests{
     use super::*;
+    #[test]
+    fn sale_approval_requires_existing_catalog_and_is_item_scoped(){
+        let mut state=json!({"products":[{"id":"p","saleStatus":"판매중지",
+            "active":true,"variants":[{"id":"v"}]}]});
+        let mut order=json!({"id":"o","recipients":[{"id":"r","name":"수취인",
+            "items":[{"id":"i","name":"709","productId":"p","variantId":"v"},
+                     {"id":"j","name":"709","productId":"p","variantId":"v"}]}]});
+        let issues=sale_issues(&state,&order,"g");
+        assert_eq!(issues.len(),2);
+        assert_ne!(issues[0]["issueId"],issues[1]["issueId"]);
+        let approved=super::super::issues::issue_action(&json!({
+            "action":"approve_current_information","state":state,"order":order,
+            "recipientId":"r","issueId":issues[0]["issueId"],"approvalBasis":issues[0]["approvalBasis"],
+            "actor":"사용자","now":"2026-11-27T00:00:00Z"
+        })).unwrap();
+        order=approved["order"].clone();
+        let row=&order["recipients"][0];
+        assert!(sale_approved(&state,row,&row["items"][0]));
+        assert!(!sale_approved(&state,row,&row["items"][1]));
+        state["products"][0]["active"]=json!(false);
+        assert!(!sale_approved(&state,row,&row["items"][0]));
+        assert!(sale_issues(&state,&order,"g").iter().all(|i|i["canApproveCurrent"]!=true));
+    }
+    #[test]
+    fn renotice_approval_keeps_formal_notice_and_copy_history_separate(){
+        let account=json!({"id":"a","bank":"은행","number":"123","holder":"예금주"});
+        let mut state=json!({
+            "clients":[{"id":"c","name":"거래처","payment":"POSTPAID"}],
+            "orders":[{"id":"o","clientId":"c","orderType":"AGENCY","freightCode":"020","applyVat":false,
+                "recipients":[{"id":"r","items":[{"id":"i","productId":"p","variantId":"v",
+                    "quantity":1,"unitPrice":3000,"origin":"FACTORY"}]}]}],
+            "products":[{"id":"p","variants":[{"id":"v"}]}],
+            "settings":{"defaultAccountId":"a","accounts":[account]},
+            "workflow":{"groups":[{"id":"g","dealerId":"c","needsNotice":true,"notices":[]}],
+                "shipments":[{"id":"s","groupId":"g","orderId":"o","recipientId":"r","step":2}],
+                "events":[{"id":"copy","groupId":"g","action":"메시지 복사",
+                    "after":{"type":"PAYMENT","billing":{"total":1000,"account":account}}}],
+                "payments":[],"confirmations":[]}
+        });
+        let copy=state["workflow"]["events"][0].clone();
+        let basis=renotice_approval_basis(&state,"g").unwrap().unwrap();
+        let approved=w::apply(&json!({"state":state,"action":"approve_renotice","groupId":"g",
+            "approvalBasis":basis,"eventId":"approve","now":"2026-11-27T00:00:00Z","actor":"사용자"})).unwrap();
+        state=approved["state"].clone();
+        assert!(renotice_approved(&state,"g").unwrap());
+        assert!(!payment_renotice_required(&state,"g").unwrap());
+        assert!(notice_pending(&state,"g").unwrap());
+        assert_eq!(state["workflow"]["events"][0],copy);
+        assert!(state["workflow"]["confirmations"].as_array().unwrap().is_empty());
+        let cancelled=w::apply(&json!({"state":state,"action":"cancel_renotice_approval","groupId":"g",
+            "approvalBasis":basis,"eventId":"cancel","now":"2026-11-27T00:01:00Z","actor":"사용자"})).unwrap();
+        assert!(!renotice_approved(&cancelled["state"],"g").unwrap());
+        state["orders"][0]["recipients"][0]["items"][0]["unitPrice"]=json!(4000);
+        assert!(!renotice_approved(&state,"g").unwrap());
+    }
     #[test]
     fn only_verified_total_or_account_changes_trigger_notice(){
         let a=json!({"bank":"은행","number":"123","holder":"예금주"});
