@@ -10930,6 +10930,20 @@ fn recognition_correction_audit_summary()->Result<serde_json::Value,String>{
 }
 
 fn main() -> eframe::Result<()> {
+    if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-learning-support"){
+        let result=(||->Result<serde_json::Value,String>{
+            if std::env::args_os().len()!=3{return Err("학습 지지도 JSON 인수 하나 필요".into());}
+            let arg=std::env::args_os().nth(2).and_then(|a|a.into_string().ok()).ok_or("학습 지지도 인수 오류")?;
+            if arg.len()>64*1024{return Err("학습 지지도 인수 한도 초과".into());}
+            let input=serde_json::from_str(&arg).map_err(|_|"학습 지지도 JSON 오류")?;
+            gateway::recognition_learning_support(&input)
+        })();
+        match result{
+            Ok(report)=>println!("{report}"),
+            Err(_)=>{eprintln!("[BANDO HUB] 학습 지지도 조회 실패: 검증된 학습 저장소와 입력 규격을 확인하세요.");std::process::exit(2);}
+        }
+        return Ok(());
+    }
     if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-learning-reset"){
         if std::env::args_os().len()!=3 || !std::env::args_os().nth(2).is_some_and(|arg|arg=="--derived-only"){
             eprintln!("[BANDO HUB] 파생 통계 초기화는 --derived-only 명시가 필요합니다.");std::process::exit(2);

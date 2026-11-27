@@ -909,6 +909,19 @@ impl PreviewStore {
         tx.commit().map_err(|e|e.to_string())
     }
 
+    pub(crate) fn recognition_learning_support(input:&Value)->Result<Value,String>{
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
+        // Diagnostic only: no preparation/migration or writes on this path.
+        let report=recognition_learning_store::assess_support(&tx,&scope,input)?;
+        if crate::business_state::authorized_business_write_path()?.canonicalize()
+            .map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("학습 지지도 조회 중 업무 DB가 변경되었습니다.".into());
+        }
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(report)
+    }
+
     pub(crate) fn recognition_learning_integrity()->Result<Value,String>{
         let (mut conn,_,scope)=Self::learning_connection()?;
         let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;

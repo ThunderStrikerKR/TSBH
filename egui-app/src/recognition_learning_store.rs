@@ -6,6 +6,9 @@ use sha2::{Digest,Sha256};
 use serde_json::{json,Value};
 use std::collections::{BTreeMap,BTreeSet};
 
+#[path="recognition_support.rs"]
+mod recognition_support;
+
 const FEATURE_VERSION:i64=1;
 // Bump whenever the meaning of a contribution or its input changes,
 // even if the public context feature keys stay the same.
@@ -49,7 +52,9 @@ pub(super) fn prepare(conn:&Connection)->Result<(),String>{
           (scope,feature_version,order_id) ON DELETE CASCADE);
         CREATE TABLE IF NOT EXISTS recognition_learning_pending(
         scope TEXT NOT NULL,feature_version INTEGER NOT NULL,order_id TEXT NOT NULL,
-        PRIMARY KEY(scope,feature_version,order_id));")
+        PRIMARY KEY(scope,feature_version,order_id));
+        CREATE INDEX IF NOT EXISTS recognition_learning_facts_context
+        ON recognition_learning_facts(scope,feature_version,family,context_key,order_id);")
         .map_err(|e|e.to_string())?;
     let version:i64=conn.query_row("SELECT value FROM recognition_learning_meta WHERE key='schema'",[],|r|r.get(0)).map_err(|e|e.to_string())?;
     if version!=1{return Err("지원하지 않는 학습 저장소 스키마입니다.".into());}
@@ -263,6 +268,10 @@ fn synchronize(tx:&Transaction<'_>,scope:&str,ids:&[String],orders:&[Value],
         order["id"].as_str().ok_or("학습 주문 ID 누락")?.to_owned(),fingerprint(order)?
     ))).collect::<Result<BTreeMap<_,_>,String>>()?;
     synchronize_with_digests(tx,scope,ids,&digests,orders,summarize)
+}
+
+pub(super) fn assess_support(tx:&Transaction<'_>,scope:&str,input:&Value)->Result<Value,String>{
+    recognition_support::assess(tx,scope,input)
 }
 
 pub(super) fn order_page(conn:&Connection,scope:&str,after:&str,limit:usize)->Result<Vec<String>,String>{
