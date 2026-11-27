@@ -1,8 +1,8 @@
 //! Low-level UI primitives independent of composite screens and controls.
-use crate::ui_layout::SharedUiClipExt as _;
-use crate::ui_layout::SharedPainterClipExt as _;
-use crate::ui_layout::SharedAllocationExt as _;
-use crate::ui_layout::AlignedUiBuilderExt as _;
+use crate::ui_layout::geometry::SharedUiClipExt as _;
+use crate::ui_layout::geometry::SharedPainterClipExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
+use crate::ui_layout::geometry::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Stroke,Ui,UiBuilder,Vec2};
 
 use crate::{theme,typography};
@@ -202,7 +202,7 @@ pub(crate) fn date_navigation_segmented_surface_with_state<R>(
         ui,id_salt,inner,Layout::left_to_right(Align::Center)
     );
     segments.apply_shared_width(CardWidthPolicy::Fixed,inner.width());
-    crate::ui_layout::set_fixed_height(&mut segments,inner.height());
+    crate::ui_layout::geometry::set_fixed_height(&mut segments,inner.height());
     segments.spacing_mut().item_spacing=Vec2::ZERO;
     let content=add_segments(&mut segments,inner);
     let stroke=crate::highlight::prioritized_stroke(
@@ -217,7 +217,7 @@ pub(crate) fn date_navigation_segmented_surface_with_state<R>(
 pub(crate) fn navigation_segment_child(
     parent:&mut Ui,id:impl std::hash::Hash,rect:Rect,layout:Layout
 )->Ui{
-    let rect=crate::ui_layout::aligned_rect(rect);
+    let rect=crate::ui_layout::geometry::aligned_rect(rect);
     let mut child=parent.new_child(UiBuilder::new().id_salt(id)
         .aligned_max_rect(rect).layout(layout));
     child.restrict_shared_clip(rect.intersect(parent.clip_rect()));
@@ -304,44 +304,8 @@ mod shared_hover_clip_tests{
     }
 }
 
-/// Card width is independent of height. Natural cards do not reserve space;
-/// full-width cards reserve a minimum, fixed columns retain their allocation,
-/// and bounded report cards additionally constrain wrapping before scrolling.
-#[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
-pub(crate) enum CardWidthPolicy {
-    #[default]
-    FitContent,
-    FillAvailable,
-    Fixed,
-    Bounded,
-    /// Upper bound only: preserve the content's natural minimum width.
-    UpperLimit,
-}
-pub(crate) fn apply_width_policy(ui:&mut Ui,policy:CardWidthPolicy,target:f32){
-    if !target.is_finite(){return;}
-    let width=crate::ui_layout::aligned_extent(target.max(0.0));
-    match policy{
-        CardWidthPolicy::FitContent=>{},
-        CardWidthPolicy::FillAvailable=>ui.set_min_width(width),
-        CardWidthPolicy::Fixed=>ui.set_width(width),
-        CardWidthPolicy::UpperLimit=>ui.set_max_width(width),
-        CardWidthPolicy::Bounded=>{
-            ui.set_width(width);
-            ui.set_max_width(width);
-        }
-    }
-}
-
-/// Same policy for owned Ui and borrowed Ui receivers.
-pub(crate) trait UiWidthPolicyExt {
-    fn apply_shared_width(&mut self,policy:CardWidthPolicy,target:f32);
-}
-impl UiWidthPolicyExt for Ui {
-    fn apply_shared_width(&mut self,policy:CardWidthPolicy,target:f32){
-        apply_width_policy(self,policy,target);
-    }
-}
-
+// Compatibility exports for existing screen callers; geometry owns the policy.
+pub(crate) use crate::ui_layout::geometry::{CardWidthPolicy,UiWidthPolicyExt,apply_width_policy};
 
 #[cfg(test)]
 mod private_api_contract_overflow_tooltip_policy_rejects_blank_and_fitting_text {
