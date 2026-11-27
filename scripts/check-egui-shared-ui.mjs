@@ -19,7 +19,6 @@ const compact = new Map(Object.entries({
   "excel_manager.rs:show_reply_review:ui":1,
   "workflow_board_ui.rs:group_frame:ui":1,
   "workflow_board_ui.rs:pending_frame:ui":1,
-  "manual_product_search.rs:show:ui":1,
   "category_dropdown.rs:menu_body:menu":1,
   "category_dropdown.rs:explorer_body:menu":1, // existing picker divider moved into shared body
   "navigation.rs:date_calendar:calendar":1
