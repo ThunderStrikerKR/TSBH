@@ -358,6 +358,7 @@ fn group_product_preview(ui:&Ui,names:&[String],available_width:f32)->String{
 struct RateEditor {
     id: String,
     name: String,
+    original_name: String,
     original: Value,
     max_bundle: Option<i64>,
     max_bundle_text: String,
@@ -373,7 +374,7 @@ impl RateEditor {
             .map(|(count,amount)|(count,amount.to_string())).collect();
         let max_bundle=rule["maxBundle"].as_i64();
         let mut editor=Self{
-            id:id.to_owned(),name:name.to_owned(),original:rule.clone(),
+            id:id.to_owned(),name:name.to_owned(),original_name:name.to_owned(),original:rule.clone(),
             max_bundle,max_bundle_text:max_bundle.map(|n|n.to_string()).unwrap_or_default(),
             fees,notes:text(rule,"notes").to_owned(),
             error:None,ask_discard:false,product:false
@@ -409,7 +410,8 @@ impl RateEditor {
     fn active_fee(&self,count:i64)->bool{
         self.max_bundle.is_none_or(|max|count<=max)
     }
-    fn dirty(&self)->bool{
+    fn dirty(&self)->bool{(!self.product&&self.name!=self.original_name)||self.rate_dirty()}
+    fn rate_dirty(&self)->bool{
         if self.original["maxBundle"].as_i64()!=self.max_bundle
             || text(&self.original,"notes")!=self.notes {return true;}
         let old=Self::confirmed_fees(&self.original);
@@ -419,6 +421,13 @@ impl RateEditor {
         old!=new
     }
     fn write_action(&self)->Result<(String,Value),String>{
+        if !self.product&&self.name!=self.original_name{
+            let name=self.name.trim();
+            if name.is_empty(){return Err("배송 그룹명을 입력하세요.".into());}
+            let mut data=json!({"groupId":self.id,"name":name});
+            if self.rate_dirty(){data["rule"]=self.draft()?;}
+            return Ok(("edit_group".into(),data));
+        }
         let rule=self.draft()?;
         let operation=if self.product {"save_product_rule"}else{"save_group_rule"};
         let data=if self.product {
@@ -696,6 +705,7 @@ impl FreightManager {
                         self.notice=Some(match action.as_str(){
                             "create_group"=>"새 배송 그룹을 등록했습니다.",
                             "rename_group"=>"배송 그룹명을 변경했습니다.",
+                            "edit_group"=>"배송 그룹 변경사항을 저장했습니다.",
                             "delete_group"=>"그룹을 삭제하고 과거 운임 기록을 보존했습니다.",
                             "assign_products"=>"배송 그룹 지정을 저장했습니다.",
                             "save_group_rule"=>"운임표를 저장했습니다. 변경 전 기준은 이력으로 보존됩니다.",
@@ -711,16 +721,16 @@ impl FreightManager {
                                 self.create_group_open=false;
                             },
                             "rename_group"=>self.rename_target=None,
-                            "delete_group"=>self.delete_target=None,
+                            "delete_group"=>{self.delete_target=None;self.rate_editor=None;},
                             "assign_products"=>{
                                 self.pending.clear();
                                 self.selected.clear();
                                 self.bulk_group=None;
                                 self.bulk_feedback=None;
                             }
-                            "save_group_rule"|"save_product_rule"=>self.rate_editor=None,
+                            "edit_group"|"save_group_rule"|"save_product_rule"=>self.rate_editor=None,
                             "reset_product_freight_rule"=>self.product_reset_target=None,
-                            "change_basis"=>self.basis_target=None,
+                            "change_basis"=>{self.basis_target=None;self.rate_editor=None;},
                             "revise_combination"=>self.exception_target=None,
                             _=>{}
                         }
@@ -931,9 +941,8 @@ impl FreightManager {
                 // scroll used to move the header away with the old duplicate list.
                 FreightTab::Rates => Self::show_rates(
                     ui,&groups,&products,projection,
-                    &mut self.create_group_open,&mut self.rename_target,
-                    &mut self.delete_target,&mut self.rate_editor,
-                    &mut self.basis_target,&mut self.rate_sort,
+                    &mut self.create_group_open,&mut self.rate_editor,
+                    &mut self.rate_sort,
                     &mut self.rate_search,&mut self.error,enabled
                 ),
                 FreightTab::History => {
@@ -1088,14 +1097,17 @@ impl FreightManager {
             let ctx=ui.ctx();
             let mut close_editor=false;
             let mut close_basis=false;
-            if let Some(editor)=self.rate_editor.as_mut(){
+            let confirmation_open=self.delete_target.is_some()||self.basis_target.is_some();
+            if let Some(editor)=self.rate_editor.as_mut().filter(|_|!confirmation_open){
                 crate::popup::modal_backdrop(ctx,"freight-rate-backdrop",false);
-                crate::popup::modal_window(ctx,if editor.product{"기본 운임 설정"}else{"배송 그룹 운임 수정"},"freight-rate-modal",area)
+                let mut request_delete=false;
+                let mut request_basis=false;
+                crate::popup::modal_window(ctx,if editor.product{"기본 운임 설정"}else{"배송 그룹 관리"},"freight-rate-modal",area)
                     .resizable(false).show(ctx,|modal|{
 
                         let title=if editor.product{
                             "기본 운임 설정"
-                        }else{"배송 그룹 운임 수정"};
+                        }else{"배송 그룹 관리"};
                         crate::popup::modal_flow_workspace(modal,|workspace|{
                             if workspace.header(title,"취소",enabled
                             ){
@@ -1103,23 +1115,47 @@ impl FreightManager {
                                 else{close_editor=true;}
                             }
                             workspace.scroll_region("freight-rate-editor-scroll",crate::popup::modal_editor_body_max_height(area.height()),|body|{
-                                        Self::rate_dialog(body,editor,enabled);
+                                if !editor.product{
+                                    crate::popup::modal_compact_text_field(body,"배송 그룹명",&mut editor.name,"그룹 이름 입력");
+                                    let members=group_product_labels(&products);
+                                    let names=members.get(&editor.id).map(Vec::as_slice).unwrap_or(&[]);
+                                    crate::popup::modal_master_body_section(body,"소속 상품",|list|{
+                                        crate::table::registry_table(list,("freight-group-members",&editor.id),
+                                            ["상품명"],[320.0],
+                                            names.len().clamp(1,5) as f32*theme::MANAGEMENT_COMPACT_ROW_HEIGHT,
+                                            names.len(),|_|false,|row,cells,index,_|{
+                                                crate::table::registry_cell(row,cells[0],&names[index],
+                                                    typography::ManagementTableCellRole::ProductName,false,index);
+                                            });
+                                    });
+                                }
+                                Self::rate_dialog(body,editor,enabled);
                             });
-                            workspace.footer_single(|bar|{
-                                if crate::button::action(bar,"확인한 운임 저장",
-                                    theme::ButtonRole::Primary,
-                                    enabled&&editor.dirty()).clicked(){
-                                    match editor.write_action(){
-                                        Ok(command)=>{
-                                            editor.error=None;
-                                            action=Some(command);
+                            workspace.footer(
+                                |left|{
+                                    if !editor.product{
+                                        request_delete=crate::button::action(left,"그룹 삭제",theme::ButtonRole::Danger,
+                                            enabled&&!editor.dirty()).clicked();
+                                    }
+                                },
+                                |right|{
+                                    if crate::button::action(right,if editor.product{"확인한 운임 저장"}else{"변경사항 저장"},
+                                        theme::ButtonRole::Primary,enabled&&editor.dirty()).clicked(){
+                                        match editor.write_action(){
+                                            Ok(command)=>{editor.error=None;action=Some(command);}
+                                            Err(message)=>editor.error=Some(message),
                                         }
-                                        Err(message)=>editor.error=Some(message),
+                                    }
+                                    if !editor.product{
+                                        request_basis=crate::button::action(right,"기준 변경",theme::ButtonRole::Secondary,
+                                            enabled&&!editor.dirty()).clicked();
                                     }
                                 }
-                            });
+                            );
                         });
                     });
+                if request_delete{self.delete_target=Some(editor.id.clone());}
+                if request_basis{self.basis_target=Some(Some(editor.id.clone()));}
                 if editor.ask_discard {
                     crate::popup::modal_backdrop(ctx,"freight-discard-backdrop",true);
                     match crate::popup::show_save_confirmation(
@@ -1856,10 +1892,7 @@ impl FreightManager {
     fn show_rates(
         ui: &mut Ui, groups: &[Value], products: &[&Value], projection: &Value,
         create_group_open: &mut bool,
-        rename_target: &mut Option<(String,String)>,
-        delete_target: &mut Option<String>,
         editor: &mut Option<RateEditor>,
-        basis: &mut Option<Option<String>>,
         sort: &mut Option<RateSort>,search:&mut String,
         error: &mut Option<String>,enabled:bool,
     ) {
@@ -1881,11 +1914,11 @@ impl FreightManager {
             let table_width=rate_layout.table_width;
             let widths=theme::management_weighted_columns(
                 theme::FREIGHT_RATE_COL_WIDTHS,
-                [0.0,0.0,1.0,0.0],
+                [0.0,0.0,1.0],
                 table_width,theme::FREIGHT_ASSIGNMENT_COL_GAP
             );
             let titles=[
-                "그룹명","묶음 한도","소속 상품","관리"
+                "그룹명","묶음 한도","소속 상품"
             ];
             let mut ordered=Self::filtered_rate_groups(groups,search);
             if let Some(active)=*sort {
@@ -1930,6 +1963,10 @@ impl FreightManager {
                         crate::ui_test_support::record("data row",row_rect);
                         first_row_left.get_or_insert(row_rect.left());
                         crate::table::fixed_row(table,("freight-rate-row",id),row_rect,index,&widths,theme::FREIGHT_ASSIGNMENT_COL_GAP,crate::table::RowTone::Alternating,|row,cells|{
+                        if editor.is_none()&&!*create_group_open{
+                            crate::table::paint_management_interactive_row_background(
+                                row.painter(),row_rect,index,row.rect_contains_pointer(row_rect));
+                        }
                         // Name owns its own column. Membership is
                                 // shown separately from the rate rule and
                                 // matches the registered product assignments.
@@ -1963,58 +2000,18 @@ impl FreightManager {
                                     },(id,2),
                                     if names.is_empty(){None}else{Some(&full)}
                                 );
-                                // Group operations are one compact trigger.
-                                // The popup is an independent overlay and never
-                                // changes the virtualized row or scrollbar height.
-                                let rect=cells[3].shrink2(egui::vec2(theme::MANAGEMENT_TABLE_ACTION_INSET,0.0));
-                                row.scope_builder(
-                                    egui::UiBuilder::new()
-                                        .id_salt(("freight-rate-actions",id))
-                                        .max_rect(rect)
-                                        .layout(egui::Layout::left_to_right(
-                                            egui::Align::Center
-                                        ).with_main_align(egui::Align::Center)),
-                                    |buttons|{
-                                        buttons.set_clip_rect(
-                                            cells[3].intersect(row_rect)
-                                                .intersect(buttons.clip_rect())
-                                        );
-                                        buttons.apply_shared_width(crate::card::CardWidthPolicy::Fixed,rect.width());
-                                        buttons.set_height(rect.height());
-                                        let trigger=crate::button::action(
-                                            buttons,"관리",
-                                            theme::ButtonRole::TableSecondary,enabled
-                                        );
-                                        crate::popup::show_management_menu(
-                                            &trigger,None,crate::popup::ManagementMenuRole::Actions,|menu|{
-                                                if menu.action("운임 수정",enabled){
-                                                    match group_rules.get(id)
-                                                        .filter(|rule|rule.is_object()){
-                                                        Some(rule)=>*editor=Some(
-                                                            RateEditor::new(
-                                                                id,text(group,"name"),rule
-                                                            )
-                                                        ),
-                                                        None=>*error=Some(
-                                                            "그룹 운임 기준을 읽지 못했습니다. 새로고침 후 확인하세요.".into()
-                                                        ),
-                                                    }
-                                                }
-                                                if menu.action("기준 변경",enabled){
-                                                    *basis=Some(Some(id.to_owned()));
-                                                }
-                                                if menu.action("이름 수정",enabled){
-                                                    *rename_target=Some((
-                                                        id.to_owned(),text(group,"name").to_owned()
-                                                    ));
-                                                }
-                                                if menu.danger_action("삭제",enabled){
-                                                    *delete_target=Some(id.to_owned());
-                                                }
-                                            });
+                                if editor.is_none()&&!*create_group_open{
+                                    let hit=row.interact(row_rect.intersect(row.clip_rect()),
+                                        row.make_persistent_id(("freight-group-detail",id)),egui::Sense::click())
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                    if hit.clicked(){
+                                        match group_rules.get(id).filter(|rule|rule.is_object()){
+                                            Some(rule)=>*editor=Some(RateEditor::new(id,text(group,"name"),rule)),
+                                            None=>*error=Some("그룹 운임 기준을 읽지 못했습니다. 새로고침 후 확인하세요.".into()),
+                                        }
                                     }
-                                );
-                                
+                                }
+
                             }
                         );
                     }
