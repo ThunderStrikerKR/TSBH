@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/egui-compile-gate.yml
+      - scripts/check-egui-layout-placement.py
       - egui-app/**
       - src-tauri/src/business_core/rules/history.rs
       - src-tauri/src/business_core/rules/manual_draft.rs
@@ -27,6 +28,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/egui-compile-gate.yml
+      - scripts/check-egui-layout-placement.py
       - egui-app/**
   workflow_dispatch:
 permissions:
@@ -46,6 +48,8 @@ jobs:
         with:
           workspaces: egui-app -> target
           key: egui-compile
+      - name: Require shared egui explicit placement ownership
+        run: python scripts/check-egui-layout-placement.py
       - name: Compile current Windows egui source
         id: compile_source
         run: cargo check --manifest-path egui-app/Cargo.toml
