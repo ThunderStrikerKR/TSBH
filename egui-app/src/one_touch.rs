@@ -1,5 +1,5 @@
 //! Paint and one-shot reveal parity with the archived React one-touch hover contract.
-use crate::ui_layout::SharedPainterClipExt as _;
+use crate::ui_layout::geometry::SharedPainterClipExt as _;
 use eframe::egui::{self,Color32,Context,Rect,Stroke,Ui};
 use crate::{theme,typography};
 pub const INK:Color32=theme::ONE_TOUCH_TEXT;
