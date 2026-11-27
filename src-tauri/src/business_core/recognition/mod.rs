@@ -602,6 +602,40 @@ fn delivery_link_conflicts(raw:&str,recipients:&Value)->Value{
     json!({"invalidSourceCount":invalid,"multipleTargetSpanCount":count,
         "conflictingSpans":conflicts,"truncated":count>64,"decisionChanged":false})
 }
+// A shared source is allowed only for the explicitly authorized role
+// (common product or explicitly per-recipient quantity), across distinct
+// recipients, never twice within one recipient.
+fn item_link_conflicts(raw:&str,recipients:&Value,allowed:&HashSet<(usize,usize,&str)>)->Value{
+    use std::collections::{BTreeMap,BTreeSet};
+    let units=raw.encode_utf16().collect::<Vec<_>>();
+    let mut links=BTreeMap::<(usize,usize),Vec<(usize,usize,&str)>>::new();
+    let mut invalid=0usize;
+    for (ri,row) in recipients.as_array().into_iter().flatten().enumerate(){
+        for (ii,item) in row["items"].as_array().into_iter().flatten().enumerate(){
+            for src in item["sources"].as_array().into_iter().flatten(){
+                let Some(field)=src["field"].as_str().filter(|f|matches!(*f,"product"|"quantity"))else{continue;};
+                if let Some(span)=observations::span(&units,src){
+                    if src["recipientId"]!=row["id"]||src["targetId"]!=item["id"]{invalid+=1;}
+                    links.entry(span).or_default().push((ri,ii,field));
+                }else{invalid+=1;}
+            }
+        }
+    }
+    let mut count=0;let mut details=Vec::new();
+    for ((start,end),targets) in links{
+        if targets.len()<2{continue;}
+        let field=targets[0].2;
+        let distinct=targets.iter().map(|t|t.0).collect::<BTreeSet<_>>();
+        let authorized=allowed.contains(&(start,end,field))&&
+            targets.iter().all(|t|t.2==field)&&distinct.len()==targets.len();
+        if !authorized{
+            count+=1;
+            if details.len()<64{details.push(json!({"start":start,"end":end,"targetCount":targets.len()}));}
+        }
+    }
+    json!({"invalidSourceCount":invalid,"unauthorizedSharedSpanCount":count,
+        "conflictingSpans":details,"truncated":count>64,"decisionChanged":false})
+}
 // Syntax completeness is not proof of a deliverable or registered address.
 fn address_info(value: &str) -> (String, String, Value) {
     let road = Regex::new(r"[로길]\s*\d+(?:-\d+)?").expect("road").is_match(value);
@@ -1856,6 +1890,15 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
             .map(|r|json!({"recipientId":r["id"],"formatKind":r["addressKind"],
                 "formatStatus":r["addressStatus"],"deliverabilityVerified":false}))
             .take(64).collect::<Vec<_>>();
+        let mut allowed_shared=HashSet::new();
+        for hit in product_hits.iter().filter(|h|h.common){
+            let e=&events[hit.evidence];
+            allowed_shared.insert((utf16(raw,e.start),utf16(raw,e.end),"product"));
+            if hit.each&&hit.quantities.len()==1{
+                let q=&events[hit.quantities[0]];
+                allowed_shared.insert((utf16(raw,q.start),utf16(raw,q.end),"quantity"));
+            }
+        }
         result["classificationCandidateTrace"]=json!({"schemaVersion":1,
             "coverage":"product_stages_variant_selection_and_quantity_post_extraction",
             "truncated":candidate_trace_truncated,"decisions":candidate_trace,
@@ -1864,6 +1907,7 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
             "productOwnerTraceTruncated":product_hits.len()>64,
             "addressFormatAssessments":address_formats,
             "deliveryLinkValidation":delivery_link_conflicts(raw,&result["recipients"]),
+            "itemLinkValidation":item_link_conflicts(raw,&result["recipients"],&allowed_shared),
             "typeGateRecords":type_trace,"typeGateRecordsTruncated":type_trace_truncated,
             "fullCandidateCoverage":false});
     }
@@ -2060,6 +2104,24 @@ mod tests {
             }
         }
         assert!(recognized_real,"A registered non-DEMO product must still match");
+    }
+    #[test]
+    fn item_link_validation_distinguishes_explicit_common_sharing(){
+        let row=|r:&str,i:&str|json!({"id":r,"items":[{"id":i,"sources":[
+            {"start":0,"end":1,"text":"P","field":"product","recipientId":r,"targetId":i},
+            {"start":2,"end":3,"text":"2","field":"quantity","recipientId":r,"targetId":i}
+        ]}]});
+        let rows=json!([row("r1","i1"),row("r2","i2")]);
+        let allowed=HashSet::from([(0,1,"product")]);
+        let report=item_link_conflicts("P 2",&rows,&allowed);
+        assert_eq!(report["invalidSourceCount"],0);
+        assert_eq!(report["unauthorizedSharedSpanCount"],1);
+        let allowed=HashSet::from([(0,1,"product"),(2,3,"quantity")]);
+        assert_eq!(item_link_conflicts("P 2",&rows,&allowed)["unauthorizedSharedSpanCount"],0);
+        let mut duplicate=rows.clone();
+        let item=duplicate[0]["items"][0].clone();
+        duplicate[0]["items"].as_array_mut().unwrap().push(item);
+        assert_eq!(item_link_conflicts("P 2",&duplicate,&allowed)["unauthorizedSharedSpanCount"],2);
     }
     #[test]
     fn delivery_link_validation_detects_invalid_and_shared_spans(){
