@@ -112,7 +112,7 @@ pub(super) fn diagnostics(state:&Value)->Vec<Finding>{
 pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
     let state=payload.get("state").ok_or("현재 상태가 없습니다.")?;
     match operation{
-        "validate_model_groups"=>{super::validate_model_groups(state)?;Ok(json!({"valid":true}))},
+        "validate_model_groups"=>{validate(state)?;Ok(json!({"valid":true}))},
         "eligible_model_group_product_ids"=>{
             Ok(json!(items(state,"products").iter()
                 .filter(|p|eligible_product(p))
@@ -130,6 +130,19 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn dispatcher_uses_same_model_group_validator_in_both_parent_modules(){
+        let mut state=json!({"products":[
+            {"id":"p1","active":true,"variants":[{"id":"v1","source":"MANUAL"}]},
+            {"id":"p2","active":true,"variants":[{"id":"v2","source":"MANUAL"}]}
+        ],"settings":{"colorGuidanceGroups":{"g":{
+            "name":"709","productIds":["p1","p2"],"representativeProductId":"p1"
+        }}}});
+        assert_eq!(execute("validate_model_groups",&json!({"state":&state})),Ok(json!({"valid":true})));
+        state["settings"]["colorGuidanceGroups"]["g"]["representativeProductId"]=json!("missing");
+        assert_eq!(execute("validate_model_groups",&json!({"state":&state})).unwrap_err(),
+            validate(&state).unwrap_err());
+    }
     #[test]
     fn eligible_ids_share_exact_validator_rules_and_exclude_demo_or_multi_sale(){
         let state=json!({"products":[
