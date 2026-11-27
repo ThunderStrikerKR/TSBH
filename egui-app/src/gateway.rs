@@ -608,18 +608,27 @@ impl BandoGateway for LocalGateway {
         }else if current!=revision{
             return Err("다른 작업에서 데이터가 수정되었습니다. 다시 불러오세요.".into());
         }
-        let payload=bando_data_access::shipping_action::action_payload(
-            action,&data,before
-        )?;
-        // Execute the SAME original Rust shipping mutation rule as Tauri.
-        let result=rules::execute("apply_shipping_action",payload)?;
-        let mut next=if result.get("state").is_some(){
-            result["state"].clone()
-        }else if let Some(shipping)=result.get("shipping"){
-            let mut snapshot=before.clone();
-            snapshot["shipping"]=shipping.clone();
-            snapshot
-        }else{return Err("Rust 운임 처리 결과를 확인할 수 없습니다.".into());};
+        let apply=|base:&Value,kind:&str,input:&Value|->Result<Value,String>{
+            let payload=bando_data_access::shipping_action::action_payload(kind,input,base)?;
+            // Execute the SAME original Rust shipping mutation rule as Tauri.
+            let result=rules::execute("apply_shipping_action",payload)?;
+            if let Some(state)=result.get("state"){Ok(state.clone())}
+            else if let Some(shipping)=result.get("shipping"){
+                let mut snapshot=base.clone();snapshot["shipping"]=shipping.clone();Ok(snapshot)
+            }else{Err("Rust 운임 처리 결과를 확인할 수 없습니다.".into())}
+        };
+        // One group editor, one SQLite commit: reuse both authoritative
+        // operations on the same candidate, never commit a partial rename.
+        let mut next=if action=="edit_group"{
+            let mut candidate=before.clone();
+            if let Some(name)=data.get("name"){
+                candidate=apply(&candidate,"rename_group",&serde_json::json!({"groupId":data["groupId"],"name":name}))?;
+            }
+            if let Some(rule)=data.get("rule"){
+                candidate=apply(&candidate,"save_group_rule",&serde_json::json!({"groupId":data["groupId"],"rule":rule}))?;
+            }
+            candidate
+        }else{apply(before,action,&data)?};
         next["revision"]=serde_json::json!(current);
         Ok((next!=*before).then_some(next))
         })?;
