@@ -714,6 +714,59 @@ mod recognition_learning_store_tests{
     }
 
     #[test]
+    fn local_replay_uses_only_pre_cutoff_current_verified_training_orders(){
+        let mut c=conn();
+        let key=json!([1,"type","base",null,["address",[0,0,1,0,0]]]).to_string();
+        let order=|id:&str,at:&str,confirmed:&str|json!({
+            "id":id,"learningActive":true,"confirmedAt":confirmed,
+            "confirmationSnapshot":{"at":confirmed,"recognitionBaseline":{"initialAnalysis":{
+                "initialPredictionCapture":{"schemaVersion":1,"origin":"native_reception_worker",
+                    "orderId":id,"analysisStartedAt":at,"analysisCompletedAt":at}}}},
+            "recognitionAuditEvents":[]});
+        let orders=vec![
+            order("train","2026-01-01T00:00:00Z","2026-01-02T00:00:00Z"),
+            order("fit","2026-02-02T00:00:00Z","2026-02-03T00:00:00Z"),
+            order("test","2026-03-02T00:00:00Z","2026-03-03T00:00:00Z"),
+            order("target","2026-01-01T00:00:00Z","2026-01-02T00:00:00Z")];
+        let ids=orders.iter().map(|o|o["id"].as_str().unwrap().to_owned()).collect::<Vec<_>>();
+        let digests=orders.iter().map(|o|(o["id"].as_str().unwrap().to_owned(),fingerprint(o).unwrap())).collect::<BTreeMap<_,_>>();
+        let tx=c.transaction().unwrap();
+        synchronize_with_digests(&tx,"db",&ids,&digests,&orders,|o|{
+            let mut r=report(1);
+            let mut counts=r["fieldStatistics"][0]["counts"].clone();
+            if o["id"]!="train"{
+                counts["weakCandidates"]=json!({});counts["weakCandidateOrders"]=json!({});
+                counts["weakIndependentOrders"]=json!(0);counts["weakUnchangedCount"]=json!(0);
+                counts["explicitCorrectionCount"]=json!(1);counts["explicitCorrectionOrders"]=json!(1);
+                counts["explicitPositiveCandidates"]=json!({"name":1});
+                counts["explicitNegativeCandidates"]=json!({"address":1});
+                counts["explicitPositiveCandidateOrders"]=json!({"name":1});
+                counts["explicitNegativeCandidateOrders"]=json!({"address":1});
+            }
+            r["fieldStatistics"]=json!([]);
+            r["fieldContextStatistics"]=json!([{"key":key,"counts":counts}]);
+            Ok(r)
+        }).unwrap();
+        tx.commit().unwrap();
+        let input=json!({"task":"type","contextKey":key,"targetOrderId":"target",
+            "candidates":["address","name"],"explicitToWeakRatio":3.0,
+            "localChronologicalReplay":{"trainingDataThrough":"2026-01-15T00:00:00Z",
+                "calibrationStart":"2026-02-01T00:00:00Z","testStart":"2026-03-01T00:00:00Z",
+                "testEnd":"2026-04-01T00:00:00Z","evaluationAsOf":"2026-04-02T00:00:00Z"}});
+        let tx=c.transaction().unwrap();
+        let v=assess_local_replay(&tx,"db",&input,&orders,&digests).unwrap();
+        assert_eq!(v["trainingOrders"],1);assert_eq!(v["fitOrders"],1);assert_eq!(v["testOrders"],1);
+        assert_eq!(v["excludedInactiveOrTargetOrders"],1);
+        assert_eq!(v["rawBrierScoreOnCoveredTest"],1.0);assert_eq!(v["calibratedBrierScoreOnCoveredTest"],0.0);
+        assert_eq!(v["currentSourceDigestsVerified"],true);
+        assert_eq!(v["historicalModelVerified"],false);
+        assert_eq!(v["eligibleForAutomaticDecision"],false);
+        let mut stale=digests.clone();stale.insert("train".into(),"f".repeat(64));
+        assert!(assess_local_replay(&tx,"db",&input,&orders,&stale).is_err());
+        mark_pending(&tx,"db","train").unwrap();
+        assert!(assess_local_replay(&tx,"db",&input,&orders,&digests).is_err());
+    }
+    #[test]
     fn failed_batch_rolls_back_all_deltas(){
         let mut c=conn();let ids=vec!["a".into(),"b".into()];let orders=vec![json!({"id":"a"}),json!({"id":"b"})];
         {let tx=c.transaction().unwrap();
