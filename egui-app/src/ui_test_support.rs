@@ -55,3 +55,36 @@ pub(crate) fn assert_layout_rects_invariant(
         }
     }
 }
+
+
+ 
+/// Geometry assertions use the actual allocated frame and widget Rects, not
+/// a second copy of the layout formula. Insets are [left, top, right, bottom]
+/// and may include explicitly approved policy slack.
+pub(crate) fn assert_geometry_value(role:&str,edge:&str,actual:f32,expected:f32,tolerance:f32){
+    assert!(actual.is_finite() && expected.is_finite() &&
+        (actual-expected).abs()<=tolerance,
+        "{role}: {edge} actual={actual:.2}pt expected={expected:.2}pt tolerance={tolerance:.2}pt");
+}
+pub(crate) fn card_content_insets(card:Rect,content:Rect)->[f32;4]{
+    [content.left()-card.left(),content.top()-card.top(),
+        card.right()-content.right(),card.bottom()-content.bottom()]
+}
+pub(crate) fn assert_card_content_insets(
+    role:&str,card:Rect,content:Rect,expected:[f32;4],tolerance:f32
+){
+    assert!(card.is_positive()&&content.is_positive(),"{role}: invalid Rects: {card:?}, {content:?}");
+    for ((edge,actual),expected) in ["left","top","right","bottom"].into_iter()
+        .zip(card_content_insets(card,content)).zip(expected){
+        assert!(actual>=-tolerance,"{role}: content exceeds {edge} edge: {actual}pt");
+        assert_geometry_value(role,edge,actual,expected,tolerance);
+    }
+}
+pub(crate) fn assert_rect_geometry(role:&str,actual:Rect,expected:Rect,tolerance:f32){
+    for (edge,a,b) in [
+        ("left",actual.left(),expected.left()),("top",actual.top(),expected.top()),
+        ("right",actual.right(),expected.right()),("bottom",actual.bottom(),expected.bottom())
+    ]{
+        assert_geometry_value(role,edge,a,b,tolerance);
+    }
+}
