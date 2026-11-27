@@ -416,22 +416,15 @@ impl ModelGroupManager {
             if cancelled||chosen.is_some(){self.product_picker=None;}
         }
         if self.confirm_delete{
-            let mut delete=false;let mut cancel=false;
             crate::popup::modal_backdrop(ctx,"family-delete-dim",false);
-            crate::popup::show_decision_window(ctx,"그룹 삭제","family-delete-confirm",rect,|dialog|{
-                    crate::popup::decision_workspace(dialog,|decision|{
-                        cancel=decision.header("그룹 삭제","취소",true);
-                        decision.body(|dialog|{
-                            dialog.label(typography::body(
-                                "이 그룹을 삭제할까요? 기존 주문과 상품은 유지됩니다."));
-                        });
-                        decision.actions(|actions|{
-                                delete=crate::button::action(actions,"삭제",
-                                    theme::ButtonRole::Danger,true).clicked();
-                            }
-                        );
-                    });
-                });
+            let decision=crate::popup::show_delete_confirmation(
+                ctx,rect,"family-delete-confirm","그룹 삭제","삭제",
+                true,true,crate::popup::DeleteBody::Plain,|dialog|{
+                    dialog.label(typography::body("이 그룹을 삭제할까요? 기존 주문과 상품은 유지됩니다."));
+                }
+            );
+            let cancel=decision==crate::popup::ConfirmDecision::Cancel;
+            let delete=decision==crate::popup::ConfirmDecision::Confirm;
             if cancel{self.confirm_delete=false;}
             else if delete{
                 if let Some(groups)=self.draft.as_object_mut(){
