@@ -1,11 +1,11 @@
 //! Shared table renderer: surface, header, row/viewport geometry and sort hit testing.
 //! Screens retain column data, stable IDs and business sort state.
-use crate::ui_layout::SharedUiClipExt as _;
-use crate::ui_layout::SharedPainterClipExt as _;
-use crate::ui_layout::SharedAllocationExt as _;
-use crate::ui_layout::AlignedUiBuilderExt as _;
+use crate::ui_layout::geometry::SharedUiClipExt as _;
+use crate::ui_layout::geometry::SharedPainterClipExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
+use crate::ui_layout::geometry::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Color32,Rect,Stroke,Ui,Vec2};
-use crate::ui_primitives::UiWidthPolicyExt;
+use crate::ui_layout::geometry::UiWidthPolicyExt;
 use crate::{theme,typography};
 use eframe::egui::{Sense,Align};
 use crate::ui_primitives::{overflow_region_tooltip,text_exceeds_rect,positioned_text_overflow};
@@ -187,7 +187,7 @@ pub(crate) fn paint_management_table_row_rule(painter:&egui::Painter,rect:Rect){
 /// Fixed and variable row viewports share the minimum-width and zero-gap
 /// rules. Retain the caller's existing width and height calculations.
 pub(crate) fn management_table_row_body(ui:&mut Ui,width:f32){
-    ui.apply_shared_width(crate::ui_primitives::CardWidthPolicy::FillAvailable,width);
+    ui.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,width);
     ui.spacing_mut().item_spacing.y=0.0;
 }
 
@@ -416,7 +416,7 @@ pub(crate) fn registry_tag_cell(ui:&Ui,rect:Rect,tags:&[String],id:impl std::has
     paint_tag_blocks(ui,rect.shrink2(Vec2::new(theme::SPACE_8,0.0)),tags,id);
 }
 pub(crate) fn registry_actions<R>(ui:&mut Ui,cell:Rect,draw:impl FnOnce(&mut Ui)->R)->R{
-    ui.scope_builder(egui::UiBuilder::new().aligned_max_rect(crate::ui_layout::aligned_rect(cell.shrink2(Vec2::new(theme::MANAGEMENT_TABLE_ACTION_INSET,0.0))))
+    ui.scope_builder(egui::UiBuilder::new().aligned_max_rect(crate::ui_layout::geometry::aligned_rect(cell.shrink2(Vec2::new(theme::MANAGEMENT_TABLE_ACTION_INSET,0.0))))
         .layout(egui::Layout::right_to_left(Align::Center)),|actions|{
             actions.restrict_shared_clip(actions.clip_rect().intersect(cell));
             draw(actions)
@@ -486,7 +486,7 @@ pub(crate) fn variable_rows_snapshot<R>(
     let (scroll,capture)=crate::scrollbar::ScrollCapture::begin(ui,&id,scroll,ready,rows);
     let output=scroll.show_viewport(ui,|body,visible|{
         management_table_row_body(body,viewport.width);
-        crate::ui_layout::reserve_min_height(body,*offsets.last().unwrap_or(&0.0));
+        crate::ui_layout::geometry::reserve_min_height(body,*offsets.last().unwrap_or(&0.0));
         let first=offsets.partition_point(|value|*value<=visible.top())
             .saturating_sub(1).min(count);
         let last=offsets.partition_point(|value|*value<=visible.bottom())
@@ -495,7 +495,7 @@ pub(crate) fn variable_rows_snapshot<R>(
         let visible_rect=Rect::from_min_size(
             egui::pos2(origin.x,origin.y+offsets[first]),
             Vec2::new(viewport.width,(offsets[last]-offsets[first]).max(0.0)));
-        let visible_rect=crate::ui_layout::aligned_rect(visible_rect);
+        let visible_rect=crate::ui_layout::geometry::aligned_rect(visible_rect);
         let clip=strict_viewport_clip(body,visible);
         body.scope_builder(egui::UiBuilder::new().id_salt(rows_id).aligned_max_rect(visible_rect),|visible|{
             visible.spacing_mut().item_spacing.y=0.0;
@@ -508,14 +508,14 @@ pub(crate) fn variable_rows_snapshot<R>(
     output
 }
 pub(crate) fn fixed_row_rect(origin:egui::Pos2,index:usize,first:usize,width:f32,height:f32)->Rect{
-    crate::ui_layout::aligned_rect(Rect::from_min_max(
+    crate::ui_layout::geometry::aligned_rect(Rect::from_min_max(
         egui::pos2(origin.x,origin.y+(index-first) as f32*height),
         egui::pos2(origin.x+width,origin.y+((index-first) as f32+1.0)*height)))
 }
 pub(crate) fn row_scope<R>(
     ui:&mut Ui,id:impl std::hash::Hash,rect:Rect,draw:impl FnOnce(&mut Ui)->R,
 )->egui::InnerResponse<R>{
-    ui.scope_builder(egui::UiBuilder::new().id_salt(id).aligned_max_rect(crate::ui_layout::aligned_rect(rect))
+    ui.scope_builder(egui::UiBuilder::new().id_salt(id).aligned_max_rect(crate::ui_layout::geometry::aligned_rect(rect))
         .layout(egui::Layout::top_down(egui::Align::Min)),draw)
 }
 #[derive(Clone,Copy)]
@@ -659,7 +659,7 @@ pub(crate) fn virtual_fixed_rows<R>(
     debug_assert!(row_height>0.0 && row_height.is_finite());
     let output=scroll.show_viewport(ui,move |body,viewport|{
         management_table_row_body(body,content_width);
-        crate::ui_layout::reserve_min_height(body,row_height*total_rows as f32);
+        crate::ui_layout::geometry::reserve_min_height(body,row_height*total_rows as f32);
         let first=((viewport.top()/row_height).floor().max(0.0) as usize)
             .saturating_sub(1).min(total_rows);
         let last=((viewport.bottom()/row_height).ceil().max(0.0) as usize)
@@ -669,7 +669,7 @@ pub(crate) fn virtual_fixed_rows<R>(
             egui::pos2(body.max_rect().left(),top),
             egui::vec2(content_width,(last-first) as f32*row_height),
         );
-        let visible_rect=crate::ui_layout::aligned_rect(visible_rect);
+        let visible_rect=crate::ui_layout::geometry::aligned_rect(visible_rect);
         let clip=strict_viewport_clip(body,viewport);
         body.scope_builder(
             egui::UiBuilder::new()
@@ -1368,12 +1368,12 @@ mod tag_block_table_tests{
 /// business actions. Focusable controls keep their caller-provided stable ID.
 pub(crate) fn control_cell<R>(ui:&mut Ui,id:impl std::hash::Hash,rect:Rect,clip:Rect,
     layout:egui::Layout,enabled:bool,fixed_width:bool,draw:impl FnOnce(&mut Ui)->R)->R{
-    let rect=crate::ui_layout::aligned_rect(rect);
+    let rect=crate::ui_layout::geometry::aligned_rect(rect);
     let mut builder=egui::UiBuilder::new().id_salt(id).aligned_max_rect(rect).layout(layout);
     if !enabled{builder=builder.disabled();}
     ui.scope_builder(builder,|control|{
         control.restrict_shared_clip(clip.intersect(control.clip_rect()));
-        if fixed_width{control.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());}
+        if fixed_width{control.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,rect.width());}
         draw(control)
     }).inner
 }
