@@ -355,7 +355,8 @@ fn item_quantity_pending(item:&Value)->bool{
 
 fn model_pending_quantity_count(model:&Value)->usize{
     list(model,"rows").iter().map(|row|
-        list(row,"items").iter().filter(|item|item_quantity_pending(item)).count()
+        list(row,"items").iter().filter(|item|item_quantity_pending(item)
+            && !crate::gateway::rules::quantity_user_approved(row,item)).count()
     ).sum()
 }
 

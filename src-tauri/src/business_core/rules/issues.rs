@@ -200,10 +200,12 @@ fn item_approved(row:&Value,item:&Value,kind:&str)->bool{
             field(record,"basis")==&basis && !str_field(record,"approvedAt").is_empty()
             && !str_field(record,"approvedBy").is_empty()))
 }
+pub(crate) fn quantity_user_approved(row:&Value,item:&Value)->bool{
+    item_approved(row,item,"QUANTITY_MISSING")||item_approved(row,item,"QUANTITY_LINK")
+}
 pub(super) fn quantity_accepted(row:&Value,item:&Value)->bool{
     field(item,"quantity").as_i64().is_some_and(|n|(1..=super::MAX_SAFE).contains(&n)) &&
-        (field(item,"quantityConfirmed")!=&Value::Bool(false) ||
-         item_approved(row,item,"QUANTITY_MISSING")||item_approved(row,item,"QUANTITY_LINK"))
+        (field(item,"quantityConfirmed")!=&Value::Bool(false) || quantity_user_approved(row,item))
 }
 pub(super) fn prune_validation_approvals(row:&mut Value){
     let valid=field(row,"validationApprovals").as_object().map(|records|
@@ -430,7 +432,6 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
                 "orderId":field(o,"id"),
                 "groupId":format!("group:{}",str_field(o,"id")),
                 "recipientId":"",
-                "selectedClientId":actual_id,
                 "kind":kind,
                 "title":title,
                 "detail":if needs_action{detail}else{""},
@@ -441,6 +442,9 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
                 "updatedAt":field(o,"updatedAt"),
                 "linkKey":"client"
             }));
+            if collision && !has_error && !actual_id.is_empty(){
+                if let Some(issue)=issues.last_mut(){issue["selectedClientId"]=json!(actual_id);}
+            }
             }
         }
     }
@@ -993,6 +997,31 @@ mod current_information_approval_tests {
         o["recipients"][0]["candidates"][1]["value"]=json!("새 후보");
         prune_validation_approvals(&mut o["recipients"][0]);
         assert!(order_issues(&o).iter().any(|i|i["kind"]=="CANDIDATE_name" && i["severity"]=="ACTION"));
+    }
+    #[test]
+    fn linked_item_approvals_are_independent_and_cannot_create_missing_values(){
+        let mut o=sample();
+        o["recipients"][0]["items"]=json!([
+            {"id":"i","name":"709","productId":"p","variantId":"v","color":"Black",
+             "quantity":3,"quantityConfirmed":false,"unitPrice":1000,
+             "issues":["색상 확인 필요"]},
+            {"id":"j","name":"709","productId":"p","variantId":"v","color":"Black",
+             "quantity":2,"quantityConfirmed":true,"unitPrice":1000,
+             "issues":["색상 확인 필요"]}]);
+        let mut o=action(&o,"OPTION","approve_current_information").unwrap();
+        let issues=order_issues(&o);
+        assert!(issues.iter().any(|i|i["kind"]=="OPTION"&&i["itemId"]=="i"&&i["resolution"]=="USER_APPROVED"));
+        assert!(issues.iter().any(|i|i["kind"]=="OPTION"&&i["itemId"]=="j"&&i["severity"]=="ACTION"));
+        o=action(&o,"QUANTITY_MISSING","approve_current_information").unwrap();
+        assert!(quantity_accepted(&o["recipients"][0],&o["recipients"][0]["items"][0]));
+        o["recipients"][0]["items"][0]["quantity"]=json!(4);
+        prune_validation_approvals(&mut o["recipients"][0]);
+        assert!(!quantity_accepted(&o["recipients"][0],&o["recipients"][0]["items"][0]));
+        assert!(order_issues(&o).iter().any(|i|i["kind"]=="OPTION"&&i["itemId"]=="i"&&i["resolution"]=="USER_APPROVED"));
+        o["recipients"][0]["items"][0]["quantity"]=Value::Null;
+        assert!(action(&o,"QUANTITY_MISSING","approve_current_information").is_err());
+        o["recipients"][0]["items"][0]["variantId"]=Value::Null;
+        assert!(!order_issues(&o).iter().any(|i|i["itemId"]=="i"&&i["canApproveCurrent"]==true));
     }
     #[test]
     fn missing_data_and_stale_basis_cannot_be_approved(){

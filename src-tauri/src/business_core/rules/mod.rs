@@ -41,6 +41,7 @@ mod validation;
 mod order_save;
 mod history;
 
+pub(crate) use issues::quantity_user_approved;
 const MAX_SAFE: i64 = 9_007_199_254_740_991;
 
 /// Shared identity normalization for UI projections that build a manual

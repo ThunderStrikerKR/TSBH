@@ -91,9 +91,6 @@ pub(super) fn manual_address_parts(value: &str) -> Value {
     Value::Object(result)
 }
 
-fn valid_quantity(v: &Value) -> bool {
-    v.as_i64().is_some_and(|q| (1..=super::MAX_SAFE).contains(&q))
-}
 fn pending_quantity(model: &Value) -> bool {
     rows(field(model, "rows")).iter().any(|r|
         rows(field(r, "items")).iter().any(|i|

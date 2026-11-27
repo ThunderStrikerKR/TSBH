@@ -357,7 +357,7 @@ pub(super) fn retail_issues(order:&Value,state:&Value)->Vec<String>{
                 array_has(field(p,"variants"),str_field(item,"variantId")));
             if !found {issues.push("등록된 상품과 옵션을 선택하세요.".into());}
             if field(item,"quantityConfirmed").as_bool()!=Some(true)
-                && !super::issues::quantity_accepted(row,item){
+                && !super::issues::quantity_user_approved(row,item){
                 issues.push("상품 수량을 직접 확정하세요.".into());
             }
         }
