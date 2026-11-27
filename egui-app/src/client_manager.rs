@@ -940,25 +940,19 @@ impl ClientManager {
         if close {self.request_close();}
         if self.confirm_delete {
             crate::popup::modal_backdrop(ctx,"client-manager-delete-backdrop",true);
-            crate::popup::show_decision_window(ctx,"거래처 삭제","client-manager-delete-confirm",work_area,|ui|{
-                crate::popup::decision_workspace(ui,|decision|{
-                    let cancel=decision.header("거래처 삭제","취소",true);
-                    decision.body(|ui|{
-                        ui.label("거래처를 삭제할까요? 기존 주문의 송하인과 금액은 그대로 보존합니다.");
-                    });
-                    let approve=decision.actions(|buttons|{
-                            crate::button::action(
-                                buttons,"거래처 삭제",ButtonRole::Danger,true
-                            ).clicked()
-                        }
-                    ).inner;
-                    if cancel {self.confirm_delete=false;}
-                    if approve {
-                        self.confirm_delete=false;
-                        self.mutate(Arc::clone(&gateway),ctx,"archive_client");
-                    }
-                });
-            });
+            match crate::popup::show_delete_confirmation(
+                ctx,work_area,"client-manager-delete-confirm","거래처 삭제","거래처 삭제",
+                true,true,crate::popup::DeleteBody::Plain,|ui|{
+                    ui.label("거래처를 삭제할까요? 기존 주문의 송하인과 금액은 그대로 보존합니다.");
+                }
+            ){
+                crate::popup::ConfirmDecision::Cancel=>self.confirm_delete=false,
+                crate::popup::ConfirmDecision::Confirm=>{
+                    self.confirm_delete=false;
+                    self.mutate(Arc::clone(&gateway),ctx,"archive_client");
+                }
+                crate::popup::ConfirmDecision::Pending=>{}
+            }
         }
         if self.confirm_discard {
             crate::popup::modal_backdrop(ctx,"client-manager-discard-backdrop",true);
