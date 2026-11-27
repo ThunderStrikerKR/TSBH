@@ -403,7 +403,8 @@ fn delivery_boundary(line:&str,phone:&Regex)->bool{
     address_begin(line).is_some() || phone.is_match(line)
 }
 fn unlabelled_recipient_span(
-    line:&str,address:Option<usize>,phone:&Regex,near_delivery:bool,state:&Value,client_id:&str
+    line:&str,address:Option<usize>,phone:&Regex,near_delivery:bool,state:&Value,client_id:&str,
+    mut reject:impl FnMut(usize,usize,&str)
 )->Option<(usize,usize)>{
     let contact=phone.find(line).map(|m|m.start());
     let end=address.into_iter().chain(contact).min().unwrap_or(line.len());
@@ -422,41 +423,47 @@ fn unlabelled_recipient_span(
         let start=prefix.rfind('|')?+1;
         let tail=prefix[start..].trim_end();
         let tail=tail.strip_suffix('/').unwrap_or(tail);
-        let (a,b)=trim_span(line,start,start+tail.len())?;
+        let Some((a,b))=trim_span(line,start,start+tail.len())else{
+            reject(start,start+tail.len(),"empty_table_recipient");return None;
+        };
         if !other_recipient_field(&line[a..b]){return Some((a,b));}
-        return None;
+        reject(a,b,"table_other_field");return None;
     }
     // A known product followed by an explicit quantity is a separate field.
     // Preserve the ENTIRE suffix, including company and English names.
     for q in quantity::extract(prefix).into_iter().rev(){
         let before=&prefix[..q.end];
         let decision=model::decision_json(&model::decide(before,state,client_id));
-        if !product_signal(before,&decision,state){continue;}
+        if !product_signal(before,&decision,state){reject(0,q.end,"no_product_before_quantity");continue;}
         let tail=&prefix[q.end..];
         let tail=tail.trim_start_matches(|c:char|c.is_whitespace()||c=='|'||c=='ㅣ');
         let a=q.end+prefix[q.end..].len()-tail.len();
-        let Some((a,b))=trim_span(line,a,end) else{continue};
+        let Some((a,b))=trim_span(line,a,end) else{reject(a,end,"empty_suffix");continue};
         let candidate=&line[a..b];
-        if other_recipient_field(candidate){continue;}
+        if other_recipient_field(candidate){reject(a,b,"suffix_other_field");continue;}
         if bounded || weak_recipient_hint(candidate){
             return Some((a,b));
         }
+        reject(a,b,"suffix_without_recipient_context");
     }
     if address.is_some() || contact.is_some(){
-        let (a,b)=composite_name_before_address(prefix)?;
+        let Some((a,b))=composite_name_before_address(prefix)else{
+            reject(0,prefix.len(),"composite_name_excluded");return None;
+        };
         let candidate=&line[a..b];
         // Address/phone prefixes with no product quantity must not promote
         // a known model to a consignee. The explicit label path has priority.
         let decision=model::decision_json(&model::decide(candidate,state,client_id));
-        if product_signal(candidate,&decision,state){return None;}
+        if product_signal(candidate,&decision,state){reject(a,b,"product_signal_before_delivery");return None;}
         return Some((a,b));
     }
-    let (a,b)=trim_span(line,0,line.len())?;
+    let Some((a,b))=trim_span(line,0,line.len())else{reject(0,line.len(),"empty_line");return None;};
     let candidate=&line[a..b];
-    if other_recipient_field(candidate) || !quantity::extract(candidate).is_empty(){return None;}
-    if !near_delivery && !weak_recipient_hint(candidate){return None;}
+    if other_recipient_field(candidate){reject(a,b,"other_document_field");return None;}
+    if !quantity::extract(candidate).is_empty(){reject(a,b,"quantity_signal");return None;}
+    if !near_delivery && !weak_recipient_hint(candidate){reject(a,b,"insufficient_recipient_context");return None;}
     let decision=model::decision_json(&model::decide(candidate,state,client_id));
-    if product_signal(candidate,&decision,state){return None;}
+    if product_signal(candidate,&decision,state){reject(a,b,"product_signal");return None;}
     Some((a,b))
 }
 fn is_money_or_header(text: &str) -> bool { ts_semantics::ignored_document_line(text) }
@@ -990,7 +997,8 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
                 !other_recipient_field(text){
                 trim_span(line.text,0,line.text.len())
             }else{
-                unlabelled_recipient_span(line.text,address,&phone,near_delivery,state,client_id)
+                unlabelled_recipient_span(line.text,address,&phone,near_delivery,state,client_id,
+                    |a,b,reason|record_type(line.number,line.start+a,line.start+b,"name",reason))
             }
         });
         if name_span.is_none(){record_type(line.number,line.start,line.start+line.text.len(),"name","no_accepted_name_span");}
@@ -1083,10 +1091,10 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
             ts_semantics::table_quantity(trimmed,model_end).map_or_else(Vec::new,
                 |(value,start,end)|vec![quantity::Quantity{value,start,end}])
         } else {
-            quantity::for_product_with_trace(skip_until,false,
-                model::products(state).iter().any(|p|model::model_names(p).iter()
-                    .any(|name|model::find_term(skip_until,name,true).is_some())),
-                capture.then_some(&mut extraction_trace))
+            let allow_trailing=model::products(state).iter().any(|p|model::model_names(p).iter()
+                .any(|name|model::find_term(skip_until,name,true).is_some()));
+            if capture{quantity::for_product_with_trace(skip_until,false,allow_trailing,Some(&mut extraction_trace))}
+            else{quantity::for_product(skip_until,false,allow_trailing)}
         };
         let quantity_before=if capture{Some(quantity_values.clone())}else{None};
         // parser.ts:537-552: a compound sale-unit phrase containing
@@ -1893,6 +1901,18 @@ mod tests {
         assert_eq!(recipients[1]["mobile"],"010-2345-6789");
         assert!(recipients[0]["address"].as_str().unwrap().contains("월드컵로 20"));
         assert!(recipients[1]["address"].as_str().unwrap().contains("불정로 6"));
+    }
+    #[test]
+    fn early_type_trace_preserves_legacy_result(){
+        let raw="수취인: 010-1234-5678\n709 2개\n메모: 문 앞";
+        let baseline=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let mut traced=execute("analyze_order",json!({"raw":raw,"state":state(),"collectCandidateTrace":true})).unwrap();
+        let trace=traced.as_object_mut().unwrap().remove("classificationCandidateTrace").unwrap();
+        assert_eq!(traced,baseline);
+        let records=trace["typeGateRecords"].as_array().unwrap();
+        assert!(records.iter().any(|r|r["reasonCode"]=="overlaps_name"));
+        assert!(records.iter().any(|r|r["reasonCode"]=="note_label"));
+        assert_eq!(trace["fullCandidateCoverage"],false);
     }
     #[test]
     fn candidate_trace_does_not_change_recognition_and_records_real_stage_survivors(){
