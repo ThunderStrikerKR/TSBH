@@ -1,4 +1,5 @@
 //! Shared card surfaces, measured layout and reusable card content profiles.
+use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Color32,Frame,Layout,Rect,Stroke,Ui,UiBuilder,Vec2};
 use crate::{theme,typography};
 use crate::theme::{
@@ -89,7 +90,7 @@ pub(crate) fn parallel_frames(
         let rect=crate::ui_layout::aligned_rect(Rect::from_min_size(egui::pos2(x,origin.y),Vec2::new(width,0.0)));
         let mut column=ui.new_child(UiBuilder::new()
             .id_salt(("parallel-card",index))
-            .max_rect(rect)
+            .aligned_max_rect(rect)
             .layout(Layout::top_down(Align::Min)));
         column.spacing_mut().item_spacing.y=0.0;
         apply_width_policy(&mut column,CardWidthPolicy::Fixed,rect.width());
@@ -227,14 +228,14 @@ pub(crate) fn fixed_scroll_panel(
     let scroll_rect=crate::ui_layout::aligned_rect(scroll_rect);
     ui.scope_builder(UiBuilder::new()
         .id_salt(heading_id)
-        .max_rect(title_rect)
+        .aligned_max_rect(title_rect)
         .layout(Layout::top_down(Align::Min)),|heading|{
             heading.set_clip_rect(title_rect.intersect(parent_clip));
             heading.label(typography::section_heading(title));
         });
     ui.scope_builder(UiBuilder::new()
         .id_salt(scroll_id)
-        .max_rect(scroll_rect)
+        .aligned_max_rect(scroll_rect)
         .layout(Layout::top_down(Align::Min)),|content|{
             content.set_clip_rect(scroll_rect.intersect(parent_clip));
             content.apply_shared_width(CardWidthPolicy::Fixed,scroll_rect.width());
@@ -516,7 +517,7 @@ pub(crate) fn reception_document_viewport<R>(
     // would report the inset child back to the parent and can change the
     // cursor used by the following footer. Keep scroll layout isolated.
     let mut canvas=ui.new_child(
-        UiBuilder::new().id_salt(canvas_id).max_rect(inner)
+        UiBuilder::new().id_salt(canvas_id).aligned_max_rect(inner)
             .layout(Layout::top_down(Align::Min))
     );
     canvas.set_clip_rect(clip);
