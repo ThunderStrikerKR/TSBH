@@ -841,9 +841,10 @@ mod tests{
     fn document_pattern_candidate_preserves_order_and_ignores_item_count(){
         // Synthetic single-character spans; no customer data.
         let project=|roles:&[&str],gap:usize|{
-            let raw="x ".repeat(roles.len()*(gap+1));
+            let block=format!("x\n{}","#\n".repeat(gap-1));
+            let raw=block.repeat(roles.len());
             let candidates=roles.iter().enumerate().map(|(i,kind)|{
-                let start=i*(gap+1)*2;
+                let start=i*block.len();
                 json!({"start":start,"end":start+1,"text":"x","kind":kind,"line":i*gap,"paragraph":0})
             }).collect::<Vec<_>>();
             lookup(&json!({"raw":raw,"initialAnalysis":{"candidates":candidates}})).unwrap()["documentPattern"].clone()
