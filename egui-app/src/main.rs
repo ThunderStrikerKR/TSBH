@@ -7470,6 +7470,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let mut confirmed_commit=false;
             let mut confirmed_cancel=false;
             let mut confirmed_navigation_request:Option<(InlineTarget,CellNavigationKey)>=None;
+            let mut review_edit:Option<(workflow_board_ui::Selection,InlineTarget)>=None;
+            let mut review_product:Option<(String,serde_json::Value)>=None;
             let mut confirmed_validation_approval:Option<(String,serde_json::Value,bool)>=None;
             let mut confirmed_customer_inquiry:Option<(String,serde_json::Value,bool)>=None;
             let mut renotice_approval:Option<(serde_json::Value,bool)>=None;
@@ -7501,7 +7503,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     let Some(label)=workflow_board::workflow_issue_label(issue)else{continue};
                                     // Shared review presentation; original issue identity and
                                     // native blocker messages are preserved.
-                                    let recognition=if issue["kind"]=="ADDRESS"{
+                                    let recognition=if issue["kind"]=="ADDRESS"||issue["kind"]=="MODEL"{
                                         group.shipments.iter().find(|s|
                                             issue["orderId"].as_str()==Some(s.order_id.as_str()) &&
                                             issue["recipientId"].as_str()==Some(s.recipient_id.as_str()))
@@ -7510,8 +7512,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     let label=review_panel::workflow_review_text(issue,&label,&recognition);
                                     let tone=review_panel::issue_tone(issue);
                                     crate::card::review_issue_card(issues,tone,|content|{
-                                        content.add(egui::Label::new(typography::body(&label)
-                                            .color(tone.text_color())).wrap());
+                                        content.add(egui::Label::new(typography::review_title(&label,tone)).wrap());
                                         if issue["kind"]=="NOTICE"{
                                             let enabled=confirmed_editable && confirmed_controls_idle
                                                 && !group.transferred && self.workflow_ui.active_preview().is_none();
@@ -7524,6 +7525,40 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             issue["orderId"].as_str()==Some(s.order_id.as_str())){
                                             let enabled=confirmed_editable && confirmed_controls_idle
                                                 && !target.transferred && self.workflow_ui.active_preview().is_none();
+                                            if issue["severity"]=="ACTION"{
+                                                let kind=issue["kind"].as_str().unwrap_or("");
+                                                let item_id=issue["itemId"].as_str();
+                                                let field=match kind{
+                                                    "NAME"|"CANDIDATE_name"=>Some("name"),
+                                                    "ADDRESS"|"CANDIDATE_address"=>Some("address"),
+                                                    "CANDIDATE_phone"=>Some("phone"),
+                                                    "CANDIDATE_mobile"=>Some("mobile"),
+                                                    "CONTACT"=>Some(if issue["linkKey"].as_str().is_some_and(|k|k.ends_with(":phone")){"phone"}else{"mobile"}),
+                                                    "PRICE"=>Some("unitPrice"),
+                                                    "QUANTITY_MISSING"|"QUANTITY_INVALID"|"QUANTITY_LINK"=>Some("quantity"),
+                                                    _=>None,
+                                                };
+                                                if let Some(field)=field{
+                                                    let inline=InlineTarget{recipient_id:target.recipient_id.clone(),
+                                                        item_id:item_id.map(str::to_owned),field};
+                                                    let editable=confirmed_navigation_entries(target,enabled,false)
+                                                        .iter().any(|entry|entry.cell.enabled&&entry.target==inline);
+                                                    let caption=match field{"unitPrice"=>"단가 입력","quantity"=>"수량 수정",_=>"입력 위치로 이동"};
+                                                    if crate::button::review_action(content,caption,theme::ButtonRole::Standard,editable).clicked(){
+                                                        review_edit=Some((workflow_board_ui::Selection{
+                                                            group_id:group.id.clone(),order_id:target.order_id.clone(),shipment_id:target.id.clone()
+                                                        },inline));
+                                                    }
+                                                }
+                                                if matches!(kind,"MODEL"|"MODEL_CHOICE"|"ALIAS_CONFLICT"|"CATEGORY_CONFLICT"|"MODEL_CONFIRM"|"OPTION"){
+                                                    if let Some(item)=target.recipient["items"].as_array().and_then(|items|
+                                                        items.iter().find(|i|i["id"].as_str()==item_id && item_id.is_some())){
+                                                        if crate::button::review_action(content,"상품 확인",theme::ButtonRole::Standard,enabled).clicked(){
+                                                            review_product=Some((target.id.clone(),item.clone()));
+                                                        }
+                                                    }
+                                                }
+                                            }
                                             if issue["inquiryRequested"]==true{
                                                 content.add(egui::Label::new(typography::review_detail(
                                                     "거래처 회신 대기",tone)).wrap());
@@ -7899,7 +7934,20 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.workflow_freight_next_selection=None;
             }
             // Destination click wins over the previous editor's blur.
-            else if let Some((target,_original,click_at))=confirmed_open{
+            else if let Some((selection,target))=review_edit{
+                self.switch_confirmed_editor(selection,target,None,false,ui.ctx());
+            }else if let Some((target_id,item))=review_product{
+                if let Some(target_ship)=group.shipments.iter().find(|s|s.id==target_id){
+                    if let Some(bound)=self.confirmed_edit_target(&board,group,target_ship){
+                        let price=item["unitPrice"].as_i64();
+                        self.item_editor=Some(item_editor::ItemEditor::new(
+                            target_ship.order_id.clone(),target_ship.source_raw.clone(),
+                            target_ship.recipient_id.clone(),item,group.dealer_id.clone(),price));
+                        self.confirmed_modal_target=Some(bound);
+                        ui.ctx().request_repaint();
+                    }
+                }
+            }else if let Some((target,_original,click_at))=confirmed_open{
                 self.switch_confirmed_editor(workflow_board_ui::Selection{
                     group_id:group.id.clone(),order_id:ship.order_id.clone(),shipment_id:ship.id.clone()
                 },target,click_at,false,ui.ctx());
