@@ -38,7 +38,7 @@ pub(crate) fn management_dropdown<'a>(
     options:impl FnOnce(&mut Ui)
 )->Response {
     let label=label.into();
-    management_dropdown_inner(ui,label.label,label.label,width,enabled,false,None,None,label.placeholder,options)
+    management_dropdown_inner(ui,label.label,label.label,width,enabled,false,None,None,label.placeholder,None,options)
 }
 /// Same management dropdown master, with an optional colored status mark.
 /// This only changes the glyph painting; popup placement, hover and row
@@ -48,7 +48,7 @@ pub(crate) fn management_status_dropdown(
     status_color:Color32,options:impl FnOnce(&mut Ui)
 )->Response {
     management_dropdown_inner(
-        ui,label,label,width,enabled,false,Some(status_color),None,false,options
+        ui,label,label,width,enabled,false,Some(status_color),None,false,None,options
     )
 }
 
@@ -58,7 +58,7 @@ pub(crate) fn management_dropdown_compact(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,
     options:impl FnOnce(&mut Ui)
 )->Response {
-    management_dropdown_inner(ui,label,label,width,enabled,true,None,None,false,options)
+    management_dropdown_inner(ui,label,label,width,enabled,true,None,None,false,None,options)
 }
 
 /// A mixed label keeps the common trigger, menu, selection and overflow
@@ -67,7 +67,7 @@ pub(crate) fn management_dropdown_values(
     ui:&mut Ui,label:&egui::text::LayoutJob,width:f32,enabled:bool,placeholder:bool,
     options:impl FnOnce(&mut Ui)
 )->Response{
-    management_dropdown_inner(ui,&label.text,&label.text,width,enabled,false,None,Some(label),placeholder,options)
+    management_dropdown_inner(ui,&label.text,&label.text,width,enabled,false,None,Some(label),placeholder,None,options)
 }
 
 /// Shared 34pt management trigger; the hierarchical category popup and
@@ -84,12 +84,12 @@ pub(crate) fn management_dropdown_trigger_full_label(
     ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
     indicator:Option<Color32>,placeholder:bool,
 )->Response {
-    management_dropdown_trigger_inner(ui,label,full_label,width,enabled,indicator,None,placeholder)
+    management_dropdown_trigger_inner(ui,label,full_label,width,enabled,indicator,None,placeholder,None)
 }
 
 fn management_dropdown_trigger_inner(
     ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
-    indicator:Option<Color32>,values:Option<&egui::text::LayoutJob>,placeholder:bool,
+    indicator:Option<Color32>,values:Option<&egui::text::LayoutJob>,placeholder:bool,emphasis:Option<crate::highlight::Role>,
 )->Response {
     // Keep exact toolbar/cell width without stretching the subsequent action
     // or exceeding a narrow selector slot.
@@ -106,8 +106,11 @@ fn management_dropdown_trigger_inner(
             .min_size(Vec2::new(width,height))
             .corner_radius(egui::CornerRadius::same(crate::highlight::CONTROL_RADIUS));
         if interactive{
-            crate::highlight::action_widget(ui,fill,stroke,false);
-        }else{button=button.fill(fill).stroke(stroke);}
+            crate::highlight::action_widget(ui,fill,stroke,(false,emphasis));
+        }else{
+            let (fill,stroke)=crate::highlight::persistent_surface(fill,stroke,emphasis);
+            button=button.fill(fill).stroke(stroke);
+        }
         ui.add_enabled(enabled,button)
     }).inner;
     let rect=trigger.rect;
@@ -174,12 +177,12 @@ fn configure_option_rows(ui:&mut Ui){
 
 fn management_dropdown_inner(
     ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
-    compact:bool,indicator:Option<Color32>,values:Option<&egui::text::LayoutJob>,placeholder:bool,
+    compact:bool,indicator:Option<Color32>,values:Option<&egui::text::LayoutJob>,placeholder:bool,emphasis:Option<crate::highlight::Role>,
     options:impl FnOnce(&mut Ui)
 )->Response {
     let width=width.min(ui.available_width()).max(1.0);
     let trigger=management_dropdown_trigger_inner(
-        ui,label,full_label,width,enabled,indicator,values,placeholder
+        ui,label,full_label,width,enabled,indicator,values,placeholder,emphasis
     );
     crate::overlay::show_menu(&trigger,None,|menu|{
             // Every selectable row reports its parent trigger, never its
@@ -386,9 +389,17 @@ pub(crate) fn management_dropdown_compact_option<T:PartialEq>(
 /// Do not swap the COD selector for a textual caption during a Rust save.
 /// The shared dropdown keeps its width, baseline, outline and chevron in
 /// BOTH states; only hit-testing is disabled while another edit is pending.
+pub(crate) struct CodState{editable:bool,review:bool}
+impl From<bool> for CodState{
+    fn from(editable:bool)->Self{Self{editable,review:false}}
+}
+impl From<(bool,bool)> for CodState{
+    fn from((editable,review):(bool,bool))->Self{Self{editable,review}}
+}
 pub(crate) fn reception_cod_dropdown(
-    ui:&mut Ui,collect:Option<bool>,editable:bool
+    ui:&mut Ui,collect:Option<bool>,state:impl Into<CodState>
 )->(bool,Response){
+    let CodState{editable,review}=state.into();
     let mut selected=collect.unwrap_or(false);
     let label=match collect {
         Some(true)=>"착불",
@@ -396,7 +407,8 @@ pub(crate) fn reception_cod_dropdown(
         None if editable=>"선불",
         None=>"—",
     };
-    let response=management_dropdown_compact(ui,label,90.0,editable,|menu|{
+    let response=management_dropdown_inner(ui,label,label,90.0,editable,true,None,None,false,
+        crate::highlight::freight_role(false,review),|menu|{
         management_dropdown_compact_option(menu,&mut selected,false,"선불",90.0);
         management_dropdown_compact_option(menu,&mut selected,true,"착불",90.0);
     });

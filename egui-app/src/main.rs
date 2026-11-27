@@ -7820,10 +7820,15 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 && !ship.transferred && !ship.freight_editing_blocked && !ship.collect
                                                 && !self.workflow_freight_editor.as_ref().is_some_and(|e|
                                                     e.shipment_id==ship.id && e.origin==*origin);
+                                            let required_freight=workflow_board::missing_freight_origin(group,ship,origin);
+                                            let editing_freight=self.workflow_action.is_none() && !self.workflow_read.required() &&
+                                                self.workflow_freight_editor.as_ref().is_some_and(|e|
+                                                    e.group_id.as_str()==group.id.as_str() && e.shipment_id.as_str()==ship.id.as_str() &&
+                                                    e.origin.as_str()==origin.as_str());
                                             let freight_actions=crate::composite_reception::reception_freight_row_controls(
                                                 contents,label,amount,Some(ship.collect),remote,
                                                 origin.as_str()=="FACTORY",amount_editable,
-                                                controls_editable,controls_editable,remote.is_some(),ship.freight_exempt
+                                                controls_editable,controls_editable,remote.is_some(),(ship.freight_exempt,required_freight,editing_freight)
                                             );
                                             if freight_actions.amount_clicked{
                                                 workflow_freight_open=Some((
@@ -7863,9 +7868,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         self.workflow_freight_guidance.as_deref()==Some(group.id.as_str());
                                                     let target=confirmed_freight_target(ship,origin);
                                                     let navigation=cell_navigation::consume_worksheet_navigation_before_editor(contents.ctx(),confirmed_editor_slot(&ship.id,&target));
-                                                    let response=crate::input::reception_freight_inline_cell_editor(
+                                                    let role=crate::highlight::freight_role(required_freight,one_touch::stage(contents).freight());
+                                                    let response=crate::input::reception_freight_inline_cell_editor_emphasized(
                                                         contents,rect,&mut editor.text,
-                                                        editor.focus_next,editor.click_at.take()
+                                                        editor.focus_next,editor.click_at.take(),role
                                                     );
                                                     cell_navigation::remember_worksheet_editor(contents.ctx(),
                                                         confirmed_editor_slot(&ship.id,&target),response.id);
@@ -7881,11 +7887,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     }else if cell_navigation::worksheet_blur_finished(&response,false){
                                                         workflow_freight_commit=true;
                                                     }
-                                                }
-                                            }
-                                            if workflow_board::missing_freight_origin(group,ship,origin){
-                                                if let Some(rect)=freight_actions.amount_rect{
-                                                    crate::input::paint_required_input(contents,rect);
                                                 }
                                             }
                                             contents.add_space(theme::SPACE_8);
@@ -7911,9 +7912,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     pane.set_height(summary_rect.height());
                     Self::section_with_header(
                         pane,"발주서 합계",summary_rect.height(),
-                        |header|{let response=crate::button::action(
-                            header,"부가세 설정",ButtonRole::Standard,confirmed_editable && confirmed_controls_idle
-                        );confirmed_vat=response.clicked();if one_touch::stage(header)==one_touch::Stage::Review{one_touch::mark(header,response.rect);}},
+                        |header|{
+                            let review=one_touch::stage(header)==one_touch::Stage::Review;
+                            let response=crate::button::action_with_emphasis(
+                                header,"부가세 설정",ButtonRole::Standard,confirmed_editable && confirmed_controls_idle,
+                                crate::highlight::freight_role(false,review)
+                            );
+                            confirmed_vat=response.clicked();
+                        },
                         |body|{
                             let mut included=false;
                             let mut excluded=false;
@@ -8244,8 +8250,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Self::section_with_header(
                         pane,"발주서 합계",summary_rect.height(),
                         |header|{
-                            let response=crate::button::action(header,"부가세 설정",ButtonRole::Standard,false);
-                            if one_touch::stage(header)==one_touch::Stage::Review{one_touch::mark(header,response.rect);}
+                            let review=one_touch::stage(header)==one_touch::Stage::Review;
+                            crate::button::action_with_emphasis(header,"부가세 설정",ButtonRole::Standard,false,
+                                crate::highlight::freight_role(false,review));
                         },|body|{
                             let inclusive=recipients.iter().filter(|r|
                                 gateway::rules::vat_applies(&serde_json::Value::Null,r)).count();
@@ -8518,11 +8525,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let mut header_add_item=false;
                 Self::section_with_header(pane,"품목 및 운임",remaining,
                     |header|{
+                        let required_add=selected.is_some_and(|row|required.contains(reception_service::text(row,"id"),"addItem"));
                         let response=crate::button::reception_item_header_action(
-                            header,false,editable && selected.is_some());
-                        if selected.is_some_and(|row|required.contains(reception_service::text(row,"id"),"addItem")){
-                            crate::input::paint_required_input(header,response.rect);
-                        }
+                            header,false,(editable && selected.is_some(),required_add));
                         header_add_item=response.clicked();
                     },|ui| {
                     // In intake standby, do not draw empty table headings,
@@ -8701,7 +8706,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         let freight_actions=crate::composite_reception::reception_freight_row_controls(
                                             items_ui,"운임",line_fee,cod,remote,
                                             true,editable,editable,editable,true,
-                                            indexed_freight_exempt(quote_index.as_deref(),recipient)
+                                            (indexed_freight_exempt(quote_index.as_deref(),recipient),false,
+                                                self.inline_editor.as_ref().is_some_and(|e|e.target==freight_target))
                                         );
                                         if freight_actions.amount_clicked{
                                             inline_open=Some((
@@ -8734,9 +8740,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             freight_actions.amount_rect
                                         ){
                                             let navigation=cell_navigation::consume_worksheet_navigation_before_editor(items_ui.ctx(),inline_editor_slot(&freight_target));
-                                            let result=crate::input::reception_freight_inline_cell_editor(
+                                            let role=crate::highlight::freight_role(false,one_touch::stage(items_ui).freight());
+                                            let result=crate::input::reception_freight_inline_cell_editor_emphasized(
                                                 items_ui,rect,&mut editor.text,editor.focus_next,
-                                                editor.click_at.take()
+                                                editor.click_at.take(),role
                                             );
                                             cell_navigation::remember_worksheet_editor(
                                                 items_ui.ctx(),inline_editor_slot(&freight_target),
@@ -8800,11 +8807,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let mut edit_vat=false;
                 Self::section_with_header(pane,"발주서 합계",summary_rect.height(),
                     |header|{
-                        let response=crate::button::action(header,"부가세 설정",ButtonRole::Standard,
+                        let review=one_touch::stage(header)==one_touch::Stage::Review;
+                        let response=crate::button::action_with_emphasis(header,"부가세 설정",ButtonRole::Standard,
                             editable && self.analysis.is_some()
                                 && self.inline_editor.is_none()
-                                && self.vat_change.is_none());
-                        if one_touch::stage(header)==one_touch::Stage::Review{one_touch::mark(header,response.rect);}
+                                && self.vat_change.is_none(),crate::highlight::freight_role(false,review));
                         if response.clicked(){edit_vat=true;}
                     },|body|{
                     let preview=self.active_id.as_deref()

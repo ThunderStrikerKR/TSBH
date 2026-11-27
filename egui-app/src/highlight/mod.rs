@@ -193,8 +193,27 @@ pub(crate) fn action_surface(rest:Color32,rest_stroke:Stroke,light:bool,hovered:
     let stroke=if hovered||focused{p.stroke.unwrap_or(rest_stroke)}else{rest_stroke};
     (fill,stroke)
 }
+/// The persistent state is selected before egui chooses its native frame.
+pub(crate) struct ActionState{light:bool,persistent:Option<Role>}
+impl From<bool> for ActionState{
+    fn from(light:bool)->Self{Self{light,persistent:None}}
+}
+impl From<(bool,Option<Role>)> for ActionState{
+    fn from((light,persistent):(bool,Option<Role>))->Self{Self{light,persistent}}
+}
+pub(crate) fn persistent_surface(rest:Color32,stroke:Stroke,role:Option<Role>)->(Color32,Stroke){
+    if let Some(role)=role{
+        let p=palette(role);
+        (p.fill.map(|t|composite_opaque(t,rest)).unwrap_or(rest),p.stroke.unwrap_or(stroke))
+    }else{(rest,stroke)}
+}
+pub(crate) fn freight_role(required:bool,review:bool)->Option<Role>{
+    States{required,review,..Default::default()}.resolve().map(|role|
+        if role==Role::RequiredReview{Role::ReviewTint}else{role})
+}
 /// The native Button owns its single frame; no custom highlight overlay.
-pub(crate) fn action_widget(ui:&mut Ui,rest:Color32,stroke:Stroke,light:bool){
+pub(crate) fn action_widget(ui:&mut Ui,rest:Color32,stroke:Stroke,state:impl Into<ActionState>){
+    let ActionState{light,persistent}=state.into();
     let widgets=&mut ui.visuals_mut().widgets;
     for (visual,hovered,focused) in [
         (&mut widgets.inactive,false,false),
@@ -202,7 +221,8 @@ pub(crate) fn action_widget(ui:&mut Ui,rest:Color32,stroke:Stroke,light:bool){
         (&mut widgets.active,false,true),
         (&mut widgets.open,false,true),
     ]{
-        let (fill,border)=action_surface(rest,stroke,light,hovered,focused);
+        let (fill,border)=if persistent.is_some(){persistent_surface(rest,stroke,persistent)}
+            else{action_surface(rest,stroke,light,hovered,focused)};
         visual.bg_fill=fill;
         visual.weak_bg_fill=fill;
         visual.bg_stroke=border;
@@ -286,6 +306,9 @@ mod tests{
         assert_eq!(fields.role(1,true),None);
         assert!(fields.editor_owns(1));
         assert_eq!(fields.role(2,true),Some(Role::RequiredReview));
+        assert_eq!(freight_role(true,true),Some(Role::RequiredInput));
+        assert_eq!(freight_role(false,true),Some(Role::ReviewTint));
+        assert_eq!(persistent_surface(theme::INPUT,Stroke::NONE,freight_role(true,true)).1.color,theme::ERROR_BORDER);
     }
     #[test]
     fn common_painter_preserves_parent_clip(){

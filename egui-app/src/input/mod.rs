@@ -588,7 +588,7 @@ fn reception_money_inline_cell_editor(
 )->Response{
     reception_money_editor_at_rect(
         ui,cell.shrink2(egui::vec2(theme::SPACE_4,theme::SPACE_2)),
-        value,request_focus,click_at,required
+        value,request_focus,click_at,required.then_some(crate::highlight::Role::RequiredInput)
     )
 }
 
@@ -600,7 +600,7 @@ fn reception_money_font()->egui::FontId{
 
 fn reception_money_editor_at_rect(
     ui:&mut Ui,rect:Rect,value:&mut String,request_focus:bool,
-    click_at:Option<egui::Pos2>,required:bool
+    click_at:Option<egui::Pos2>,role:Option<crate::highlight::Role>
 )->Response{
     // The preformatted draft is also the comparison baseline in both
     // callers. Normalize raw initial values for direct component reuse.
@@ -611,13 +611,12 @@ fn reception_money_editor_at_rect(
         ui,value,reception_money_font(),rect.width(),"원",inset,
         RECEPTION_MONEY_UNIT_GAP,typography::reception_cell_text_margin()
     );
-    let role=crate::highlight::Role::RequiredInput;
-    if required{crate::highlight::field_background(ui,rect,role,true);}
-    let edit=if required{edit.frame(false)}else{edit};
+    if let Some(role)=role{crate::highlight::field_background(ui,rect,role,true);}
+    let edit=if role.is_some(){edit.frame(false)}else{edit};
     let response=reception_text_editor_at_click(ui,rect,edit,request_focus,click_at);
     normalize_money_edit(ui,value,&before,&response);
     paint_money_unit(ui,response.rect,unit_galley,inset);
-    if required{crate::highlight::field_outline(ui,rect,role);}
+    if let Some(role)=role{crate::highlight::field_outline(ui,rect,role);}
     response
 }
 
@@ -626,27 +625,39 @@ fn reception_money_editor_at_rect(
 /// use identical suffix geometry; only their interaction mode differs.
 pub(crate) const RECEPTION_FREIGHT_MONEY_WIDTH:f32=104.0;
 
-pub(crate) fn reception_freight_money_readonly(ui:&mut Ui,value:&mut String,exempt:bool)->Response{
-    if exempt{
-        // Exemption is a billing status, not a numeric amount to display.
+pub(crate) struct FreightAmountState{
+    exempt:bool,role:Option<crate::highlight::Role>,editor_owns:bool,
+}
+impl From<bool> for FreightAmountState{
+    fn from(exempt:bool)->Self{Self{exempt,role:None,editor_owns:false}}
+}
+impl From<(bool,Option<crate::highlight::Role>,bool)> for FreightAmountState{
+    fn from((exempt,role,editor_owns):(bool,Option<crate::highlight::Role>,bool))->Self{Self{exempt,role,editor_owns}}
+}
+pub(crate) fn reception_freight_money_readonly(ui:&mut Ui,value:&mut String,state:impl Into<FreightAmountState>)->Response{
+    let FreightAmountState{exempt,role,editor_owns}=state.into();
+    let role=if editor_owns{None}else{role};
+    let size=Vec2::new(RECEPTION_FREIGHT_MONEY_WIDTH,theme::INPUT_HEIGHT);
+    if let Some(role)=role{
+        crate::highlight::field_background(ui,Rect::from_min_size(ui.cursor().min,size),role,true);
+    }
+    let frame=role.is_none()&&!editor_owns;
+    let response=if exempt{
         let mut label="면제".to_owned();
         let edit=singleline_editor(&mut label,reception_money_font(),
             RECEPTION_FREIGHT_MONEY_WIDTH,Align::Center,typography::reception_cell_text_margin());
-        return allocate_singleline_field(
-            ui,Vec2::new(RECEPTION_FREIGHT_MONEY_WIDTH,theme::INPUT_HEIGHT),
-            edit.interactive(false),None
+        allocate_singleline_field(ui,size,edit.frame(frame).interactive(false),None)
+    }else{
+        let inset=theme::SPACE_8;
+        let (edit,unit_galley)=money_text_edit_with_unit(
+            ui,value,reception_money_font(),RECEPTION_FREIGHT_MONEY_WIDTH,
+            "원",inset,RECEPTION_MONEY_UNIT_GAP,typography::reception_cell_text_margin()
         );
-    }
-    let inset=theme::SPACE_8;
-    let (edit,unit_galley)=money_text_edit_with_unit(
-        ui,value,reception_money_font(),RECEPTION_FREIGHT_MONEY_WIDTH,
-        "원",inset,RECEPTION_MONEY_UNIT_GAP,typography::reception_cell_text_margin()
-    );
-    let response=allocate_singleline_field(
-        ui,Vec2::new(RECEPTION_FREIGHT_MONEY_WIDTH,theme::INPUT_HEIGHT),
-        edit.interactive(false),None
-    );
-    paint_money_unit(ui,response.rect,unit_galley,inset);
+        let response=allocate_singleline_field(ui,size,edit.frame(frame).interactive(false),None);
+        paint_money_unit(ui,response.rect,unit_galley,inset);
+        response
+    };
+    if let Some(role)=role{crate::highlight::field_outline(ui,response.rect,role);}
     response
 }
 
@@ -654,7 +665,13 @@ pub(crate) fn reception_freight_inline_cell_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
     click_at:Option<egui::Pos2>
 )->Response{
-    reception_money_editor_at_rect(ui,cell,value,request_focus,click_at,false)
+    reception_money_editor_at_rect(ui,cell,value,request_focus,click_at,None)
+}
+pub(crate) fn reception_freight_inline_cell_editor_emphasized(
+    ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
+    click_at:Option<egui::Pos2>,role:Option<crate::highlight::Role>
+)->Response{
+    reception_money_editor_at_rect(ui,cell,value,request_focus,click_at,role)
 }
 
 /// Quantity uses the shared date-selector frame and segment buttons.

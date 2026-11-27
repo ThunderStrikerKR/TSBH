@@ -73,13 +73,13 @@ pub(crate) fn action_full_width(
 pub(crate) fn action_with_min_width(
     ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool, min_width: f32,
 ) -> Response {
-    action_with_palette(ui, label, role, enabled, min_width, false)
+    action_with_palette(ui, label, role, enabled, min_width, false,None)
 }
 
 /// Actions embedded in colored review cards retain their original role geometry
 /// and hover behavior, but use the shared white action palette when enabled.
 pub(crate) fn review_action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Response {
-    action_with_palette(ui, label, role, enabled, 0.0, true)
+    action_with_palette(ui, label, role, enabled, 0.0, true,None)
 }
 
 /// One visual role/state contract for standard widgets and fixed-rect actions.
@@ -97,9 +97,14 @@ pub(crate) fn field_action_palette(enabled:bool,enabled_ink:Color32)
     theme::field_visual(theme::VisualState::enabled(enabled),enabled_ink)
 }
 
+pub(crate) fn action_with_emphasis(
+    ui:&mut Ui,label:&str,role:ButtonRole,enabled:bool,emphasis:Option<crate::highlight::Role>
+)->Response{
+    action_with_palette(ui,label,role,enabled,0.0,false,emphasis)
+}
 fn action_with_palette(
     ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool, min_width: f32,
-    review_white: bool,
+    review_white: bool,emphasis:Option<crate::highlight::Role>,
 ) -> Response {
     let effective_enabled=enabled && ui.is_enabled();
     let (height,fill,color,stroke)=action_style(role,effective_enabled,review_white);
@@ -151,8 +156,11 @@ fn action_with_palette(
             .corner_radius(CornerRadius::same(radius))
             .min_size(Vec2::new(min_width, height));
         if effective_enabled{
-            crate::highlight::action_widget(ui,fill,stroke,light_surface);
-        }else{button=button.fill(fill).stroke(stroke);}
+            crate::highlight::action_widget(ui,fill,stroke,(light_surface,emphasis));
+        }else{
+            let (fill,stroke)=crate::highlight::persistent_surface(fill,stroke,emphasis);
+            button=button.fill(fill).stroke(stroke);
+        }
         ui.add_enabled(enabled, button)
     }).inner;
     #[cfg(test)]
@@ -564,7 +572,7 @@ pub(crate) fn calendar_day(grid:&mut Ui,day:&str,width:f32,selected:bool,today:b
 }
 
 /// Dispatch-origin toggle; the reception row retains its business selection and highlight.
-pub(crate) fn dispatch_origin(right:&mut Ui,label:&str,selected:bool,editable:bool)->Response{
+pub(crate) fn dispatch_origin(right:&mut Ui,label:&str,selected:bool,editable:bool,emphasis:Option<crate::highlight::Role>)->Response{
     let effective_enabled=editable&&right.is_enabled();
     let response=right.scope(|ui|{
         let fill=if selected{theme::RAISED}else{theme::PANEL};
@@ -575,7 +583,7 @@ pub(crate) fn dispatch_origin(right:&mut Ui,label:&str,selected:bool,editable:bo
             if selected{theme::TEXT}else{theme::SECONDARY}
         )).min_size(Vec2::new(42.0,theme::ACTION_STANDARD_HEIGHT))
          .corner_radius(crate::highlight::CONTROL_RADIUS);
-        if effective_enabled{crate::highlight::action_widget(ui,fill,stroke,false);}
+        if effective_enabled{crate::highlight::action_widget(ui,fill,stroke,(false,emphasis));}
         else{button=button.fill(fill).stroke(stroke);}
         ui.add_enabled(editable,button)
     }).inner;
@@ -698,10 +706,19 @@ pub(crate) fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<u
 
 /// The add/rollback modes occupy exactly the same header action slot.
 /// Never insert a pending-assignment action between the item and freight rows.
-pub(crate) fn reception_item_header_action(ui:&mut Ui,rollback:bool,enabled:bool)->Response{
-    action_with_min_width(
+pub(crate) struct HeaderActionState{enabled:bool,required:bool}
+impl From<bool> for HeaderActionState{
+    fn from(enabled:bool)->Self{Self{enabled,required:false}}
+}
+impl From<(bool,bool)> for HeaderActionState{
+    fn from((enabled,required):(bool,bool))->Self{Self{enabled,required}}
+}
+pub(crate) fn reception_item_header_action(ui:&mut Ui,rollback:bool,state:impl Into<HeaderActionState>)->Response{
+    let HeaderActionState{enabled,required}=state.into();
+    action_with_palette(
         ui,if rollback{"선택 취소"}else{"＋ 상품 추가"},
-        theme::ButtonRole::Standard,enabled,112.0
+        theme::ButtonRole::Standard,enabled,112.0,false,
+        required.then_some(crate::highlight::Role::RequiredInput)
     )
 }
 

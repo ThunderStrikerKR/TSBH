@@ -262,10 +262,9 @@ pub fn reception_recipient_fields(
 pub fn reception_message_copy_actions(ui:&mut Ui,enabled:bool)->Option<bool>{
     let mut greeting=None;
     let button=|actions:&mut Ui,label:&str|{
-        let response=crate::button::action(actions,label,theme::ButtonRole::Standard,enabled);
-        if enabled && crate::one_touch::stage(actions)==crate::one_touch::Stage::PaymentCopy{
-            crate::one_touch::mark(actions,response.rect);
-        }
+        let review=enabled && crate::one_touch::stage(actions)==crate::one_touch::Stage::PaymentCopy;
+        let response=crate::button::action_with_emphasis(actions,label,theme::ButtonRole::Standard,enabled,
+            crate::highlight::freight_role(false,review));
         response.clicked()
     };
     if ui.available_width()<280.0 {
@@ -445,12 +444,20 @@ pub(crate) fn freight_actions_need_second_row(available_width:f32)->bool{
 /// Workflow freight rows have independent permissions: the amount can be
 /// blocked for COD/waived shipments while the freight-code and locality
 /// controls remain available until the shipment is transferred.
+pub(crate) struct FreightRowState{exempt:bool,required:bool,editing:bool}
+impl From<bool> for FreightRowState{
+    fn from(exempt:bool)->Self{Self{exempt,required:false,editing:false}}
+}
+impl From<(bool,bool,bool)> for FreightRowState{
+    fn from((exempt,required,editing):(bool,bool,bool))->Self{Self{exempt,required,editing}}
+}
 pub fn reception_freight_row_controls(
     ui:&mut Ui,label:&str,amount:Option<i64>,collect:Option<bool>,
     remote:Option<bool>,inquiry_visible:bool,
     amount_editable:bool,collect_editable:bool,remote_editable:bool,
-    remote_visible:bool,exempt:bool
+    remote_visible:bool,state:impl Into<FreightRowState>
 )->ReceptionFreightEdit{
+    let FreightRowState{exempt,required,editing}=state.into();
     let mut clicked=false;
     let mut amount_click_pos=None;
     let mut remote_clicked=false;
@@ -491,9 +498,9 @@ pub fn reception_freight_row_controls(
                 );
                 // Prevent editing without greying out an already entered
                 // amount. The disabled parent Ui was dimming valid freight.
-                let displayed=reception_freight_money_readonly(price,&mut amount_text,exempt);
+                let role=crate::highlight::freight_role(required,crate::one_touch::stage(price).freight());
+                let displayed=reception_freight_money_readonly(price,&mut amount_text,(exempt,role,editing));
                 amount_rect=Some(displayed.rect);
-                if crate::one_touch::stage(price).freight(){crate::one_touch::mark(price,displayed.rect);}
                 if amount_editable && collect!=Some(true) && !exempt{
                     let hit=price.interact(
                         displayed.rect,
@@ -512,8 +519,8 @@ pub fn reception_freight_row_controls(
         );
         // A checkbox/VAT edit temporarily disables interactions while Rust
         // saves. Keep the SAME common dropdown instead of flashing "(선불)".
-        let (changed,response)=reception_cod_dropdown(line,collect,collect_editable);
-        if crate::one_touch::stage(line).freight(){crate::one_touch::mark(line,response.rect);}
+        let review=crate::one_touch::stage(line).freight();
+        let (changed,_)=reception_cod_dropdown(line,collect,(collect_editable,review));
         collect_clicked=changed;
     };
     let mut draw_remote_and_inquiry=|line:&mut Ui|{
@@ -570,8 +577,8 @@ pub fn reception_item_origin_action_editable(
     ui.horizontal(|bar|{
         bar.with_layout(Layout::right_to_left(Align::Center),|right|{
             let button=|right:&mut Ui,label:&str,selected:bool|{
-                let response=crate::button::dispatch_origin(right,label,selected,editable);
-                if selected && crate::one_touch::stage(right).freight(){crate::one_touch::mark(right,response.rect);}
+                let review=selected && crate::one_touch::stage(right).freight();
+                let response=crate::button::dispatch_origin(right,label,selected,editable,crate::highlight::freight_role(false,review));
                 response.clicked()
             };
             if button(right,"매장",dispatch_origin==Some("STORE")){

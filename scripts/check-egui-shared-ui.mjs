@@ -1465,7 +1465,8 @@ const highlightContracts = {
   "input/mod.rs":{
     "paint_required_input":{"highlight :: paint (":1},
     "reception_recipient_inline_cell_editor":{"highlight :: field_background (":1,"highlight :: field_outline (":1},
-    "reception_money_editor_at_rect":{"highlight :: field_background (":1,"highlight :: field_outline (":1}},
+    "reception_money_editor_at_rect":{"highlight :: field_background (":1,"highlight :: field_outline (":1},
+    "reception_freight_money_readonly":{"highlight :: field_background (":1,"highlight :: field_outline (":1}},
   "source_highlight.rs":{
     "paint_active_background":{"highlight :: paint_fill (":1},
     "paint_active_outline":{"highlight :: paint_outline (":1},
