@@ -2493,7 +2493,10 @@ pub(super) fn compare_registered_models(payload:&Value)->Result<Value,String>{
         cutoff=cutoff.max(date(v).ok_or("독립 평가 추가 시각 경계 오류")?);
     }
     let as_of=date(&payload["evaluationAsOf"]).ok_or("독립 평가 시각 오류")?;
-    if cutoff>=as_of||a["modelId"]==b["modelId"]||am["clientBuildVersion"]!=bm["clientBuildVersion"]{
+    let legacy_baseline=payload["compareAgainstLegacy"]==true;
+    // Internal bootstrap reuses the candidate's verified model envelope,
+    // but the reference prediction is the unchanged original classifier.
+    if cutoff>=as_of||(a["modelId"]==b["modelId"])!=legacy_baseline||am["clientBuildVersion"]!=bm["clientBuildVersion"]{
         return Err("독립 평가 모델 또는 시각 불일치".into());
     }
     let alpha=match payload.get("inferenceAlpha"){
@@ -2534,7 +2537,7 @@ pub(super) fn compare_registered_models(payload:&Value)->Result<Value,String>{
         let initial=owner_observations_indexed(&units,first,&owner_index,&owner_index);
         let replay=|model:&Value|run_blend_prepared(first,shadow,model,&shadow["capturedAt"],
             &cap["clientBuildVersion"],&units,&owner_index,&initial).unwrap_or_else(|_|json!({"decisions":[]}));
-        let ar=replay(am);let br=replay(bm);
+        let ar=if legacy_baseline{None}else{Some(replay(am))};let br=replay(bm);
         let mut local=BTreeMap::<(String,String,String,String),ModelPairCounts>::new();
         let mut used=BTreeSet::new();
         for obs in rows(&compared["observations"]).filter(|v|v["task"]=="recipient_ownership"){
@@ -2549,7 +2552,8 @@ pub(super) fn compare_registered_models(payload:&Value)->Result<Value,String>{
                 (label=="explicit_correction"&&(old==actual||singleton(&obs["positiveCandidates"])!=Some(actual)||
                 singleton(&obs["negativeCandidates"])!=Some(old)))||(label=="unchanged_proxy"&&old!=actual){continue;}
             if !used.insert(s){return Err("독립 평가 관측 위치 중복".into());}
-            let x=paired_decision(&ar,&units,s,old);let y=paired_decision(&br,&units,s,old);
+            let x=if legacy_baseline{Some(old)}else{ar.as_ref().and_then(|v|paired_decision(v,&units,s,old))};
+            let y=paired_decision(&br,&units,s,old);
             let kind=match obs["sourceKind"].as_str(){Some("address")=>"address",Some("phone"|"mobile")=>"contact",_=>"unknown"};
             let mut traces=rows(&first["recipientOwnerTrace"]["decisions"]).filter(|v|position(&units,&v["source"])==Some(s));
             let route=match (traces.next(),traces.next()){
@@ -2570,7 +2574,7 @@ pub(super) fn compare_registered_models(payload:&Value)->Result<Value,String>{
     let groups=totals.into_iter().map(|((kind,route,level,label),v)|json!({
         "sourceKind":kind,"legacyRoute":route,"contextLevel":level,"labelKind":label,"metrics":v.wire_with_inference(alpha)})).collect::<Vec<_>>();
     Ok(json!({"status":"paired_model_replay_diagnostic_only","inferencePolicyVersion":1,"inferenceAlpha":alpha,
-        "inferenceAssumesIndependentOrders":true,"globalMultiplicityControlled":false,"baselineModelId":a["modelId"],"candidateModelId":b["modelId"],
+        "inferenceAssumesIndependentOrders":true,"globalMultiplicityControlled":false,"baselineModelId":if legacy_baseline{json!("legacy")}else{a["modelId"].clone()},"candidateModelId":b["modelId"],
         "cutoff":cutoff.to_rfc3339(),"evaluationAsOf":payload["evaluationAsOf"],"requestedOrders":orders.len(),
         "orderStatuses":statuses,"groups":groups,"sameFrozenInputs":true,"prospectiveTrialVerified":false,
         "representativeLabelsVerified":false,"winner":null,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
