@@ -110,6 +110,38 @@ pub(crate) fn reserve_min_size(ui:&mut Ui,size:Vec2){
     ui.set_min_size(Vec2::new(aligned_extent(size.x),aligned_extent(size.y)));
 }
 
+/// Explicit allocation inputs share the logical size lattice. Keep native
+/// egui negotiation, cursor advancement, IDs, response/sense, and layout.
+/// In particular an exact content rectangle and its response can differ.
+fn aligned_allocation_size(size:Vec2)->Vec2{
+    Vec2::new(aligned_extent(size.x),aligned_extent(size.y))
+}
+
+pub(crate) trait SharedAllocationExt{
+    fn shared_allocate_exact_size(&mut self,size:Vec2,sense:Sense)->(Rect,egui::Response);
+    fn shared_allocate_space(&mut self,size:Vec2)->(egui::Id,Rect);
+    fn shared_allocate_ui_with_layout<R>(&mut self,size:Vec2,layout:Layout,draw:impl FnOnce(&mut Ui)->R)->egui::InnerResponse<R>;
+    fn shared_add_sized(&mut self,size:impl Into<Vec2>,widget:impl egui::Widget)->egui::Response;
+    fn shared_allocate_response(&mut self,size:Vec2,sense:Sense)->egui::Response;
+}
+impl SharedAllocationExt for Ui{
+    fn shared_allocate_exact_size(&mut self,size:Vec2,sense:Sense)->(Rect,egui::Response){
+        self.allocate_exact_size(aligned_allocation_size(size),sense)
+    }
+    fn shared_allocate_space(&mut self,size:Vec2)->(egui::Id,Rect){
+        self.allocate_space(aligned_allocation_size(size))
+    }
+    fn shared_allocate_ui_with_layout<R>(&mut self,size:Vec2,layout:Layout,draw:impl FnOnce(&mut Ui)->R)->egui::InnerResponse<R>{
+        self.allocate_ui_with_layout(aligned_allocation_size(size),layout,draw)
+    }
+    fn shared_add_sized(&mut self,size:impl Into<Vec2>,widget:impl egui::Widget)->egui::Response{
+        self.add_sized(aligned_allocation_size(size.into()),widget)
+    }
+    fn shared_allocate_response(&mut self,size:Vec2,sense:Sense)->egui::Response{
+        self.allocate_response(aligned_allocation_size(size),sense)
+    }
+}
+
 /// Semantic layout profiles. Screen modules choose a content role, never
 /// a numeric spacing override. Preserve the reviewed spacing for each role.
 #[derive(Clone,Copy)]
@@ -162,7 +194,7 @@ pub fn fixed_row<R>(
     // Allocate the parent footprint exactly once. allocate_ui_with_layout
     // negotiates its response rect with the child's minimum content size,
     // so a 20pt label could silently expand an intended 18pt status slot.
-    let (rect,_response)=ui.allocate_exact_size(
+    let (rect,_response)=ui.shared_allocate_exact_size(
         Vec2::new(width,height),Sense::hover()
     );
     let rect=aligned_rect(rect);
@@ -234,7 +266,7 @@ pub fn reception_goods_viewport(
     ui:&mut Ui,height:f32,content:impl FnOnce(&mut Ui)
 ){
     let size=Vec2::new(ui.available_width().max(0.0),height.max(0.0));
-    let (rect,_)=ui.allocate_exact_size(size,Sense::hover());
+    let (rect,_)=ui.shared_allocate_exact_size(size,Sense::hover());
     let rect=aligned_rect(rect);
     if !rect.is_positive(){return;}
     let mut child=ui.new_child(UiBuilder::new()
@@ -255,7 +287,7 @@ pub fn reception_section_scroll(
 ){
     let height=docked_section_body_height(section_height)
         .min(ui.available_height().max(0.0));
-    let (rect,_)=ui.allocate_exact_size(
+    let (rect,_)=ui.shared_allocate_exact_size(
         Vec2::new(ui.available_width().max(0.0),height),Sense::hover()
     );
     let rect=aligned_rect(rect);
@@ -502,7 +534,7 @@ pub(crate) fn management_toolbar_pair(ui:&mut Ui,policy:ToolbarPair,
             else{[ToolbarPart::Search,ToolbarPart::Actions]};
         for (index,part) in parts.into_iter().enumerate(){
             if index>0{ui.add_space(theme::SPACE_8);}
-            let (rect,_)=ui.allocate_exact_size(Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover());
+            let (rect,_)=ui.shared_allocate_exact_size(Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover());
             let (id,layout)=match part{
                 ToolbarPart::Search=>(policy.narrow_search_id,Layout::left_to_right(Align::Center)),
                 ToolbarPart::Actions=>(policy.narrow_actions_id,actions_layout.clone()),
@@ -510,7 +542,7 @@ pub(crate) fn management_toolbar_pair(ui:&mut Ui,policy:ToolbarPair,
             management_toolbar_slot(ui,id,rect,layout,policy.clip,false,|slot|draw(slot,part));
         }
     }else{
-        let (outer,_)=ui.allocate_exact_size(Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover());
+        let (outer,_)=ui.shared_allocate_exact_size(Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover());
         let actions=management_toolbar_trailing_rect(outer,policy.actions_width,0.0,outer.height());
         let search_width=policy.search_max.min((actions.left()-outer.left()-theme::SPACE_12).max(1.0));
         let search=Rect::from_min_size(outer.min,Vec2::new(search_width,outer.height()));
@@ -523,7 +555,7 @@ pub(crate) fn management_toolbar_pair(ui:&mut Ui,policy:ToolbarPair,
 /// reception panes intentionally fit their existing inner-width policy.
 pub(crate) fn workspace_pane<R>(ui:&mut Ui,width:f32,height:f32,fixed_width:bool,
     draw:impl FnOnce(&mut Ui)->R)->R{
-    ui.allocate_ui_with_layout(Vec2::new(width,height),Layout::top_down(Align::Min),|pane|{
+    ui.shared_allocate_ui_with_layout(Vec2::new(width,height),Layout::top_down(Align::Min),|pane|{
         if fixed_width{pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,width);}
         draw(pane)
     }).inner
