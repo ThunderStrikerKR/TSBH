@@ -10920,6 +10920,35 @@ fn recognition_correction_audit_summary()->Result<serde_json::Value,String>{
 }
 
 fn main() -> eframe::Result<()> {
+    if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-owner-statistics"){
+        let result=(||->Result<serde_json::Value,String>{
+            let ids=std::env::args_os().skip(2).map(|arg|
+                arg.into_string().map_err(|_|"주문 ID 형식 오류".to_owned())
+            ).collect::<Result<Vec<_>,_>>()?;
+            let mut report=gateway::read_recognition_owner_statistics(&ids)?;
+            // Do not print raw data, IDs or client-scoped context keys.
+            if let Some(records)=report["statistics"].as_array_mut(){
+                for record in records{
+                    let level=record["key"].as_str().and_then(|key|
+                        serde_json::from_str::<serde_json::Value>(key).ok())
+                        .and_then(|parts|parts[2].as_str().map(str::to_owned));
+                    if let Some(object)=record.as_object_mut(){
+                        object.remove("key");
+                        object.insert("contextLevel".into(),serde_json::json!(level));
+                    }
+                }
+            }
+            Ok(report)
+        })();
+        match result{
+            Ok(report)=>println!("{report}"),
+            Err(_)=>{
+                eprintln!("[BANDO HUB] 귀속 통계 검증 실패. 명시한 기존 DB 연결과 주문 ID를 확인하세요.");
+                std::process::exit(2);
+            }
+        }
+        return Ok(());
+    }
     if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-correction-audit"){
         match recognition_correction_audit_summary(){
             Ok(summary)=>println!("{summary}"),
