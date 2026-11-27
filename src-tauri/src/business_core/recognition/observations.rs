@@ -494,6 +494,38 @@ fn reconcile_owner_audits(payload:&Value,units:&[u16],first:&Value,observations:
     Ok(())
 }
 
+// The frozen manifest is the authority for which audit rows belong to
+// this confirmation. Old orders lack it; their comparisons remain diagnostic
+// and must not be treated as verified durable training evidence.
+fn audit_coverage(payload:&Value)->&'static str{
+    let baseline=&payload["confirmationSnapshot"]["recognitionBaseline"];
+    let Some(events)=payload["recognitionAuditEvents"].as_array()else{return "missing_history";};
+    let Some(manifest)=baseline.get("auditEventIds")else{return "legacy_unverified";};
+    let Some(ids)=manifest.as_array()else{return "invalid_manifest";};
+    let expected=ids.iter().filter_map(Value::as_str).collect::<BTreeSet<_>>();
+    if expected.len()!=ids.len()||expected.iter().any(|id|id.trim().is_empty()){
+        return "invalid_manifest";
+    }
+    let Some(confirmed)=payload["confirmedAt"].as_str()
+        .and_then(|v|chrono::DateTime::parse_from_rfc3339(v).ok())else{return "invalid_manifest";};
+    let mut actual=BTreeSet::new();
+    for event in events{
+        if event["orderId"]!=payload["id"] ||
+            event["sourceRaw"]!=payload["confirmationSnapshot"]["raw"]{continue;}
+        let Some(at)=event["at"].as_str().and_then(|v|chrono::DateTime::parse_from_rfc3339(v).ok())
+            else{return "incomplete_history";};
+        if at>confirmed{continue;}
+        // A previous analysis of identical raw text cannot be silently
+        // treated as an untouched observation.
+        if event["initialAnalysis"]!=baseline["initialAnalysis"]||event["context"]["schemaVersion"]!=1{
+            return "incomplete_history";
+        }
+        let Some(id)=event["id"].as_str()else{return "incomplete_history";};
+        actual.insert(id);
+    }
+    if actual==expected{"verified_manifest"}else{"incomplete_history"}
+}
+
 pub(super) fn compare(payload:&Value)->Result<Value,String>{
     let snapshot=&payload["confirmationSnapshot"];
     let Some(raw)=snapshot["raw"].as_str().filter(|raw|!raw.trim().is_empty())
@@ -527,6 +559,34 @@ pub(super) fn compare(payload:&Value)->Result<Value,String>{
             (Some(a),Some(b)) if a.len()==1 && b.len()==1=>"changed_requires_review",
             _=>"unresolved_evidence",
         };
+        // Sets collapse identical candidate IDs; they do not prove that the
+        // source has exactly one owner. Require both snapshots to agree on
+        // unique, valid source links even when duplicate labels are equal.
+        let old_rows=&first["recipients"];
+        let new_rows=&snapshot["recipients"];
+        let old_state=field_state(&units,old_rows,position,task);
+        let new_state=field_state(&units,new_rows,position,task);
+        let matches=|values:Option<&BTreeSet<String>>,state:&Option<String>|
+            values.is_some_and(|v|v.len()==1&&state.as_ref().is_some_and(|s|v.contains(s)));
+        if !matches(old,&old_state)||!matches(new,&new_state){
+            status="unresolved_evidence";
+        }
+        let original_count=rows(&first["candidates"]).filter(|c|span(&units,c)==Some(position)).count();
+        if original_count>1 || task=="type"&&original_count!=1{status="unresolved_evidence";}
+        if task=="type" && old_state.as_deref().is_some_and(contact)
+            && new_state.as_deref().is_some_and(contact) && old_state!=new_state{
+            // Phone/mobile slots can change without a classification error.
+            status="unresolved_evidence";
+        }
+        if task=="quantity"&&status=="unchanged_observed"{
+            let qs=super::quantity::extract(&String::from_utf16_lossy(&units[position.0..position.1]));
+            if qs.len()!=1||new_state.as_deref()!=Some(qs[0].value.to_string().as_str()){
+                status="unresolved_evidence";
+            }
+        }
+        if task=="variant"&&field_state(&units,old_rows,position,"product")!=
+            field_state(&units,new_rows,position,"product"){status="unresolved_evidence";}
+
         // A default option is not a verified source observation. Require
         // the written color and a single associated product for weak credit.
         if task=="variant"&&status=="unchanged_observed"{
@@ -545,7 +605,23 @@ pub(super) fn compare(payload:&Value)->Result<Value,String>{
     }
     observations.extend(owner_observations(&units,first,&snapshot["recipients"]));
     reconcile_owner_audits(payload,&units,first,&mut observations)?;
-    Ok(json!({"status":"compared","observations":observations,
+    let coverage=audit_coverage(payload);
+    if matches!(coverage,"invalid_manifest"|"incomplete_history") ||
+        baseline.get("auditEventIds").is_some()&&coverage!="verified_manifest"{
+        for o in &mut observations{
+            if o["eligibleForCandidateLearning"]==true{
+                o["outcome"]=json!("changed_requires_review");
+                o["eligibleForCandidateLearning"]=json!(false);
+                o["requiresReview"]=json!(true);
+                o["reason"]=json!("audit_history_incomplete");
+                if let Some(object)=o.as_object_mut(){
+                    object.remove("positiveCandidates");
+                    object.remove("negativeCandidates");
+                }
+            }
+        }
+    }
+    Ok(json!({"status":"compared","auditCoverage":coverage,"observations":observations,
         "initialRecognition":first.get("recognitionContext"),
         "finalClientId":baseline.get("finalClientId"),
         "finalClientSelection":baseline.get("finalClientSelection")}))
