@@ -25,6 +25,70 @@ fn event_index(units:&[u16],first:&Value)->Vec<Event>{
     out.sort_by_key(|e|(e.position,e.role));
     out
 }
+// Shared order evidence for the provisional owner comparator and learning
+// diagnostics. A paragraph is an independent observation only when it has
+// exactly one name and non-overlapping recognized spans. Neither final
+// recipient assignments nor transaction/client history enters this index.
+#[derive(Default)]
+pub(super) struct OwnerOrderEvidence{
+    paragraphs:BTreeMap<u64,(Vec<&'static str>,[i8;2])>,
+    shapes:BTreeMap<Vec<&'static str>,usize>,
+    totals:[[usize;2];2],
+}
+impl OwnerOrderEvidence{
+    pub(super) fn new<'a>(source:impl IntoIterator<Item=(&'a str,u64,usize,usize)>)->Self{
+        let mut grouped=BTreeMap::<u64,Vec<(usize,usize,&'static str)>>::new();
+        for (kind,paragraph,start,end) in source{
+            if let Some(r)=role(kind){grouped.entry(paragraph).or_default().push((start,end,r));}
+        }
+        let mut out=Self::default();
+        for (paragraph,mut entries) in grouped{
+            entries.sort_unstable();
+            if entries.iter().any(|e|e.0>=e.1)||entries.windows(2).any(|w|w[0].1>w[1].0){continue;}
+            let roles=entries.iter().map(|e|e.2).collect::<Vec<_>>();
+            let mut names=roles.iter().enumerate().filter(|(_,r)|**r=="name");
+            let Some((name,_))=names.next()else{continue;};
+            if names.next().is_some(){continue;}
+            let mut direction=[0i8;2];
+            for (slot,field) in ["address","contact"].into_iter().enumerate(){
+                let before=roles[..name].contains(&field);
+                let after=roles[name+1..].contains(&field);
+                direction[slot]=match (before,after){(true,false)=>-1,(false,true)=>1,_=>0};
+                if direction[slot]!=0{out.totals[slot][usize::from(direction[slot]>0)]+=1;}
+            }
+            if direction==[0,0]{continue;}
+            // Collapse adjacent equal roles (e.g. multiple contacts) without
+            // treating quantities, raw strings or distances as votes.
+            let mut shape=roles;
+            shape.dedup();
+            *out.shapes.entry(shape.clone()).or_default()+=1;
+            out.paragraphs.insert(paragraph,(shape,direction));
+        }
+        out
+    }
+    pub(super) fn votes(&self,kind:&str,excluded:[u64;3])->[usize;2]{
+        let slot=match role(kind){Some("address")=>0,Some("contact")=>1,_=>return [0,0]};
+        let mut votes=self.totals[slot];
+        for (i,p) in excluded.iter().enumerate(){
+            if excluded[..i].contains(p){continue;}
+            if let Some((_,d))=self.paragraphs.get(p){
+                if d[slot]!=0{votes[usize::from(d[slot]>0)]-=1;}
+            }
+        }
+        votes
+    }
+    // Repeated exact paragraph shapes are reported separately, not added
+    // as a second vote for the same observations.
+    pub(super) fn repeated_shape_count(&self,paragraph:u64,excluded:[u64;3])->usize{
+        let Some((shape,_))=self.paragraphs.get(&paragraph)else{return 0;};
+        let mut n=self.shapes.get(shape).copied().unwrap_or(0);
+        for (i,p) in excluded.iter().enumerate(){
+            if excluded[..i].contains(p){continue;}
+            if self.paragraphs.get(p).is_some_and(|(s,_)|s==shape){n=n.saturating_sub(1);}
+        }
+        n
+    }
+}
 // 03-11: provisional document shape, separate from the existing local
 // context contract. Never use final labels, values, distances or client IDs
 // as pattern identity. Keep repetition count outside the structural key.
@@ -610,6 +674,12 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
         "documentPattern":document_pattern(&events,first)});
     if payload["includeDocumentFeatures"]==true{
         result["documentFeatures"]=document_geometry(raw,&units,&events,&result["documentPattern"]);
+        let order=OwnerOrderEvidence::new(events.iter().map(|e|(if e.role=="contact"{"phone"}else{e.role},
+            e.paragraph,e.position.0,e.position.1)));
+        result["documentFeatures"]["ownerOrderEvidence"]=json!({
+            "addressBeforeAfter":order.votes("address",[u64::MAX;3]),
+            "contactBeforeAfter":order.votes("phone",[u64::MAX;3]),
+            "status":"diagnostic_only"});
     }
     // Optional offline comparison. Ordinary context projection remains unchanged.
     if let Some(history)=payload.get("historicalOrders"){
