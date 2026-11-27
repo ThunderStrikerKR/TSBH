@@ -1534,6 +1534,71 @@ fn owner_transfer_indexed(units:&[u16],first:&Value,index:&OwnerIndex<'_>,d:&Val
     };
     fail().unwrap_or(Some("unverified_source_or_anchor"))
 }
+// P07: validate a recommendation before replaying the original analyzer.
+// This contract is counterfactual only and does not grant operational authority.
+pub(super) fn checked_owner_replay(raw:&str,first:&Value,decision:&Value)
+    ->Result<(Span,Span,usize,usize,String),String>{
+    let units=raw.encode_utf16().collect::<Vec<_>>();
+    let check=(||->Option<(Span,Span,usize,usize,String)>{
+        if decision["status"]!="diagnostic_proposal_only"||decision["decisionChanged"]!=false||
+            decision["eligibleForAutomaticDecision"]!=false||decision["calibrationScope"]!=OWNER_PAIR_CALIBRATION_SCOPE{
+            return None;
+        }
+        let s=position(&units,decision)?;
+        let old=decision["legacyCandidate"].as_str()?;
+        let new=decision["diagnosticCandidate"].as_str()?;
+        if !matches!((old,new),("previous","next")|("next","previous")){return None;}
+        let index=OwnerIndex::new(&units,&first["recipients"]);
+        let mut traces=rows(&first["recipientOwnerTrace"]["decisions"]).filter(|d|position(&units,&d["source"])==Some(s));
+        let d=traces.next()?;if traces.next().is_some()||owner_transfer_indexed(&units,first,&index,d,s,old).is_some(){return None;}
+        let link=index.links.get(&s)?.first()?;
+        let mut candidates=rows(&d["candidates"]).filter(|c|c["relation"]==new);
+        let target=position(&units,&candidates.next()?["anchor"])?;
+        if candidates.next().is_some(){return None;}
+        let destination=*index.names.get(&target)?.iter().next()?;
+        let origin=index.unique_anchor(link.row)?;
+        let mut prior=rows(&d["candidates"]).filter(|c|c["relation"]==old);
+        if position(&units,&prior.next()?["anchor"])!=Some(origin)||prior.next().is_some(){return None;}
+        // No other source may share the old field, even a disjoint fragment.
+        if index.links.iter().any(|(other,links)|*other!=s&&links.iter().any(|v|v.row==link.row&&v.field==link.field)){
+            return None;
+        }
+        Some((s,target,link.row,destination,link.field.to_owned()))
+    })();
+    check.ok_or("귀속 재계산 근거 또는 변경 대상 불일치".into())
+}
+pub(super) fn verify_owner_replay(raw:&str,first:&Value,replay:&Value,source:Span,target:Span,
+    old_row:usize,new_row:usize,field:&str)->Result<(),String>{
+    let units=raw.encode_utf16().collect::<Vec<_>>();
+    let before=first["recipients"].as_array().ok_or("최초 수취인 누락")?;
+    let after=replay["recipients"].as_array().ok_or("재계산 수취인 누락")?;
+    let old=before.get(old_row).ok_or("이전 수취인 누락")?;
+    let destination=after.get(new_row).ok_or("변경 수취인 누락")?;
+    let value=old[field].as_str().filter(|v|!v.is_empty()).ok_or("이전 배송 정보 누락")?;
+    if before.len()!=after.len()||destination[field].as_str()!=Some(value)||
+        after[old_row][field].as_str()!=Some("")||
+        OwnerIndex::new(&units,&replay["recipients"]).owner(source,field,value)!=Some(target){
+        return Err("귀속 재계산 결과 불일치".into());
+    }
+    // All other recipient fields and item assignments must survive intact.
+    for (i,(a,b)) in before.iter().zip(after).enumerate(){
+        let mut a=a.clone();let mut b=b.clone();
+        if i==old_row||i==new_row{
+            for v in [&mut a,&mut b]{
+                let object=v.as_object_mut().ok_or("수취인 형식 오류")?;
+                object.remove(field);
+                if field=="address"{for k in ["postcode","addressKind","addressStatus","addressParts"]{object.remove(k);}}
+                for k in ["sources","candidates"]{
+                    if let Some(xs)=object.get_mut(k).and_then(Value::as_array_mut){
+                        xs.retain(|v|position(&units,v)!=Some(source));
+                    }
+                }
+            }
+        }
+        if a!=b{return Err("귀속 재계산 중 다른 정보 변경".into());}
+    }
+    Ok(())
+}
 const MIN_CHANGE_PROXY:f64=0.80;
 const MIN_CHANGE_MARGIN:f64=0.25;
 const MAX_CHANGE_OUTSIDE:f64=0.05;
