@@ -296,7 +296,7 @@ pub const RECEPTION_SECTION_DIVIDER_GAP: f32 = SPACE_8;
 pub const RECEPTION_SECTION_DIVIDER_HEIGHT: f32 =
     2.0 * RECEPTION_SECTION_DIVIDER_GAP + SOFT_DIVIDER_WIDTH;
 // Canvas/footer clearance must be counted in the message editor's height.
-pub const RECEPTION_MESSAGE_ACTION_GAP: f32 = SPACE_12;
+pub const RECEPTION_MESSAGE_ACTION_GAP: f32 = RECEPTION_SECTION_DIVIDER_HEIGHT;
 // One 13pt shortcut label with 3pt keycap top/bottom padding and border.
 // The reception intake free-space calculator uses this instead of a plain
 // metadata text line, keeping three section groups vertically balanced.
