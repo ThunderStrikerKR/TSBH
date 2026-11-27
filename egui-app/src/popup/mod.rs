@@ -1,9 +1,9 @@
 //! Modal presentation and geometry. Overlay owns window layers, input priority and lifetime.
-use crate::ui_layout::SharedUiClipExt as _;
-use crate::ui_layout::SharedAllocationExt as _;
-use crate::ui_layout::AlignedUiBuilderExt as _;
+use crate::ui_layout::geometry::SharedUiClipExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
+use crate::ui_layout::geometry::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Frame,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
-use crate::ui_primitives::UiWidthPolicyExt;
+use crate::ui_layout::geometry::UiWidthPolicyExt;
 use crate::{theme,typography};
 use crate::theme::{
     role_surface_frame, SurfaceRole, VisualState, CONTROL_RADIUS, MODAL_PANEL_PADDING_X,
@@ -99,7 +99,7 @@ pub(crate) fn modal_master_content_from_ui(available:Rect,outer:Vec2)->Vec2{
 /// Using scope_builder directly on that parent caused the window to outgrow
 /// fixed_size and lose its lower rounded frame to viewport clipping.
 pub(crate) fn modal_master_overlay_ui(parent:&mut Ui,bounds:Rect,id:&'static str)->Ui{
-    let bounds=crate::ui_layout::aligned_rect(bounds);
+    let bounds=crate::ui_layout::geometry::aligned_rect(bounds);
     let inherited_clip=parent.clip_rect();
     let mut overlay=parent.new_child(
         egui::UiBuilder::new()
@@ -573,8 +573,8 @@ fn modal_master_header_content_in_rect(
         egui::pos2(content.left(),heading.bottom()+theme::SPACE_4),
         Vec2::new(content.width(),20.0)
     );
-    let heading=crate::ui_layout::aligned_rect(heading);
-    let subtitle=crate::ui_layout::aligned_rect(subtitle);
+    let heading=crate::ui_layout::geometry::aligned_rect(heading);
+    let subtitle=crate::ui_layout::geometry::aligned_rect(subtitle);
     let heading_clip=heading.intersect(ui.clip_rect());
     // Reserve the real close-button hitbox first; a long heading may
     // truncate, but must never push the only exit outside the modal.
@@ -588,7 +588,7 @@ fn modal_master_header_content_in_rect(
     let close=response.clicked();
     let title_right=(response.rect.left()-theme::SPACE_8).max(heading.left());
     if title_right>heading.left(){
-        let title_rect=crate::ui_layout::aligned_rect(Rect::from_min_max(heading.min,egui::pos2(title_right,heading.bottom())));
+        let title_rect=crate::ui_layout::geometry::aligned_rect(Rect::from_min_max(heading.min,egui::pos2(title_right,heading.bottom())));
         let mut title_ui=ui.new_child(
             egui::UiBuilder::new().id_salt("modal-master-heading-title")
                 .aligned_max_rect(title_rect)
@@ -605,7 +605,7 @@ fn modal_master_header_content_in_rect(
                 .aligned_max_rect(subtitle),
             |details|{
                 details.restrict_shared_clip(subtitle_clip);
-                details.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,subtitle.width());
+                details.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,subtitle.width());
                 details.add(truncated_label(typography::caption(description)))
                     ;
             },
@@ -684,7 +684,7 @@ pub(crate) fn modal_master_header_with_toolbar_in_rect<R>(
     let close=modal_master_header_content_in_rect(
         ui,title_rect,title,"",close_label,enabled
     );
-    let toolbar_rect=crate::ui_layout::aligned_rect(modal_master_header_toolbar_rect(rect,ppp));
+    let toolbar_rect=crate::ui_layout::geometry::aligned_rect(modal_master_header_toolbar_rect(rect,ppp));
     let mut toolbar_ui=ui.new_child(
         egui::UiBuilder::new().id_salt("modal-master-header-toolbar")
             .aligned_max_rect(toolbar_rect)
@@ -719,7 +719,7 @@ pub(crate) fn modal_master_footer_in_rect(
     // height; a 34pt clip sliced 2pt off the bottom of "적용".
     let action_height=theme::ACTION_PRIMARY_HEIGHT
         .max(theme::ACTION_STANDARD_HEIGHT);
-    let content=crate::ui_layout::aligned_rect(modal_master_action_area(rect,action_height));
+    let content=crate::ui_layout::geometry::aligned_rect(modal_master_action_area(rect,action_height));
     let clip=content.intersect(ui.clip_rect());
     ui.scope_builder(
         egui::UiBuilder::new().id_salt("modal-master-actions")
@@ -727,7 +727,7 @@ pub(crate) fn modal_master_footer_in_rect(
             .layout(Layout::right_to_left(Align::Center)),
         |footer|{
             footer.restrict_shared_clip(clip);
-            footer.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,content.width());
+            footer.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,content.width());
             actions(footer);
         },
     );
@@ -754,7 +754,7 @@ fn modal_action_row_measured<R>(
     paint_modal_master_footer_surface(ui,rect);
     let action_height=theme::ACTION_PRIMARY_HEIGHT
         .max(theme::ACTION_STANDARD_HEIGHT);
-    let area=crate::ui_layout::aligned_rect(modal_master_action_area(rect,action_height));
+    let area=crate::ui_layout::geometry::aligned_rect(modal_master_action_area(rect,action_height));
     let clip=area.intersect(ui.clip_rect());
     let response=ui.scope_builder(
         egui::UiBuilder::new().id_salt("modal-master-flow-actions")
@@ -762,7 +762,7 @@ fn modal_action_row_measured<R>(
             .layout(Layout::right_to_left(Align::Center)),
         |buttons|{
             buttons.restrict_shared_clip(clip);
-            buttons.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,area.width());
+            buttons.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,area.width());
             actions(buttons)
         }
     );
@@ -912,7 +912,7 @@ pub(crate) fn show_management_menu<R>(
                 (menu.ctx().content_rect().width()-theme::SPACE_24).max(1.0)
             ),theme::SPACE_4),
         };
-        crate::ui_primitives::apply_width_policy(menu,crate::ui_primitives::CardWidthPolicy::Bounded,width);
+        crate::ui_layout::geometry::apply_width_policy(menu,crate::ui_layout::geometry::CardWidthPolicy::Bounded,width);
         menu.spacing_mut().item_spacing.y=gap;
         content(&mut ManagementMenu{ui:menu})
     })
@@ -927,7 +927,7 @@ fn modal_plain_body_region<R>(
     let width=(ui.available_width()-2.0*inset).max(1.0);
     Frame::NONE.inner_margin(egui::Margin::symmetric(inset as i8,0))
         .show(ui,|content|{
-            content.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,width);
+            content.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,width);
             modal_form_row_spacing(content);
             contents(content)
         })
@@ -944,7 +944,7 @@ pub(crate) fn modal_master_body<R>(
     theme::role_surface_frame(theme::SurfaceRole::Section,theme::VisualState::Normal,theme::CONTROL_RADIUS)
         .inner_margin(inset)
         .show(ui,|body|{
-            body.apply_shared_width(crate::ui_primitives::CardWidthPolicy::FillAvailable,width);
+            body.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,width);
             contents(body)
         }).inner
 }
@@ -987,7 +987,7 @@ pub(crate) fn modal_section_measured<R>(
         theme::MODAL_SECTION_PADDING,theme::MODAL_SECTION_PADDING,
         theme::FRAME_STROKE_WIDTH,0.0,1.0);
     modal_section_frame().show(ui,|section|{
-            crate::ui_primitives::apply_width_policy(section,crate::ui_primitives::CardWidthPolicy::FillAvailable,inner_width);
+            crate::ui_layout::geometry::apply_width_policy(section,crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,inner_width);
             modal_section_heading_with_rule(section,title);
             section.scope(|body|{
                 modal_form_row_spacing(body);
