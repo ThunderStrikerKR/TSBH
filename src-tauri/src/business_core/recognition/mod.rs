@@ -28,7 +28,17 @@ struct Evidence {
 // the current assignment. Keep offsets, not duplicate raw text. These
 // are distinct from missing/unknown fields and must not become anchors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CandidateExclusion { SaleUnit, OverlappingField, SenderSection, EmbeddedDigits }
+enum CandidateExclusion {
+    SaleUnit, OverlappingField, SenderSection, EmbeddedDigits,
+    // These two are not hard exclusions. They preserve evidence the
+    // legacy policy did not use without turning it into a confirmed field.
+    CompetingType, UnclassifiedSegment,
+}
+impl CandidateExclusion {
+    fn hard(self)->bool{
+        !matches!(self,Self::CompetingType|Self::UnclassifiedSegment)
+    }
+}
 #[derive(Default)]
 struct CandidateExclusions {
     entries:HashMap<(&'static str,usize,usize),CandidateExclusion>,
@@ -38,12 +48,15 @@ impl CandidateExclusions {
     fn record(&mut self,raw:&str,kind:&'static str,start:usize,end:usize,reason:CandidateExclusion){
         if start>=end||raw.get(start..end).is_none(){self.truncated=true;return;}
         let key=(kind,start,end);
-        if self.entries.contains_key(&key){return;}
+        if let Some(existing)=self.entries.get_mut(&key){
+            if reason.hard()&&!existing.hard(){*existing=reason;}
+            return;
+        }
         if self.entries.len()>=4096{self.truncated=true;return;}
         self.entries.insert(key,reason);
     }
     fn excludes(&self,kind:&'static str,start:usize,end:usize)->bool{
-        self.entries.contains_key(&(kind,start,end))
+        self.entries.get(&(kind,start,end)).is_some_and(|reason|reason.hard())
     }
 }
 #[derive(Clone, Debug)]
@@ -555,7 +568,8 @@ fn split_product_records<'a>(lines:Vec<Line<'a>>,label:&Regex,phone:&Regex,
     out
 }
 fn unlabelled_recipient_span<'a>(
-    line:&'a str,address:Option<usize>,phone:&Regex,near_delivery:bool,search:&mut ProductSearch<'a,'_>
+    line:&'a str,address:Option<usize>,phone:&Regex,near_delivery:bool,
+    search:&mut ProductSearch<'a,'_>,competing:&mut Vec<(usize,usize)>
 )->Option<(usize,usize)>{
     let state=search.state;
     let contact=phone.find(line).map(|m|m.start());
@@ -599,14 +613,20 @@ fn unlabelled_recipient_span<'a>(
         let candidate=&line[a..b];
         // Address/phone prefixes with no product quantity must not promote
         // a known model to a consignee. The explicit label path has priority.
-        if product_signal(candidate,search.decision(candidate),state){return None;}
+        if product_signal(candidate,search.decision(candidate),state){
+            competing.push((a,b));
+            return None;
+        }
         return Some((a,b));
     }
     let (a,b)=trim_span(line,0,line.len())?;
     let candidate=&line[a..b];
     if other_recipient_field(candidate) || !search.quantities(candidate).is_empty(){return None;}
     if !near_delivery && !weak_recipient_hint(candidate){return None;}
-    if product_signal(candidate,search.decision(candidate),state){return None;}
+    if product_signal(candidate,search.decision(candidate),state){
+        competing.push((a,b));
+        return None;
+    }
     Some((a,b))
 }
 fn is_money_or_header(text: &str) -> bool { ts_semantics::ignored_document_line(text) }
@@ -1014,6 +1034,11 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
     let mut note_continuation: Option<usize>=None;
     let mut sender_section = false;
     let mut sender_lines=HashSet::new();
+    let mut non_delivery_segments=HashSet::new();
+    let sender_label=Regex::new(r"^(?:보내는\s*(?:분|사람|곳)|송하인(?:명)?)\s*[:：]").expect("sender prefix");
+    // Generic '이름:' or '주소:' can still belong to the sender. Only
+    // an explicit receiving-party marker ends the sender section.
+    let receiving_label=Regex::new(r"(?i)^(?:수취인(?:명|\s*주소)?|수하인(?:명)?|수령자|받(?:는|으시는)\s*(?:분|사람|곳)|배송지(?:\s*주소)?|recipient|consignee)\s*[:：]").expect("receiving prefix");
     for (line_index,line) in lines.iter().enumerate() {
         let text = line.text.trim();
         let explicit_name=explicit_recipient_span(line.text,&person_label,&phone);
@@ -1024,12 +1049,20 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
                 lines.get(line_index+1).is_none_or(|next|next.paragraph!=line.paragraph));
         let after_label=line_index>0 && lines.get(line_index-1).is_some_and(|prev|
             person_label.find(prev.text).is_some_and(|m|prev.text[m.end()..].trim().is_empty()));
-        if Regex::new(r"^(?:보내는\s*(?:분|사람|곳)|송하인(?:명)?)\s*[:：]")
-            .expect("sender prefix").is_match(text) {
-            sender_section = true;
+        if sender_label.is_match(text){
+            sender_section=true;
+            note_continuation=None;
+        }else if sender_section&&receiving_label.is_match(text){
+            sender_section=false;
+            note_continuation=None;
         }
-        if sender_section { sender_lines.insert(line.number); continue; }
+        if sender_section {
+            sender_lines.insert(line.start);
+            non_delivery_segments.insert(line.start);
+            continue;
+        }
         if postcode::labelled_line(text).is_some() {
+            non_delivery_segments.insert(line.start);
             note_continuation=None;
             continue;
         }
@@ -1043,7 +1076,10 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
             note_continuation=None;
             continue;
         }
-        if is_money_or_header(text) { continue; }
+        if is_money_or_header(text) {
+            non_delivery_segments.insert(line.start);
+            continue;
+        }
         // The TS recognizer extends a memo through subsequent non-field
         // lines in the same paragraph, stopping at any contact/address/item.
         if let Some(i)=note_continuation {
@@ -1122,14 +1158,18 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
             }
         }
 
+        let mut competing_names=Vec::new();
         let name_span=explicit_name.or_else(||{
             if after_label && address.is_none() && !phone.is_match(line.text) &&
                 !other_recipient_field(text){
                 trim_span(line.text,0,line.text.len())
             }else{
-                unlabelled_recipient_span(line.text,address,&phone,near_delivery,&mut search)
+                unlabelled_recipient_span(line.text,address,&phone,near_delivery,&mut search,&mut competing_names)
             }
         });
+        for (a,b) in competing_names{
+            exclusions.record(raw,"name",line.start+a,line.start+b,CandidateExclusion::CompetingType);
+        }
         if let Some((begin,end))=name_span{
             add_match(&mut events,line,begin,end,"name",line.text[begin..end].to_owned(),
                 if explicit_name.is_some()||after_label{"명시적 수취인 이름"}
@@ -1139,7 +1179,9 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
             let full = c.get(0).expect("phone match");
             let kind=if c[1].starts_with("01"){"mobile"}else{"phone"};
             if name_span.is_some_and(|(a,b)|a<full.end()&&full.start()<b){
-                exclusions.record(raw,kind,line.start+full.start(),line.start+full.end(),CandidateExclusion::OverlappingField);
+                let reason=if explicit_name.is_some()||after_label{CandidateExclusion::OverlappingField}
+                    else{CandidateExclusion::CompetingType};
+                exclusions.record(raw,kind,line.start+full.start(),line.start+full.end(),reason);
                 continue;
             }
             // Reject a phone-like substring embedded in a longer digit run.
@@ -1287,7 +1329,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
     }
     // A generic quantity line is evidence but cannot itself prove which SKU was ordered.
     for line in &lines {
-        if sender_lines.contains(&line.number){
+        if sender_lines.contains(&line.start){
             for q in search.quantities(line.text){
                 exclusions.record(raw,"quantity",line.start+q.start,line.start+q.end,CandidateExclusion::SenderSection);
             }
@@ -1314,6 +1356,22 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         }
     }
 
+    // Preserve wholly unclassified logical records, not every whitespace
+    // gap or field label. Sweep the existing spans once; no second parse.
+    let mut spans=events.iter().map(|e|(e.start,e.end)).collect::<Vec<_>>();
+    spans.sort_unstable();
+    let (mut cursor,mut covered_end)=(0usize,0usize);
+    for line in &lines{
+        let end=line.start+line.text.len();
+        while cursor<spans.len()&&spans[cursor].0<end{
+            covered_end=covered_end.max(spans[cursor].1);cursor+=1;
+        }
+        if covered_end<=line.start&&!non_delivery_segments.contains(&line.start){
+            if let Some((a,b))=trim_span(line.text,0,line.text.len()){
+                exclusions.record(raw,"segment",line.start+a,line.start+b,CandidateExclusion::UnclassifiedSegment);
+            }
+        }
+    }
     let delivery=DeliveryGeometry::new(&events);
     ExtractedDocument{raw,lines,events,product_hits,geometry,delivery,exclusions}
 }
@@ -2137,6 +2195,28 @@ mod tests {
             assert!(raw.get(hit.source_start+c.span.0..hit.source_start+c.span.1).is_some());
         }
         assert!(assign_document(doc,&state,None).is_ok());
+    }
+    #[test]
+    fn sender_scope_resumes_only_at_explicit_receiving_label(){
+        let raw="송하인: 가상상호\n이름: 가상송하인\n7개\n수취인: 김가상 010-0000-0001\n709 1개";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        assert!(doc.events.iter().all(|e|e.value!="가상송하인"&&!(e.kind=="quantity"&&e.value=="7")));
+        let result=assign_document(doc,&state,None).unwrap();
+        assert_eq!(result["recipients"][0]["name"],"김가상");
+        assert_eq!(result["recipients"][0]["items"][0]["quantity"],1);
+    }
+    #[test]
+    fn unclassified_records_are_not_promoted_to_fields(){
+        let raw="ABCDEF";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        assert!(doc.events.is_empty());
+        assert_eq!(doc.exclusions.entries.get(&("segment",0,raw.len())),
+            Some(&CandidateExclusion::UnclassifiedSegment));
+        assert!(!doc.exclusions.excludes("segment",0,raw.len()));
+        let result=assign_document(doc,&state,None).unwrap();
+        assert_eq!(result["recipients"][0]["items"].as_array().unwrap().len(),0);
     }
     #[test]
     fn excluded_source_candidates_retain_offsets_without_entering_assignment(){
