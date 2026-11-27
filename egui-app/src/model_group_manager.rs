@@ -294,11 +294,6 @@ impl ModelGroupManager {
                         body.add_enabled_ui(!nested,|body|{
                             let body_top=body.cursor().top();
                             if let Some(g)=self.draft.get(&self.selected).cloned(){
-                                body.horizontal(|toolbar|toolbar.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                                    if crate::button::action(actions,"그룹 삭제",theme::ButtonRole::Danger,writable&&!busy).clicked(){
-                                        self.confirm_delete=true;
-                                    }
-                                }));
                         let mut name=text(&g,"name").to_owned();
                         body.horizontal(|form|{
                             crate::ui_primitives::form_field_label(form,"모델군 이름");
@@ -386,12 +381,20 @@ impl ModelGroupManager {
                             }
                         });
                     });
-                    workspace.footer_single(|buttons|{
-                        buttons.add_enabled_ui(!nested,|buttons|{
-                            if crate::button::action(buttons,"변경사항 저장",theme::ButtonRole::Primary,
-                                writable&&!busy&&self.dirty()).clicked(){save=true;}
-                        });
-                    });
+                    let mut request_delete=false;
+                    workspace.footer(
+                        |left|{
+                            if self.draft.get(&self.selected).is_some(){
+                                request_delete=crate::button::action(left,"그룹 삭제",theme::ButtonRole::Danger,
+                                    writable&&!busy&&!nested).clicked();
+                            }
+                        },
+                        |right|{
+                            if crate::button::action(right,"변경사항 저장",theme::ButtonRole::Primary,
+                                writable&&!busy&&!nested&&self.dirty()).clicked(){save=true;}
+                        }
+                    );
+                    if request_delete{self.confirm_delete=true;save=false;}
                 });
             });
         if close{self.request_exit(Exit::Close);}
