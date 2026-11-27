@@ -848,6 +848,9 @@ impl ProductManager {
                     }
                     if job.kind=="upsert_brand" {
                         self.brands.on_saved(&catalog);
+                    }else if job.kind=="delete_brand"{
+                        self.brands.on_deleted();
+                        if !self.brand.is_empty()&&!rows(&catalog["brands"]).iter().any(|b|field(b,"id")==self.brand){self.brand.clear();}
                     }
                     if job.kind=="upsert_product" || job.kind=="archive_product" {
                         self.selected=None;
@@ -879,6 +882,7 @@ impl ProductManager {
                             "save_alias"=>"별칭을 저장했습니다.",
                             "delete_alias"=>"별칭을 삭제했습니다.",
                             "upsert_brand"=>"브랜드 정보를 저장했습니다. 기존 연결 상품은 유지됩니다.",
+                            "delete_brand"=>"브랜드를 삭제했습니다. 상품과 기존 주문 기록은 유지됩니다.",
                             _=>"상품 변경을 저장했습니다.",
                         }).into())
                     };
@@ -917,7 +921,7 @@ impl ProductManager {
             Some(Err(TryRecvError::Disconnected))=>{
                 let disconnected=self.writing.take();
                 let brand_write=disconnected.as_ref()
-                    .is_some_and(|job|job.kind=="upsert_brand");
+                    .is_some_and(|job|matches!(job.kind.as_str(),"upsert_brand"|"delete_brand"));
                 if disconnected.as_ref().is_some_and(|job|job.kind=="set_price"){
                     self.price_write_queue.clear();
                     self.price_mode_exit_requested=false;
@@ -2064,10 +2068,10 @@ impl ProductManager {
             if let Some(catalog)=self.catalog.clone(){
                 let editable=self.gateway.product_write_enabled()
                     && catalog["revision"].as_u64().is_some();
-                if let Some(data)=self.brands.show_dialogs(
+                if let Some(request)=self.brands.show_dialogs(
                     ctx,work_area,&catalog,editable,self.writing.is_some()
                 ){
-                    self.start_write("upsert_brand",data,None,ctx.clone());
+                    self.start_write(request.action,request.data,None,ctx.clone());
                 }
             }
             return;
