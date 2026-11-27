@@ -251,7 +251,7 @@ pub fn load_export_metadata()->Result<Value,String>{
 
 enum ReadScope{Full,Catalog,ReceptionCatalog,Settings,Exports}
 
-fn open_business_read_snapshot()->Result<Connection,String>{
+pub(crate) fn open_business_read_snapshot()->Result<Connection,String>{
     let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
         .filter(|p|!p.is_empty())
         .map(PathBuf::from)
@@ -421,7 +421,7 @@ pub(crate) fn hash_learning_text(hash:&mut sha2::Sha256,value:rusqlite::types::V
     }
 }
 
-fn learning_sources(conn:&Connection,ids:&[String])->Result<LearningSources,String>{
+pub(crate) fn learning_sources(conn:&Connection,ids:&[String])->Result<LearningSources,String>{
     use sha2::{Digest,Sha256};
     let unique=ids.iter().map(String::as_str).collect::<std::collections::BTreeSet<_>>();
     if unique.is_empty()||ids.len()>250||unique.iter().any(|id|id.trim().is_empty()){
@@ -496,8 +496,13 @@ pub(crate) fn read_learning_sources(ids:&[String])->Result<LearningSources,Strin
 }
 
 pub(crate) fn learning_order_page(after:&str,limit:usize)->Result<Vec<String>,String>{
-    if !(1..=25).contains(&limit){return Err("학습 주문 페이지 범위 오류".into());}
     let conn=open_business_read_snapshot()?;
+    let result=learning_order_page_from_snapshot(&conn,after,limit)?;
+    conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+    Ok(result)
+}
+pub(crate) fn learning_order_page_from_snapshot(conn:&Connection,after:&str,limit:usize)->Result<Vec<String>,String>{
+    if !(1..=25).contains(&limit){return Err("학습 주문 페이지 범위 오류".into());}
     let result={
         let mut stmt=conn.prepare("SELECT id FROM core_orders WHERE id>?1
             AND json_extract(payload,'$.confirmationSnapshot.recognitionBaseline.schemaVersion')=1
@@ -506,7 +511,6 @@ pub(crate) fn learning_order_page(after:&str,limit:usize)->Result<Vec<String>,St
             .map_err(|e|e.to_string())?;
         rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?
     };
-    conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
     Ok(result)
 }
 

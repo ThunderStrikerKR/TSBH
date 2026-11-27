@@ -1071,8 +1071,57 @@ impl PreviewStore {
             "status":"shadow_selection_only","automaticChangeAuthorized":false}))
     }
 
+    // Explicit read-only full scan. Both databases remain on fixed read
+    // snapshots; they are not one cross-database atomic transaction.
+    fn combined_model_performance(input:&Value)->Result<Value,String>{
+        if input.get("orderIds").is_some()||input.get("samples").is_some(){return Err("전체 평가에는 외부 표본을 혼합하지 않습니다.".into());}
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
+        let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending WHERE scope=?1 AND feature_version=1",
+            [&scope],|r|r.get(0)).map_err(|e|e.to_string())?;
+        if pending!=0{return Err("복구 대기 주문이 있어 전체 평가를 보류합니다.".into());}
+        let source=crate::business_state::open_business_read_snapshot()?;
+        let started=chrono::Utc::now().to_rfc3339();
+        let mut cursor=String::new();
+        let mut totals=recognition_learning_store::CombinedPerformance::default();
+        loop{
+            let ledger=recognition_learning_store::order_page(&tx,&scope,&cursor,25)?;
+            let current=crate::business_state::learning_order_page_from_snapshot(&source,&cursor,25)?;
+            let ids=ledger.into_iter().chain(current).collect::<std::collections::BTreeSet<_>>()
+                .into_iter().take(25).collect::<Vec<_>>();
+            if ids.is_empty(){break;}
+            if totals.scanned+ids.len() as u64>100_000{return Err("전체 평가 100000건 안전 한도 초과".into());}
+            let sources=crate::business_state::learning_sources(&source,&ids)?;
+            let (_,digests)=select_learning_changes(&tx,&scope,&sources)?;
+            totals.scanned+=ids.len() as u64;
+            totals.inactive+=(ids.len()-digests.len()) as u64;
+            recognition_learning_store::accumulate_combined_performance(&tx,&scope,&digests,&mut totals)?;
+            cursor=ids.last().cloned().ok_or("평가 순회 위치 오류")?;
+        }
+        let selected=if blend_registry_exists(&tx)?{selected_blend_model(&tx,&scope)?}else{None};
+        let mut report=totals.wire();
+        report["selectedModelId"]=json!(selected);
+        report["fullSnapshotScanCompleted"]=json!(true);
+        report["allActiveOrdersEvaluated"]=json!(totals.unsynchronized==0&&totals.missing==0);
+        report["snapshotStartedAt"]=json!(started);
+        report["crossDatabaseAtomicSnapshot"]=json!(false);
+        if crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("전체 평가 중 업무 DB 변경".into());
+        }
+        source.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(report)
+    }
+
     pub(crate) fn recognition_learning_support(input:&Value,
         evaluate:impl Fn(&[Value])->Result<Value,String>)->Result<Value,String>{
+        if let Some(performance)=input.get("combinedModelPerformance"){
+            if ["blendModelRegistry","shadowEvaluation","combinedEvaluation","legacyScoreCalibration",
+                "shadowCandidateCalibration","blendWeightLearning","localChronologicalReplay"].iter().any(|k|input.get(*k).is_some()){
+                return Err("전체 모델 평가 요청을 분리하세요.".into());
+            }
+            return Self::combined_model_performance(performance);
+        }
         if let Some(registry)=input.get("blendModelRegistry"){
             if ["shadowEvaluation","combinedEvaluation","legacyScoreCalibration","shadowCandidateCalibration","blendWeightLearning","localChronologicalReplay"]
                 .iter().any(|key|input.get(*key).is_some()){return Err("모델 관리와 평가 요청을 분리하세요.".into());}

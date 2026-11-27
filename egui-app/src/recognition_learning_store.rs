@@ -252,6 +252,124 @@ pub(super) fn combined_evaluation_report(tx:&Transaction<'_>,scope:&str,digests:
         "missingEvaluationOrders":missing,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
 }
 
+// Aggregate only digest-verified current rows. A model's own cohort is
+// not a randomized or paired comparison against any other model.
+#[derive(Default)]
+struct PerformanceCounts{
+    orders:u64,observations:u64,legacy:u64,combined:u64,proposals:u64,improved:u64,worsened:u64,outside:u64,
+    order_legacy:f64,order_combined:f64,
+}
+impl PerformanceCounts{
+    fn add_order(&mut self,c:[u64;7])->Result<(),String>{
+        let [n,old,new,proposed,better,worse,outside]=c;
+        if n==0||old>n||new>n||proposed>n||better+worse>proposed||
+            better>n-old||worse>old||outside>n||old+better!=new+worse{
+            return Err("결합 평가 카운터 불일치".into());
+        }
+        self.orders+=1;self.observations+=n;self.legacy+=old;self.combined+=new;
+        self.proposals+=proposed;self.improved+=better;self.worsened+=worse;self.outside+=outside;
+        self.order_legacy+=old as f64/n as f64;self.order_combined+=new as f64/n as f64;
+        Ok(())
+    }
+    fn wire(&self)->Value{
+        let n=self.observations as f64;
+        json!({"orders":self.orders,"observations":self.observations,"legacyAgrees":self.legacy,
+            "screenedCombinedAgrees":self.combined,"proposals":self.proposals,"improved":self.improved,
+            "worsened":self.worsened,"outsideLabels":self.outside,
+            "legacyAgreement":(n>0.0).then(||self.legacy as f64/n),
+            "screenedCombinedAgreement":(n>0.0).then(||self.combined as f64/n),
+            "agreementDelta":(n>0.0).then(||(self.combined as f64-self.legacy as f64)/n),
+            "orderMacroLegacyAgreement":(self.orders>0).then(||self.order_legacy/self.orders as f64),
+            "orderMacroCombinedAgreement":(self.orders>0).then(||self.order_combined/self.orders as f64)})
+    }
+}
+#[derive(Default)]
+struct ModelPerformance{
+    orders:u64,eligible:u64,missing:u64,excluded:u64,
+    strata:BTreeMap<(String,String,String,String),PerformanceCounts>,
+    labels:BTreeMap<String,PerformanceCounts>,
+}
+#[derive(Default)]
+pub(super) struct CombinedPerformance{
+    pub(super) scanned:u64,pub(super) inactive:u64,pub(super) unsynchronized:u64,
+    pub(super) missing:u64,
+    statuses:BTreeMap<String,u64>,models:BTreeMap<String,ModelPerformance>,
+}
+impl CombinedPerformance{
+    pub(super) fn add(&mut self,report:&Value)->Result<(),String>{
+        let status=report["status"].as_str().filter(|s|matches!(*s,"no_combined_prediction"|
+            "unverified_prediction_time"|"unverified_prediction_provenance"|"unverified_model_identity"|
+            "unverified_audit"|"unverified_audit_time"|"compared_diagnostic_only"))
+            .ok_or("결합 평가 상태 오류")?;
+        if report["schemaVersion"]!=1||report["decisionChanged"]!=false||
+            report["eligibleForAutomaticDecision"]!=false{return Err("결합 평가 규격 오류".into());}
+        *self.statuses.entry(status.to_owned()).or_default()+=1;
+        let groups=report["groups"].as_array().filter(|a|a.len()<=64).ok_or("결합 평가 집단 오류")?;
+        if status!="compared_diagnostic_only"{
+            if !groups.is_empty(){return Err("미검증 결합 평가 집단".into());}
+            return Ok(());
+        }
+        let id=report["modelId"].as_str().filter(|s|s.len()==70&&s.starts_with("blend-")&&
+            s[6..].bytes().all(|b|b.is_ascii_hexdigit())).ok_or("평가 모델 ID 오류")?;
+        let eligible=report["eligibleObservations"].as_u64().filter(|n|*n<=64).ok_or("평가 관측 수 오류")?;
+        let missing=report["missingOrIneligiblePredictions"].as_u64().filter(|n|*n<=eligible).ok_or("평가 누락 수 오류")?;
+        let excluded=report["excludedLabels"].as_u64().filter(|n|*n<=64).ok_or("평가 제외 수 오류")?;
+        let m=self.models.entry(id.to_owned()).or_default();
+        m.orders+=1;m.eligible+=eligible;m.missing+=missing;m.excluded+=excluded;
+        let mut local=BTreeMap::<String,[u64;7]>::new();
+        let mut seen=BTreeSet::new();let mut evaluated=0;
+        for g in groups{
+            let field=|key:&str,allowed:&[&str]|g[key].as_str().filter(|v|allowed.contains(v))
+                .map(str::to_owned).ok_or("평가 집단 키 오류");
+            let key=(field("sourceKind",&["address","contact"])?,field("legacyRoute",&["score","gate"])?,
+                field("contextLevel",&["base","structure","client_structure"])?,
+                field("labelKind",&["explicit_correction","unchanged_proxy"])?);
+            if !seen.insert(key.clone()){return Err("주문 내 평가 집단 중복".into());}
+            let mut c=[0;7];
+            for (i,name) in ["evaluated","legacyAgrees","screenedCombinedAgrees","proposals","improved","worsened","outsideLabels"].iter().enumerate(){
+                c[i]=g[*name].as_u64().filter(|n|*n<=64).ok_or("평가 카운터 오류")?;
+            }
+            if key.3=="explicit_correction"&&c[1]!=0||key.3=="unchanged_proxy"&&c[1]!=c[0]{
+                return Err("정정 유형과 기존 판정 불일치".into());
+            }
+            evaluated+=c[0];
+            let sum=local.entry(key.3.clone()).or_default();
+            for i in 0..7{sum[i]+=c[i];}
+            m.strata.entry(key).or_default().add_order(c)?;
+        }
+        if evaluated+missing!=eligible{return Err("결합 평가 분모 불일치".into());}
+        for (label,c) in local{m.labels.entry(label).or_default().add_order(c)?;}
+        Ok(())
+    }
+    pub(super) fn wire(&self)->Value{
+        let models=self.models.iter().map(|(id,m)|json!({"modelId":id,"evaluatedOrders":m.orders,
+            "eligibleObservations":m.eligible,"missingOrIneligiblePredictions":m.missing,"excludedLabels":m.excluded,
+            "coverage":(m.eligible>0).then(||(m.eligible-m.missing) as f64/m.eligible as f64),
+            "labelGroups":m.labels.iter().map(|(label,v)|json!({"labelKind":label,"metrics":v.wire()})).collect::<Vec<_>>(),
+            "strata":m.strata.iter().map(|((kind,route,level,label),v)|json!({
+                "sourceKind":kind,"legacyRoute":route,"contextLevel":level,"labelKind":label,"metrics":v.wire()})).collect::<Vec<_>>()
+        })).collect::<Vec<_>>();
+        json!({"status":"cumulative_model_performance_diagnostic_only",
+            "scannedOrders":self.scanned,"inactiveOrMissingOrders":self.inactive,
+            "unsynchronizedOrders":self.unsynchronized,"missingEvaluationOrders":self.missing,
+            "evaluationStatuses":self.statuses,"models":models,
+            "crossModelPairedComparison":false,"crossModelRankingAuthorized":false,
+            "representativeLabelsVerified":false,"eligibleForAutomaticDecision":false,"decisionChanged":false})
+    }
+}
+pub(super) fn accumulate_combined_performance(tx:&Transaction<'_>,scope:&str,digests:&BTreeMap<String,String>,
+    totals:&mut CombinedPerformance)->Result<(),String>{
+    for (id,digest) in digests{
+        if cached_count(tx,scope,id,digest)?.is_none(){totals.unsynchronized+=1;continue;}
+        if !combined_evaluation_cached(tx,scope,id,digest)?{totals.missing+=1;continue;}
+        let payload:String=tx.query_row("SELECT payload FROM recognition_combined_evaluation
+            WHERE scope=?1 AND feature_version=?2 AND order_id=?3",params![scope,FEATURE_VERSION,id],|r|r.get(0))
+            .map_err(|e|e.to_string())?;
+        totals.add(&serde_json::from_str::<Value>(&payload).map_err(|_|"결합 평가 JSON 오류")?)?;
+    }
+    Ok(())
+}
+
 /// The caller holds an IMMEDIATE transaction in the audit database across
 /// snapshot read, per-order projection, delta replacement and revalidation.
 pub(super) fn synchronize_with_digests(tx:&Transaction<'_>,scope:&str,ids:&[String],
