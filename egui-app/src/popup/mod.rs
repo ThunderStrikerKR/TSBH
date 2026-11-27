@@ -1,6 +1,5 @@
 //! Modal presentation and geometry. Overlay owns window layers, input priority and lifetime.
 use crate::ui_layout::geometry::SharedUiClipExt as _;
-use crate::ui_layout::pixel_paint::PaintRect;
 use crate::ui_layout::geometry::SharedAllocationExt as _;
 use crate::ui_layout::geometry::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Frame,Layout,Rect,Response,Sense,Ui,Vec2};
@@ -443,15 +442,6 @@ pub(crate) struct ModalMasterWorkspace {
     pub(crate) toolbar_bottom:f32,
     pub(crate) divider_x:Option<f32>,
 }
-
-/// Align the master edges to physical pixels before painting the header,
-/// rounded workspace, or footer. Layout still owns the original dimensions;
-/// every edge moves by at most half a device pixel. All strokes and pane fills
-/// must use the SAME aligned rect so anti-aliasing cannot expose a seam.
-fn modal_master_pixel_aligned_rect(rect:Rect,pixels_per_point:f32)->PaintRect {
-    crate::ui_layout::pixel_paint::snap_paint_rect(rect,pixels_per_point)
-}
-
 /// One horizontal content grid for the modal title, toolbar, body, rules and footer.
 /// The outer frame owns its own 12pt inset; this second inset is shared by every
 /// visible child so the popup never has competing left/right alignment columns.
@@ -462,12 +452,6 @@ fn modal_master_content_rect(rect:Rect)->Rect {
         egui::pos2(rect.right()-inset,rect.bottom())
     )
 }
-
-/// Pixel-aligned rule using the same left/right edges as modal content.
-fn modal_master_rule_rect(rect:PaintRect,ppp:f32,at_bottom:bool)->PaintRect {
-    rect.edge_rule(theme::SOFT_DIVIDER_WIDTH,theme::MODAL_MASTER_CONTENT_INSET,ppp,at_bottom)
-}
-
 /// Balance footer actions against the outer frame padding and top rule
 /// while keeping the same horizontal content edges.
 fn modal_master_action_area(rect:Rect,action_height:f32)->Rect {
@@ -489,7 +473,7 @@ pub(crate) fn modal_master_workspace_background(
     ui:&Ui,rect:Rect,toolbar_height:f32,split_ratio:Option<f32>
 )->ModalMasterWorkspace {
     let ppp=ui.ctx().pixels_per_point();
-    let paint_rect=modal_master_pixel_aligned_rect(rect,ppp);
+    let paint_rect=crate::ui_layout::pixel_paint::snap_paint_rect(rect,ppp);
     paint_rect.fill(ui.painter(),theme::CONTROL_RADIUS,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
     modal_master_workspace_geometry(rect,toolbar_height,split_ratio)
 }
@@ -513,7 +497,7 @@ pub(crate) fn modal_master_workspace_finish(
     ui:&Ui,rect:Rect,geometry:ModalMasterWorkspace
 ) {
     let ppp=ui.ctx().pixels_per_point().max(1.0);
-    let rect=modal_master_pixel_aligned_rect(rect,ppp);
+    let rect=crate::ui_layout::pixel_paint::snap_paint_rect(rect,ppp);
     rect.finish_frame(ui.painter(),ppp,geometry.toolbar_bottom,geometry.divider_x,
         theme::SOFT_DIVIDER_WIDTH,theme::FRAME_STROKE_WIDTH,theme::CONTROL_RADIUS,
         theme::border_ink(theme::BorderRole::Divider));
@@ -592,11 +576,11 @@ pub(crate) fn modal_master_header_in_rect(
 )->bool {
     let ppp=ui.ctx().pixels_per_point().max(1.0);
     let rect=crate::ui_layout::geometry::aligned_rect(rect);
-    let paint_rect=modal_master_pixel_aligned_rect(rect,ppp);
+    let paint_rect=crate::ui_layout::pixel_paint::snap_paint_rect(rect,ppp);
     paint_rect.fill(ui.painter(),0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
     // A centered line at rect.bottom() is half clipped and can appear
     // darker at one end. Fill exactly one pixel-aligned INNER rule instead.
-     modal_master_rule_rect(paint_rect,ppp,true).fill(
+    paint_rect.edge_rule(theme::SOFT_DIVIDER_WIDTH,theme::MODAL_MASTER_CONTENT_INSET,ppp,true).fill(
         ui.painter(),0.0,theme::border_ink(theme::BorderRole::Divider)
     );
     modal_master_header_content_in_rect(
@@ -611,13 +595,6 @@ pub(crate) fn modal_master_header_with_toolbar_height()->f32{
         +theme::MODAL_MASTER_TOOLBAR_RULE_GAP
         +theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT
 }
-
-/// The single divider occupies the slot directly after the title row.
-fn modal_master_toolbar_rule_rect(rect:Rect,ppp:f32)->PaintRect{
-    let rect=modal_master_pixel_aligned_rect(rect,ppp);
-    rect.toolbar_rule(theme::MODAL_HEADER_HEIGHT,theme::SOFT_DIVIDER_WIDTH,theme::MODAL_MASTER_CONTENT_INSET,ppp)
-}
-
 /// Toolbar uses the same horizontal inset as the body, below the rule.
 fn modal_master_header_toolbar_rect(rect:Rect)->Rect{
     let rect=crate::ui_layout::geometry::aligned_rect(rect);
@@ -638,9 +615,9 @@ pub(crate) fn modal_master_header_with_toolbar_in_rect<R>(
 )->(bool,R){
     let ppp=ui.ctx().pixels_per_point().max(1.0);
     let rect=crate::ui_layout::geometry::aligned_rect(rect);
-    let paint_rect=modal_master_pixel_aligned_rect(rect,ppp);
+    let paint_rect=crate::ui_layout::pixel_paint::snap_paint_rect(rect,ppp);
     paint_rect.fill(ui.painter(),0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
-     modal_master_toolbar_rule_rect(rect,ppp).fill(
+    paint_rect.toolbar_rule(theme::MODAL_HEADER_HEIGHT,theme::SOFT_DIVIDER_WIDTH,theme::MODAL_MASTER_CONTENT_INSET,ppp).fill(
         ui.painter(),0.0,theme::border_ink(theme::BorderRole::Divider)
     );
     let title_rect=Rect::from_min_size(
@@ -666,9 +643,9 @@ pub(crate) fn modal_master_header_with_toolbar_in_rect<R>(
 /// prevents half-clipped line segments or doubled separator strokes.
 fn paint_modal_master_footer_surface(ui:&Ui,rect:Rect) {
     let ppp=ui.ctx().pixels_per_point().max(1.0);
-    let rect=modal_master_pixel_aligned_rect(rect,ppp);
+    let rect=crate::ui_layout::pixel_paint::snap_paint_rect(rect,ppp);
     rect.fill(ui.painter(),0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
-     modal_master_rule_rect(rect,ppp,false).fill(
+    rect.edge_rule(theme::SOFT_DIVIDER_WIDTH,theme::MODAL_MASTER_CONTENT_INSET,ppp,false).fill(
         ui.painter(),0.0,theme::border_ink(theme::BorderRole::Divider)
     );
 }
