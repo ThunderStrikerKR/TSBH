@@ -517,7 +517,7 @@ const heightWriteAllowances=new Map([
   ["order_history_manager.rs:show_page:dates.set_height(date_rect.height())",1],
   ["product_manager.rs:show_catalog_surface:actions.set_height(actions_rect.height())",1],
   ["navigation.rs:reception_recipient_navigator:segments.set_height(inner.height())",1],
-  ["ui_primitives.rs:date_navigation_segmented_surface:segments.set_height(inner.height())",1],
+  ["ui_primitives.rs:date_navigation_segmented_surface_with_state:segments.set_height(inner.height())",1],
   ["ui_layout.rs:fixed_result_viewport:pane.set_min_height(height)",1],
   ["ui_layout.rs:reception_goods_viewport:child.set_height(rect.height())",1],
   ["table/mod.rs:variable_rows_snapshot:body.set_min_height(*offsets.last().unwrap_or(&0.0))",1],
@@ -818,7 +818,11 @@ export function audit(source,file,checkTableContracts=false){
     for(const [pattern,owner] of ownedControls)
       if(is(i,pattern)&&file+":"+fn!==owner)
         flag(i,"raw control outside owning component: "+pattern);
-    if(file!=="theme.rs"&&paletteConstructors.some(name=>is(i,"Color32 :: "+name+" (")))
+    // Only this exact computed alpha-compositing expression is derived from
+    // existing semantic tokens rather than an authored screen-local palette.
+    const derivedHighlightColor=file==="highlight/mod.rs"&&fn==="composite_opaque"&&
+      is(i,"Color32 :: from_rgb ( mix ( r , rest . r ( ) ) , mix ( g , rest . g ( ) ) , mix ( b , rest . b ( ) ) )");
+    if(file!=="theme.rs"&&!derivedHighlightColor&&paletteConstructors.some(name=>is(i,"Color32 :: "+name+" (")))
       flag(i,"local color construction; define a semantic theme token");
     if(file!=="typography.rs"){
       if(is(i,"RichText :: new ("))
@@ -974,7 +978,7 @@ const compositeContracts = {
   "alias_manager.rs:show_editor":{"popup::modal_flow_workspace":1,"popup::modal_window":1},
   "workflow_board_ui.rs:workflow_header":{"button::disclosure_at":1},
   "order_history_manager.rs:draw_line":{"button::disclosure_at":1},
-  "composite_workflow.rs:workflow_shipment_row":{"source_highlight::paint_active_outline":1},
+  "composite_workflow.rs:workflow_shipment_row":{"highlight::paint_parts":1},
   // Check the owners as well, so a hollow wrapper cannot satisfy the gate.
   "card/mod.rs:reception_document_viewport":{
     "paint_source_document_surface":1,"reception_document_inner_rect":1,
@@ -991,7 +995,7 @@ const compositeContracts = {
     ".interact":1,"ui_primitives::overflow_tooltip":1,".on_hover_cursor":1
   },
   "source_highlight.rs:paint_active_if":{"paint_active_outline":1},
-  "source_highlight.rs:paint_active_outline":{".rect_stroke":1}
+  "source_highlight.rs:paint_active_outline":{"highlight::paint_outline":1}
 };
 const compositeRawBans = {
   "composite_reception.rs:reception_item_row":[
@@ -1063,7 +1067,7 @@ function compositeSelfTest(){
   assert.equal(auditComposite("fn render(){card::paint_source_document_surface(ui,r);}","new_screen.rs").length,1);
   assert.equal(auditComposite("fn render(){card::reception_document_viewport(ui,r,a,b,f);}","new_screen.rs").length,0);
   assert.equal(auditComposite("fn render(){/* card::source_document_frame(); */ let s=\"source_document_frame\";}","new_screen.rs").length,0);
-  assert.equal(auditComposite("fn paint_active_outline(){p.rect_stroke(r,a,b,c);} fn paint_active_if(){paint_active_outline();}","source_highlight.rs",true).length,0);
+  assert.equal(auditComposite("fn paint_active_outline(){highlight::paint_outline(p,r,a,b);} fn paint_active_if(){paint_active_outline();}","source_highlight.rs",true).length,0);
   assert.equal(auditComposite("fn paint_active_outline(){} fn paint_active_if(){paint_active_outline();}","source_highlight.rs",true).length,1);
   assert.equal(auditComposite("fn message_section(){ui.scope_builder(a,b);}","main.rs").length,1);
   assert.equal(auditComposite("fn source_section(){ui.scope_builder(a,b);}","main.rs").length,0);
@@ -1339,7 +1343,7 @@ export function designTokenViolations(source,file){
       "MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y : i8 = INPUT_TEXT_OPTICAL_SHIFT_Y"
     ],
     "button/mod.rs":["ButtonRole :: Danger => ( ACTION_STANDARD_HEIGHT"],
-    "input/mod.rs":["highlight :: Role :: Focus","highlight :: Role :: RequiredInput"],
+    "input/mod.rs":["highlight :: States","focused : input . has_focus ( )","highlight :: Role :: RequiredInput"],
     "layout.rs":["SPLITTER : f32 = crate :: ui_tokens :: WORKSPACE_SPLITTER_WIDTH"],
     "ui_tokens.rs":["WORKSPACE_SPLITTER_WIDTH : f32 = SPACE_6"],
     "freight_manager.rs":["rect . shrink2 ( egui :: vec2 ( theme :: MANAGEMENT_TABLE_TEXT_LEADING_INSET","cells [ 3 ] . shrink2 ( egui :: vec2 ( theme :: MANAGEMENT_TABLE_ACTION_INSET"],
@@ -1524,6 +1528,10 @@ export function auditHighlight(source,file,requireCalls=false){
     }
     // Single-frame button renderers must not regain a post-widget overlay,
     // even via an existing shared wrapper or locally aliased paint color.
+    if((file==="main.rs"||file==="composite_reception.rs")&&
+       (matchAt(i,"one_touch :: mark (")||matchAt(i,"input :: paint_required_input ("))){
+      flag(i,"post-render highlight overlay; supply semantic state before rendering");continue;
+    }
     const singleFrame=(file==="button/mod.rs"&&["action_with_palette","workflow_fixed_action","date_navigation_button_surface","dispatch_origin","calendar_day"].includes(fn))||
       (file==="dropdown/mod.rs"&&fn==="management_dropdown_trigger_inner");
     if(singleFrame&&v[i+1]==="("&&
@@ -1590,7 +1598,10 @@ function highlightSelfTest(){
   assert.equal(audit("fn action_with_palette(){crate::highlight::action_widget(ui,fill,stroke,false);paint_button_hover(ui,r,6.0);}","button/mod.rs").length,1);
   assert.equal(audit("fn workflow_fixed_action(){crate::highlight::fixed_action_surface(ui,r,6,fill,stroke,false,true);painter.rect_stroke(r,6,local,kind);}","button/mod.rs").length,1);
   assert.equal(audit("fn management_dropdown_trigger_inner(){crate::highlight::action_widget(ui,fill,stroke,false);paint_button_hover(ui,r,6.0);}","dropdown/mod.rs").length,1);
-  console.log("EGUI_HIGHLIGHT_SELFTEST_PASS",15);
+  assert.equal(audit("fn show(){crate::one_touch::mark(ui,r);}","main.rs").length,1);
+  assert.equal(audit("fn show(){crate::input::paint_required_input(ui,r);}","composite_reception.rs").length,1);
+  assert.equal(audit("fn show(){crate::button::action_with_emphasis(ui,label,role,true,emphasis);}","main.rs").length,0);
+  console.log("EGUI_HIGHLIGHT_SELFTEST_PASS",18);
 }
 
 function main(){

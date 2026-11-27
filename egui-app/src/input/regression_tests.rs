@@ -479,7 +479,7 @@ mod money_live_format_tests{
             egui::CentralPanel::default().show(ctx,|ui|{
                 let (cell,_)=ui.allocate_exact_size(Vec2::new(128.0,42.0),Sense::hover());
                 let before=ui.available_rect_before_wrap().min;
-                let response=reception_money_inline_cell_editor(ui,cell,&mut amount,true,None);
+                let response=reception_money_inline_cell_editor(ui,cell,&mut amount,true,None,false);
                 observed=Some((cell,response.rect,before,ui.available_rect_before_wrap().min));
             });
         });
