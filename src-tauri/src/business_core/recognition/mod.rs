@@ -622,6 +622,36 @@ fn owner_index(anchors: &[usize], events: &[Evidence], offset: usize) -> usize {
     anchors.iter().enumerate().rev().find(|(_, i)| events[**i].start <= offset)
         .map(|(idx,_)|idx).unwrap_or(0)
 }
+// Keep the v1 score contract intact for replay/calibration. Gate rules
+// are heuristic restrictions, not proven hard business constraints.
+const LEGACY_OWNER_MARGIN:usize=30;
+struct OwnerScores{
+    previous_paragraph:usize,previous_distance:usize,next_distance:usize,
+    address:usize,blank:usize,content_penalty:usize,
+    previous:usize,next:usize,
+}
+fn legacy_owner_scores(same_previous:bool,previous_distance:usize,next_distance:usize,
+    nearby_address:bool,previous_blank:usize,following_content:usize)->OwnerScores{
+    let previous_paragraph=if same_previous{80}else{0};
+    let previous_distance=20usize.saturating_sub(previous_distance.saturating_mul(5));
+    let next_distance=20usize.saturating_sub(next_distance.saturating_mul(5));
+    let address=if nearby_address{20}else{0};
+    let blank=previous_blank.min(2)*5;
+    let content_penalty=following_content.min(2)*5;
+    let previous=previous_paragraph+previous_distance;
+    let next=(80+next_distance+address+blank).saturating_sub(content_penalty);
+    OwnerScores{previous_paragraph,previous_distance,next_distance,address,blank,content_penalty,previous,next}
+}
+fn legacy_owner_gate(paragraph_blocked:bool,previous_has_delivery:bool,
+    following_blank:usize,next_distance:usize,contact_without_address:bool)->Option<&'static str>{
+    if paragraph_blocked{Some("paragraph_boundary")}
+    else if !previous_has_delivery{Some("prior_delivery_missing")}
+    else if following_blank>0{Some("blank_before_next")}
+    else if next_distance>3{Some("next_distance_exceeds_3")}
+    else if contact_without_address{Some("contact_without_nearby_address")}
+    else{None}
+}
+
 // Existing ownership is the baseline policy, not the learned decision.
 // Record only the two adjacent anchors; no full-document candidate search.
 fn recipient_owner_index(
@@ -664,26 +694,15 @@ fn recipient_owner_index(
     );
     let contact_without_address=matches!(candidate.kind,"phone"|"mobile") &&
         !has_nearby_address;
-    let blocked=if paragraph_blocked {Some("paragraph_boundary")}
-        else if !previous_has_delivery {Some("prior_delivery_missing")}
-        else if following_gap.blank_lines>0 {Some("blank_before_next")}
-        else if next_distance>3 {Some("next_distance_exceeds_3")}
-        else if contact_without_address {Some("contact_without_nearby_address")}
-        else {None};
+    let blocked=legacy_owner_gate(paragraph_blocked,previous_has_delivery,
+        following_gap.blank_lines,next_distance,contact_without_address);
 
     let preceding_distance=signed_line_distance(preceding.line as u64,candidate.line as u64).max(0) as usize;
     // These are the original score components, not probabilities. No
     // score is fabricated for a candidate the original gates rejected.
-    let previous_paragraph=if same_previous {80usize} else {0};
-    let previous_distance=20usize.saturating_sub(preceding_distance.saturating_mul(5));
-    let next_distance_score=20usize.saturating_sub(next_distance.saturating_mul(5));
-    let address_score=if has_nearby_address {20usize} else {0};
-    let blank_score=previous_gap.blank_lines.min(2)*5;
-    let content_penalty=following_gap.content_lines.min(2)*5;
-    let previous_score=previous_paragraph+previous_distance;
-    let following_score=(80usize+next_distance_score+address_score+blank_score)
-        .saturating_sub(content_penalty);
-    let selected=if blocked.is_none() && following_score>=previous_score+30 {
+    let scores=legacy_owner_scores(same_previous,preceding_distance,next_distance,
+        has_nearby_address,previous_gap.blank_lines,following_gap.content_lines);
+    let selected=if blocked.is_none() && scores.next>=scores.previous+LEGACY_OWNER_MARGIN {
         previous+1
     } else {previous};
     if let Some(trace)=trace {
@@ -696,30 +715,30 @@ fn recipient_owner_index(
             "maxConsecutiveBlankLines":g.max_consecutive_blank_lines
         });
         let previous_components=blocked.is_none().then(||json!({
-            "sameParagraph":previous_paragraph,"distance":previous_distance
+            "sameParagraph":scores.previous_paragraph,"distance":scores.previous_distance
         }));
         let following_components=blocked.is_none().then(||json!({
-            "sameParagraph":80,"distance":next_distance_score,
-            "nearbyAddress":address_score,"previousBlankLines":blank_score,
-            "contentPenalty":content_penalty
+            "sameParagraph":80,"distance":scores.next_distance,
+            "nearbyAddress":scores.address,"previousBlankLines":scores.blank,
+            "contentPenalty":scores.content_penalty
         }));
         trace.push(json!({
             "source":location(candidate),
             "selectedAnchor":location(&events[anchors[selected]]),
             "legacyFirstBlockingReason":blocked,
-            "legacyRequiredMargin":30,
+            "legacyRequiredMargin":LEGACY_OWNER_MARGIN,
             "previousHasDelivery":previous_has_delivery,
             "nearbyAddress":has_nearby_address,
             "candidates":[
                 {"relation":"previous","anchor":location(preceding),
                  "sameParagraph":same_previous,"lineDistance":preceding_distance,
                  "gap":gap(&previous_gap),
-                 "legacyScore":blocked.is_none().then_some(previous_score),
+                 "legacyScore":blocked.is_none().then_some(scores.previous),
                  "legacyComponents":previous_components},
                 {"relation":"next","anchor":location(following),
                  "sameParagraph":same_following,"lineDistance":next_distance,
                  "gap":gap(&following_gap),
-                 "legacyScore":blocked.is_none().then_some(following_score),
+                 "legacyScore":blocked.is_none().then_some(scores.next),
                  "legacyComponents":following_components}
             ]
         }));
@@ -2141,6 +2160,32 @@ mod tests {
         assert_eq!(recipients.len(),1);
         assert_eq!(recipients[0]["mobile"],"010-1234-5678");
         assert_eq!(recipients[0]["phone"],"010-3456-7890");
+    }
+    #[test]
+    fn legacy_owner_margin_is_redundant_after_gates(){
+        // Enumerate the saturated distance/blank/content domains, including
+        // all gate-approved next distances. Nearby address is also true for
+        // an address candidate itself. Keep the v1 outputs for comparison.
+        let mut minimum_margin=usize::MAX;
+        for previous in 0..=8{
+            for next in 0..=3{
+                for blank in 0..=3{
+                    for content in 0..=3{
+                        assert_eq!(legacy_owner_gate(false,true,0,next,false),None);
+                        let s=legacy_owner_scores(false,previous,next,true,blank,content);
+                        assert_eq!(s.previous_paragraph,0);
+                        assert!(s.next>=s.previous+LEGACY_OWNER_MARGIN);
+                        minimum_margin=minimum_margin.min(s.next-s.previous);
+                    }
+                }
+            }
+        }
+        assert_eq!(minimum_margin,75);
+        assert_eq!(legacy_owner_gate(true,false,1,4,true),Some("paragraph_boundary"));
+        assert_eq!(legacy_owner_gate(false,false,1,4,true),Some("prior_delivery_missing"));
+        assert_eq!(legacy_owner_gate(false,true,1,4,true),Some("blank_before_next"));
+        assert_eq!(legacy_owner_gate(false,true,0,4,true),Some("next_distance_exceeds_3"));
+        assert_eq!(legacy_owner_gate(false,true,0,3,true),Some("contact_without_nearby_address"));
     }
     #[test]
     fn shared_source_geometry_preserves_legacy_line_ranges_and_direction(){
