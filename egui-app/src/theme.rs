@@ -5,7 +5,7 @@
 //! docs/egui-ui-design-contract.md.
 //! Keep screen-specific hard-coded colors and geometry out of view code.
 
-use crate::ui_layout::SharedAllocationExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
 use eframe::egui::{
     self, Color32, CornerRadius, Frame, Stroke, Ui, Vec2,
 };
