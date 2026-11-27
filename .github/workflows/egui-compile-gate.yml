@@ -98,6 +98,7 @@ jobs:
             'ui_regressions::shared_tag_chip_contract_tests::',
             'ui_regressions::common_action_tooltip_tests::',
             'table::regression_tests::shared_table_rendered_geometry_tests::',
+            'checkbox::regression_tests::shared_checkbox_rendered_geometry_tests::',
             'card::regression_tests::shared_card_rendered_geometry_tests::',
             'scrollbar::regression_tests::shared_scrollbar_rendered_geometry_tests::',
             'button::regression_tests::shared_button_rendered_geometry_tests::',
