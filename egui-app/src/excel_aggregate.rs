@@ -110,6 +110,13 @@ fn read_legacy_reply(base:&Path,record:&serde_json::Value,row:&serde_json::Value
     let v=original["aggregateValues"].as_array().ok_or("회신 원본 열 누락")?;
     v.iter().map(|x|x.as_str().map(str::to_owned).ok_or_else(||"회신 원본 값 오류".into())).collect()
 }
+#[cfg(test)]
+fn crash_checkpoint(stage:&str){
+    if std::env::var("BANDO_AGGREGATE_CRASH_STAGE").ok().as_deref()!=Some(stage){return}
+    let root=PathBuf::from(std::env::var_os("BANDO_AGGREGATE_CRASH_ROOT").expect("isolated crash fixture"));
+    fs::write(root.join("crash-ready"),stage).expect("write crash checkpoint");
+    loop{std::thread::sleep(Duration::from_millis(100));}
+}
 fn publish(conn:&mut Connection,requested:&jobs::Job,base:&Path)->Result<(),String>{
     // Capture generation and projected rows from a consistent SQLite read.
     let tx=conn.transaction().map_err(err)?;
@@ -118,11 +125,21 @@ fn publish(conn:&mut Connection,requested:&jobs::Job,base:&Path)->Result<(),Stri
     let mut cache=HashMap::new();
     let rows=jobs::daily_rows(&tx,&j,|record,row|read_legacy_reply(base,record,row,&mut cache))?;
     tx.commit().map_err(err)?;
+    #[cfg(test)]
+    crash_checkpoint("after_db_commit");
     let bytes=encode(&rows,j.origin=="REPLY")?;
     let target=checked_target(&j)?;
     let dir=target.parent().ok_or("취합 저장 폴더 누락")?;
     let tmp=Temp(dir.join(format!(".bando-aggregate-{}.tmp",Uuid::new_v4())));
     let mut file=fs::OpenOptions::new().create_new(true).write(true).open(&tmp.0).map_err(err)?;
+    #[cfg(test)]
+    {
+        let half=bytes.len()/2;
+        file.write_all(&bytes[..half]).map_err(err)?;
+        crash_checkpoint("during_temp_write");
+        file.write_all(&bytes[half..]).and_then(|_|file.sync_all()).map_err(err)?;
+    }
+    #[cfg(not(test))]
     file.write_all(&bytes).and_then(|_|file.sync_all()).map_err(err)?;
     drop(file);
     let hash=format!("{:x}",Sha256::digest(&bytes));
@@ -135,10 +152,16 @@ fn publish(conn:&mut Connection,requested:&jobs::Job,base:&Path)->Result<(),Stri
     if checked_target(&j)?!=target{return Err("취합 보관함 경로 변경".into())}
     // Same-directory rename replaces the destination without truncating it
     // first. On Windows a sharing violation leaves the previous file intact.
+    #[cfg(test)]
+    crash_checkpoint("before_replace");
     fs::rename(&tmp.0,&target).map_err(err)?;
+    #[cfg(test)]
+    crash_checkpoint("after_replace");
     #[cfg(unix)]
     fs::File::open(dir).and_then(|f|f.sync_all()).map_err(err)?;
     jobs::mark_saved(&tx,&j,&hash)?;
+    #[cfg(test)]
+    crash_checkpoint("after_mark_before_commit");
     tx.commit().map_err(err)?;
     Ok(())
 }
@@ -151,8 +174,8 @@ fn verify_completed(conn:&Connection)->Result<(),String>{
     Ok(())
 }
 fn clean_stale_temps(conn:&mut Connection,min_age:Duration)->Result<(),String>{
-    let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(err)?;
-    for j in jobs::jobs(&tx,0,true)?{
+    // Do not hold the business writer lock while scanning archive directories.
+    for j in jobs::jobs(conn,0,true)?{
         let Ok(target)=checked_target(&j)else{continue};
         let Some(dir)=target.parent()else{continue};
         let Ok(entries)=fs::read_dir(dir)else{continue};
@@ -166,7 +189,7 @@ fn clean_stale_temps(conn:&mut Connection,min_age:Duration)->Result<(),String>{
             }
         }
     }
-    tx.commit().map_err(err)
+    Ok(())
 }
 fn run(reconcile:bool)->Result<(),String>{
     let (mut conn,base)=crate::factory_reply_inbox::open_db()?;
@@ -309,6 +332,59 @@ mod tests{
         assert_eq!(v[1],"01234");assert_eq!(v[16],"0000123456");
         fs::write(path,b"bad").unwrap();
         assert!(read_legacy_reply(&f.root,&record,&source,&mut HashMap::new()).is_err());
+    }
+    #[test]
+    fn aggregate_crash_child(){
+        let Some(root)=std::env::var_os("BANDO_AGGREGATE_CRASH_ROOT").map(PathBuf::from)else{return};
+        let mut conn=Connection::open(root.join("crash.sqlite")).unwrap();
+        let job=jobs::jobs(&conn,0,false).unwrap().remove(0);
+        publish(&mut conn,&job,&root).unwrap();
+        panic!("crash checkpoint not reached");
+    }
+    #[test]
+    fn process_kill_recovers_all_publication_boundaries(){
+        use std::process::{Command,Stdio};
+        for stage in ["after_db_commit","during_temp_write","before_replace","after_replace","after_mark_before_commit"]{
+            let mut f=Fixture::new();f.update(1);publish(&mut f.conn,&f.job,&f.root).unwrap();
+            let old=fs::read(&f.job.path).unwrap();f.update(2);
+            let state:String=f.conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0)).unwrap();
+            let disk=Connection::open(f.root.join("crash.sqlite")).unwrap();
+            disk.execute_batch("CREATE TABLE core_schema(key TEXT PRIMARY KEY,version INTEGER);
+                INSERT INTO core_schema VALUES('business-core',2);
+                CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);").unwrap();
+            disk.execute("INSERT INTO app_state VALUES(1,?1)",[state]).unwrap();
+            jobs::initialize(&disk).unwrap();
+            disk.execute("INSERT INTO excel_aggregate_jobs(business_date,origin,target_path,desired_revision,saved_revision,file_hash)
+                VALUES (?1,?2,?3,2,1,?4)",rusqlite::params![f.job.date,f.job.origin,f.job.path,f.job.hash]).unwrap();
+            drop(disk);
+            let mut child=Command::new(std::env::current_exe().unwrap())
+                .args(["--exact","excel_aggregate::tests::aggregate_crash_child","--nocapture"])
+                .env("BANDO_AGGREGATE_CRASH_ROOT",&f.root).env("BANDO_AGGREGATE_CRASH_STAGE",stage)
+                .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+            let deadline=Instant::now()+Duration::from_secs(30);
+            let ready=loop{
+                if fs::read_to_string(f.root.join("crash-ready")).ok().as_deref()==Some(stage){break true}
+                if child.try_wait().unwrap().is_some()||Instant::now()>=deadline{break false}
+                std::thread::sleep(Duration::from_millis(20));
+            };
+            let _=child.kill();let _=child.wait();assert!(ready,"child never reached {stage}");
+            let after_kill=fs::read(&f.job.path).unwrap();
+            if matches!(stage,"after_db_commit"|"during_temp_write"|"before_replace"){
+                assert_eq!(after_kill,old,"old file was changed before replace: {stage}");
+            }else{assert_ne!(after_kill,old);}
+            let mut reopened=Connection::open(f.root.join("crash.sqlite")).unwrap();
+            let pending=jobs::jobs(&reopened,0,false).unwrap();
+            assert_eq!(pending.len(),1);assert_eq!(pending[0].saved,1);
+            publish(&mut reopened,&pending[0],&f.root).unwrap();
+            let mut book=Xlsx::new(Cursor::new(fs::read(&f.job.path).unwrap())).unwrap();
+            let range=book.worksheet_range("로젠택배").unwrap();
+            assert_eq!(range.end().unwrap().0,2);
+            assert_eq!(range.get_value((2,1)),Some(&Data::String("01234".into())));
+            assert!(jobs::jobs(&reopened,0,false).unwrap().is_empty());
+            clean_stale_temps(&mut reopened,Duration::ZERO).unwrap();
+            assert!(!fs::read_dir(Path::new(&f.job.path).parent().unwrap()).unwrap()
+                .filter_map(Result::ok).any(|e|e.file_name().to_string_lossy().starts_with(".bando-aggregate-")));
+        }
     }
     #[test]
     fn same_directory_replacement_preserves_complete_bytes(){
