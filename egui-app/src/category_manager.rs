@@ -601,7 +601,7 @@ impl CategoryManager {
         index.products(id).len()+index.branches(id).iter().filter(|&&i|index.shows(&cats[i].id)).map(|&i|{
             let child=&cats[i];
             1+if self.expanded.contains(&child.id){self.visible_descendants(cats,index,&child.id,seen)}else{0}
-        }).sum()
+        }).sum::<usize>()
     }
     fn node(&mut self,ui:&mut Ui,cats:&[Category],index:&CategoryMapIndex,
         item:&Category,depth:usize,ancestor_guides:&[bool],is_last:bool,ancestors:&mut HashSet<String>,product_enabled:bool,move_enabled:bool){
