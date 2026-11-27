@@ -7,7 +7,7 @@ use serde_json::{json,Value};
 use crate::{validate_brands,validate_clients};
 fn err<E:std::fmt::Display>(e:E)->String{e.to_string()}
 #[path = "../../../src-tauri/src/reception.rs"]
-mod reception;
+pub(super) mod reception;
 
 fn read_current_envelope(tx:&Transaction<'_>,expected_revision:u64)->Result<Value,String>{
     let version:i64=tx.query_row(

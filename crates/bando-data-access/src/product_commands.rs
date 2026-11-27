@@ -13,6 +13,10 @@ pub(crate) fn validate_native_model_groups(state:&Value)->Result<(),String>{
     catalog_clients::validate_model_groups(state)
 }
 
+pub(crate) fn validate_native_category_topology(state:&Value)->Result<(),String>{
+    catalog_clients::validate_category_topology(state)
+}
+
 /// Derive committed history from the authoritative before/after product, not
 /// from the editable draft or workbook preview. The existing history is
 /// append-only; a missing price and explicit null are equivalent.

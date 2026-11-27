@@ -89,6 +89,11 @@ pub(crate) fn validate_model_groups(state:&Value)->Result<(),String>{
     model_groups::validate(state)
 }
 
+/// Pure hierarchy validation, without repeating the assignment transition.
+pub(crate) fn validate_category_topology(state:&Value)->Result<(),String>{
+    categories::validate_topology(state)
+}
+
 fn validate_product(state: &Value, product: &Value) -> Result<(), String> {
     bando_data_access::validate_product_assignment(state,product)?;
     // src/domain.ts::productSchema and validateProduct: one sale unit only,

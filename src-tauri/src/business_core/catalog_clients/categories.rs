@@ -34,7 +34,7 @@ fn category_ids(product:&Value)->Vec<String>{
 fn parent_id(value:&Value)->Option<&str>{
     value.get("parentId").and_then(Value::as_str).filter(|s|!s.is_empty())
 }
-pub(super) fn validate(before:Option<&Value>,next:&Value)->Result<(),String>{
+pub(super) fn validate_topology(next:&Value)->Result<(),String>{
     let cats=items(next,"categories");
     let mut known=HashSet::new();
     for cat in cats{
@@ -47,6 +47,10 @@ pub(super) fn validate(before:Option<&Value>,next:&Value)->Result<(),String>{
         }
         category_path(cats,field(cat,"id"))?;
     }
+    Ok(())
+}
+pub(super) fn validate(before:Option<&Value>,next:&Value)->Result<(),String>{
+    validate_topology(next)?;
     if let Some(before)=before{
         bando_data_access::validate_category_transition(before,next)?;
     }else{
