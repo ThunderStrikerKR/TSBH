@@ -119,3 +119,71 @@ pub(crate) fn assert_painted_caption(output:&egui::FullOutput,label:&str,widget:
     assert_rect_inside(label,ink,clip,1.0);
     ink
 }
+
+
+ 
+/// Independent trace for production component calls, separate from fixed slots.
+#[derive(Clone,Copy,Debug)]
+pub(crate) struct ComponentGeometry{
+    pub role:&'static str,
+    pub rect:Rect,
+    pub clip:Rect,
+    pub minimum_height:Option<f32>,
+}
+thread_local!{
+    static COMPONENT_TRACE:RefCell<Option<Vec<ComponentGeometry>>>=RefCell::new(None);
+}
+pub(crate) fn begin_component_geometry(){
+    COMPONENT_TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
+}
+pub(crate) fn record_component_geometry(role:&'static str,rect:Rect,clip:Rect,minimum_height:Option<f32>){
+    COMPONENT_TRACE.with(|trace|{
+        if let Some(samples)=trace.borrow_mut().as_mut(){
+            samples.push(ComponentGeometry{role,rect,clip,minimum_height});
+        }
+    });
+}
+pub(crate) fn finish_component_geometry(screen:Rect)->Vec<ComponentGeometry>{
+    let samples=COMPONENT_TRACE.with(|trace|trace.borrow_mut().take().expect("component trace not started"));
+    for sample in &samples{
+        let ComponentGeometry{role,rect,clip,minimum_height}=*sample;
+        assert!([rect.left(),rect.right(),rect.top(),rect.bottom()].iter().all(|v|v.is_finite()),
+            "{role}: non-finite actual component geometry {rect:?}");
+        // Overscan and nested scroll contents are allowed outside the viewport.
+        let visible=rect.intersect(clip).intersect(screen);
+        if !visible.is_positive(){continue;}
+        assert!(rect.is_positive(),"{role}: invalid visible allocation {rect:?}");
+        assert_rect_inside(role,visible,screen,0.5);
+        if let Some(height)=minimum_height{
+            assert!(rect.height()+1.0>=height,
+                "{role}: actual control height {} below shared minimum {height}",rect.height());
+        }
+    }
+    samples
+}
+pub(crate) fn assert_component_roles(samples:&[ComponentGeometry],required:&[&str]){
+    for role in required{
+        assert!(samples.iter().any(|sample|sample.role==*role&&sample.rect.is_positive()),
+            "actual workflow never reached shared {role} renderer");
+    }
+}
+
+#[cfg(test)]
+mod shared_component_screen_trace_tests{
+    use super::*;
+    #[test]
+    #[should_panic(expected="below shared minimum")]
+    fn detector_rejects_visible_control_height_regression(){
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(400.0,300.0));
+        begin_component_geometry();
+        record_component_geometry("button",Rect::from_min_size(screen.min,egui::vec2(100.0,20.0)),screen,Some(34.0));
+        finish_component_geometry(screen);
+    }
+    #[test]
+    fn virtualized_offscreen_allocation_is_not_a_visible_geometry_failure(){
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(400.0,300.0));
+        begin_component_geometry();
+        record_component_geometry("input",Rect::from_min_size(egui::pos2(0.0,500.0),egui::vec2(100.0,20.0)),screen,Some(36.0));
+        assert_eq!(finish_component_geometry(screen).len(),1);
+    }
+}
