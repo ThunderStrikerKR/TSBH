@@ -886,7 +886,10 @@ impl PreviewStore {
             let id=order["id"].as_str().ok_or("확정 주문 ID 누락")?;
             if let Some(events)=audit.remove(id){order["recognitionAuditEvents"]=json!(events);}
         }
-        let report=recognition_learning_store::synchronize(&tx,&scope,ids,&orders,summarize)?;
+        let mut report=recognition_learning_store::synchronize(&tx,&scope,ids,&orders,summarize)?;
+        let requested=ids.iter().collect::<std::collections::BTreeSet<_>>().len();
+        report["missingSelectedOrders"]=json!(requested.saturating_sub(frozen.len()));
+        report["inactiveSelectedOrders"]=json!(frozen.len().saturating_sub(orders.len()));
         if crate::business_state::read_learning_snapshots(ids)?!=frozen ||
             crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
             return Err("학습 갱신 중 확정 주문 또는 업무 DB가 변경되었습니다.".into());

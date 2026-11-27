@@ -1096,6 +1096,22 @@ fn learning_lifecycle_order_ids(state:&Value,args:&Value)->Vec<String>{
     ids.into_iter().collect()
 }
 
+#[cfg(test)]
+mod recognition_learning_lifecycle_tests{
+    use super::*;
+    #[test]
+    fn affected_orders_include_deleted_group_members_and_deduplicate_split_shipments(){
+        let state=serde_json::json!({"workflow":{"groups":[{"id":"g","deletedAt":"t"}],
+            "shipments":[{"groupId":"g","orderId":"a"},{"groupId":"g","orderId":"a"},
+                {"groupId":"g","orderId":"b"},{"groupId":"h","orderId":"c"}]}});
+        assert_eq!(learning_lifecycle_order_ids(&state,&serde_json::json!({"groupId":"g"})),
+            vec!["a".to_owned(),"b".to_owned()]);
+        assert_eq!(learning_lifecycle_order_ids(&state,&serde_json::json!({"groupId":"new","draft":{"id":"d"}})),
+            vec!["d".to_owned()]);
+        assert!(learning_lifecycle_order_ids(&state,&serde_json::json!({})).is_empty());
+    }
+}
+
 pub(crate) fn start_recognition_learning_worker(){
     if LEARNING_WORKER.get().is_some() ||
         !std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into()).trim().eq_ignore_ascii_case("local") ||
