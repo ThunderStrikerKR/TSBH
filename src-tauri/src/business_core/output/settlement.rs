@@ -2,7 +2,7 @@
 //! Billed orders and received cash are deliberately separate accounting clocks.
 use chrono::{DateTime, FixedOffset, NaiveDate};
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap,HashSet};
 
 const MAX_SAFE: i64 = 9_007_199_254_740_991;
 fn s<'a>(v: &'a Value, key: &str) -> &'a str {
@@ -40,11 +40,11 @@ fn seoul_date(value: &str) -> String {
 }
 fn allocations_for(
     state: &Value, shipment_ids: &HashSet<&str>, approval: bool
-) -> Result<i64, String> {
+) -> Result<HashMap<String,i64>, String> {
     let workflow = &state["workflow"];
     let records = if approval { list(workflow, "confirmations") } else { list(workflow, "payments") };
     let mut seen = HashSet::new();
-    let mut amount = 0;
+    let mut amounts=HashMap::new();
     for record in records {
         if !seen.insert(s(record, "id")) {
             return Err(if approval { "입금 승인 기록 ID가 중복되었습니다." }
@@ -61,10 +61,11 @@ fn allocations_for(
             let n = safe(&allocation["amount"]).ok_or(
                 if approval { "입금 승인 기록에 잘못된 금액이 있습니다." } else { "입금 배분액이 올바르지 않습니다." }
             )?;
-            amount = add(amount, n)?;
+            let amount=amounts.entry(id.to_owned()).or_insert(0);
+            *amount=add(*amount,n)?;
         }
     }
-    Ok(amount)
+    Ok(amounts)
 }
 fn freight(state: &Value, row: &Value) -> Result<(i64,bool), String> {
     let shipment_ids = list(row, "shipmentIds");
@@ -145,16 +146,23 @@ pub(super) fn prepare(state: &Value, date: &str, history_rows: &Value) -> Result
             match payment { "POSTPAID"=>"후불", "PREPAID"=>"선입금", _=>"미확인" }
         };
         let shipment_ids: HashSet<&str> = list(row,"shipmentIds").iter().filter_map(Value::as_str).collect();
-        let paid = allocations_for(state,&shipment_ids,false)?;
-        let approved = allocations_for(state,&shipment_ids,true)?;
+        let paid_by_shipment=allocations_for(state,&shipment_ids,false)?;
+        let approved_by_shipment=allocations_for(state,&shipment_ids,true)?;
+        let paid=sum(paid_by_shipment.values().copied())?;
+        let approved=sum(approved_by_shipment.values().copied())?;
+        // Approval and bank evidence may describe the same payment.
+        // Without an explicit link, use the greater amount per shipment,
+        // never the sum of two potentially overlapping evidence sources.
+        let recognized=sum(shipment_ids.iter().map(|id|
+            (*paid_by_shipment.get(*id).unwrap_or(&0))
+                .max(*approved_by_shipment.get(*id).unwrap_or(&0))))?;
         let (freight_value, complete) = freight(state,row)?;
         let bill = &row["billing"];
         let total = bill.get("total").and_then(safe);
         let outstanding = if shipment_ids.is_empty() || terms=="소매" {
             None
         } else if let Some(total) = total {
-            let due = total.saturating_sub(paid);
-            Some(due.saturating_sub(approved.min(due)))
+            Some(total.saturating_sub(recognized).max(0))
         } else { None };
         let client_name = if !s(client,"name").is_empty() { s(client,"name") }
             else if !s(&order["clientSnapshot"],"name").is_empty() { s(&order["clientSnapshot"],"name") }
@@ -180,7 +188,7 @@ pub(super) fn prepare(state: &Value, date: &str, history_rows: &Value) -> Result
     let receipts = receipt_rows(state,date)?;
     let billed_unknown = count_unknown(&orders,"total");
     let mut warnings = vec![];
-    if billed_unknown>0 { warnings.push(format!("청구 합계가 미확정된 주문 {}건은 금액 합계에서 제외했습니다.",billed_unknown)); }
+    if billed_unknown>0 { warnings.push(format!("청구 합계가 미확정된 주문 {}건은 확정 청구액 및 확정 주문 구성 금액에서 제외했습니다.",billed_unknown)); }
     if orders.iter().any(|r|r["legacyDate"]==true) {
         warnings.push("확정일이 없는 과거 주문은 최초 작성일을 기준으로 분류했습니다.".into());
     }
@@ -196,6 +204,14 @@ pub(super) fn prepare(state: &Value, date: &str, history_rows: &Value) -> Result
     if orders.iter().any(|r|r["freightComplete"]==false) {
         warnings.push("실제 운임은 현재 기록된 값이며 해당 날짜의 현금 지출액을 의미하지 않습니다.".into());
     }
+    if orders.iter().any(|r|r["paymentApproved"].as_i64().unwrap_or(0)>0 && r["paidAllocated"].as_i64().unwrap_or(0)>0){
+        warnings.push("입금 승인과 실제 입금이 함께 있는 경우 배송 건별 큰 금액만 미수 차감에 반영합니다. 별도 입금 여부는 실제 배분 기록으로 확인하세요.".into());
+    }
+    let billed_orders=orders.iter().filter(|r|r["total"].as_i64().is_some()).collect::<Vec<_>>();
+    let billed_component=|key:&str|->Result<Value,String>{
+        if billed_orders.iter().any(|row|row[key].as_i64().is_none()){return Ok(Value::Null);}
+        Ok(json!(sum(billed_orders.iter().filter_map(|r|r[key].as_i64()))?))
+    };
     let paid_cash = known(&receipts,"amount")?;
     let allocated_cash = known(&receipts,"allocated")?;
     let postpaid = sum(orders.iter().filter(|r|s(r,"paymentTerms")=="후불")
@@ -205,6 +221,9 @@ pub(super) fn prepare(state: &Value, date: &str, history_rows: &Value) -> Result
         "orderRows":orders,"paymentRows":receipts,
         "billedKnown":known(&orders,"total")?,
         "billedUnknown":billed_unknown,
+        "billedProductKnown":billed_component("subtotal")?,
+        "billedShippingKnown":billed_component("shippingCharge")?,
+        "billedVatKnown":billed_component("vat")?,
         "productKnown":known(&orders,"subtotal")?,
         "shippingKnown":known(&orders,"shippingCharge")?,
         "vatKnown":known(&orders,"vat")?,
@@ -236,6 +255,27 @@ mod tests {
         prepare(&state, "2026-11-25", &history).unwrap()
     }
 
+    #[test]
+    fn confirmed_components_share_scope_and_approval_does_not_double_count() {
+        let state=json!({"workflow":{
+            "payments":[{"id":"p","paidAt":"2026-11-25T01:00:00Z","amount":40,
+                "allocations":[{"shipmentId":"s1","amount":40}]}],
+            "confirmations":[{"id":"c","allocations":[{"shipmentId":"s1","amount":40},{"shipmentId":"s2","amount":10}]}]
+        }});
+        let history=json!([
+            {"order":{"id":"o1"},"shipmentIds":["s1","s2"],
+                "billing":{"subtotal":80,"shipping":10,"vat":10,"total":100}},
+            {"order":{"id":"o2"},"shipmentIds":[],"billing":{"subtotal":500,"total":null}}
+        ]);
+        let report=prepare(&state,"2026-11-25",&history).unwrap();
+        assert_eq!(report["productKnown"],580);
+        assert_eq!(report["billedProductKnown"],80);
+        assert_eq!(report["billedShippingKnown"],10);
+        assert_eq!(report["billedVatKnown"],10);
+        assert_eq!(report["billedKnown"],100);
+        assert_eq!(report["outstandingKnown"],50);
+        assert_eq!(report["paidCash"],40);
+    }
     #[test]
     fn missing_shipment_does_not_confirm_partial_actual_freight() {
         let result = settlement_with_shipments(json!([

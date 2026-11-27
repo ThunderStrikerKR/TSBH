@@ -694,12 +694,11 @@ pub const FREIGHT_GROUP_HISTORY_COL_WIDTHS:[f32;6] =
 // Daily settlement is two accounting tables, not the six-column freight
 // editor: reserve numeric columns before handing the spare width to names
 // and receipt memo. Long account details remain available on cell hover.
-pub const SETTLEMENT_ORDER_COL_WIDTHS:[f32;8] =
-    [258.0,106.0,138.0,148.0,118.0,143.0,205.0,145.0];
+pub const SETTLEMENT_ORDER_COL_WIDTHS:[f32;9] =
+    [160.0,130.0,92.0,130.0,140.0,110.0,138.0,198.0,139.0];
 pub const SETTLEMENT_PAYMENT_COL_WIDTHS:[f32;7] =
     [172.0,180.0,254.0,141.0,126.0,126.0,260.0];
 pub const SETTLEMENT_KPI_CARD_WIDTH:f32 = 278.0;
-pub const SETTLEMENT_DATE_FIELD_WIDTH:f32 = 132.0;
 // Client name, phone and terms stay compact; the address takes remaining
 // width. Do not force freight/product's 1320pt grid on the client list.
 pub const MANAGEMENT_CLIENT_TABLE_MIN_WIDTH: f32 = 900.0;

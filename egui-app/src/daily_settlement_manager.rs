@@ -6,7 +6,7 @@ use crate::{
     gateway::{BandoGateway,ReadOperation},
     settings_help,theme,typography,
 };
-use chrono::{DateTime,Duration as Days,FixedOffset,NaiveDate,Utc};
+use chrono::{DateTime,FixedOffset,NaiveDate,Utc};
 use eframe::egui::{self,Align2,Rect,Ui,Vec2};
 use serde_json::{json,Value};
 use std::sync::Arc;
@@ -33,17 +33,11 @@ fn valid_date(date:&str)->bool{
     NaiveDate::parse_from_str(date,"%Y-%m-%d")
         .is_ok_and(|d|d.format("%Y-%m-%d").to_string()==date)
 }
+#[cfg(test)]
 fn move_date(date:&str,days:i64)->String{
-    let fallback=seoul_today();
-    let base=if valid_date(date){date}else{&fallback};
-    NaiveDate::parse_from_str(base,"%Y-%m-%d").ok()
-        .and_then(|day|day.checked_add_signed(Days::days(days)))
-        .map(|day|day.format("%Y-%m-%d").to_string())
-        .unwrap_or_else(||base.to_owned())
+    crate::navigation::range_move_date(date,days)
 }
-/// Same date field / arrows / calendar control as Order History, located
-/// INSIDE the first settlement report card rather than in an outer panel.
-/// Return true only when a different valid date is selected.
+/// Keep the report date valid while the shared date control is being edited.
 fn settlement_date_toolbar(
     ui:&mut Ui,date:&mut String,date_input:&mut String,
     calendar_month:&mut NaiveDate
@@ -51,57 +45,22 @@ fn settlement_date_toolbar(
     let mut changed=false;
     ui.horizontal_wrapped(|controls|{
         crate::ui_layout::apply_spacing_role(controls,crate::ui_layout::SpacingRole::Toolbar);
+        crate::navigation::apply_management_date_control_spacing(controls);
         crate::ui_primitives::form_field_label(controls,"결산 날짜");
-        if crate::button::action(controls,"‹",theme::ButtonRole::Standard,true).clicked(){
-            *date=move_date(date,-1);
-            *date_input=date.clone();
-            if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
-                *calendar_month=crate::navigation::calendar_month_start(day);
-            }
-            changed=true;
-        }
-        if crate::input::flexible_text_field(
-            controls,date_input,theme::SETTLEMENT_DATE_FIELD_WIDTH,"YYYY-MM-DD"
-        ).changed() && valid_date(date_input) && date!=date_input{
+        if crate::navigation::range_date_picker_with_notice(
+            controls,false,date_input,calendar_month,
+            "daily-settlement-date-calendar","settlement.date"
+        ) && valid_date(date_input) && date!=date_input{
             *date=date_input.clone();
-            if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
-                *calendar_month=crate::navigation::calendar_month_start(day);
-            }
-            changed=true;
-        }
-        let trigger=crate::button::action(
-            controls,"달력",theme::ButtonRole::Standard,true
-        );
-        if trigger.clicked(){
-            let open=NaiveDate::parse_from_str(date,"%Y-%m-%d")
-                .unwrap_or_else(|_|NaiveDate::parse_from_str(
-                    &seoul_today(),"%Y-%m-%d").expect("valid today"));
-            *calendar_month=crate::navigation::calendar_month_start(open);
-        }
-        if let Some(day)=crate::navigation::date_calendar(
-            &trigger,calendar_month,date,"daily-settlement-date-calendar"
-        ){
-            *date=day.format("%Y-%m-%d").to_string();
-            *date_input=date.clone();
-            changed=true;
-        }
-        if crate::button::action(controls,"›",theme::ButtonRole::Standard,true).clicked(){
-            *date=move_date(date,1);
-            *date_input=date.clone();
-            if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
-                *calendar_month=crate::navigation::calendar_month_start(day);
-            }
             changed=true;
         }
     });
-    let date_error=(!valid_date(date_input)).then_some(
-        "결산 날짜는 YYYY-MM-DD 형식으로 입력하세요."
-    );
-    let status_width=ui.available_width();
-    crate::ui_layout::fixed_status_slot(
-        ui,status_width,typography::METADATA_LINE_HEIGHT,
-        date_error,date_error,theme::message_ink(theme::MessageInkRole::Danger)
-    );
+    if !valid_date(date_input){
+        crate::ui_layout::fixed_status_slot(ui,ui.available_width(),
+            typography::METADATA_LINE_HEIGHT,
+            Some("결산 날짜는 YYYY-MM-DD 형식으로 입력하세요."),
+            None,theme::message_ink(theme::MessageInkRole::Danger));
+    }
     changed
 }
 
@@ -116,12 +75,25 @@ fn seoul_datetime(raw:&str)->String{
 fn money_key(row:&Value,key:&str)->Option<i64>{
     row.get(key).and_then(Value::as_i64)
 }
+fn payment_time_key(row:&Value)->Option<DateTime<FixedOffset>>{
+    DateTime::parse_from_rfc3339(field(row,"paidAt")).ok()
+}
+fn sort_unknown(row:&Value,column:usize,payment:bool)->bool{
+    if payment{
+        if column==0{return payment_time_key(row).is_none();}
+        ["amount","allocated","unallocated"].get(column.wrapping_sub(3))
+            .is_some_and(|key|money_key(row,key).is_none())
+    }else{
+        ["subtotal","shippingCharge","vat","total","paidAllocated","outstanding"]
+            .get(column.wrapping_sub(3)).is_some_and(|key|money_key(row,key).is_none())
+    }
+}
 fn compare_rows(
     left:&Value,right:&Value,column:usize,payment:bool
 )->std::cmp::Ordering{
     if payment {
         match column {
-            0=>field(left,"paidAt").cmp(field(right,"paidAt")),
+            0=>payment_time_key(left).cmp(&payment_time_key(right)),
             1=>field(left,"dealer").to_lowercase()
                 .cmp(&field(right,"dealer").to_lowercase()),
             2=>field(left,"account").to_lowercase()
@@ -137,13 +109,14 @@ fn compare_rows(
         match column {
             0=>field(left,"clientName").to_lowercase()
                 .cmp(&field(right,"clientName").to_lowercase()),
-            1=>field(left,"paymentTerms").cmp(field(right,"paymentTerms")),
-            2=>money_key(left,"subtotal").cmp(&money_key(right,"subtotal")),
-            3=>money_key(left,"shippingCharge").cmp(&money_key(right,"shippingCharge")),
-            4=>money_key(left,"vat").cmp(&money_key(right,"vat")),
-            5=>money_key(left,"total").cmp(&money_key(right,"total")),
-            6=>money_key(left,"paidAllocated").cmp(&money_key(right,"paidAllocated")),
-            7=>money_key(left,"outstanding").cmp(&money_key(right,"outstanding")),
+            1=>field(left,"status").cmp(field(right,"status")),
+            2=>field(left,"paymentTerms").cmp(field(right,"paymentTerms")),
+            3=>money_key(left,"subtotal").cmp(&money_key(right,"subtotal")),
+            4=>money_key(left,"shippingCharge").cmp(&money_key(right,"shippingCharge")),
+            5=>money_key(left,"vat").cmp(&money_key(right,"vat")),
+            6=>money_key(left,"total").cmp(&money_key(right,"total")),
+            7=>money_key(left,"paidAllocated").cmp(&money_key(right,"paidAllocated")),
+            8=>money_key(left,"outstanding").cmp(&money_key(right,"outstanding")),
             _=>std::cmp::Ordering::Equal,
         }
     }
@@ -172,7 +145,9 @@ fn sorted_indices(data:&[Value],sort:Option<Sort>,payment:bool)->Vec<usize>{
             let order=if sort.direction==Direction::Descending{
                 order.reverse()
             }else{order};
-            order.then_with(||a.cmp(b))
+            sort_unknown(&data[*a],sort.column,payment)
+                .cmp(&sort_unknown(&data[*b],sort.column,payment))
+                .then(order).then_with(||a.cmp(b))
         });
     }
     indices
@@ -207,7 +182,7 @@ fn kpi(ui:&mut Ui,label:&str,value:&str,state:theme::TextState){
 }
 
 fn metric(ui:&mut Ui,label:&str,value:String,state:theme::TextState){
-    ui.horizontal(|line|{
+    ui.vertical(|line|{
         crate::ui_layout::apply_spacing_role(line,crate::ui_layout::SpacingRole::ReportMetricPair);
         line.label(typography::field_label(label));
         // Preserve the original 22pt body line box while displaying a
@@ -227,6 +202,12 @@ fn paint_cell(
         ui,rect.shrink2(Vec2::new(theme::SPACE_8,0.0)),content,content,role,
         align,("settlement-cell",id),false,state
     );
+}
+
+fn report_body_height(count:usize,screen_height:f32,horizontal_rail:f32)->f32{
+    let cap=(screen_height*theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION/ROW_HEIGHT)
+        .floor().max(1.0) as usize;
+    count.max(1).min(cap) as f32*ROW_HEIGHT+horizontal_rail
 }
 
 /// One record per row with one header/row geometry. Header stays pinned
@@ -251,8 +232,11 @@ fn report_table<const N:usize>(
     let header=layout.header_rect;
     // This report has multiple tables below each other: the track ends
     // at its OWN row viewport and cannot extend into later sections.
-    let scroll_max_height=ui.ctx().content_rect().height()
-        *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION;
+    let horizontal_rail=if width>layout.viewport_width-layout.scrollbar_gutter+0.01{
+        ui.spacing().scroll.allocated_width()
+    }else{0.0};
+    let scroll_max_height=report_body_height(indices.len(),
+        ui.ctx().content_rect().height(),horizontal_rail);
     // A nested report can start below the outer scroll viewport. Reserve
     // its logical row slot independently of the parent's remaining visible
     // height; the inherited clip still hides off-screen rows.
@@ -464,17 +448,17 @@ impl DailySettlementManager{
                     if date_changed{visible_report=None;}
                     let report=visible_report.unwrap_or(&missing);
                     let orders=rows(&report["orderRows"]);
+                    // Order cohort is selected-day; cumulative balances are live.
                     section.label(typography::subsection_heading(
                         "해당 날짜 접수 주문 / 청구 내역"
                     ));
-                    section.add_space(theme::SPACE_8);
                     section.horizontal_wrapped(|line|{
                         crate::ui_layout::apply_spacing_role(line,crate::ui_layout::SpacingRole::ReportMetrics);
                         for (title,key) in [
-                            ("상품대금 확인분","productKnown"),
-                            ("고객 청구 배송비 확인분","shippingKnown"),
-                            ("부가세 확인분","vatKnown"),
-                            ("후불 주문 청구액 확인분","postpaidKnown"),
+                            ("확정 주문 상품대금","billedProductKnown"),
+                            ("확정 주문 청구 배송비","billedShippingKnown"),
+                            ("확정 주문 부가세","billedVatKnown"),
+                            ("후불 확정 청구액","postpaidKnown"),
                             ("현재 미수 확인분","outstandingKnown"),
                             ("현재 공장 운임 확인분","actualFreightKnown"),
                         ]{
@@ -482,8 +466,10 @@ impl DailySettlementManager{
                                 if visible_report.is_some(){theme::TextState::value(report[key].as_i64().is_some())}else{theme::TextState::Pending});
                         }
                     });
-                    section.add_space(theme::SPACE_8);
-                    section.horizontal(|review|{
+                    section.label(typography::caption(
+                        "미수·실제 입금 배분 누계·공장 운임은 현재 조회 시점 기준"
+                    ));
+                    section.horizontal_wrapped(|review|{
                         crate::ui_layout::apply_spacing_role(review,crate::ui_layout::SpacingRole::FormColumns);
                         review.label(typography::caption(&format!(
                             "미수 미확정 {}",
@@ -495,19 +481,18 @@ impl DailySettlementManager{
                         )));
                         settings_help::icon(review,"미수금과 실제 운임");
                     });
-                    crate::ui_primitives::section_divider(section);
                     let indices=self.order_cache.get((self.order_sort,visible_report.is_some()),||sorted_indices(orders,self.order_sort,false));
                     let scroll_keys=|i:usize|crate::scrollbar::row_key(field(&orders[indices[i]],"orderId"));
                     report_table(
                         section,"settlement-orders",
-                        ["거래처 / 상태","결제 방식","상품대금","청구 배송비",
+                        ["거래처","관리 상태","결제 방식","상품대금","청구 배송비",
                          "부가세","청구 합계","실제 입금 배분 누계","현재 미수"],
                         theme::SETTLEMENT_ORDER_COL_WIDTHS,
-                        [Align2::LEFT_CENTER,Align2::LEFT_CENTER,
+                        [Align2::LEFT_CENTER,Align2::CENTER_CENTER,Align2::CENTER_CENTER,
                          Align2::RIGHT_CENTER,Align2::RIGHT_CENTER,
                          Align2::RIGHT_CENTER,Align2::RIGHT_CENTER,
                          Align2::RIGHT_CENTER,Align2::RIGHT_CENTER],
-                        [typography::ManagementTableCellRole::ClientName,typography::ManagementTableCellRole::Status,
+                        [typography::ManagementTableCellRole::ClientName,typography::ManagementTableCellRole::Status,typography::ManagementTableCellRole::Status,
                          typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::RowTotal,
                          typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money],
                         0,&indices,visible_report.is_some(),&scroll_keys,&mut self.order_sort,
@@ -517,7 +502,8 @@ impl DailySettlementManager{
                         |index|{
                             let order=&orders[index];
                             [
-                                format!("{} · {}",field(order,"clientName"),field(order,"status")),
+                                field(order,"clientName").to_owned(),
+                                field(order,"status").to_owned(),
                                 field(order,"paymentTerms").to_owned(),
                                 won(&order["subtotal"]),
                                 won(&order["shippingCharge"]),
@@ -529,9 +515,9 @@ impl DailySettlementManager{
                         },
                         |index|{
                             let order=&orders[index];
-                            let mut states=[theme::TextState::Normal;8];
+                            let mut states=[theme::TextState::Normal;9];
                             for (column,key) in ["subtotal","shippingCharge","vat","total","paidAllocated","outstanding"].into_iter().enumerate(){
-                                states[column+2]=theme::TextState::value(order[key].as_i64().is_some());
+                                states[column+3]=theme::TextState::value(order[key].as_i64().is_some());
                             }
                             states
                         }
@@ -559,7 +545,6 @@ impl DailySettlementManager{
                                 if visible_report.is_some(){theme::TextState::value(report[key].as_i64().is_some())}else{theme::TextState::Pending});
                         }
                     });
-                    crate::ui_primitives::section_divider(section);
                     let indices=self.payment_cache.get((self.payment_sort,visible_report.is_some()),||sorted_indices(payments,self.payment_sort,true));
                     let scroll_keys=|i:usize|crate::scrollbar::row_key(field(&payments[indices[i]],"id"));
                     report_table(
@@ -605,13 +590,20 @@ impl DailySettlementManager{
                     review.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Bounded,section_inner_max_width);
                     review.label(typography::section_heading("결산 검토 사항"));
                     crate::ui_primitives::section_divider(review);
-                    crate::ui_layout::fixed_result_viewport(review,"settlement-warnings",100.0,|list|{
-                        for warning in rows(&report["warnings"]){
+                    if visible_report.is_none(){
+                        crate::ui_primitives::management_body_state_inline(review,
+                            if loading||date_changed{"조회 중"}else{"결산 자료 미확인"});
+                    }else{
+                        let warnings=rows(&report["warnings"]);
+                        if warnings.is_empty(){
+                            crate::ui_primitives::management_body_state_inline(review,"검토 사항 없음");
+                        }
+                        for warning in warnings{
                             if let Some(message)=warning.as_str(){
-                                list.label(typography::body(message));
+                                review.label(typography::body(message));
                             }
                         }
-                    });
+                    }
                 });
             });
         capture.finish(ui,&output,None);
@@ -622,6 +614,19 @@ impl DailySettlementManager{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn settlement_rows_fit_small_reports_and_cap_large_reports(){
+        assert_eq!(report_body_height(0,1080.0,0.0),ROW_HEIGHT);
+        assert_eq!(report_body_height(1,1080.0,0.0),ROW_HEIGHT);
+        assert_eq!(report_body_height(3,1080.0,0.0),3.0*ROW_HEIGHT);
+        assert_eq!(report_body_height(3,1080.0,10.0),3.0*ROW_HEIGHT+10.0);
+        assert!(report_body_height(100,768.0,0.0)<=768.0*theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION);
+        let data=vec![json!({"total":null}),json!({"total":20}),json!({"total":10})];
+        assert_eq!(sorted_indices(&data,Some(Sort{column:6,direction:Direction::Ascending}),false),vec![2,1,0]);
+        assert_eq!(sorted_indices(&data,Some(Sort{column:6,direction:Direction::Descending}),false),vec![1,2,0]);
+        let data=vec![json!({"paidAt":"2026-11-27T12:00:00+09:00"}),json!({"paidAt":"2026-11-27T04:00:00Z"})];
+        assert_eq!(sorted_indices(&data,Some(Sort{column:0,direction:Direction::Ascending}),true),vec![0,1]);
+    }
     #[test]
     fn settlement_dates_and_sort_are_presentation_only(){
         assert!(valid_date("2026-11-20"));
@@ -666,6 +671,7 @@ impl DailySettlementManager {
                 json!({"date":date,"orderRows":orders,"paymentRows":payments,"warnings":(0..count).map(|i|format!("합성 확인 사항 {i}")).collect::<Vec<_>>(),
                     "billedKnown":total,"paidCash":count as i64*100000,"billedUnknown":0,"productKnown":count as i64*100000,
                     "shippingKnown":count as i64*3000,"vatKnown":count as i64*10300,"postpaidKnown":0,
+                    "billedProductKnown":count as i64*100000,"billedShippingKnown":count as i64*3000,"billedVatKnown":count as i64*10300,
                     "outstandingKnown":count as i64*13300,"actualFreightKnown":count as i64*3000,
                     "outstandingUnknown":0,"freightUnknown":0,"allocatedCash":count as i64*95000,"unallocatedCash":count as i64*5000})
             });

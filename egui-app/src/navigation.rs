@@ -624,6 +624,12 @@ pub(crate) fn range_date_picker(
     ui:&mut Ui,all_dates:bool,date:&mut String,month:&mut NaiveDate,
     id:&'static str
 )->bool{
+    range_date_picker_with_notice(ui,all_dates,date,month,id,"history.date")
+}
+pub(crate) fn range_date_picker_with_notice(
+    ui:&mut Ui,all_dates:bool,date:&mut String,month:&mut NaiveDate,
+    id:&'static str,notice:&'static str
+)->bool{
     const PREV:f32=theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
     const NEXT:f32=theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
     const CALENDAR:f32=theme::MANAGEMENT_DATE_CALENDAR_BUTTON_WIDTH;
@@ -637,7 +643,7 @@ pub(crate) fn range_date_picker(
             )
                 ;
             if prev.clicked(){
-                crate::floating_notice::action_rect(row.ctx(),"history.date",prev.rect);
+                crate::floating_notice::action_rect(row.ctx(),notice,prev.rect);
                 *date=range_move_date(date,-1);
                 changed=true;
             }
@@ -646,7 +652,7 @@ pub(crate) fn range_date_picker(
                 if all_dates{"전체"}else{"YYYY-MM-DD"}
             );
             crate::floating_notice::sized_text_caret(
-                row,"history.date",&edit,date,
+                row,notice,&edit,date,
                 typography::data_value_font(
                     typography::DataValueKind::Date,
                     typography::DataValueContext::Form
@@ -660,7 +666,7 @@ pub(crate) fn range_date_picker(
                 ;
             debug_assert!((prev.rect.width()-next.rect.width()).abs()<0.01);
             if next.clicked(){
-                crate::floating_notice::action_rect(row.ctx(),"history.date",next.rect);
+                crate::floating_notice::action_rect(row.ctx(),notice,next.rect);
                 *date=range_move_date(date,1);
                 changed=true;
             }
@@ -677,7 +683,7 @@ pub(crate) fn range_date_picker(
             if let Some(day)=crate::navigation::date_calendar(
                 &trigger,month,date,id
             ){
-                crate::floating_notice::action_rect(row.ctx(),"history.date",trigger.rect);
+                crate::floating_notice::action_rect(row.ctx(),notice,trigger.rect);
                 *date=day.format("%Y-%m-%d").to_string();
                 changed=true;
             }

@@ -383,7 +383,7 @@ mod management_async_layout_contract_tests {
         assert!(!rendered.contains("management_list_strip_frame().show(panel,|empty|"));
         let settlement=include_str!("daily_settlement_manager.rs");
         assert!(settlement.contains("let values=["));
-        assert!(settlement.contains("for (name,value) in ["));
+        assert!(settlement.contains("for (index,(name,value)) in ["));
         let model_groups=include_str!("model_group_manager.rs");
         assert!(!model_groups.contains("if self.dirty(){\n                                crate::ui_primitives::soft_divider(right);"));
         let aliases=include_str!("alias_manager.rs");
@@ -446,6 +446,11 @@ mod management_async_behavior_regression_tests {
         assert!(settlement.contains(".auto_shrink([false,false])"));
         assert!(!settlement.contains("변경한 결산 날짜를 조회하고 있습니다."));
         assert!(!settlement.contains("결산 자료 확인 중"));
+        assert!(settlement.contains("align_management_primary_card(ui,page_origin_y)"));
+        assert!(settlement.contains("report_body_height(indices.len()"));
+        assert!(settlement.contains("range_date_picker_with_notice("));
+        assert!(!settlement.contains("fixed_result_viewport(review"));
+        assert!(settlement.contains("if !valid_date(date_input){"));
 
         let model_groups=include_str!("model_group_manager.rs");
         assert!(model_groups.contains("writable&&!busy&&self.dirty()"));
