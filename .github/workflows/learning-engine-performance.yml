@@ -52,6 +52,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml learning_two_database_disk_replay_uses_real_snapshot_and_audit_paths -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml blend_registry_stores_immutable_revisions_and_separate_selection -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml governance_never_promotes_on_missing_coverage_or_normal_case_regression -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: First analysis and correction regressions
         run: |
           cargo test --manifest-path egui-app/Cargo.toml recognition::observations::tests -- --nocapture
