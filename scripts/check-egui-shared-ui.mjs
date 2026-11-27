@@ -489,40 +489,8 @@ function contextLockSelfTest(){
 // Match file, enclosing function, receiver, complete arguments and count.
 // Neither a whole screen nor a whole component module is exempt.
 const heightWriteAllowances=new Map([
-  ["card/mod.rs:apply_height_policy:ui.set_min_height(height)",1],
-  ["card/mod.rs:reception_section_with_header:header.set_min_height(theme::SECTION_HEADER_HEIGHT)",1],
-  ["card/mod.rs:reception_document_viewport:canvas.set_height(inner.height())",1],
-  ["main.rs:show_ocr_review:viewport.set_height(image_scroll_rect.height())",1],
-  ["main.rs:show_ocr_review:editor.set_height(text_view_rect.height())",1],
-  ["main.rs:reception:pane.set_height(rect.height())",1],
-  ["main.rs:source_and_message:child.set_height(source_rect.height())",1],
-  ["main.rs:source_and_message:child.set_height(message_rect.height())",1],
-  ["main.rs:details_and_freight:pane.set_height(review_rect.height())",3],
-  ["main.rs:details_and_freight:pane.set_height(recipient_rect.height())",3],
-  ["main.rs:details_and_freight:pane.set_height(bottom_rect.height())",3],
-  ["main.rs:details_and_freight:pane.set_height(summary_rect.height())",3],
-  ["main.rs:other_page:pane.set_height(left.height())",1],
-  ["main.rs:other_page:main.set_height(right.height())",1],
-  ["manual_workspace.rs:show:status.set_min_height(theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT)",1],
-  ["manual_workspace.rs:show:panel.set_min_height(height.max(0.0))",1],
-  ["excel_manager.rs:show_page:dates.set_height(dates_rect.height())",1],
-  ["freight_manager.rs:show_groups:tools.set_height(left_rect.height())",1],
-  ["freight_manager.rs:show_groups:bulk.set_height(right_controls_rect.height())",1],
-  ["freight_manager.rs:rate_toolbar:tools.set_height(toolbar_rect.height())",1],
-  ["freight_manager.rs:show_rates:buttons.set_height(rect.height())",1],
-  ["order_history_manager.rs:history_date_controls:line.set_height(first.height())",1],
-  ["order_history_manager.rs:history_date_controls:line.set_height(second.height())",1],
-  ["order_history_manager.rs:show_page:search.set_height(search_rect.height())",1],
-  ["order_history_manager.rs:show_page:dates.set_height(date_rect.height())",1],
-  ["product_manager.rs:show_catalog_surface:actions.set_height(actions_rect.height())",1],
-  ["navigation.rs:reception_recipient_navigator:segments.set_height(inner.height())",1],
-  ["ui_primitives.rs:date_navigation_segmented_surface_with_state:segments.set_height(inner.height())",1],
-  ["ui_layout.rs:fixed_result_viewport:pane.set_min_height(height)",1],
-  ["ui_layout.rs:reception_goods_viewport:child.set_height(rect.height())",1],
-  ["ui_layout.rs:reception_section_scroll:child.set_height(rect.height())",1],
-  ["ui_layout.rs:management_toolbar_slot:slot.set_height(rect.height())",1],
-  ["table/mod.rs:variable_rows_snapshot:body.set_min_height(*offsets.last().unwrap_or(&0.0))",1],
-  ["table/mod.rs:virtual_fixed_rows:body.set_min_height(row_height*total_rowsasf32)",1],
+  ["ui_layout/geometry.rs:set_fixed_height:ui.set_height(aligned_extent(height))",1],
+  ["ui_layout/geometry.rs:reserve_min_height:ui.set_min_height(aligned_extent(height))",1],
 ]);
 export function auditCardHeights(source,file){
   const tokens=productionTokens(source),v=tokens.map(t=>t.v),hits=[],used=new Map();
@@ -563,18 +531,17 @@ function cardHeightSelfTest(){
   assert.equal(check("fn render(){scroll_area(axes).max_height(h);ui.allocate_exact_size(size,sense);}"),0);
   assert.equal(check('fn render(){/* ui.set_height(h); */ let s="ui.set_min_height(h)";}'),0);
   assert.equal(check("#[cfg(test)] mod tests{fn test(){ui.set_height(h);}} fn render(){}"),0);
-  const allowed="fn apply_height_policy(){ui.set_min_height(height);}";
-  assert.equal(check(allowed,"card/mod.rs"),0);
-  assert.equal(check(allowed.replace("height);","height+1.0);"),"card/mod.rs"),1);
-  assert.equal(check(allowed.replace("ui.set_min_height(height);","ui.set_min_height(height);ui.set_min_height(height);"),"card/mod.rs"),1);
+  const allowed="fn reserve_min_height(){ui.set_min_height(aligned_extent(height));}";
+  const owner="ui_layout/geometry.rs";
+  assert.equal(check(allowed,owner),0);
+  assert.equal(check(allowed.replace("aligned_extent(height)","height"),owner),1);
+  assert.equal(check(allowed.replace("ui.set_min_height(aligned_extent(height));","ui.set_min_height(aligned_extent(height));ui.set_min_height(aligned_extent(height));"),owner),1);
   assert.equal(check(allowed,"new_screen.rs"),1);
-  assert.equal(check("fn other(){ui.set_min_height(height);}","card/mod.rs"),1);
+  assert.equal(check("fn other(){ui.set_min_height(height);}",owner),1);
   const viewport="fn details_and_freight(){pane.set_height(review_rect.height());}";
-  assert.equal(check(viewport,"main.rs"),0);
-  assert.equal(check(viewport.replace("pane.","card."),"main.rs"),1);
-  assert.equal(check(viewport.replace("review_rect","arbitrary_rect"),"main.rs"),1);
-  assert.equal(check("fn details_and_freight(){"+ "pane.set_height(review_rect.height());".repeat(4)+"}","main.rs"),1);
-  assert.equal(check("fn virtual_fixed_rows(){body.set_min_height(row_height*total_rows as f32);}","table/mod.rs"),0);
+  assert.equal(check(viewport,"main.rs"),1);
+  assert.equal(check("fn details_and_freight(){pane.set_height(review_rect.height());pane.set_height(review_rect.height());}","main.rs"),2);
+  assert.equal(check("fn virtual_fixed_rows(){body.set_min_height(row_height*total_rows as f32);}","table/mod.rs"),1);
   console.log("EGUI_CARD_HEIGHT_SELFTEST_PASS",19);
 }
 
@@ -597,7 +564,9 @@ const indirectHeightAllowances=new Map([
   ["item_editor.rs:detail_information:ui.add_space((height-used-theme::ACTION_STANDARD_HEIGHT-theme::SPACE_8).max(theme::SPACE_8))",1],
   ["item_editor.rs:show:line.add_space(ITEM_DETAIL_PANEL_GAP)",1],
   ["manual_workspace.rs:show:sheet.add_space(crate::ui_layout::RECEPTION_STACKED_CARD_GAP)",1],
-  ["card/mod.rs:apply_height_policy:ui.expand_to_include_y(used.top()+height)",1],
+  ["card/mod.rs:apply_height_policy:ui.expand_to_include_y(target.bottom())",1],
+  ["ui_layout/geometry.rs:reserve_min_size:ui.set_min_size(aligned_allocation_size(size))",1],
+  ["ui_layout/geometry.rs:shared_allocate_space:self.allocate_space(aligned_allocation_size(size))",1],
   ["card/mod.rs:parallel_frames:ui.advance_cursor_after_rect(bounds)",1],
   ["card/mod.rs:management_summary_card_with_role_and_state:cell.add_space(theme::FREIGHT_SUMMARY_TEXT_GAP)",1],
   ["card/mod.rs:align_management_primary_card:ui.add_space(remaining)",1],
@@ -720,9 +689,9 @@ function indirectCardHeightSelfTest(){
 // Reviewed width writes: card policy owner and existing non-card geometry.
 // Exact file/function/receiver/argument/count, not whole-screen exemptions.
 const widthWriteAllowances=new Map([
-  ["ui_primitives.rs:apply_width_policy:ui.set_min_width(width)",1],
-  ["ui_primitives.rs:apply_width_policy:ui.set_width(width)",2],
-  ["ui_primitives.rs:apply_width_policy:ui.set_max_width(width)",2],
+  ["ui_layout/geometry.rs:apply_width_policy:ui.set_min_width(width)",1],
+  ["ui_layout/geometry.rs:apply_width_policy:ui.set_width(width)",1],
+  ["ui_layout/geometry.rs:apply_width_policy:ui.set_max_width(width)",1],
 ]);
 export function auditCardWidths(source,file){
   const tokens=productionTokens(source),v=tokens.map(t=>t.v),hits=[],used=new Map();
@@ -767,9 +736,9 @@ function cardWidthSelfTest(){
   ];
   for(const [source,expected] of cases)assert.equal(check(source),expected,source);
   const owner="fn apply_width_policy(){ui.set_min_width(width);ui.set_width(width);ui.set_max_width(width);}";
-  assert.equal(check(owner,"ui_primitives.rs"),0);
+  assert.equal(check(owner,"ui_layout/geometry.rs"),0);
   assert.equal(check(owner,"new_screen.rs"),3);
-  assert.equal(check(owner.replace("ui.set_min_width(width)","ui.set_min_width(width+1.0)"),"ui_primitives.rs"),1);
+  assert.equal(check(owner.replace("ui.set_min_width(width)","ui.set_min_width(width+1.0)"),"ui_layout/geometry.rs"),1);
   assert.equal(check("fn other(){ui.set_width(width);}","card/mod.rs"),1);
   const viewport="fn details_and_freight(){pane.set_width(review_rect.width());}";
   assert.equal(check(viewport,"main.rs"),1);
@@ -1250,6 +1219,7 @@ function selfTest(){
 // orchestration or the business database. Same-layer references are allowed
 // only when acyclic. Presentation-only adapters are explicit graph members.
 const dependencyLayers=[
+  ["ui_geometry"],
   ["ui_tokens","launch_profile","display_format","user_error","overlay","cell_navigation","highlight_native"],
   ["theme","view_state","window_state","highlight"],
   ["typography","scrollbar","layout"],
@@ -1266,6 +1236,7 @@ const dependencyOwners=new Set(dependencyRank.keys());
 // #[path] gives this adapter a separate crate-level identity.
 function dependencyOwner(file){
   if(file==="highlight/native.rs")return "highlight_native";
+  if(file==="ui_layout/geometry.rs")return "ui_geometry";
   return file.includes("/")?file.split("/")[0]:file.replace(/\.rs$/,"");
 }
 function sharedDependencies(source,owner,includeExternal=false){
@@ -1276,6 +1247,17 @@ function sharedDependencies(source,owner,includeExternal=false){
       out.add(name);
   };
   for(let i=0;i<v.length;i++){
+    // The geometry submodule has independent ownership and does not
+    // depend on the screen composition facade that re-exports it.
+    if(v[i]==="crate"&&v[i+1]==="::"&&v[i+2]==="ui_layout"&&v[i+3]==="::"&&v[i+4]==="geometry"){
+      add("ui_geometry");i+=4;continue;
+    }
+    if(v[i]==="ui_layout"&&v[i+1]==="::"&&v[i+2]==="geometry"){
+      add("ui_geometry");i+=2;continue;
+    }
+    if(owner==="ui_layout"&&v[i]==="geometry"&&v[i+1]==="::"){
+      add("ui_geometry");continue;
+    }
     // Qualified references plus imported aliases: the original crate
     // root is recorded at its import, even when the alias is used later.
     if(v[i]==="crate"&&v[i+1]==="::"&&v[i+2]!=="{")add(v[i+2],true);
@@ -1305,6 +1287,11 @@ function dependencyBoundaryViolations(owner,deps){
 }
 function dependencyBoundarySelfTest(){
   assert.equal(dependencyOwner("highlight/native.rs"),"highlight_native");
+  assert.equal(dependencyOwner("ui_layout/geometry.rs"),"ui_geometry");
+  assert.deepEqual([...sharedDependencies("use crate::ui_layout::geometry::SharedAllocationExt;","card",true)],["ui_geometry"]);
+  assert.deepEqual([...sharedDependencies("pub(crate) use geometry::{aligned_rect};","ui_layout",true)],["ui_geometry"]);
+  assert.equal(dependencyBoundaryViolations("card",new Set(["ui_geometry"])).length,0);
+  assert.equal(dependencyBoundaryViolations("ui_geometry",new Set(["card"])).length,1);
   assert.equal(dependencyOwner("highlight/mod.rs"),"highlight");
   assert.equal(dependencyOwner("table/mod.rs"),"table");
   assert.equal(dependencyCycles(new Map([
