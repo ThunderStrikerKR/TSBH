@@ -419,6 +419,10 @@ pub fn workflow_dealer_galley(
     ))
 }
 
+pub(crate) fn input_placeholder_ink(text:&str,ink:Color32)->RichText{
+    RichText::new(text).color(ink)
+}
+
 pub fn body(text: &str) -> RichText { render(text, Role::Body) }
 
 /// Retain body typography while resolving the independently supplied state.

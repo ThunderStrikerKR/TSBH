@@ -236,7 +236,7 @@ impl ModelGroupManager {
                         |i|visible[i].0==selected_id,|row,cells,i,rect|{
                             let (id,g)=visible[i];
                             let selected=self.selected==*id;
-                            let response=row.interact(rect,row.make_persistent_id(id),if busy||self.editor_open{Sense::hover()}else{Sense::click()});
+                            let response=crate::table::registry_row_hit(row,rect,row.make_persistent_id(id),!busy&&!self.editor_open);
                             if response.hovered()&&!selected&&!busy{
                                 crate::table::paint_management_interactive_row_background(row.painter(),rect,i,true);
                             }

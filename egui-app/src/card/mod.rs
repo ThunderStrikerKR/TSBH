@@ -539,7 +539,7 @@ pub(crate) fn workflow_group_card<R>(
     let response=frame.show(ui,|card|{
         // The 42pt upper/lower bands and 1pt divider own all vertical
         // spacing. No additional automatic gap between the compact rows.
-        crate::ui_layout::apply_spacing_role(card,crate::ui_layout::SpacingRole::ExplicitVertical);
+        crate::ui_primitives::apply_explicit_vertical_spacing(card);
         let width=crate::card::inner_width_for_insets(outer,0.0,0.0,theme::SOFT_DIVIDER_WIDTH,0.0,0.0);
         crate::ui_primitives::apply_width_policy(card,crate::ui_primitives::CardWidthPolicy::FillAvailable,width);
         body(card)

@@ -2,6 +2,13 @@
 use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Stroke,Ui,UiBuilder,Vec2};
 
 use crate::{theme,typography};
+
+/// The lowest-level explicit vertical gap rule, also used by card layout.
+pub(crate) fn apply_explicit_vertical_spacing(ui:&mut Ui){
+    ui.spacing_mut().item_spacing.y=0.0;
+}
+
+
  
 /// Shared state caption for content-sized lists and menus with no reserved body.
 /// Fixed viewports use management_body_state_overlay instead.

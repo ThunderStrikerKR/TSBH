@@ -201,7 +201,7 @@ impl BrandManager {
                     let id=field(brand,"id");
                     let enabled=!busy&&!self.editor_open;
                     let selected=self.form.editing.as_deref()==Some(id);
-                    let hit=row.interact(rect,row.make_persistent_id(id),if enabled{Sense::click()}else{Sense::hover()});
+                    let hit=crate::table::registry_row_hit(row,rect,row.make_persistent_id(id),enabled);
                     if hit.hovered()&&!selected&&enabled{
                         crate::table::paint_management_interactive_row_background(row.painter(),rect,i,true);
                     }

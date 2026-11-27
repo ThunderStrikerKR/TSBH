@@ -49,7 +49,7 @@ pub(crate) fn removable_tag_chip(ui:&mut Ui,tag:&str)->Response{
         egui::pos2(inner.right()-icon*0.5,rect.center().y),Vec2::splat(icon));
     let response=crate::button::remove_at_response(
         ui,icon_rect,ui.make_persistent_id(("tag-remove",tag)),true);
-    let response=response.on_hover_text("태그 삭제");
+    let response=crate::ui_primitives::overflow_tooltip(response,true,"태그 삭제");
     #[cfg(test)]
     {
         crate::ui_test_support::record("tag chip",rect);

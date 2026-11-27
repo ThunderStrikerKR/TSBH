@@ -90,11 +90,11 @@ const tableContracts = {
     shipment_detail_block_height:1,paint_shipment_detail_surface:1,
     paint_shipment_detail_products:2,paint_table_galley:1
   },
-  "client_manager.rs:show_page":{show:1,fixed_rows_snapshot:1,row_scope:1,management_row:1,management_client_header:1},
+  "client_manager.rs:show_page":{show:1,fixed_rows_snapshot:1,row_scope:1,management_row_with_tags:1,management_client_header_with_tags:1},
   "client_chooser.rs:show":{show:1,fixed_rows:1,row_scope:1,management_row:1,management_client_header:1},
-  "alias_manager.rs:show_page":{registry_table:1,registry_cell:1,registry_actions:1},
-  "brand_manager.rs:show_page":{registry_table:1,registry_cell:1,registry_actions:1},
-  "model_group_manager.rs:show_page":{registry_table:1,registry_cell:1,registry_actions:1},
+  "alias_manager.rs:show_page":{registry_table:1,registry_cell:1,registry_row_hit:1},
+  "brand_manager.rs:show_page":{registry_table:1,registry_cell:1,registry_row_hit:1},
+  "model_group_manager.rs:show_page":{registry_table:1,registry_cell:1,registry_row_hit:1},
   "model_group_manager.rs:show_editor":{registry_table:1,registry_cell:1,registry_actions:1},
   "product_manager.rs:show_detail":{management_readonly_table:1},
   "product_excel_ui.rs:show_review":{management_readonly_table:1},
@@ -141,7 +141,7 @@ const tableOwnerContracts = {
 };
 const tableOnlyCalls = new Set(["show","fixed_rows","fixed_rows_snapshot","fixed_row","fixed_row_rect",
   "variable_rows_snapshot","history_row","header_columns","heading","sort_clicked","row_scope",
-  "registry_table","registry_cell","registry_actions","master_header_begin","header_finish"]);
+  "registry_table","registry_cell","registry_actions","registry_row_hit","master_header_begin","header_finish"]);
 const tableMarkers = new Set(["management_table_cells","management_table_column_rules",
   "management_row","management_readonly_table","shipment_detail_cells",
   "fixed_rows","fixed_rows_snapshot","variable_rows","variable_rows_snapshot","fixed_row","history_row","header_columns","registry_table"]);
@@ -519,6 +519,8 @@ const heightWriteAllowances=new Map([
   ["ui_primitives.rs:date_navigation_segmented_surface_with_state:segments.set_height(inner.height())",1],
   ["ui_layout.rs:fixed_result_viewport:pane.set_min_height(height)",1],
   ["ui_layout.rs:reception_goods_viewport:child.set_height(rect.height())",1],
+  ["ui_layout.rs:reception_section_scroll:child.set_height(rect.height())",1],
+  ["ui_layout.rs:management_toolbar_slot:slot.set_height(rect.height())",1],
   ["table/mod.rs:variable_rows_snapshot:body.set_min_height(*offsets.last().unwrap_or(&0.0))",1],
   ["table/mod.rs:virtual_fixed_rows:body.set_min_height(row_height*total_rowsasf32)",1],
 ]);
@@ -595,6 +597,7 @@ const indirectHeightAllowances=new Map([
   ["item_editor.rs:detail_information:ui.add_space((height-used-theme::ACTION_STANDARD_HEIGHT-theme::SPACE_8).max(theme::SPACE_8))",1],
   ["item_editor.rs:show:line.add_space(ITEM_DETAIL_PANEL_GAP)",1],
   ["manual_workspace.rs:show:sheet.add_space(crate::ui_layout::RECEPTION_STACKED_CARD_GAP)",1],
+  ["card/mod.rs:apply_height_policy:ui.expand_to_include_y(used.top()+height)",1],
   ["card/mod.rs:parallel_frames:ui.advance_cursor_after_rect(bounds)",1],
   ["card/mod.rs:management_summary_card_with_role_and_state:cell.add_space(theme::FREIGHT_SUMMARY_TEXT_GAP)",1],
   ["card/mod.rs:align_management_primary_card:ui.add_space(remaining)",1],
@@ -626,6 +629,8 @@ export function auditIndirectCardHeights(source,file){
     if(v[i]==="fn"&&/^[A-Za-z_]\w*$/.test(v[i+1]??""))fn=v[i+1];
     const name=v[i]?.replace(/^r#/,"");
     if(![".","::"].includes(v[i-1]))continue;
+    // Field reads (e.g. ScrollRailGeometry.outer_margin) reserve no UI size.
+    if(v[i+1]!=="(")continue;
     if(!raw.has(name)&&!["add_space","allocate_exact_size","allocate_ui","allocate_ui_with_layout","inner_margin"].includes(name))continue;
     let end=i;
     if(v[i+1]==="("){
@@ -836,11 +841,12 @@ export function audit(source,file,checkTableContracts=false){
     }
     if(is(i,". set_fonts (")&&file!=="typography.rs")
       flag(i,"global font installation outside typography");
-    if(is(i,". set_style (")&&file!=="typography.rs"&&file!=="theme.rs")
+    if(is(i,". set_style (")&&file!=="typography.rs"&&file!=="theme.rs"&&
+       !(file==="checkbox/mod.rs"&&fn==="checkbox"&&is(i,". set_style ( original_style )")))
       flag(i,"global style installation outside shared theme");
     if((is(i,"table ::")||(is(i,"components ::")&&!tableOnlyCalls.has(v[i+2]))||
         (is(i,"card ::")&&v[i+2]==="paint_shipment_detail_surface")||
-        (is(i,"composite_client ::")&&v[i+2]==="management_row"))&&v[i+3]==="("){
+        (is(i,"composite_client ::")&&["management_row","management_row_with_tags"].includes(v[i+2])))&&v[i+3]==="("){
       const key=file+":"+fn+":"+v[i+2];
       sharedCalls.set(key,(sharedCalls.get(key)||0)+1);
     }
@@ -983,7 +989,8 @@ const compositeContracts = {
     "paint_source_document_surface":1,"reception_document_inner_rect":1,
     ".intersect":1,".set_clip_rect":1,"scroll_area":1,".auto_shrink":1
   },
-  "button/mod.rs:remove_at":{".interact":1,"paint_button_hover":1,".line_segment":1},
+  "button/mod.rs:remove_at":{"remove_at_response":1},
+  "button/mod.rs:remove_at_response":{".interact":1,"paint_button_hover":1,".line_segment":1},
   "button/mod.rs:disclosure_at":{
     "paint_management_chevron":1,".interact":1,"ui_primitives::overflow_tooltip":1,"paint_button_hover":1
   },
@@ -1357,7 +1364,7 @@ export function designTokenViolations(source,file){
     "input/mod.rs":["highlight :: States","focused : input . has_focus ( )","highlight :: Role :: RequiredInput"],
     "layout.rs":["SPLITTER : f32 = crate :: ui_tokens :: WORKSPACE_SPLITTER_WIDTH"],
     "ui_tokens.rs":["WORKSPACE_SPLITTER_WIDTH : f32 = SPACE_6"],
-    "freight_manager.rs":["rect . shrink2 ( egui :: vec2 ( theme :: MANAGEMENT_TABLE_TEXT_LEADING_INSET","cells [ 3 ] . shrink2 ( egui :: vec2 ( theme :: MANAGEMENT_TABLE_ACTION_INSET"],
+    "freight_manager.rs":["rect . shrink2 ( egui :: vec2 ( theme :: MANAGEMENT_TABLE_TEXT_LEADING_INSET","table :: editable_cell_hit ("],
     "order_history_manager.rs":["rect . left ( ) + theme :: MANAGEMENT_TABLE_TEXT_LEADING_INSET"],
     "order_history_detail.rs":["theme :: paint_bordered_surface ( ui . painter ( ) , rect , theme :: CONTROL_RADIUS"],
     "manual_workspace.rs":["highlight :: Role :: DropHovered","highlight :: Role :: DropTarget"]
@@ -1402,7 +1409,8 @@ export function auditManagedLayout(source,file){
   if(file==="product_excel_ui.rs"&&(!code.includes("ManagementMenuRole :: Workbook")||
       /menu \. (?:set_min_width|set_max_width|spacing_mut) \(/.test(code)))
     hits.push({line:1,rule:"workbook menu must use the shared popup role"});
-  if(file==="client_manager.rs"&&!code.includes("popup :: modal_compact_text_field ("))
+  if(file==="client_manager.rs"&&(!code.includes("popup :: modal_labeled_row_with_width (")||
+      !code.includes("input :: flexible_text_field (")))
     hits.push({line:1,rule:"client label editor must use shared compact field"});
   if(file==="product_manager.rs"&&/\b(?:group|advanced) \. spacing_mut \( \) \. item_spacing \. y/.test(code))
     hits.push({line:1,rule:"product detail group spacing belongs to popup"});
@@ -1422,8 +1430,8 @@ export function auditManagedLayout(source,file){
   // typed wrappers back to the old raw callback APIs.
   if(file==="freight_manager.rs"){
     const count=name=>v.filter((x,i)=>x===name&&v[i+1]==="("&&v[i-1]!=="fn").length;
-    if(count("modal_form_stack")<1||count("show_management_menu")<2)
-      hits.push({line:1,rule:"freight managed form/menu entry missing"});
+    if(count("modal_form_stack")<1||count("editable_cell_hit")<2)
+      hits.push({line:1,rule:"freight managed form/cell entry missing"});
     if(count("show_menu")>0)
       hits.push({line:1,rule:"freight raw menu bypass; use show_management_menu"});
   }

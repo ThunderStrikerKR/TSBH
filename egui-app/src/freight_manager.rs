@@ -2087,9 +2087,9 @@ impl FreightManager {
                                     if names.is_empty(){None}else{Some(&full)}
                                 );
                                 if editor.is_none()&&!*create_group_open{
-                                    let hit=row.interact(row_rect.intersect(row.clip_rect()),
-                                        row.make_persistent_id(("freight-group-detail",id)),egui::Sense::click())
-                                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                    let hit=crate::table::editable_cell_hit(row,row_rect.intersect(row.clip_rect()),
+                                        row.make_persistent_id(("freight-group-detail",id)),true,
+                                        egui::CursorIcon::PointingHand,false,"");
                                     if hit.clicked(){
                                         match group_rules.get(id).filter(|rule|rule.is_object()){
                                             Some(rule)=>*editor=Some(RateEditor::new(id,text(group,"name"),rule)),
@@ -2365,9 +2365,9 @@ impl FreightManager {
                     );
                     if exception.is_none(){
                         let rect=cells.iter().copied().reduce(|a,b|a.union(b)).unwrap_or(egui::Rect::NOTHING);
-                        let hit=row.interact(rect.intersect(row.clip_rect()),
-                            row.make_persistent_id(("freight-history-detail",id)),egui::Sense::click())
-                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        let hit=crate::table::editable_cell_hit(row,rect.intersect(row.clip_rect()),
+                            row.make_persistent_id(("freight-history-detail",id)),true,
+                            egui::CursorIcon::PointingHand,false,"");
                         if hit.clicked(){
                             *exception=Some((id.to_owned(),record["charge"].as_i64()
                                 .map(|n|n.to_string()).unwrap_or_default()));

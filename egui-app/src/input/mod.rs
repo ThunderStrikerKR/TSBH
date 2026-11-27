@@ -11,7 +11,7 @@ pub(crate) const INPUT_PLACEHOLDER_COLOR:egui::Color32=
     theme::text_ink(theme::TextRole::Value,theme::TextState::Placeholder);
 
 fn input_placeholder(text:&str)->egui::RichText{
-    egui::RichText::new(text).color(INPUT_PLACEHOLDER_COLOR)
+    typography::input_placeholder_ink(text,INPUT_PLACEHOLDER_COLOR)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

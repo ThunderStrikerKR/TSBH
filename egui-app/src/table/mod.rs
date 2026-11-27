@@ -31,6 +31,15 @@ pub(crate) fn editable_cell_hit(
     if editable{response.on_hover_cursor(cursor)}else{response}
 }
 
+/// Registry row selection uses one actual hit rectangle and the table's
+/// existing hover/selected surface; no extra geometry or layout allocation.
+pub(crate) fn registry_row_hit(ui:&Ui,rect:Rect,id:egui::Id,enabled:bool)->egui::Response{
+    let response=ui.interact(rect,id,if enabled{Sense::click()}else{Sense::hover()});
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("registry row",response.rect,ui.clip_rect());
+    response
+}
+
 fn header_begin(ui:&Ui,header:Rect,content:Rect)->Rect{
     let text=Rect::from_min_max(content.min,egui::pos2(
         content.right(),content.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT

@@ -17,6 +17,10 @@ pub(crate) enum SpacingRole{
     ExplicitVertical,ExplicitHorizontal,DocumentBody,WorkflowDetail,TagChips,KakaoIconMode,
 }
 pub(crate) fn apply_spacing_role(ui:&mut Ui,role:SpacingRole){
+    if matches!(role,SpacingRole::ExplicitVertical|SpacingRole::DocumentBody){
+        crate::ui_primitives::apply_explicit_vertical_spacing(ui);
+        return;
+    }
     let spacing=ui.spacing_mut();
     match role{
         SpacingRole::Toolbar=>spacing.item_spacing.x=theme::SPACE_8,
@@ -31,7 +35,7 @@ pub(crate) fn apply_spacing_role(ui:&mut Ui,role:SpacingRole){
         SpacingRole::ReportMetrics=>spacing.item_spacing=Vec2::new(theme::SPACE_12,theme::SPACE_8),
         SpacingRole::ReportMetricPair=>spacing.item_spacing.x=theme::SPACE_4,
         SpacingRole::CompactChooser=>spacing.item_spacing.y=theme::SPACE_4,
-        SpacingRole::ExplicitVertical|SpacingRole::DocumentBody=>spacing.item_spacing.y=0.0,
+        SpacingRole::ExplicitVertical|SpacingRole::DocumentBody=>unreachable!(),
         SpacingRole::ExplicitHorizontal=>spacing.item_spacing.x=0.0,
         SpacingRole::KakaoIconMode=>spacing.item_spacing.x=theme::KAKAO_ICON_MODE_GAP,
         SpacingRole::WorkflowDetail=>spacing.item_spacing.y=theme::SPACING,
