@@ -83,7 +83,7 @@ pub(super) fn project(payload:&Value)->Result<Value,String>{
         let review=requires_review(state,record);
         let label=if !review{"반영 완료"}
             else if s(record,"status")=="PARTIAL"{"일부 반영"}
-            else{"직원 확인 필요"};
+            else{"확인 필요"};
         let mut row_data=Vec::new();
         for row in rows(record,"rows"){
             let is_resolved=resolved(state,record,row,true);

@@ -604,7 +604,7 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
             } else { "COMMON_ALIAS" }
         } else { "UNKNOWN" };
     let reason = if alias_conflict { Some("정확한 SKU 후보와 등록된 별칭이 서로 다른 상품을 가리킵니다.".to_owned()) }
-        else if category_mismatch { Some("모델 코드와 상품 종류의 일치 여부를 직원이 확인해야 합니다.".to_owned()) }
+        else if category_mismatch { Some("모델 코드와 상품 종류가 일치하는지 확인하세요.".to_owned()) }
         else if broad || branded_category { Some("상품 종류는 인식했지만 모델명은 확정되지 않았습니다. 실제 상품을 선택하세요.".to_owned()) }
         else if ambiguous { Some("여러 독립 상품 후보가 있습니다. 실제 상품과 색상을 확인하세요.".to_owned()) }
         else if chosen.is_none() { Some("등록된 모델명 또는 별칭과 일치하지 않습니다.".to_owned()) }

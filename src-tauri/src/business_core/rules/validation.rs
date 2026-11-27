@@ -300,7 +300,7 @@ pub(super) fn validate_with_prior_core(state:&Value,before:Option<&Value>,
                     let metadata_only=old_file_only && !flag(current,"fileOnly") &&
                         current_delivered && metadata_view==*old &&
                         rows(field(w,"events")).iter().any(|e|
-                            str_field(e,"action")=="공장 전달 직원 확인" &&
+                            super::terminology::canonical_event_action(str_field(e,"action"))==super::terminology::FACTORY_DELIVERY_CONFIRMED &&
                             rows(field(e,"shipmentIds")).iter()
                                 .any(|sid|sid.as_str()==Some(str_field(old,"shipmentId"))));
                     let reopened=old_file_only && !old_delivered &&

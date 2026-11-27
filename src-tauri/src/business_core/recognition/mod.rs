@@ -154,7 +154,7 @@ fn ts_evidence_reason(raw: &str,e:&Evidence) -> String {
             =>"명시적 수취인 이름",
         ("name","명시적 수취인 이름")=>"명시적 수취인 이름",
         ("name","수취인 필드 경계에서 원문 전체 보존")=>"수취인 필드 경계에서 원문 전체 보존",
-        ("name",_)=>"같은 행의 대안 후보; 직원 확인 필요",
+        ("name",_)=>"같은 행의 대안 후보 / 확인 필요",
         ("phone","연락처 원문 구간")
           |("mobile","연락처 원문 구간")=>{
             if line.starts_with("TEL") || line.starts_with("Tel") {

@@ -990,6 +990,9 @@ mod regression {
         assert_eq!(run("validate_workflow",json!({
             "state":after,"before":before
         }))["valid"],true);
+        let mut canonical=after.clone();
+        canonical["workflow"]["events"][0]["action"]=json!("공장 전달 확인");
+        assert_eq!(run("validate_workflow",json!({"state":canonical,"before":before}))["valid"],true);
         let mut forged=after.clone();
         forged["workflow"]["events"]=json!([]);
         assert!(execute("validate_workflow",json!({
