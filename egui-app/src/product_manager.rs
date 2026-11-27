@@ -1380,7 +1380,7 @@ impl ProductManager {
             let headings=[
                 crate::table::ManagementTableColumnLabel::ProductName.text(),
                 "색상/옵션","도매가",
-                "반도매가","소매가",if selecting{"선택"}else{"상세"}];
+                "반도매가","소매가",if selecting{"선택"}else{"판매 상태"}];
             let selection_locked=self.has_pending_prices();
             let selection_ready=selecting && self.next_query.is_none()
                 && !self.result.pending() && self.error.is_none();
@@ -1450,6 +1450,24 @@ impl ProductManager {
                         row_left.get_or_insert(row_rect.left());
                         crate::table::fixed_row(table,("product-table-fixed-row",product_id),row_rect,row_index,&widths,theme::SPACE_8,crate::table::RowTone::Alternating,|row,cells|{
                         let row_clip=row.clip_rect();
+                                // The management row is the detail entry. Selection dialogs and
+                                // existing variant/worksheet editors retain their own controls.
+                                if !selecting&&!saving{
+                                    crate::table::paint_management_interactive_row_background(
+                                        row.painter(),row_rect,row_index,row.rect_contains_pointer(row_rect)
+                                    );
+                                    let has_variant_menu=rows(&product["variants"]).len()>1;
+                                    let has_price_editor=self.price_mode&&!rows(&product["variants"]).is_empty();
+                                    for (column,cell) in cells.iter().enumerate(){
+                                        if (column==1&&has_variant_menu)||(has_price_editor&&matches!(column,2|3|4)){continue;}
+                                        let hit=cell.expand2(Vec2::new(theme::SPACE_8/2.0,0.0))
+                                            .intersect(row_clip).intersect(row_rect);
+                                        if !hit.is_positive(){continue;}
+                                        let response=row.interact(hit,row.make_persistent_id(("product-detail-row",column)),Sense::click())
+                                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                        if response.clicked(){open_detail=Some(product.clone());}
+                                    }
+                                }
                                 let name=field(product,"name");
                                 let subtitle=field(product,"subtitle");
                                 let mut display=if subtitle.is_empty(){name.to_owned()}
@@ -1681,6 +1699,7 @@ impl ProductManager {
                                             typography::ManagementTableCellRole::Money,(product_id,offset+2));
                                     }
                                 }
+                                if selecting{
                                 let action_rect=Rect::from_center_size(
                                     cells[5].center(),Vec2::new(
                                         cells[5].width()-theme::SPACE_8,
@@ -1715,14 +1734,13 @@ impl ProductManager {
                                                     }
                                                 }
                                             }
-                                        }else if crate::button::action(
-                                            actions,"상세 관리",
-                                            theme::ButtonRole::TableSecondary,!saving
-                                        ).clicked(){
-                                            open_detail=Some(product.clone());
                                         }
                                     }
                                 );
+                                }else{
+                                    product_table_text(row,cells[5],displayed_sale_status(product),
+                                        typography::ManagementTableCellRole::Option,(product_id,5));
+                                }
                                 
                             }
                         );
@@ -1970,11 +1988,11 @@ impl ProductManager {
         ui:&mut Ui,draft:&mut Value,
         prices:&mut HashMap<String,String>,editable:bool,busy:bool
     ){
-        crate::popup::modal_labeled_row(ui,"판매 상태",|line|{
+        let price_width=crate::popup::modal_labeled_row(ui,"판매 상태",|line|{
+            let width=(line.available_width()*0.5).max(1.0);
             let current=displayed_sale_status(draft);
             let mut selected=current.to_owned();
             line.add_enabled_ui(editable&&!busy,|input|{
-                let width=input.available_width().max(1.0);
                 crate::dropdown::management_status_dropdown(
                     input,current,width,true,
                     sale_status_color(current),|options|{
@@ -1987,6 +2005,7 @@ impl ProductManager {
                     });
             });
             if selected!=current{set_sale_status(draft,&selected);}
+            width
         });
         let mut navigation=cell_navigation::WorksheetFocus::new(
             ui.make_persistent_id("product-detail-price-cells"),
@@ -1999,21 +2018,11 @@ impl ProductManager {
             crate::popup::modal_labeled_row(ui,label,|line|{
                 let value=prices.entry(tier.to_owned())
                     .or_insert_with(String::new);
-                // Reserve the '원' unit inside the same row rather than
-                // placing it below the price or beyond the modal section.
-                let unit_slot=theme::SPACE_24;
-                let width=(line.available_width()-unit_slot).max(48.0);
-                line.allocate_ui_with_layout(
-                    Vec2::new(width,theme::INPUT_HEIGHT),
-                    Layout::left_to_right(Align::Center),
-                    |input|{
-                        input.add_enabled_ui(editable&&!busy,|editor|{
-                            navigation.before(editor.ctx(),tier,value);
-                            let response=crate::input::money_field(editor,value,true);
-                            navigation.record(tier,response,value);
-                        });
-                    }
-                );
+                // All four controls share the half-width status trigger's
+                // left/right anchors. The currency unit stays outside the input.
+                navigation.before(line.ctx(),tier,value);
+                let response=crate::input::money_field_sized(line,value,price_width,editable&&!busy);
+                navigation.record(tier,response,value);
                 line.label(typography::field_label("원"));
             });
         }
@@ -2959,6 +2968,35 @@ mod tests {
         }
         assert!(!pending.iter().any(|(s,_)|s=="상품 가격표 조회 중"));
         assert!(!empty.iter().any(|(s,_)|s=="상품 변경 저장 중"));
+    }
+    #[test]
+    fn rendered_detail_price_fields_match_half_width_sale_status(){
+        let ctx=crate::ui_test_support::test_context();
+        let work=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,600.0));
+        let mut draft=json!({"active":true,"saleStatus":"판매중"});
+        let mut prices=HashMap::new();
+        for _ in 0..3{
+            crate::ui_test_support::begin_component_geometry();
+            let _=ctx.run(egui::RawInput{screen_rect:Some(work),..Default::default()},|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.scope(|group|{
+                        group.set_width(400.0);
+                        crate::popup::modal_form_row_spacing(group);
+                        ProductManager::detail_price_column(group,&mut draft,&mut prices,true,false);
+                    });
+                });
+            });
+            let trace=crate::ui_test_support::finish_component_geometry(work);
+            let dropdown=trace.iter().find(|sample|sample.role=="dropdown").unwrap().rect;
+            let inputs=trace.iter().filter(|sample|sample.role=="input").collect::<Vec<_>>();
+            assert_eq!(inputs.len(),3);
+            let expected=(400.0-theme::MODAL_FORM_LABEL_WIDTH-theme::SPACE_8)*0.5;
+            assert!((dropdown.width()-expected).abs()<=1.0,"status width: {dropdown:?}");
+            for input in inputs{
+                assert!((input.rect.left()-dropdown.left()).abs()<=1.0);
+                assert!((input.rect.right()-dropdown.right()).abs()<=1.0);
+            }
+        }
     }
     #[test]
     fn rendered_product_detail_measures_real_card_order_and_master_gaps(){
