@@ -465,10 +465,19 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 set(order,"senderSnapshot",sender)?;
                 set(order,"pricesLocked",json!(true))?;
                 set(order,"status",json!("STATEMENT"))?;
+                // Reuse the learning branch's immutable baseline transfer.
+                // Direct/legacy orders can still be confirmed without it.
+                let baseline=order.as_object_mut().ok_or("주문 JSON 형식 오류")?
+                    .remove("recognitionBaseline");
                 let mut data=order.clone();
                 data.as_object_mut().ok_or("주문 JSON 형식 오류")?.remove("confirmationSnapshot");
-                let snapshot=json!({"at":now,"raw":field(order,"raw"),"client":client,
+                let mut snapshot=json!({"at":now,"raw":field(order,"raw"),"client":client,
                     "recipients":field(order,"recipients"),"data":data});
+                if let Some(baseline)=baseline.filter(|v|
+                    v["schemaVersion"]==1 && v["initialAnalysis"]["recipients"].is_array()
+                    && v["initialAnalysis"]["candidates"].is_array()){
+                    snapshot["recognitionBaseline"]=baseline;
+                }
                 set(order,"confirmationSnapshot",snapshot)?;
             }
             if let Some(notice_value)=notices {

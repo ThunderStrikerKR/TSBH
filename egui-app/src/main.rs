@@ -9163,7 +9163,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     prepared.client_id!=target_id{
                     return Err("거래처·상품·운임 기준 또는 계산 결과가 변경되었습니다. 거래처를 다시 선택해 최신 금액을 확인하세요.".into());
                 }
-                let order=prepared.order
+                let mut order=prepared.order
                     .ok_or("확정할 주문 정보를 확인할 수 없습니다.")?;
                 if order.get("id").and_then(serde_json::Value::as_str)
                         !=Some(source.id.as_str()) ||
@@ -9175,6 +9175,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         !=Some(source.order_type.as_str()){
                     return Err("최종 주문 데이터가 현재 미확정 발주서와 일치하지 않습니다.".into());
                 }
+                native_order_change::attach_recognition_baseline(&mut order,&source);
                 let args=serde_json::json!({
                     "groupId":worker_group_id,
                     "draft":order
