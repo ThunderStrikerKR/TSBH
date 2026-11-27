@@ -1326,7 +1326,7 @@ mod shared_popup_rendered_geometry_tests{
 #[test]
 fn shared_name_and_delete_confirmation_callers(){
     let freight=include_str!("../freight_manager.rs");
-    assert_eq!(freight.matches("crate::popup::show_name_confirmation(").count(),2);
+    assert_eq!(freight.matches("crate::popup::show_name_confirmation(").count(),1);
     for (source,expected) in [
         (freight,1),
         (include_str!("../client_manager.rs"),1),
