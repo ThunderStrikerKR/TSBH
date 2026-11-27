@@ -326,3 +326,174 @@ fn card_width_policies_preserve_natural_and_reserved_widths(){
     assert_eq!(fixed_and_remaining_columns(880.0,346.0,12.0,310.0),Some((346.0,522.0)));
     assert_eq!(fixed_and_remaining_columns(667.0,346.0,12.0,310.0),None);
 }
+
+
+
+/// Real frame/widget allocation and paint-shape tests. These are deliberately
+/// named shared_ so the existing targeted CI shared-component suite runs them.
+#[cfg(test)]
+mod shared_card_rendered_geometry_tests {
+    use super::*;
+    use crate::ui_test_support::{
+        assert_card_content_insets,assert_geometry_value,assert_rect_geometry,card_content_insets
+    };
+
+    const TOL:f32=1.0;
+    const PROBE:Color32=Color32::from_rgb(73,147,211);
+
+    fn probe(ui:&mut egui::Ui,width:f32,height:f32)->Rect{
+        let (rect,_)=ui.allocate_exact_size(Vec2::new(width,height),Sense::hover());
+        ui.painter().rect_filled(rect,0.0,PROBE);
+        rect
+    }
+
+    fn collect_fill(shape:&egui::Shape,fill:Color32,clip:Rect,out:&mut Vec<(Rect,Rect)>){
+        match shape{
+            egui::Shape::Rect(r) if r.fill==fill=>out.push((r.rect,clip)),
+            egui::Shape::Vec(shapes)=>for shape in shapes{collect_fill(shape,fill,clip,out);},
+            _=>{}
+        }
+    }
+
+    fn assert_painted(output:&egui::FullOutput,role:&str,fill:Color32,expected:Rect){
+        let mut candidates=Vec::new();
+        for shape in &output.shapes{
+            collect_fill(&shape.shape,fill,shape.clip_rect,&mut candidates);
+        }
+        // egui may represent a frame stroke at a half-point inset.
+        let tolerance=TOL+theme::FRAME_STROKE_WIDTH/2.0;
+        let (paint,clip)=candidates.iter().copied().find(|(r,_)|
+            (r.left()-expected.left()).abs()<=tolerance &&
+            (r.right()-expected.right()).abs()<=tolerance &&
+            (r.top()-expected.top()).abs()<=tolerance &&
+            (r.bottom()-expected.bottom()).abs()<=tolerance
+        ).unwrap_or_else(||panic!("{role}: no painted frame/widget matching {expected:?}; candidates={candidates:?}"));
+        assert_rect_geometry(role,paint,expected,tolerance);
+        assert_rect_geometry(role,paint.intersect(clip),paint,tolerance);
+    }
+
+    #[test]
+    fn natural_section_frame_shrinks_both_axes_and_preserves_four_insets(){
+        let ctx=test_context();
+        let pad=theme::SECTION_PADDING+theme::FRAME_STROKE_WIDTH;
+        let mut previous:Option<Rect>=None;
+        // Same Context and widget position: a smaller frame must not retain
+        // either dimension from the preceding larger frame.
+        for (viewport,w,h) in [(1000.0,260.0,160.0),(640.0,124.0,36.0),(840.0,190.0,84.0)]{
+            let mut geometry=None;
+            let output=ctx.run(egui::RawInput{
+                screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(viewport,700.0))),
+                ..Default::default()
+            },|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.spacing_mut().item_spacing.y=0.0;
+                    let measured=measured_management_section_card(ui,|body|{
+                        apply_width_policy(body,CardWidthPolicy::FitContent,400.0);
+                        let content=probe(body,w,h);
+                        apply_height_policy(body,CardHeightPolicy::FitContent,400.0);
+                        content
+                    });
+                    geometry=Some((measured.response.rect,measured.inner));
+                });
+            });
+            let (card,content)=geometry.expect("natural card geometry");
+            assert_card_content_insets("natural card",card,content,[pad;4],TOL);
+            assert_geometry_value("natural card","width",card.width(),w+2.0*pad,TOL);
+            assert_geometry_value("natural card","height",card.height(),h+2.0*pad,TOL);
+            assert_painted(&output,"natural card border",theme::PANEL,card);
+            assert_painted(&output,"natural card content",PROBE,content);
+            if w==124.0{
+                let old=previous.expect("preceding larger card");
+                assert!(card.width()<old.width()&&card.height()<old.height(),
+                    "card retained previous frame: {old:?} -> {card:?}");
+            }
+            previous=Some(card);
+        }
+    }
+
+    #[test]
+    fn master_card_fill_policy_reserves_only_the_approved_work_area(){
+        let ctx=test_context();
+        let left=theme::SECTION_PADDING+theme::FRAME_STROKE_WIDTH;
+        let bottom=theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING+theme::FRAME_STROKE_WIDTH;
+        for (viewport,budget) in [(920.0,180.0),(640.0,110.0)]{
+            let mut geometry=None;
+            let output=ctx.run(egui::RawInput{
+                screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(viewport,500.0))),
+                ..Default::default()
+            },|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.spacing_mut().item_spacing.y=0.0;
+                    let available=ui.available_width();
+                    let measured=measured_management_master_card(ui,|body|{
+                        fill_management_primary_card(body,budget);
+                        let width=body.available_width();
+                        probe(body,width,40.0)
+                    });
+                    geometry=Some((measured.response.rect,measured.inner,available));
+                });
+            });
+            let (card,content,available)=geometry.expect("master card geometry");
+            assert_card_content_insets("master fill",card,content,
+                [left,left,left,bottom+budget-40.0],TOL);
+            assert_geometry_value("master fill","width",card.width(),available,TOL);
+            assert_geometry_value("master fill","height",card.height(),budget+left+bottom,TOL);
+            assert_painted(&output,"master card border",theme::PANEL,card);
+            assert_painted(&output,"master card content",PROBE,content);
+        }
+    }
+
+    #[test]
+    fn parallel_modal_cards_measure_widths_gap_and_only_intended_height_slack(){
+        let ctx=test_context();
+        let pad=theme::MODAL_SECTION_PADDING+theme::FRAME_STROKE_WIDTH;
+        let gap=theme::MODAL_MASTER_WORKSPACE_GAP;
+        let mut first_height=None;
+        for (viewport,widths,heights,policy) in [
+            (1000.0,[346.0,420.0],[170.0,90.0],CardHeightPolicy::MatchTallest),
+            (780.0,[250.0,330.0],[50.0,70.0],CardHeightPolicy::MatchTallest),
+            (780.0,[250.0,330.0],[50.0,70.0],CardHeightPolicy::FitContent),
+        ]{
+            let mut cards=Vec::new();
+            let mut content=[Rect::NOTHING;2];
+            let mut calls=[0;2];
+            let output=ctx.run(egui::RawInput{
+                screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(viewport,700.0))),
+                ..Default::default()
+            },|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.spacing_mut().item_spacing.y=0.0;
+                    let sections=[("상품 이미지",widths[0]),("상품 개요",widths[1])];
+                    cards=crate::popup::modal_parallel_sections(ui,&sections,policy,|i,body|{
+                        calls[i]+=1;
+                        let width=body.available_width();
+                        content[i]=probe(body,width,heights[i]);
+                    });
+                    let end=cards.iter().map(Rect::bottom).fold(f32::NEG_INFINITY,f32::max);
+                    assert_geometry_value("parallel modal","next content top",ui.cursor().top(),end,TOL);
+                });
+            });
+            assert_eq!(calls,[1,1],"interactive card contents executed twice");
+            assert_eq!(cards.len(),2);
+            let header_inset=card_content_insets(cards[0],content[0])[1];
+            assert!(header_inset>pad,"modal heading/divider must precede the content");
+            assert_geometry_value("parallel modal","top alignment",cards[1].top(),cards[0].top(),TOL);
+            assert_geometry_value("parallel modal","card gap",cards[1].left()-cards[0].right(),gap,TOL);
+            let tallest=heights[0].max(heights[1]);
+            for i in 0..2{
+                let slack=if policy==CardHeightPolicy::MatchTallest{tallest-heights[i]}else{0.0};
+                assert_geometry_value("parallel modal","allocated width",cards[i].width(),widths[i],TOL);
+                assert_card_content_insets("parallel modal",cards[i],content[i],
+                    [pad,header_inset,pad,pad+slack],TOL);
+                assert_painted(&output,"parallel modal border",theme::MODAL_SECTION_BG,cards[i]);
+                assert_painted(&output,"parallel modal content",PROBE,content[i]);
+            }
+            if policy==CardHeightPolicy::MatchTallest{
+                assert_geometry_value("parallel modal","bottom alignment",cards[0].bottom(),cards[1].bottom(),TOL);
+                if let Some(old)=first_height{
+                    assert!(cards[0].height()<old,"matched card retained obsolete height");
+                }else{first_height=Some(cards[0].height());}
+            }
+        }
+    }
+}
