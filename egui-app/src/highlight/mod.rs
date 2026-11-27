@@ -56,6 +56,13 @@ pub(crate) fn paint_fill(painter:&Painter,rect:Rect,radius:impl Into<CornerRadiu
 pub(crate) fn paint_outline(painter:&Painter,rect:Rect,radius:impl Into<CornerRadius>,role:Role){
     paint_parts(painter,rect,radius,None,palette(role).stroke);
 }
+/// Preserve the card's existing status stripe geometry, using the same
+/// semantic border color as the associated selection or linked preview.
+pub(crate) fn paint_stripe(painter:&Painter,rect:Rect,role:Role){
+    if let Some(stroke)=palette(role).stroke{
+        paint_parts(painter,rect,0.0,Some(stroke.color),None);
+    }
+}
 pub(crate) fn button_hover_palette(hovered:bool,focused:bool)->(Option<Color32>,Option<Stroke>){
     (if hovered{palette(Role::Hover).fill}else{None},
         if hovered||focused{palette(Role::Focus).stroke}else{None})
