@@ -451,7 +451,7 @@ pub(crate) fn reception_section_with_header(
         let _header=ui.allocate_ui_with_layout(
             Vec2::new(ui.available_width(),theme::SECTION_HEADER_HEIGHT),
             Layout::left_to_right(Align::Center),|header|{
-                header.set_min_height(theme::SECTION_HEADER_HEIGHT);
+                crate::ui_layout::reserve_min_height(header,theme::SECTION_HEADER_HEIGHT);
                 header.label(typography::section_heading(title));
                 header.with_layout(Layout::right_to_left(Align::Center),header_right);
             }
@@ -522,7 +522,7 @@ pub(crate) fn reception_document_viewport<R>(
     );
     canvas.set_clip_rect(clip);
     canvas.apply_shared_width(CardWidthPolicy::Fixed,inner.width());
-    canvas.set_height(inner.height());
+    crate::ui_layout::set_fixed_height(&mut canvas,inner.height());
     Some(scroll_area(ScrollAxes::Vertical).id_salt(scroll_id)
         .max_height(inner.height()).auto_shrink([false,false])
         .show(&mut canvas,content).inner)
