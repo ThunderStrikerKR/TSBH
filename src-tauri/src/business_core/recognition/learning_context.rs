@@ -42,9 +42,8 @@ fn prefix_role_period(roles:&[&str])->usize{
     }
     roles.len()-prefix[roles.len()-1]
 }
-fn exact_role_period(roles:&[&str])->usize{
-    let p=prefix_role_period(roles);
-    if p==0||roles.len()%p==0{p}else{roles.len()}
+fn exact_role_period(len:usize,prefix:usize)->usize{
+    if prefix==0||len%prefix==0{prefix}else{len}
 }
 fn observed_segment(events:&[Event],ranges:&[(usize,usize)],start:usize,end:usize)->Value{
     let first=ranges[start].0;
@@ -116,7 +115,8 @@ fn document_pattern(events:&[Event],first:&Value)->Value{
         i+=1;
     }
     if normalized.is_empty(){return unavailable("no_structural_roles");}
-    let p=exact_role_period(&normalized);
+    let prefix=prefix_role_period(&normalized);
+    let p=exact_role_period(normalized.len(),prefix);
     let cycle=&normalized[..p];
     // A repeated field alone is not evidence of repeated recipient blocks.
     let recipient_cycle=cycle.contains(&"name")&&
@@ -129,7 +129,6 @@ fn document_pattern(events:&[Event],first:&Value)->Value{
     }else{Vec::new()};
     // Incomplete prefix repetitions remain separate evidence and must
     // never inherit the exact-cycle identity automatically.
-    let prefix=prefix_role_period(&normalized);
     let incomplete=if prefix<normalized.len()&&normalized.len()%prefix!=0&&
         normalized.len()/prefix>=1&&normalized[..prefix].contains(&"name")&&
         (normalized[..prefix].contains(&"contact")||normalized[..prefix].contains(&"address")){
@@ -959,8 +958,10 @@ mod tests{
             {"start":0,"end":2,"text":"xx","kind":"name","line":0,"paragraph":0},
             {"start":1,"end":2,"text":"x","kind":"phone","line":0,"paragraph":0}]}});
         assert_eq!(lookup(&overlap).unwrap()["documentPattern"]["candidateKey"],Value::Null);
-        assert_eq!(exact_role_period(&["name","phone","name","phone"]),2);
-        assert_eq!(exact_role_period(&["name","phone","name"]),3);
+        let roles=["name","phone","name","phone"];
+        assert_eq!(exact_role_period(roles.len(),prefix_role_period(&roles)),2);
+        let roles=["name","phone","name"];
+        assert_eq!(exact_role_period(roles.len(),prefix_role_period(&roles)),3);
     }
     #[test]
     fn document_features_preserve_exact_unicode_distance_and_boundaries(){
