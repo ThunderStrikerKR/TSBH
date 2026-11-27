@@ -55,6 +55,7 @@ jobs:
             'ui_regressions::notice_no_reflow_contract_tests::guard_detects_direct_feedback_and_multiline_input_hint',
             'ui_regressions::notice_no_reflow_contract_tests::production_screens_reject_direct_inline_transient_notices',
             'brand_manager::modal_lifecycle_tests::actual_brand_popup_feedback_never_moves_controls',
+            'brand_manager::modal_lifecycle_tests::brand_delete_request_requires_original_entity_and_preserves_draft_on_failure',
             'popup::regression_tests::shared_editor_footer_keeps_delete_left_and_save_right',
             'popup::regression_tests::actual_common_popup_families_keep_geometry_during_feedback_and_permissions',
             'alias_manager::modal_lifecycle_tests::actual_alias_popup_feedback_and_permissions_keep_rects',
@@ -109,5 +110,21 @@ jobs:
             $matching = @($listed | Where-Object { $_ -like "$group*" -and $_ -like "*: test" })
             if ($matching.Count -eq 0) { throw "Missing mandatory design contract group: $group" }
             cargo test --manifest-path egui-app/Cargo.toml $group -- --nocapture
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Mandatory native brand deletion safety
+        shell: pwsh
+        run: |
+          $filters = @(
+            'brand_delete_only_removes_the_selected_unreferenced_brand',
+            'brand_delete_blocks_even_archived_and_superseded_product_references',
+            'brand_delete_requires_original_entity_and_rejects_stale_edits'
+          )
+          foreach ($filter in $filters) {
+            $listed = cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --list
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if (-not ($listed | Where-Object { $_ -like "*${filter}: test" })) { throw "Missing brand deletion regression: $filter" }
+            cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --nocapture
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
