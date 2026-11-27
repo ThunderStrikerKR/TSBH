@@ -6,7 +6,7 @@ use crate::ui_layout::geometry::SharedAllocationExt as _;
 use eframe::egui::{self, Id, Pos2, Rect, Ui, Vec2};
 use crate::ui_layout::geometry::UiWidthPolicyExt;
 use std::time::{Duration, Instant};
-use crate::{preview_store::WorkingReception, source_highlight, theme, typography};
+use crate::{preview_store::WorkingReception, theme, typography};
 use std::collections::{HashMap,HashSet};
 use crate::workflow_board::{BoardSnapshot, GroupRow, ShipmentRow};
 
@@ -1882,7 +1882,7 @@ mod linked_highlight_palette_tests {
         assert_eq!(shipment_row_fill(false,true),theme::linked_preview_palette().fill);
         assert_ne!(shipment_row_fill(true,true),theme::linked_preview_palette().fill);
         assert_eq!(shipment_row_fill(false,false),theme::surface_palette(theme::SurfaceRole::WorkflowDetailRow,theme::VisualState::Normal).fill);
-        assert_eq!(source_highlight::ACTIVE_BORDER_WIDTH,2.0);
+        assert_eq!(crate::source_highlight::ACTIVE_BORDER_WIDTH,2.0);
     }
 
     #[test]

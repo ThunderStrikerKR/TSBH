@@ -409,7 +409,7 @@ pub fn workflow_dealer_galley(
         font_id:FontId::new(
             role.size,FontFamily::Name(EMPHASIS_FAMILY.into())
         ),
-        color:TEXT,
+        color:text_ink(TextRole::Value,TextState::Normal),
         extra_letter_spacing:0.0,
         line_height:Some(role.line),
         ..Default::default()
