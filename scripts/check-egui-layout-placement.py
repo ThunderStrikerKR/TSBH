@@ -5,6 +5,8 @@ checker. Native flow layout remains unrestricted; physical pixel helpers
 are restricted to paint-only use. Test fixtures may use malformed coordinates.
 """
 from pathlib import Path
+from collections import Counter
+import json
 import re
 import sys
 
@@ -353,6 +355,188 @@ def api_contract_self_test():
     assert api_contract_violations("ui_layout.rs", "pub mod geometry; pub(crate) mod pixel_paint;")
 
 
+
+# The rest of the shared design system uses a reviewed declaration inventory.
+# Do not hash whole source files: changing colors, sizes, or implementation
+# bodies must not require an API-contract revision.
+DESIGN_API_OWNERS = CORE_COMPONENTS | {
+    "typography.rs", "ui_tokens.rs", "scrollbar/mod.rs", "highlight/mod.rs",
+    "highlight/native.rs", "ui_layout.rs", "overlay.rs", "text_fit.rs",
+    "cell_navigation.rs", "display_format.rs",
+}
+DESIGN_API_FILES = (
+    "egui-design-api-contract.json",
+    "egui-design-api-contract-controls.json",
+    "egui-design-api-contract-composition.json",
+)
+DESIGN_API_DIR = Path(__file__).resolve().parent
+
+def load_design_api():
+    inventory = {}
+    for filename in DESIGN_API_FILES:
+        data = json.loads((DESIGN_API_DIR / filename).read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError(f"invalid API inventory: {filename}")
+        for owner, rows in data.items():
+            if owner in inventory or not isinstance(rows, list) or not all(isinstance(row, str) for row in rows):
+                raise ValueError(f"duplicate or invalid API owner: {owner}")
+            inventory[owner] = rows
+    if set(inventory) != DESIGN_API_OWNERS:
+        raise ValueError(f"API inventory coverage mismatch: missing={sorted(DESIGN_API_OWNERS-set(inventory))}, unexpected={sorted(set(inventory)-DESIGN_API_OWNERS)}")
+    return inventory
+
+def design_public_surface(source):
+    """Extract public declaration tokens, their enclosing type and relevant attributes.
+
+    This is a lexical source contract, not macro expansion or Rust HIR.
+    Trait and enum bodies are compared as declarations; public named struct
+    fields are separate entries. Constant initializers and ordinary function
+    bodies are not part of the contract.
+    """
+    tokens = api_tokens(production(source))
+    stack, scopes, closing = [], [], {}
+    for i, token in enumerate(tokens):
+        scopes.append(tuple(stack))
+        if token == "{":
+            stack.append(i)
+        elif token == "}":
+            if not stack:
+                raise ValueError("unbalanced API scope")
+            closing[stack.pop()] = i
+    if stack:
+        raise ValueError("unbalanced API scope")
+
+    def scope(i):
+        parents = scopes[i]
+        if not parents:
+            return "module"
+        k = parents[-1]
+        j = k - 1
+        while j >= 0 and tokens[j] not in ("{", "}", ";"):
+            j -= 1
+        header = tokens[j+1:k]
+        for index, token in enumerate(header):
+            if token in ("impl", "struct", "enum", "trait", "union", "mod"):
+                return " ".join(header[index:])
+        return " ".join(header)
+
+    def end(i, delimiters, angles=False):
+        parens = brackets = angle = 0
+        for j in range(i, len(tokens)):
+            token = tokens[j]
+            if not parens and not brackets and not angle and token in delimiters:
+                return j
+            if token == "(":
+                parens += 1
+            elif token == ")":
+                parens -= 1
+            elif token == "[":
+                brackets += 1
+            elif token == "]":
+                brackets -= 1
+            if angles and not parens and not brackets:
+                if token == "<":
+                    angle += 1
+                elif token == ">" and angle:
+                    angle -= 1
+        raise ValueError("unterminated API declaration: " + " ".join(tokens[i:i+25]))
+
+    def attributes(i):
+        start, j = i, i-1
+        while j >= 0 and tokens[j] == "]":
+            depth, k = 1, j-1
+            while k >= 0 and depth:
+                if tokens[k] == "]":
+                    depth += 1
+                elif tokens[k] == "[":
+                    depth -= 1
+                k -= 1
+            if k < 0 or tokens[k] != "#":
+                break
+            if tokens[k+2] in ("cfg", "cfg_attr", "derive", "repr", "non_exhaustive"):
+                start = k
+            j = k-1
+        return start
+
+    rows, i = [], 0
+    while i < len(tokens):
+        if tokens[i] != "pub":
+            i += 1
+            continue
+        j = i+1
+        if tokens[j] == "(":
+            j = tokens.index(")", j)+1
+        kind = tokens[j]
+        if kind in ("const", "async", "unsafe") and tokens[j+1] == "fn":
+            kind = "fn"
+        if kind == "fn":
+            k = end(j, ("{", ";"))+1
+        elif kind in ("struct", "enum", "trait", "union", "mod"):
+            k = end(j, ("{", ";"))+1
+            if kind in ("enum", "trait", "union") and tokens[k-1] == "{":
+                k = closing[k-1]+1
+        elif kind in ("const", "static"):
+            k = end(j, ("=", ";"), angles=True)+1
+        elif kind == "use":
+            k = tokens.index(";", j)+1
+        elif kind == "type":
+            k = end(j, (";",))+1
+        else:
+            k = end(j, (",", "}"), angles=True)
+        rows.append(scope(i) + " | " + " ".join(tokens[attributes(i):k]))
+        if kind in ("enum", "trait", "union", "use") or (kind == "struct" and tokens[k-1] == ";"):
+            i = k
+        else:
+            i += 1
+    return rows
+
+def design_api_violations(name, source, inventory):
+    if name not in inventory:
+        return []
+    expected = Counter(inventory[name])
+    actual = Counter(design_public_surface(source))
+    findings = []
+    for row, count in sorted((actual-expected).items()):
+        findings.append((1, f"unapproved public design API ({count}): {row}"))
+    for row, count in sorted((expected-actual).items()):
+        findings.append((1, f"missing or changed public design API ({count}): {row}"))
+    return findings
+
+def design_api_self_test():
+    source = """pub(crate) const WIDTH:f32=10.0;
+    #[derive(Clone)] pub(crate) struct Card<'a>{ private:bool, pub title:&'a str }
+    pub enum Role{Default, Other(bool)}
+    pub trait Policy{fn apply(&self);}
+    impl<'a> Card<'a>{
+        pub(crate) fn render(&self)->bool{ true }
+        #[cfg(test)] pub(crate) fn inspect(&self)->bool{false}
+    }
+    pub(crate) use crate::theme::Role as PublicRole;
+    #[cfg(test)] mod tests{ pub fn test_only(){} }
+    """
+    expected = {"fixture.rs": design_public_surface(source)}
+    assert len(expected["fixture.rs"]) == 8
+    def check(value):
+        return design_api_violations("fixture.rs", value, expected)
+    assert not check(source)
+    assert not check(source.replace("10.0", "12.0").replace("true }", "false }"))
+    assert not check(source.replace("private:bool", "private:u8").replace("fn render", "fn /* comment */ render"))
+    assert not check(source + "\nfn internal(){}")
+    for changed in (
+        source + "\npub(crate) fn extra(){}",
+        source.replace("pub(crate) const WIDTH", "pub const WIDTH"),
+        source.replace("pub title", "title"),
+        source.replace("pub title:&'a str", "pub title:String"),
+        source.replace("Other(bool)", "Other(bool), New"),
+        source.replace("fn apply(&self);", "fn apply(&self); fn extra(&self);"),
+        source.replace("render(&self)->bool", "render(&self)->u8"),
+        source.replace("#[cfg(test)] pub(crate) fn inspect", "pub(crate) fn inspect"),
+        source.replace("as PublicRole", "as ChangedRole"),
+        source.replace("impl<'a> Card<'a>", "impl<'a> Other<'a>"),
+    ):
+        assert check(changed), changed
+
+
 def violations(name, source):
     code = production(source)
     findings = pixel_paint_violations(name, code) + pixel_math_violations(name, code)
@@ -497,10 +681,12 @@ def self_test():
 def main():
     self_test()
     api_contract_self_test()
+    design_api_self_test()
+    inventory = load_design_api()
     failures = []
     checked = 0
     checked_owners = set()
-    required_owners = set(API_CONTRACT) | {"ui_layout.rs"}
+    required_owners = set(API_CONTRACT) | set(inventory) | {"ui_layout.rs"}
     for path in sorted(ROOT.rglob("*.rs")):
         name = path.relative_to(ROOT).as_posix()
         source = path.read_text(encoding="utf-8-sig")
@@ -511,10 +697,12 @@ def main():
             checked_owners.add(name)
         failures.extend(f"{name}:{line}: {rule}" for line, rule in violations(name, source))
         failures.extend(f"{name}:{line}: {rule}" for line, rule in api_contract_violations(name, source))
+        failures.extend(f"{name}:{line}: {rule}" for line, rule in design_api_violations(name, source, inventory))
     for required in sorted(required_owners - checked_owners):
         failures.append(f"{required}:1: required API contract owner missing or excluded from production")
     for finding in failures:
         print(finding, file=sys.stderr)
+    print(f"egui design API contract: {len(inventory)+len(API_CONTRACT)} modules, {sum(map(len,inventory.values()))+sum(map(len,API_CONTRACT.values()))} declaration(s)")
     print(f"egui explicit placement ownership: {checked} Rust files, {len(failures)} violation(s)")
     return int(bool(failures))
 

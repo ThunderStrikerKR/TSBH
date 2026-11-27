@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/egui-compile-gate.yml
       - scripts/check-egui-layout-placement.py
+      - 'scripts/egui-design-api-contract*.json'
       - egui-app/**
       - src-tauri/src/business_core/rules/history.rs
       - src-tauri/src/business_core/rules/manual_draft.rs
@@ -29,6 +30,7 @@ on:
     paths:
       - .github/workflows/egui-compile-gate.yml
       - scripts/check-egui-layout-placement.py
+      - 'scripts/egui-design-api-contract*.json'
       - egui-app/**
   workflow_dispatch:
 permissions:
