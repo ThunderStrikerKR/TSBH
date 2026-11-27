@@ -359,6 +359,32 @@ impl BandoGateway for LocalGateway {
                 result["modelId"]=serde_json::json!(model_id);
                 result["currentModelSourceDigestsMatched"]=serde_json::json!(true);
                 result["modelIndependentlyApproved"]=serde_json::json!(false);
+                // Reuse the original parser to verify that a proposed
+                // attribution can actually be represented without losing
+                // evidence. This remains a counterfactual; never return
+                // replacement recipients to the working reception.
+                let proposals=result["decisions"].as_array().into_iter().flatten()
+                    .filter(|d|d["status"]=="diagnostic_proposal_only").collect::<Vec<_>>();
+                let replay_status=match proposals.as_slice(){
+                    []=>"no_proposal",
+                    [decision]=>{
+                        let replay=(||->Result<Value,String>{
+                            let state=self.load_reception_catalog()?;
+                            if first["recognitionContext"]["catalogRevision"].is_null()||
+                                first["recognitionContext"]["catalogRevision"]!=state["revision"]{
+                                return Err("귀속 검증 카탈로그 변경 또는 식별 불가".into());
+                            }
+                            let client=first["recognitionContext"]["clientId"].as_str()
+                                .map(|id|serde_json::json!({"id":id}));
+                            recognition::execute("replay_owner_recommendation",serde_json::json!({
+                                "raw":raw,"state":state,"client":client,"initialAnalysis":first,"decision":decision}))
+                        })();
+                        if replay.is_ok_and(|v|v["status"]=="validated_counterfactual"){"validated_counterfactual"}
+                        else{"unverified_replay"}
+                    },
+                    _=>"joint_replay_not_verified"
+                };
+                result["parserReplayValidation"]=serde_json::json!(replay_status);
                 Ok(result)
             })();
             shadow["combinedShadow"]=combined.unwrap_or_else(|_|serde_json::json!({
