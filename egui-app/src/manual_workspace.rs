@@ -257,17 +257,8 @@ fn manual_assignment_recommendations(
 fn paint_manual_assignment_recommendation(
     ui:&egui::Ui,rect:egui::Rect,hovered:bool
 ){
-    let clip=rect.intersect(ui.clip_rect());
-    if clip.width()<=0.0 || clip.height()<=0.0{return;}
-    let color=theme::SELECTION;
-    let fill=if hovered{theme::MANUAL_ASSIGNMENT_HOVER_TINT}else{theme::MANUAL_ASSIGNMENT_TINT};
-    let painter=ui.painter().with_clip_rect(clip);
-    painter.rect_filled(rect,theme::CONTROL_RADIUS,fill);
-    painter.rect_stroke(
-        rect,theme::CONTROL_RADIUS,
-        egui::Stroke::new(if hovered{theme::MANUAL_ASSIGNMENT_HOVER_STROKE_WIDTH}else{theme::MANUAL_ASSIGNMENT_STROKE_WIDTH},color),
-        egui::StrokeKind::Inside
-    );
+    let role=if hovered{crate::highlight::Role::DropHovered}else{crate::highlight::Role::DropTarget};
+    crate::highlight::paint(ui,rect,theme::CONTROL_RADIUS,role);
 }
 
 /// Paint only the selected source evidence while preserving the original
@@ -328,21 +319,15 @@ fn paint_manual_source_drag_preview(
         crate::popup::modal_window_layer("bando-native-manual-classification"),
         egui::Id::new("manual-source-drag-preview")) else{return;};
     for rect in &original_geometry.rects {
-        painter.rect_filled(
-            rect.translate(translation),original_geometry.style.radius,
-            original_geometry.style.fill
-        );
+        crate::highlight::paint_parts(&painter,rect.translate(translation),
+            original_geometry.style.radius,Some(original_geometry.style.fill),None);
     }
     painter.galley(galley_pos,galley,theme::TEXT);
     // Match the source document's paint order: glyphs first, then the outline.
     for rect in &original_geometry.rects {
-        painter.rect_stroke(
-            rect.translate(translation),original_geometry.style.radius,
-            egui::Stroke::new(
-                original_geometry.style.border_width,original_geometry.style.border
-            ),
-            egui::StrokeKind::Inside
-        );
+        crate::highlight::paint_parts(&painter,rect.translate(translation),
+            original_geometry.style.radius,None,Some(egui::Stroke::new(
+                original_geometry.style.border_width,original_geometry.style.border)));
     }
 }
 
