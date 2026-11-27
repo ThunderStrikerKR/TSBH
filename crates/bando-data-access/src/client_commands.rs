@@ -41,7 +41,7 @@ pub fn mutate_client_v2(
     let version:i64=conn.query_row(
         "SELECT version FROM core_schema WHERE key='business-core'",
         [],|row|row.get(0),
-    ).map_err(|_|"운영 DB 스키마를 확인할 수 없습니다.".to_owned())?;
+    ).map_err(|_|crate::terminology::DB_SCHEMA_UNAVAILABLE.to_owned())?;
     if !crate::supported_relational_version(version){return Err("지원하지 않는 운영 DB 버전입니다.".into());}
 
     let revision=crate::read_envelope(conn)?["revision"].as_u64()

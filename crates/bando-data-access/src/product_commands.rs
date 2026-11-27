@@ -101,7 +101,7 @@ pub fn patch_model_groups_v2(
     let version:i64=conn.query_row(
         "SELECT version FROM core_schema WHERE key='business-core'",
         [],|row|row.get(0),
-    ).map_err(|_|"운영 DB 스키마를 확인할 수 없습니다.".to_owned())?;
+    ).map_err(|_|crate::terminology::DB_SCHEMA_UNAVAILABLE.to_owned())?;
     if !crate::supported_relational_version(version){return Err("지원하지 않는 운영 DB 버전입니다.".into());}
     crate::storage::update_v2_entity_if_changed(conn,true,|before|{
     let mut state=before.clone();
@@ -109,7 +109,7 @@ pub fn patch_model_groups_v2(
         .ok_or("설정 데이터 오류")?;
     let prior=settings.get("colorGuidanceGroups").unwrap_or(&Value::Null);
     if prior!=expected && prior!=groups {
-        return Err("colorGuidanceGroups 설정이 다른 화면에서 수정됐습니다. 다시 불러온 뒤 저장하세요.".into());
+        return Err(crate::terminology::settings_changed("colorGuidanceGroups"));
     }
     settings.insert("colorGuidanceGroups".into(),groups.clone());
     validate_native_model_groups(&state)?;
@@ -350,7 +350,7 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
     let version:i64=conn.query_row(
         "SELECT version FROM core_schema WHERE key='business-core'",
         [],|row|row.get(0),
-    ).map_err(|_|"운영 DB 스키마를 확인할 수 없습니다.".to_owned())?;
+    ).map_err(|_|crate::terminology::DB_SCHEMA_UNAVAILABLE.to_owned())?;
     if !crate::supported_relational_version(version){return Err("지원하지 않는 운영 DB 버전입니다.".into());}
     let data=request.get("data").ok_or("상품 변경 입력이 없습니다.")?;
     let mutate=|before:&Value|->Result<Option<Value>,String>{

@@ -7,6 +7,12 @@ use serde_json::{json, Value};
 use std::collections::{HashMap,HashSet};
 use unicode_normalization::UnicodeNormalization;
 
+/// Shared read-only factory correction confirmation text.
+pub(crate) fn factory_conflict_message(row:&str,name:&str,current_tracking:&str,
+    current_fee:&str,reply_tracking:&str,reply_fee:&str)->String{
+    format!("{row}행 / {name}\n기존: {current_tracking} / 운임 {current_fee}\n회신: {reply_tracking} / 운임 {reply_fee}\n이 한 행만 정정할까요? 기존 값과 원본 파일은 보존됩니다.")
+}
+
 fn field<'a>(v:&'a Value, k:&str)->&'a Value { v.get(k).unwrap_or(&Value::Null) }
 fn s<'a>(v:&'a Value,k:&str)->&'a str { field(v,k).as_str().unwrap_or("") }
 fn rows<'a>(v:&'a Value,k:&str)->&'a [Value] {
@@ -656,7 +662,7 @@ fn conflict_confirmation_for_state(state:&Value,payload:&Value)->Result<Value,St
     let old=actual(ship,recipient);
     let current=s(field(ship,"tracking"),"FACTORY");
     let current=if current.is_empty(){"미등록"}else{current};
-    let message=super::factory_conflict_message(
+    let message=factory_conflict_message(
         &row_num.to_string(),s(row,"name"),current,&grouped_amount(&old),
         s(row,"tracking"),&grouped_amount(field(row,"actual")));
     Ok(json!({"text":message}))

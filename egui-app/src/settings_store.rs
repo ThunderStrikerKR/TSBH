@@ -163,7 +163,7 @@ fn patch_local(changes:Value,expected:Value)->Result<Value,String>{
         let before=entries.get(key).unwrap_or(&Value::Null);
         let original=&expected[key];
         if before!=original && before!=value{
-            return Err(format!("다른 화면에서 {key} 설정이 변경됐습니다. 다시 불러오세요."));
+            return Err(bando_data_access::terminology::settings_changed(key));
         }
     }
     for (key,value) in changes{

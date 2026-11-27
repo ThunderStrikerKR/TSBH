@@ -31,7 +31,7 @@ fn archive_root(state:&Value)->Result<PathBuf,String>{
     if business_state::test_launch(){return business_state::test_directory("Excel");}
     let configured=state["settings"]["excelDirectory"].as_str()
         .map(str::trim).filter(|s|!s.is_empty())
-        .ok_or("설정에서 Excel 보관함 위치를 먼저 지정하고 저장하세요.")?;
+        .ok_or(bando_data_access::terminology::EXCEL_DIRECTORY_REQUIRED)?;
     let path=PathBuf::from(configured);
     if !path.is_absolute(){return Err("Excel 보관함은 절대 경로여야 합니다.".into())}
     let root=path.canonicalize().map_err(|_|"Excel 보관함 경로를 확인할 수 없습니다.")?;

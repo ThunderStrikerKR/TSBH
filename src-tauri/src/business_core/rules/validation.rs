@@ -28,16 +28,16 @@ fn unchanged_records(old: &Value, new: &Value) -> bool {
 }
 fn shipment_for<'a>(state: &'a Value, ship: &Value) -> Result<(&'a Value,&'a Value),String> {
     let order = find_by_id(field(state,"orders"),str_field(ship,"orderId"))
-        .ok_or_else(|| "배송 건의 발주서 / 수취인 / 거래처 연결을 확인하세요.".to_string())?;
+        .ok_or_else(|| super::terminology::SHIPMENT_LINK_REQUIRED.to_string())?;
     let row = find_by_id(field(order,"recipients"),str_field(ship,"recipientId"))
-        .ok_or_else(|| "배송 건의 발주서 / 수취인 / 거래처 연결을 확인하세요.".to_string())?;
+        .ok_or_else(|| super::terminology::SHIPMENT_LINK_REQUIRED.to_string())?;
     // shipmentContext() requires orderParty(), not merely a recipient.
     // A retail order synthesizes its company party, while agency/dealer
     // orders require a live client or their own frozen clientSnapshot.
     if str_field(order,"orderType")!="RETAIL" &&
         find_by_id(field(state,"clients"),str_field(order,"clientId")).is_none() &&
         !has_value(field(order,"clientSnapshot")) {
-        return Err("배송 건의 발주서 / 수취인 / 거래처 연결을 확인하세요.".into());
+        return Err(super::terminology::SHIPMENT_LINK_REQUIRED.into());
     }
     Ok((order,row))
 }
@@ -352,7 +352,7 @@ pub(super) fn retail_issues(order:&Value,state:&Value)->Vec<String>{
         }
         let actual=field(row,"actualFreight");
         if !actual.is_null()&&safe(actual).is_none(){
-            issues.push("출고 운임을 확인하세요.".into());
+            issues.push(super::terminology::DISPATCH_FREIGHT_REQUIRED.into());
         }
         for item in rows(field(row,"items")){
             let found=rows(field(state,"products")).iter().any(|p|

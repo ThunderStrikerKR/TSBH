@@ -20,7 +20,7 @@ fn valid_name(n:&str)->bool{!n.is_empty()&&n.len()<=240&&!n.starts_with("~$")&&
     !n.strip_suffix("(취합).xlsx").is_some_and(|stem|stem.len()==8&&stem.bytes().all(|c|c.is_ascii_digit()))&&
     !n.contains('/')&&!n.contains('\\')&&!n.contains('\0')&&n.to_ascii_lowercase().ends_with(".xlsx")}
 pub(crate) fn open_db()->Result<(Connection,PathBuf),String>{
-    if !excel_service::writable(){return Err("공장 회신 저장 권한 없음".into())}
+    if !excel_service::writable(){return Err(bando_data_access::terminology::FACTORY_REPLY_WRITE_DENIED.into())}
     let path=business_state::authorized_business_write_path()?;
     let base=path.parent().ok_or("업무 DB 경로 오류")?.to_path_buf();
     let conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE).map_err(|e|e.to_string())?;

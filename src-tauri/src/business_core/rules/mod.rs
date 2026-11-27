@@ -14,10 +14,7 @@ pub(crate) fn correction_message_header(shipment_id:&str)->Vec<String>{
 pub(crate) fn correction_change_line(label:&str,before:&str,after:&str)->String{
     format!("{label}: {before} → {after}")
 }
-pub(crate) fn factory_conflict_message(row:&str,name:&str,current_tracking:&str,
-    current_fee:&str,reply_tracking:&str,reply_fee:&str)->String{
-    format!("{row}행 / {name}\n기존: {current_tracking} / 운임 {current_fee}\n회신: {reply_tracking} / 운임 {reply_fee}\n이 한 행만 정정할까요? 기존 값과 원본 파일은 보존됩니다.")
-}
+pub(crate) use factory_reply::factory_conflict_message;
 #[cfg(test)]
 #[test]
 fn shared_correction_copy_retains_scope_and_before_after_values(){
@@ -52,6 +49,26 @@ fn correction_fee_display_preserves_missing_zero_and_units(){
 mod pricing;
 /// Common business terminology, including the legacy read compatibility.
 pub mod terminology {
+    pub const MODEL_GROUP_MIN: &str = "모델군에는 상품을 2개 이상 등록하세요.";
+    pub const MODEL_GROUP_DUPLICATE: &str = "모델군에 상품을 중복 등록할 수 없습니다.";
+    pub const MODEL_GROUP_INDEPENDENT: &str = "등록된 독립 판매 상품만 모델군에 추가할 수 있습니다.";
+    pub const MODEL_GROUP_REPRESENTATIVE: &str = "모델군에 속한 상품을 대표모델로 선택하세요.";
+    pub const MODEL_GROUP_NAME_DUPLICATE: &str = "모델군 이름이 중복됩니다.";
+    pub const ALIAS_SCOPE_CONFLICT: &str = "같은 적용 범위의 별칭이 충돌합니다.";
+    pub const ALIAS_SCOPE_EXISTS: &str = "같은 적용 범위의 별칭이 이미 있습니다.";
+    pub const ALIAS_MODEL_CONFLICT: &str = "다른 등록 상품명 또는 모델 표기와 충돌하는 별칭입니다.";
+    pub const ALIAS_VARIANT_CONFLICT: &str = "상품명의 색상 또는 구성 표기와 충돌하는 별칭입니다.";
+    pub const ALIAS_VARIANT_LINK: &str = "별칭 색상 / 옵션 연결을 확인하세요.";
+    pub const ALIAS_EXISTING_LINK_CONFLICT: &str = "기존 별칭과 연결 상품이 충돌합니다. 기존 연결을 확인하세요.";
+    pub const DB_SCHEMA_UNAVAILABLE: &str = "운영 DB 스키마를 확인할 수 없습니다.";
+    pub const SHIPMENT_LINK_REQUIRED: &str = "배송 건의 발주서 / 수취인 / 거래처 연결을 확인하세요.";
+    pub const EXCEL_DIRECTORY_REQUIRED: &str = "설정에서 Excel 보관함 위치를 먼저 지정하고 저장하세요.";
+    pub const FACTORY_REPLY_WRITE_DENIED: &str = "공장 회신 저장 권한 없음";
+    pub const DISPATCH_FREIGHT_REQUIRED: &str = "출고 운임을 확인하세요.";
+    pub fn settings_changed(field:&str)->String{
+        format!("다른 화면에서 {field} 설정이 변경됐습니다. 다시 불러온 뒤 저장하세요.")
+    }
+
     pub const UNASSIGNED_ACTOR: &str = "작업자 미지정";
     pub const FACTORY_DELIVERY_CONFIRMED: &str = "공장 전달 확인";
 

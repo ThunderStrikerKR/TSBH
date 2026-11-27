@@ -52,7 +52,7 @@ pub(super) fn alias_findings(record:&Value,aliases:&[Value],products:&[Value])->
          a.get("variantId")!=record.get("variantId"))){
         out.push((identity("alias-conflict",Some(field(peer,"id"))),
             json!([basis,peer.get("text"),peer.get("clientId"),peer.get("productId"),peer.get("variantId")]),
-            "같은 적용 범위의 별칭이 충돌합니다.".to_owned()));
+            bando_data_access::terminology::ALIAS_SCOPE_CONFLICT.to_owned()));
     }
     if let Some(target)=target{
         for peer in products.iter().filter(|p|visible(p)&&
@@ -60,7 +60,7 @@ pub(super) fn alias_findings(record:&Value,aliases:&[Value],products:&[Value])->
                 .any(|name|model_key(name)==key) &&field(p,"id")!=field(target,"id")){
             out.push((identity("product-conflict",Some(field(peer,"id"))),
                 json!([basis,peer.get("name"),peer.get("deletedAt"),peer.get("supersededBy")]),
-                "다른 등록 상품명 또는 모델 표기와 충돌하는 별칭입니다.".to_owned()));
+                bando_data_access::terminology::ALIAS_MODEL_CONFLICT.to_owned()));
         }
     }
     static SUFFIX:LazyLock<Regex>=LazyLock::new(||
@@ -89,7 +89,7 @@ pub(super) fn alias_findings(record:&Value,aliases:&[Value],products:&[Value])->
                 let mut base_ids=bases.iter().map(|p|field(p,"id")).collect::<Vec<_>>();
                 base_ids.sort_unstable();
                 out.push((identity("suffix",None),json!([basis,base_ids,desired,actual]),
-                    "상품명의 색상 또는 구성 표기와 충돌하는 별칭입니다.".to_owned()));
+                    bando_data_access::terminology::ALIAS_VARIANT_CONFLICT.to_owned()));
             }
         }
     }
@@ -97,7 +97,7 @@ pub(super) fn alias_findings(record:&Value,aliases:&[Value],products:&[Value])->
        !target.is_some_and(|p|items(p,"variants").iter()
             .any(|v|field(v,"id")==field(record,"variantId"))){
         out.push((identity("variant",None),json!([basis,target.map(|p|items(p,"variants").iter().map(|v|field(v,"id")).collect::<Vec<_>>())]),
-            "별칭 색상 / 옵션 연결을 확인하세요.".to_owned()))
+            bando_data_access::terminology::ALIAS_VARIANT_LINK.to_owned()))
     }
     out
 }
@@ -110,12 +110,12 @@ fn save_alias(state:&Value,record:&Value)->Result<Value,String>{
     let by_id=all.iter().find(|a|field(a,"id")==field(record,"id"));
     if same.is_some()&&by_id.is_some()&&
         field(same.unwrap(),"id")!=field(by_id.unwrap(),"id"){
-        return Err("같은 적용 범위의 별칭이 이미 있습니다.".into());
+        return Err(bando_data_access::terminology::ALIAS_SCOPE_EXISTS.into());
     }
     if let Some(existing)=same{
         if by_id.is_none() && (existing.get("productId")!=record.get("productId")||
             existing.get("variantId")!=record.get("variantId")){
-            return Err("기존 별칭과 연결 상품이 충돌합니다. 기존 연결을 확인하세요.".into())
+            return Err(bando_data_access::terminology::ALIAS_EXISTING_LINK_CONFLICT.into())
         }
     }
     let mut proposed=record.clone();

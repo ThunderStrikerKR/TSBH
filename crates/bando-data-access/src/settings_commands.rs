@@ -33,9 +33,7 @@ pub fn apply_settings_changes(
         }
         let before=state["settings"].get(field.as_str()).unwrap_or(&Value::Null);
         if before!=&expected[field] && before!=updated{
-            return Err(format!(
-                "{} 설정이 다른 화면에서 수정됐습니다. 다시 불러온 뒤 저장하세요.",field
-            ));
+            return Err(crate::terminology::settings_changed(field));
         }
     }
     {

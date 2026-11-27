@@ -68,14 +68,14 @@ fn alias_problems(record:&Value,state:&Value)->Vec<String>{
         key(str_field(x,"text"))==alias_key&&
         (field(x,"productId")!=field(record,"productId")||
          field(x,"variantId")!=field(record,"variantId"))){
-        problems.push("같은 적용 범위의 별칭이 충돌합니다.".to_string());
+        problems.push(super::terminology::ALIAS_SCOPE_CONFLICT.to_string());
     }
     if products.iter().any(|p|!has_value(field(p,"deletedAt"))&&
         !has_value(field(p,"supersededBy"))&&
         (key(str_field(p,"name"))==alias_key||
          model_names(p).iter().any(|name|key(name)==alias_key))&&
         target.is_some()&&str_field(p,"id")!=str_field(record,"productId")){
-        problems.push("다른 등록 상품명 또는 모델 표기와 충돌하는 별칭입니다.".to_string());
+        problems.push(super::terminology::ALIAS_MODEL_CONFLICT.to_string());
     }
     let suffix=Regex::new(r"^(\d{3}(?:-\d+)?)(BK|BR|B|C|W|G)$").expect("literal");
     if let Some(m)=suffix.captures(&alias_key){
@@ -104,13 +104,13 @@ fn alias_problems(record:&Value,state:&Value)->Vec<String>{
                 (target.is_none()||
                  !bases.iter().any(|p|str_field(p,"id")==str_field(record,"productId"))||
                  variant_mismatch){
-                problems.push("상품명의 색상 또는 구성 표기와 충돌하는 별칭입니다.".to_string());
+                problems.push(super::terminology::ALIAS_VARIANT_CONFLICT.to_string());
             }
         }
     }
     if !str_field(record,"variantId").is_empty()&&target.is_some_and(|p|
         !rows(field(p,"variants")).iter().any(|v|str_field(v,"id")==str_field(record,"variantId"))){
-        problems.push("별칭 색상 / 옵션 연결을 확인하세요.".to_string());
+        problems.push(super::terminology::ALIAS_VARIANT_LINK.to_string());
     }
     problems
 }
@@ -121,13 +121,13 @@ fn save_alias(state:&mut Value,record:&Value)->Result<(),String>{
         key(str_field(a,"text"))==key(str_field(record,"text")));
     let by_id=aliases.iter().position(|a|str_field(a,"id")==str_field(record,"id"));
     if let (Some(si),Some(bi))=(same,by_id){
-        if si!=bi{return Err("같은 적용 범위의 별칭이 이미 있습니다.".into());}
+        if si!=bi{return Err(super::terminology::ALIAS_SCOPE_EXISTS.into());}
     }
     if let Some(si)=same {
         if by_id.is_none()&&
             (field(&aliases[si],"productId")!=field(record,"productId")||
              field(&aliases[si],"variantId")!=field(record,"variantId")){
-            return Err("기존 별칭과 연결 상품이 충돌합니다. 기존 연결을 확인하세요.".into());
+            return Err(super::terminology::ALIAS_EXISTING_LINK_CONFLICT.into());
         }
     }
     let mut proposed=record.clone();
@@ -152,16 +152,16 @@ fn registered_independent<'a>(state:&'a Value,id:&str,exclude_demo:bool)->Option
 }
 fn validate_model_group(state:&Value,ids:&Value,representative:&str)->Result<(),String>{
     let all=rows(ids);
-    if all.len()<2{return Err("모델군에는 상품을 2개 이상 등록하세요.".into());}
+    if all.len()<2{return Err(super::terminology::MODEL_GROUP_MIN.into());}
     let names=all.iter().filter_map(Value::as_str).collect::<Vec<_>>();
     if names.iter().collect::<HashSet<_>>().len()!=all.len(){
-        return Err("모델군에 상품을 중복 등록할 수 없습니다.".into());
+        return Err(super::terminology::MODEL_GROUP_DUPLICATE.into());
     }
     if names.iter().any(|id|registered_independent(state,id,true).is_none()){
-        return Err("등록된 독립 판매 상품만 모델군에 추가할 수 있습니다.".into());
+        return Err(super::terminology::MODEL_GROUP_INDEPENDENT.into());
     }
     if representative.is_empty()||!names.contains(&representative){
-        return Err("모델군에 속한 상품을 대표모델로 선택하세요.".into());
+        return Err(super::terminology::MODEL_GROUP_REPRESENTATIVE.into());
     }
     Ok(())
 }

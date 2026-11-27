@@ -359,16 +359,16 @@ fn validate_color_guidance(state: &Value) -> Result<(), String> {
         if id.trim().is_empty() || name.is_empty() {
             return Err("모델군 이름을 입력하세요.".into());
         }
-        if !names.insert(name.to_lowercase()) { return Err("모델군 이름이 중복됩니다.".into()); }
+        if !names.insert(name.to_lowercase()) { return Err(bando_data_access::terminology::MODEL_GROUP_NAME_DUPLICATE.into()); }
         let members = group["productIds"].as_array().ok_or("소속 상품 형식 오류")?;
-        if members.len() < 2 { return Err("모델군에는 상품을 2개 이상 등록하세요.".into()); }
+        if members.len() < 2 { return Err(bando_data_access::terminology::MODEL_GROUP_MIN.into()); }
 
         // The settings key is kept for SQLite compatibility. New groups are
         // defined by independent product IDs, not shared color, price or size.
         if let Some(representative) = group.get("representativeProductId") {
             let selected = representative.as_str().unwrap_or("").trim();
             if selected.is_empty() {
-                return Err("모델군에 속한 상품을 대표모델로 선택하세요.".into());
+                return Err(bando_data_access::terminology::MODEL_GROUP_REPRESENTATIVE.into());
             }
             let mut local = std::collections::HashSet::new();
             for member in members {
@@ -584,7 +584,7 @@ fn workspace_excel_directory(db: &Database, settings: &Value) -> Result<PathBuf,
 fn saved_excel_directory(settings: &Value) -> Result<PathBuf, String> {
     let chosen = settings.get("excelDirectory").and_then(Value::as_str)
         .map(str::trim).filter(|s| !s.is_empty())
-        .ok_or("설정에서 Excel 보관함 위치를 먼저 지정하고 저장하세요.")?;
+        .ok_or(bando_data_access::terminology::EXCEL_DIRECTORY_REQUIRED)?;
     canonical_excel_directory(Path::new(chosen))
 }
 #[tauri::command]

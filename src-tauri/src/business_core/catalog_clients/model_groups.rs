@@ -16,21 +16,21 @@ fn eligible_product(p:&Value)->bool{
 }
 fn validate_product_ids(state:&Value,ids:&[Value],rep:&str)->Result<(),String>{
     if ids.len()<2{
-        return Err("모델군에는 등록된 상품이 2개 이상 있어야 합니다.".into())
+        return Err(bando_data_access::terminology::MODEL_GROUP_MIN.into())
     }
     let unique=ids.iter().filter_map(Value::as_str).collect::<HashSet<_>>();
     if unique.len()!=ids.len(){
-        return Err("모델군에 상품을 중복 등록할 수 없습니다.".into())
+        return Err(bando_data_access::terminology::MODEL_GROUP_DUPLICATE.into())
     }
     let all=items(state,"products");
     if ids.iter().any(|id|{
         let Some(id)=id.as_str()else{return true};
         !all.iter().any(|p|field(p,"id")==id && eligible_product(p))
     }){
-        return Err("등록된 독립 판매 상품만 모델군에 추가할 수 있습니다.".into())
+        return Err(bando_data_access::terminology::MODEL_GROUP_INDEPENDENT.into())
     }
     if rep.is_empty()||!ids.iter().any(|v|v.as_str()==Some(rep)){
-        return Err("모델군에 등록된 상품 중 하나를 대표모델로 지정하세요.".into())
+        return Err(bando_data_access::terminology::MODEL_GROUP_REPRESENTATIVE.into())
     }
     Ok(())
 }
@@ -57,7 +57,7 @@ pub(super) fn diagnostics(state:&Value)->Vec<Finding>{
         let peers=names.entry(name_key.clone()).or_default();
         for prior in peers.iter(){
             let identity=if prior.trim().is_empty()||id.trim().is_empty(){vec![]}else{vec!["name-conflict".into(),prior.clone(),id.clone()]};
-            out.push((identity,json!(name_key),"모델군 이름이 중복됩니다.".into()));
+            out.push((identity,json!(name_key),bando_data_access::terminology::MODEL_GROUP_NAME_DUPLICATE.into()));
         }
         peers.push(id.clone());
         let members=items(group,"productIds");
@@ -65,14 +65,14 @@ pub(super) fn diagnostics(state:&Value)->Vec<Finding>{
         let unique=members.iter().filter_map(Value::as_str).collect::<HashSet<_>>();
         if !rep.is_empty(){
             if members.len()<2{
-                out.push((key("member-count"),group["productIds"].clone(),"모델군에는 등록된 상품이 2개 이상 있어야 합니다.".into()));
+                out.push((key("member-count"),group["productIds"].clone(),bando_data_access::terminology::MODEL_GROUP_MIN.into()));
             }
             if unique.len()!=members.len(){
-                out.push((key("member-identity"),group["productIds"].clone(),"모델군에 상품을 중복 등록할 수 없습니다.".into()));
+                out.push((key("member-identity"),group["productIds"].clone(),bando_data_access::terminology::MODEL_GROUP_DUPLICATE.into()));
             }
             for member in members{
                 let Some(pid)=member.as_str()else{
-                    out.push((vec![],Value::Null,"등록된 독립 판매 상품만 모델군에 추가할 수 있습니다.".into()));continue;
+                    out.push((vec![],Value::Null,bando_data_access::terminology::MODEL_GROUP_INDEPENDENT.into()));continue;
                 };
                 let candidates=items(state,"products").iter().filter(|p|field(p,"id")==pid).collect::<Vec<_>>();
                 if !candidates.iter().any(|p|eligible_product(p)){
@@ -83,11 +83,11 @@ pub(super) fn diagnostics(state:&Value)->Vec<Finding>{
                         "catalog":p["catalog"],"sources":items(p,"variants").iter().map(|v|&v["source"]).collect::<Vec<_>>()
                     })).collect::<Vec<_>>();
                     let identity=if id.trim().is_empty()||pid.trim().is_empty()||candidates.len()>1{vec![]}else{vec!["ineligible-member".into(),id.clone(),pid.into()]};
-                    out.push((identity,json!(evidence),"등록된 독립 판매 상품만 모델군에 추가할 수 있습니다.".into()));
+                    out.push((identity,json!(evidence),bando_data_access::terminology::MODEL_GROUP_INDEPENDENT.into()));
                 }
             }
             if !members.iter().any(|v|v.as_str()==Some(rep)){
-                out.push((key("representative"),json!([rep,group["productIds"]]),"모델군에 등록된 상품 중 하나를 대표모델로 지정하세요.".into()));
+                out.push((key("representative"),json!([rep,group["productIds"]]),bando_data_access::terminology::MODEL_GROUP_REPRESENTATIVE.into()));
             }
         }else{
             if field(group,"representativeColor").is_empty(){
@@ -182,12 +182,12 @@ mod tests{
             "기존 그룹도 대표모델을 직접 선택한 뒤 저장하세요.");
         state["settings"]["colorGuidanceGroups"]["g"]["representativeProductId"]=json!("p3");
         assert_eq!(validate(&state).unwrap_err(),
-            "모델군에 등록된 상품 중 하나를 대표모델로 지정하세요.");
+            "모델군에 속한 상품을 대표모델로 선택하세요.");
         state["settings"]["colorGuidanceGroups"]["g"]["representativeProductId"]=json!("p1");
         assert!(validate(&state).is_ok());
         state["settings"]["colorGuidanceGroups"]["g"]["productIds"]=json!(["p1"]);
         assert_eq!(validate(&state).unwrap_err(),
-            "모델군에는 등록된 상품이 2개 이상 있어야 합니다.");
+            "모델군에는 상품을 2개 이상 등록하세요.");
     }
     #[test]
     fn model_group_rejects_multiple_memberships_without_modifying_products(){
