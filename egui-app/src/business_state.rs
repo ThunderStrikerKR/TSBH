@@ -340,8 +340,13 @@ fn owner_snapshot_batch(conn:&Connection,ids:&[String])->Result<Vec<Value>,Strin
             r.get::<_,Option<String>>(2)?,r.get::<_,Option<String>>(3)?)))
         .map_err(|e|e.to_string())?;
     let mut orders=Vec::new();
+    let mut snapshot_bytes=0usize;
     for row in records{
         let (id,confirmed_at,deleted_at,snapshot)=row.map_err(|e|e.to_string())?;
+        snapshot_bytes=snapshot_bytes.saturating_add(snapshot.as_ref().map_or(0,String::len));
+        if snapshot_bytes>32*1024*1024{
+            return Err("확정 스냅샷 조회 한도 초과: 주문 범위를 줄여 다시 조회하세요.".into());
+        }
         let snapshot:Value=match snapshot{
             Some(s)=>serde_json::from_str(&s).map_err(|_|"확정 스냅샷 형식 오류")?,
             None=>Value::Null
