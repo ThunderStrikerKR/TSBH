@@ -499,6 +499,38 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
 mod management_scope_cas_tests{
     use super::*;
     #[test]
+    fn category_batch_move_is_all_or_nothing_and_keeps_prices(){
+        let product=|id:&str|json!({"id":id,"code":id,"name":id,
+            "createdAt":"2026-01-01","updatedAt":"2026-01-01","active":true,
+            "origin":"FACTORY","catalog":"BANDOSTAND","defaultColor":"Black",
+            "categories":["a"],"category":"이전","variants":[
+                {"id":format!("{id}-v"),"color":"Black","source":"MANUAL","url":"",
+                "wholesale":1000,"semi":1500,"retail":2000} ]});
+        let p1=product("p1");let p2=product("p2");
+        let before=json!({"revision":7,"categories":[
+            {"id":"a","name":"이전","parentId":"catalog-root:BANDOSTAND"},
+            {"id":"b","name":"대상","parentId":"catalog-root:BANDOSTAND"}
+        ],"products":[p1,p2]});
+        let change=|product:&Value|json!({"expectedEntity":product,"source":"a","target":"b"});
+        let good=json!({"changes":[change(&before["products"][0]),change(&before["products"][1])]});
+        let after=apply_category_moves(&before,&good).unwrap();
+        for i in 0..2{
+            assert_eq!(after["products"][i]["categories"],json!(["b"]));
+            assert_eq!(after["products"][i]["variants"],before["products"][i]["variants"]);
+        }
+        let mut bad=good.clone();
+        bad["changes"][1]["expectedEntity"]["name"]=json!("stale");
+        assert!(apply_category_moves(&before,&bad).is_err());
+        assert_eq!(before["products"][0]["categories"],json!(["a"]));
+        let mut bad=good.clone();
+        bad["changes"][1]["target"]=json!("missing");
+        assert!(apply_category_moves(&before,&bad).is_err());
+        let mut bad=good.clone();
+        bad["changes"][1]=bad["changes"][0].clone();
+        assert!(apply_category_moves(&before,&bad).is_err());
+    }
+
+    #[test]
     fn management_scopes_ignore_unrelated_order_revision_and_prices(){
         let old=json!({"revision":1,"orders":[],"clients":[],
             "categories":[{"id":"c","name":"분류"}],
