@@ -24,6 +24,27 @@ use std::sync::{
 
 // Temporary presentation-only switch. Keep shipping.groups[*].history
 // writes and archived records intact until the user chooses the final UI.
+/// Display the persisted global basis start in Korea business dates.
+fn freight_basis_label(shipping:&Value)->String{
+    let epoch=shipping["epoch"].as_i64().unwrap_or(1).to_string();
+    let date=shipping["basisStartedAtByEpoch"].get(&epoch)
+        .and_then(Value::as_str)
+        .and_then(|at|chrono::DateTime::parse_from_rfc3339(at).ok())
+        .map(|at|at.with_timezone(&chrono::FixedOffset::east_opt(9*3600).expect("KST"))
+            .format("%Y_%m_%d").to_string());
+    format!("운임_기준_시작일_{}",date.as_deref().unwrap_or("미확인"))
+}
+
+#[cfg(test)]
+#[test]
+fn freight_basis_label_uses_korean_start_date_and_never_guesses(){
+    assert_eq!(freight_basis_label(&serde_json::json!({"epoch":1})),
+        "운임_기준_시작일_미확인");
+    let shipping=serde_json::json!({"epoch":2,"basisStartedAtByEpoch":{
+        "1":"2026-12-27T15:00:00Z","2":"2027-12-31T15:00:00Z"}});
+    assert_eq!(freight_basis_label(&shipping),"운임_기준_시작일_2028_01_01");
+}
+
 const SHOW_PREVIOUS_GROUP_FREIGHT_HISTORY: bool = false;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1017,10 +1038,7 @@ impl FreightManager {
                 if let Some(state)=self.state.as_ref(){
                     heading.with_layout(
                         egui::Layout::right_to_left(egui::Align::Center),|right|{
-                            right.label(typography::caption(&format!(
-                                "운임 기준 {}",
-                                state["shipping"]["epoch"].as_i64().unwrap_or(1)
-                            )));
+                            right.label(typography::caption(&freight_basis_label(&state["shipping"])));
                         });
                 }
             });
@@ -2395,8 +2413,7 @@ impl FreightManager {
             crate::card::fill_management_primary_card(section,card_min_height);
             section.label(typography::section_heading("전체 운임 기준"));
             section.add_space(theme::SPACE_12);
-            let epoch=shipping["epoch"].as_i64().unwrap_or(1);
-            section.label(typography::body(&format!("현재 운임 기준: {epoch}")));
+            section.label(typography::body(&freight_basis_label(shipping)));
             section.add_space(theme::SPACE_12);
             section.label(typography::body(
                 "전체 운임 기준을 변경하면 기존 운임의 자동 추천을 중단합니다. \
