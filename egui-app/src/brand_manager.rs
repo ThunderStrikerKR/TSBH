@@ -222,22 +222,24 @@ impl BrandManager {
                                 self.form.aliases.retain(|alias|alias!=&tag);
                                 self.alias_notice=None;
                             }
-                            if interaction.add{self.add_alias();}
-                            if let Some(notice)=self.alias_notice.as_deref(){
-                                body.label(typography::caption(notice));
-                            }else if !self.alias_input.trim().is_empty(){
-                                body.label(typography::caption("입력한 별칭은 추가 버튼으로 등록하세요."));
+                            if interaction.add{
+                                crate::floating_notice::dispatch_pointer(ctx,"brands.alias");
+                                self.add_alias();
                             }
+                            crate::floating_notice::sync(ctx,"brands.alias.feedback","brands.alias",
+                                crate::floating_notice::Tone::Validation,self.alias_notice.as_deref());
                             });
                             });
                             crate::popup::modal_compact_text_field(body,"확인 근거 URL",&mut self.form.evidence,"확인 근거 URL");
                         });
-                        if let Some(error)=self.error.as_deref(){body.label(typography::caption(error));}
                     });
                     workspace.footer_single(|actions|{
                         save=crate::button::action(actions,"브랜드 저장",theme::ButtonRole::Primary,
                             editable&&!busy&&!nested&&self.alias_input.trim().is_empty()&&self.dirty()).clicked();
+                        if save{crate::floating_notice::dispatch_pointer(ctx,"brands.save");}
                     });
+                    crate::floating_notice::sync(ctx,"brands.save.error","brands.save",
+                        crate::floating_notice::Tone::Error,self.error.as_deref());
                 });
             });
         if close{if self.dirty(){self.pending=Some(Exit::Close);}else{self.close_editor();}}
@@ -288,6 +290,43 @@ mod modal_lifecycle_tests{
         manager.add_alias();
         assert_eq!(manager.form.aliases.len(),2);
         assert!(manager.alias_input.is_empty());
+    }
+    #[test]
+    fn actual_brand_popup_feedback_never_moves_controls(){
+        use crate::ui_test_support::{begin_component_geometry,finish_component_geometry,
+            assert_layout_rects_invariant,test_context};
+        let catalog=json!({"brands":[{"id":"b","name":"BANDO","aliases":["existing"]}]});
+        let ctx=test_context();
+        let mut manager=BrandManager::default();
+        manager.choose("b".into(),&catalog);
+        let work=Rect::from_min_size(eframe::egui::Pos2::ZERO,eframe::egui::vec2(1400.0,900.0));
+        let mut baseline=None;
+        for phase in 0..5{
+            match phase{
+                1=>manager.alias_input="pending alias".into(),
+                2=>{manager.alias_input="existing".into();manager.add_alias();
+                    assert!(manager.alias_notice.is_some());},
+                3=>manager.on_failed("synthetic save error".into()),
+                4=>{manager.alias_notice=None;manager.error=None;},
+                _=>{}
+            }
+            let mut slots=Vec::new();
+            for _ in 0..6{
+                begin_component_geometry();
+                let _=ctx.run(eframe::egui::RawInput{screen_rect:Some(work),..Default::default()},|ctx|{
+                    crate::floating_notice::begin_page(ctx,"brand feedback test");
+                    manager.show_editor(ctx,work,true,false);
+                    crate::floating_notice::show(ctx);
+                });
+                slots=finish_component_geometry(work).into_iter()
+                    .filter(|sample|matches!(sample.role,"input"|"button"|"popup"|"scrollbar"))
+                    .map(|sample|(sample.role,sample.rect)).collect::<Vec<_>>();
+            }
+            assert!(slots.iter().filter(|(role,_)|*role=="input").count()>=4);
+            if let Some(before)=baseline.as_ref(){
+                assert_layout_rects_invariant(before,&slots);
+            }else{baseline=Some(slots);}
+        }
     }
     #[test]
     fn correction_and_close_preserve_catalog_and_clear_editor(){
