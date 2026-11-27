@@ -21,16 +21,6 @@ try {
     $version = $match.Groups[1].Value
     $zip = Join-Path $release ("BANDO-HUB-v" + $version + "-windows-x64.zip")
     New-Item -ItemType Directory -Path $release -Force | Out-Null
-    $targetDir = Join-Path $repo "egui-app\target"
-    Write-Host "[BUILD] BANDO HUB v$version (native egui, x64 Release)"
-    if (!(Test-Path -LiteralPath (Join-Path $repo "egui-app\Cargo.lock") -PathType Leaf)) { throw "Committed egui Cargo.lock is required." }
-    & git.exe ls-files --error-unmatch egui-app/Cargo.lock | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "egui Cargo.lock is not tracked." }
-    & cargo.exe build --locked --release --manifest-path $manifest --bin bando-hub-egui --target x86_64-pc-windows-msvc --target-dir $targetDir
-    if ($LASTEXITCODE -ne 0) { throw "Rust release build failed (code=$LASTEXITCODE)." }
-    $exe = Join-Path $targetDir "x86_64-pc-windows-msvc\release\bando-hub-egui.exe"
-    if (!(Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Release EXE missing." }
-
     # Release packaging must never download or execute an unapproved runtime.
     if (!$env:BANDO_OCR_APPROVAL_MANIFEST -or !$env:BANDO_OCR_APPROVAL_SHA256) {
         throw "Independently approved OCR inventory and its SHA256 are required."
@@ -41,11 +31,21 @@ try {
     } else { Join-Path $release "ocr" }
     Assert-ApprovedOcr $ocrSource $approval $env:BANDO_OCR_APPROVAL_SHA256
     New-Item -ItemType Directory -Path $stage | Out-Null
-    Copy-Item -LiteralPath $exe -Destination (Join-Path $stage "BANDO-HUB.exe")
     Copy-Item -LiteralPath $ocrSource -Destination (Join-Path $stage "ocr") -Recurse
     Assert-ApprovedOcr (Join-Path $stage "ocr") $approval $env:BANDO_OCR_APPROVAL_SHA256
     & (Join-Path $PSScriptRoot "check-release-security.ps1") -OcrRoot (Join-Path $stage "ocr") -ApprovalManifest $approval -ApprovalSha256 $env:BANDO_OCR_APPROVAL_SHA256
     if ($LASTEXITCODE -ne 0) { throw "Release security checks failed." }
+    $targetDir = Join-Path $repo "egui-app\target"
+    Write-Host "[BUILD] BANDO HUB v$version (native egui, x64 Release)"
+    if (!(Test-Path -LiteralPath (Join-Path $repo "egui-app\Cargo.lock") -PathType Leaf)) { throw "Committed egui Cargo.lock is required." }
+    & git.exe ls-files --error-unmatch egui-app/Cargo.lock | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "egui Cargo.lock is not tracked." }
+    & cargo.exe build --locked --release --manifest-path $manifest --bin bando-hub-egui --target x86_64-pc-windows-msvc --target-dir $targetDir
+    if ($LASTEXITCODE -ne 0) { throw "Rust release build failed (code=$LASTEXITCODE)." }
+    $exe = Join-Path $targetDir "x86_64-pc-windows-msvc\release\bando-hub-egui.exe"
+    if (!(Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Release EXE missing." }
+
+    Copy-Item -LiteralPath $exe -Destination (Join-Path $stage "BANDO-HUB.exe")
     Copy-Item -LiteralPath (Join-Path $repo "scripts\RUN_BANDO_HUB.cmd") -Destination $stage
     @(
         "BANDO HUB v$version - Windows x64",
