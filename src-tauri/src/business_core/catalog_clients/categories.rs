@@ -47,22 +47,10 @@ pub(super) fn validate(before:Option<&Value>,next:&Value)->Result<(),String>{
         }
         category_path(cats,field(cat,"id"))?;
     }
-    for product in items(next,"products"){
-        let before_product=before.and_then(|s|items(s,"products").iter()
-            .find(|p|field(p,"id")==field(product,"id")));
-        let Some(old)=before_product else {continue};
-        if old.get("categories")==product.get("categories"){continue}
-        let ids=category_ids(product);
-        for id in &ids{
-            if !cats.iter().any(|c|field(c,"id")==id){continue}
-            let inactive=category_path(cats,id)?.iter()
-                .any(|c|c.get("active")==Some(&Value::Bool(false)));
-            let unchosen_child=cats.iter().any(|c|parent_id(c)==Some(id.as_str())
-                && !ids.iter().any(|part|part==field(c,"id")));
-            if inactive||unchosen_child{
-                return Err("활성 최하위 카테고리에 배정하세요.".into())
-            }
-        }
+    if let Some(before)=before{
+        bando_data_access::validate_category_transition(before,next)?;
+    }else{
+        bando_data_access::validate_category_transition(&json!({"products":[],"categories":[]}),next)?;
     }
     Ok(())
 }
@@ -298,6 +286,7 @@ fn legacy_add(input:&Value,id:&str,name:&str,parent:Option<&str>)->Result<Value,
     let mut updated=cats.to_vec();
     updated.push(json!({"id":id,"name":trimmed,"parentId":parent}));
     next["categories"]=json!(updated);
+    validate(Some(input),&next)?;
     Ok(json!({"state":next}))
 }
 fn legacy_rename(input:&Value,id:&str,name:&str)->Result<Value,String>{

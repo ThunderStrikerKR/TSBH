@@ -14,6 +14,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 mod validation;
+mod category_assignment;
+pub use category_assignment::{validate_product_assignment,validate_category_transition};
 mod relational_write;
 mod storage;
 pub mod notification_store;

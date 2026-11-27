@@ -84,6 +84,7 @@ fn validate_client(state: &Value, client: &Value) -> Result<(), String> {
     client_mutation::validate_client(state,client)
 }
 fn validate_product(state: &Value, product: &Value) -> Result<(), String> {
+    bando_data_access::validate_product_assignment(state,product)?;
     // src/domain.ts::productSchema and validateProduct: one sale unit only,
     // valid immutable identity, nonnegative safe prices and trusted links.
     for key in ["id", "code", "name", "createdAt", "updatedAt"] {
@@ -177,6 +178,7 @@ fn apply_product_workbook(state: &Value, preview: &Value) -> Result<Value, Strin
         .ok_or("상품 Excel 후보 목록이 없습니다.")?;
     let mut next = state.clone();
     next["products"] = products.clone();
+    bando_data_access::validate_category_transition(state,&next)?;
     Ok(json!({
         "next":next,
         "createdProducts":preview.get("createdProducts").cloned().unwrap_or(json!(0)),

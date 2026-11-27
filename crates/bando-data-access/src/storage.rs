@@ -583,6 +583,8 @@ fn verify_order_domain(tx:&Transaction<'_>,old:Value,next:&Value)
 
 fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
     current_revision:u64,validate_orders:bool,prefer_workflow_patch:bool)->Result<(Value,WriteScope),String>{
+    // A category topology change can invalidate unchanged product rows.
+    crate::validate_category_transition(current,&state)?;
     let products_changed = current["products"] != state["products"];
     let clients_changed = current["clients"] != state["clients"];
     let orders_changed = current["orders"] != state["orders"];
