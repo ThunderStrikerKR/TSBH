@@ -30,11 +30,9 @@ fn tauri_database_path(roaming:&std::path::Path)->Result<PathBuf,String>{
     Ok(roaming.join(identifier).join("bando-hub-v001.sqlite"))
 }
 
-/// Test execution is a launch-only boundary, not a Settings feature.
-pub fn test_launch()->bool{
-    cfg!(windows) && cfg!(debug_assertions) &&
-        std::env::var("BANDO_EGUI_DEVELOPER_TEST").ok().as_deref()==Some("1")
-}
+// Compatibility entry for existing business callers; the launch profile
+// is shared with native window persistence, not owned by the database.
+pub use crate::launch_profile::test_launch;
 fn test_database_path(roaming:&std::path::Path)->Result<PathBuf,String>{
     let production=tauri_database_path(roaming)?;
     Ok(production.parent().ok_or("업무 DB 폴더 오류")?

@@ -3,7 +3,7 @@
 //! avoiding reflow when a neighboring card changes its contents.
 
 pub const PANEL_COUNT: usize = 4;
-pub const SPLITTER: f32 = crate::ui_tokens::SPACE_6;
+pub const SPLITTER: f32 = crate::ui_tokens::WORKSPACE_SPLITTER_WIDTH;
 // Original 1920x1080 React reference: 390/531/529/418 physical pixels.
 // The current default below deliberately transfers width from the source
 // pane to the details pane; the reference remains useful for minimums.

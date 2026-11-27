@@ -11,7 +11,7 @@ pub(crate) fn ui_state_path(name:&str)->Option<PathBuf>{
         .map(|p|PathBuf::from(p).join("BANDO-HUB-egui-preview"))
         .or_else(||std::env::var_os("HOME").filter(|v|!v.is_empty())
             .map(|p|PathBuf::from(p).join(".config").join("bando-hub-egui-preview")))?;
-    Some(scoped_path(&root,crate::business_state::test_launch(),name))
+    Some(scoped_path(&root,crate::launch_profile::test_launch(),name))
 }
 pub(crate) fn write_atomic(path:&Path,bytes:&[u8])->io::Result<()>{
     use std::io::Write;

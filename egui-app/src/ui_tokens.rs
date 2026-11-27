@@ -6,6 +6,8 @@ pub const SPACE_8:f32=8.0;
 pub const SPACE_12:f32=12.0;
 pub const SPACE_16:f32=16.0;
 pub const SPACE_24:f32=24.0;
+/// Shared draggable workspace separator geometry, independent of persistence.
+pub const WORKSPACE_SPLITTER_WIDTH:f32=SPACE_6;
 pub const FONT_FIELD_LABEL: f32 = 13.0;
 pub const FONT_FREIGHT_SUMMARY_NUMBER: f32 = 28.0;
 pub const FONT_FREIGHT_SUMMARY_LABEL: f32 = 13.0;

@@ -1334,15 +1334,34 @@ function selfTest(){
   console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+33);
 }
 
-// The shared UI dependency graph excludes business screens and test-only support.
-// Parse Rust code tokens (not comments/strings), including grouped crate imports.
-const dependencyOwners=new Set(["components","theme","typography","ui_tokens","ui_primitives",
-  "display_format","button","input","dropdown","table","checkbox","scrollbar","popup",
-  "card","overlay","floating_notice","source_highlight","cell_navigation","one_touch","layout","ui_layout","navigation","composite_workflow","composite_client","composite_reception","text_fit","category_tree","status_notice"]);
-function sharedDependencies(source,owner){
+// UI dependency layers: shared primitives never reach upward into screen
+// orchestration or the business database. Same-layer references are allowed
+// only when acyclic. Presentation-only adapters are explicit graph members.
+const dependencyLayers=[
+  ["ui_tokens","launch_profile","display_format","user_error","overlay","cell_navigation"],
+  ["theme","view_state","window_state"],
+  ["typography","scrollbar","layout"],
+  ["ui_primitives","source_highlight","text_fit"],
+  ["floating_notice"],
+  ["button","input","checkbox"],
+  ["card","category_tree","navigation","dropdown","one_touch"],
+  ["table","popup","status_notice"],
+  ["ui_layout"],
+  ["composite_client","composite_reception","composite_workflow","components"]
+];
+const dependencyRank=new Map(dependencyLayers.flatMap((layer,index)=>layer.map(name=>[name,index])));
+const dependencyOwners=new Set(dependencyRank.keys());
+function sharedDependencies(source,owner,includeExternal=false){
   const v=productionTokens(source).map(t=>t.v),out=new Set();
-  const add=name=>{if(name!==owner&&dependencyOwners.has(name))out.add(name);};
+  const add=(name,explicit=false)=>{
+    if(name!==owner&&(dependencyOwners.has(name)||
+      (includeExternal&&explicit&&/^[a-z_][a-z_0-9]*$/.test(name??"")&&!["self","super","crate","ui_test_support"].includes(name))))
+      out.add(name);
+  };
   for(let i=0;i<v.length;i++){
+    // Qualified references plus imported aliases: the original crate
+    // root is recorded at its import, even when the alias is used later.
+    if(v[i]==="crate"&&v[i+1]==="::"&&v[i+2]!=="{")add(v[i+2],true);
     if(v[i+1]==="::"&&v[i-1]!=="mod")add(v[i]);
     if(v[i]==="crate"&&v[i+1]==="::"&&v[i+2]==="{"){
       let depth=1,entry=true;
@@ -1350,11 +1369,32 @@ function sharedDependencies(source,owner){
         if(v[j]==="{"){depth++;continue;}
         if(v[j]==="}"){depth--;continue;}
         if(depth===1&&v[j]===","){entry=true;continue;}
-        if(depth===1&&entry){add(v[j]);entry=false;}
+        if(depth===1&&entry){add(v[j],true);entry=false;}
       }
     }
   }
   return out;
+}
+function dependencyBoundaryViolations(owner,deps){
+  const hits=[];
+  for(const dep of deps){
+    if(!dependencyRank.has(dep)){
+      hits.push(owner+": shared UI imports non-UI module "+dep);
+    }else if(dependencyRank.get(dep)>dependencyRank.get(owner)){
+      hits.push(owner+": upward UI dependency on "+dep);
+    }
+  }
+  return hits;
+}
+function dependencyBoundarySelfTest(){
+  assert.deepEqual([...sharedDependencies("use crate::{theme as colors, gateway::{X,Y}};","button",true)],["theme","gateway"]);
+  assert.deepEqual(dependencyBoundaryViolations("button",new Set(["theme","gateway"])),["button: shared UI imports non-UI module gateway"]);
+  assert.deepEqual(dependencyBoundaryViolations("input",new Set(["popup"])),["input: upward UI dependency on popup"]);
+  assert.equal(dependencyBoundaryViolations("scrollbar",new Set(["view_state","theme"])).length,0);
+  assert.equal(dependencyBoundaryViolations("layout",new Set(["window_state","ui_tokens"])).length,0);
+  assert.equal(dependencyBoundaryViolations("window_state",new Set(["launch_profile"])).length,0);
+  assert.equal(sharedDependencies("fn a(){} #[cfg(test)] mod tests {use crate::gateway;}","button",true).size,0);
+  assert.equal(sharedDependencies("fn a(){let s=\"crate::gateway\";}","button",true).size,0);
 }
 function dependencyCycles(graph){
   const visited=new Set(),active=new Set(),stack=[],cycles=[];
@@ -1392,7 +1432,8 @@ export function designTokenViolations(source,file){
     ],
     "button/mod.rs":["ButtonRole :: Danger => ( ACTION_STANDARD_HEIGHT"],
     "input/mod.rs":["Stroke :: new ( theme :: INPUT_FOCUS_STROKE_WIDTH , theme :: SELECTION","Stroke :: new ( theme :: REQUIRED_INPUT_STROKE_WIDTH , theme :: REQUIRED_INPUT_BORDER"],
-    "layout.rs":["SPLITTER : f32 = crate :: ui_tokens :: SPACE_6"],
+    "layout.rs":["SPLITTER : f32 = crate :: ui_tokens :: WORKSPACE_SPLITTER_WIDTH"],
+    "ui_tokens.rs":["WORKSPACE_SPLITTER_WIDTH : f32 = SPACE_6"],
     "freight_manager.rs":["rect . shrink2 ( egui :: vec2 ( theme :: MANAGEMENT_TABLE_TEXT_LEADING_INSET","cells [ 3 ] . shrink2 ( egui :: vec2 ( theme :: MANAGEMENT_TABLE_ACTION_INSET"],
     "order_history_manager.rs":["rect . left ( ) + theme :: MANAGEMENT_TABLE_TEXT_LEADING_INSET"],
     "order_history_detail.rs":["theme :: paint_bordered_surface ( ui . painter ( ) , rect , theme :: CONTROL_RADIUS"],
@@ -1405,7 +1446,7 @@ export function designTokenViolations(source,file){
 }
 function designTokenSelfTest(){
   assert.equal(designTokenViolations("const SPLITTER:f32=6.0;","layout.rs").length,1);
-  assert.equal(designTokenViolations("const SPLITTER:f32=crate::ui_tokens::SPACE_6;","layout.rs").length,0);
+  assert.equal(designTokenViolations("const SPLITTER:f32=crate::ui_tokens::WORKSPACE_SPLITTER_WIDTH;","layout.rs").length,0);
   assert.equal(designTokenViolations("const WORKFLOW_VAT_FONT_SIZE:f32=10.0;","theme.rs").includes("workflow VAT font belongs to typography"),true);
   assert.equal(designTokenViolations("fn icon(){Stroke::new(1.0,ink);}","screen.rs").length,0);
 }
@@ -1480,6 +1521,7 @@ function managedLayoutSelfTest(){
 
 function main(){
   managedLayoutSelfTest();
+  dependencyBoundarySelfTest();
   selfTest();
   designTokenSelfTest();
   compositeSelfTest();
@@ -1498,8 +1540,14 @@ function main(){
     const file=relative(resolve(root,"egui-app/src"),path).replaceAll("\\","/");
     const source=readFileSync(path,"utf8");
     if(source.startsWith("#![cfg(test)]"))continue;
-    const owner=file.endsWith("/mod.rs")?file.split("/")[0]:file.replace(/\.rs$/,"");
-    if(dependencyOwners.has(owner))graph.set(owner,sharedDependencies(source,owner));
+    const owner=file.includes("/")?file.split("/")[0]:file.replace(/\.rs$/,"");
+    // Merge all production submodules instead of overwriting their root.
+    // Explicit regression-test files are not production dependencies.
+    if(dependencyOwners.has(owner)&&!/(?:^|\/)(?:regression_tests|tests)\.rs$/.test(file)){
+      const deps=graph.get(owner)||new Set();
+      for(const dep of sharedDependencies(source,owner,true))deps.add(dep);
+      graph.set(owner,deps);
+    }
     for(const rule of designTokenViolations(source,file)){failures++;console.error(file+": "+rule);}
     for(const hit of [...audit(source,file,true),...auditComposite(source,file,true),...auditContextLocks(source,file),...auditCardHeights(source,file),...auditIndirectCardHeights(source,file),...auditCardWidths(source,file),...auditManagedLayout(source,file)]){
       failures++;console.error(file+":"+hit.line+" "+hit.rule);
@@ -1509,8 +1557,8 @@ function main(){
     failures++;console.error("shared UI dependency cycle: "+cycle.join(" -> "));
   }
   for(const [owner,deps] of graph){
-    if(owner!=="components"&&deps.has("components")){
-      failures++;console.error(owner+": reverse dependency on composite components");
+    for(const rule of dependencyBoundaryViolations(owner,deps)){
+      failures++;console.error("shared UI dependency boundary: "+rule);
     }
   }
   console.log("EGUI_SHARED_UI_AUDIT",JSON.stringify({files:files.length,failures}));

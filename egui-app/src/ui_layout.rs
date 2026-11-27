@@ -270,8 +270,8 @@ pub fn paint_dock_network(
         let x_start = verticals[left].0.center().x;
         let x_end = verticals[right].0.center().x;
         let area = Rect::from_min_max(
-            egui::pos2(x_start, center_y - crate::layout::SPLITTER / 2.0),
-            egui::pos2(x_end, center_y + crate::layout::SPLITTER / 2.0),
+            egui::pos2(x_start, center_y - crate::ui_tokens::WORKSPACE_SPLITTER_WIDTH / 2.0),
+            egui::pos2(x_end, center_y + crate::ui_tokens::WORKSPACE_SPLITTER_WIDTH / 2.0),
         );
         paint_dock_axis_line(ui, area, false, false);
     }

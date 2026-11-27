@@ -14,6 +14,7 @@ mod composite_client;
 mod composite_reception;
 mod text_fit;
 mod window_state;
+mod launch_profile;
 #[cfg(test)]
 mod ui_regressions;
 mod category_tree;
