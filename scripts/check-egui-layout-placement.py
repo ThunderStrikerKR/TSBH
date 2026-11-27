@@ -620,10 +620,19 @@ def retired_color_alias_violations(name, code):
             findings.append((code.count("\n", 0, match.start())+1, "retired color alias declaration"))
     return findings
 
+def public_color_violations(name, code):
+    # API inventories are advisory; this actual ownership invariant is not.
+    # All concrete Color32 constants belong to private theme/component scope.
+    # Typed palette-returning functions and public palette fields remain valid.
+    pattern = r"\bpub\s*(?:\([^)]*\)\s*)?(?:const|static)\s+(?:mut\s+)?\w+\s*:\s*(?:(?:\w+)\s*::\s*)*Color32\b"
+    return [(code.count("\n", 0, m.start())+1, "public color constant or static; expose semantic palette instead")
+            for m in re.finditer(pattern, code)]
+
 def violations(name, source):
     code = production(source)
     findings = pixel_paint_violations(name, code) + pixel_math_violations(name, code)
     findings += retired_color_alias_violations(name, code)
+    findings += public_color_violations(name, code)
     owner_calls = 0
     if name == OWNER:
         for match in re.finditer(r"\b(?:crate|super)\s*::", code):
@@ -672,6 +681,11 @@ def violations(name, source):
     return sorted(findings)
 
 def self_test():
+    assert violations("theme.rs", "pub const NEW_COLOR: Color32 = Color32::WHITE;")
+    assert violations("theme.rs", "pub(crate) const NEW_COLOR: egui::Color32 = Color32::WHITE;")
+    assert violations("theme.rs", "pub(crate) static NEW_COLOR: eframe::egui::Color32 = Color32::WHITE;")
+    assert not violations("theme.rs", "const NEW_COLOR: Color32 = Color32::WHITE;")
+    assert not violations("theme.rs", "pub(crate) fn color()->Color32 { NEW_COLOR }")
     assert violations("source_highlight.rs", "pub const ACTIVE_FILL:Color32 = palette.fill;")
     assert violations("one_touch.rs", "pub const INK:Color32 = palette.text;")
     assert violations("screen.rs", "let c = source_highlight::ACTIVE_BORDER;")
