@@ -1121,6 +1121,108 @@ impl PreviewStore {
         Ok(report)
     }
 
+    /// Candidate generation only: the selected model and business data
+    /// remain unchanged. The worker calls this after a full ledger pass.
+    pub(crate) fn auto_retrain_blend(evaluate:impl Fn(&Value)->Result<Value,String>)->Result<Value,String>{
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending WHERE scope=?1 AND feature_version=1",
+            [&scope],|r|r.get(0)).map_err(|e|e.to_string())?;
+        if pending!=0{return Ok(auto_retrain_status("pending_reconciliation",0));}
+        let build=env!("CARGO_PKG_VERSION");
+        let source=crate::business_state::open_business_read_snapshot()?;
+        // Most recent compatible initial predictions, never imported labels.
+        // The existing lifecycle check below rejects inactive orders.
+        let ids={
+            let mut stmt=source.prepare("SELECT id FROM core_orders
+                WHERE json_extract(payload,'$.confirmationSnapshot.recognitionBaseline.schemaVersion')=1
+                AND json_extract(payload,'$.confirmationSnapshot.recognitionBaseline.initialAnalysis.initialPredictionCapture.clientBuildVersion')=?1
+                AND json_extract(payload,'$.confirmationSnapshot.recognitionBaseline.initialAnalysis.recipientOwnerTrace.scorePolicyVersion')='owner-margin-30-v1'
+                AND json_extract(payload,'$.confirmationSnapshot.recognitionBaseline.initialAnalysis.initialPredictionCapture.learningShadow.captureVersion')=4
+                AND json_extract(payload,'$.confirmationSnapshot.recognitionBaseline.initialAnalysis.initialPredictionCapture.learningShadow.status')='captured_shadow_support'
+                AND coalesce(json_extract(payload,'$.deletedAt'),'')=''
+                AND julianday(confirmed_at) IS NOT NULL
+                AND julianday(json_extract(payload,'$.confirmationSnapshot.recognitionBaseline.initialAnalysis.initialPredictionCapture.learningShadow.capturedAt')) IS NOT NULL
+                ORDER BY julianday(json_extract(payload,'$.confirmationSnapshot.recognitionBaseline.initialAnalysis.initialPredictionCapture.learningShadow.capturedAt')) DESC,id DESC LIMIT 250")
+                .map_err(|e|e.to_string())?;
+            let rows=stmt.query_map([build],|r|r.get::<_,String>(0)).map_err(|e|e.to_string())?;
+            rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?
+        };
+        if ids.len()<AUTO_RETRAIN_MIN_ORDERS{return Ok(auto_retrain_status("insufficient_orders",ids.len()));}
+        let (frozen,mut orders,digests)=crate::business_state::learning_inputs_from_snapshot(&source,&ids,|sources|{
+            let (misses,digests)=select_learning_changes(&tx,&scope,sources)?;
+            if !misses.is_empty(){return Err("자동 재학습 원본 동기화 필요".into());}
+            let active=sources.iter().filter(|(_,s)|s.active).map(|(id,_)|id.clone()).collect();
+            Ok((active,digests))
+        })?;
+        source.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+        if orders.len()<AUTO_RETRAIN_MIN_ORDERS{return Ok(auto_retrain_status("insufficient_active_orders",orders.len()));}
+        let now=chrono::Utc::now().fixed_offset();
+        let Some(config)=auto_retrain_config(&orders,now,build)else{
+            return Ok(auto_retrain_status("insufficient_distinct_chronological_windows",orders.len()));
+        };
+        // Persistent attempt state prevents retraining identical cohorts on
+        // every scan or after restarting the application.
+        tx.execute_batch("CREATE TABLE IF NOT EXISTS recognition_blend_retrain_state(
+            scope TEXT NOT NULL,build TEXT NOT NULL,policy_version INTEGER NOT NULL,
+            cohort TEXT NOT NULL,attempted_at TEXT NOT NULL,status TEXT NOT NULL,model_id TEXT,
+            PRIMARY KEY(scope,build,policy_version));").map_err(|e|e.to_string())?;
+        let prior:Option<String>=tx.query_row("SELECT cohort FROM recognition_blend_retrain_state
+            WHERE scope=?1 AND build=?2 AND policy_version=1",params![scope,build],|r|r.get(0))
+            .optional().map_err(|e|e.to_string())?;
+        if let Some(prior)=prior{
+            let prior:LearningDigests=serde_json::from_str(&prior).map_err(|_|"자동 재학습 상태 손상")?;
+            if !auto_retrain_due(&prior,&digests){return Ok(auto_retrain_status("unchanged_or_insufficient_new_orders",orders.len()));}
+        }
+        let audit_ids=orders.iter().filter_map(|o|o["id"].as_str()).filter(|id|
+            frozen.get(*id).is_some_and(|s|s.audit_needed)).map(str::to_owned).collect::<Vec<_>>();
+        let mut audit=if audit_ids.is_empty(){std::collections::BTreeMap::new()}
+            else{query_reception_audit_batch(&tx,&audit_ids)?};
+        for order in &mut orders{
+            let id=order["id"].as_str().ok_or("자동 재학습 주문 ID 누락")?;
+            if let Some(events)=audit.remove(id){order["recognitionAuditEvents"]=json!(events);}
+        }
+        let report=evaluate(&json!({"orders":orders,"config":config}))?;
+        if crate::business_state::read_learning_sources(&ids)?!=frozen||
+            crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("자동 재학습 중 원본 변경".into());
+        }
+        let mut result=auto_retrain_status("insufficient_calibrated_or_test_samples",digests.len());
+        let mut model_id=None;
+        // Save only a usable candidate with a nonempty held-out evaluation.
+        // This is not an approval or a comparison-based promotion.
+        if report["status"]=="blend_weight_diagnostic_only"&&report["runtimeParameters"].is_object()&&
+            report["weightOrdersWithBothModels"].as_u64().is_some_and(|n|n>=10)&&
+            report["testOrdersWithBothModels"].as_u64().is_some_and(|n|n>=10)&&
+            report["overallTestCoverage"].as_f64().is_some_and(|v|v>0.0)&&
+            report["models"].as_array().is_some_and(|a|a.iter().any(|m|
+                m["weightFitOrders"].as_u64().is_some_and(|n|n>=10)&&m["learningWeight"].is_number())){
+            let mut model=report["runtimeParameters"].clone();
+            model["businessScope"]=json!(scope);
+            model["sourceDigests"]=json!(digests);
+            model["generationKind"]=json!("automatic_candidate_v1");
+            model["generationPolicyVersion"]=json!(1);
+            // Record the actual cutoff boundaries, not only availableAfter.
+            model["trainingWindows"]=config.clone();
+            verify_blend_model_sources(&tx,&scope,&business,&model,None)?;
+            prepare_blend_registry(&tx)?;
+            model_id=Some(store_blend_model(&tx,&scope,&model)?);
+            result["status"]=json!("candidate_stored");
+            result["storedModelId"]=json!(model_id);
+        }
+        let cohort=serde_json::to_string(&digests).map_err(|_|"재학습 표본 직렬화 오류")?;
+        tx.execute("INSERT INTO recognition_blend_retrain_state VALUES(?1,?2,1,?3,?4,?5,?6)
+            ON CONFLICT(scope,build,policy_version) DO UPDATE SET cohort=excluded.cohort,
+            attempted_at=excluded.attempted_at,status=excluded.status,model_id=excluded.model_id",
+            params![scope,build,cohort,now.to_rfc3339(),result["status"].as_str(),model_id]).map_err(|e|e.to_string())?;
+        result["trainingWindows"]=config;
+        result["weightOrdersWithBothModels"]=report["weightOrdersWithBothModels"].clone();
+        result["testOrdersWithBothModels"]=report["testOrdersWithBothModels"].clone();
+        result["overallTestCoverage"]=report["overallTestCoverage"].clone();
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(result)
+    }
+
     pub(crate) fn recognition_learning_support(input:&Value,
         evaluate:impl Fn(&[Value])->Result<Value,String>)->Result<Value,String>{
         if let Some(performance)=input.get("combinedModelPerformance"){
@@ -1257,6 +1359,42 @@ impl PreviewStore {
 /// Read exact stored audit bytes through the existing order/time index.
  /// No serde parse, string copies, or event JSON construction on cache hits.
 type LearningDigests=std::collections::BTreeMap<String,String>;
+const AUTO_RETRAIN_MIN_ORDERS:usize=60;
+const AUTO_RETRAIN_NEW_ORDERS:usize=20;
+fn auto_retrain_status(status:&str,n:usize)->Value{
+    json!({"status":status,"candidateOrders":n,"policyVersion":1,
+        "minimumOrders":AUTO_RETRAIN_MIN_ORDERS,"minimumNewOrders":AUTO_RETRAIN_NEW_ORDERS,
+        "modelAutomaticallySelected":false,"automaticChangeAuthorized":false,"decisionChanged":false})
+}
+fn auto_retrain_due(previous:&LearningDigests,current:&LearningDigests)->bool{
+    let new=current.keys().filter(|id|!previous.contains_key(*id)).count();
+    let changed=current.iter().any(|(id,digest)|previous.get(id).is_some_and(|old|old!=digest));
+    // A modified shared source invalidates the old evidence even without
+    // 20 new orders. A rolling-window eviction alone does not trigger.
+    changed||new>=AUTO_RETRAIN_NEW_ORDERS
+}
+fn auto_retrain_config(orders:&[Value],now:chrono::DateTime<chrono::FixedOffset>,build:&str)->Option<Value>{
+    if orders.len()<AUTO_RETRAIN_MIN_ORDERS||orders.len()>250{return None;}
+    let date=|v:&Value|v.as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
+    let mut times=Vec::new();let mut starts=Vec::new();
+    for order in orders{
+        let cap=&order["confirmationSnapshot"]["recognitionBaseline"]["initialAnalysis"]["initialPredictionCapture"];
+        let (start,predicted,confirmed)=(date(&cap["analysisStartedAt"])?,date(&cap["learningShadow"]["capturedAt"])?,date(&order["confirmedAt"])?);
+        if !(start<=predicted&&predicted<confirmed&&confirmed<now){return None;}
+        starts.push(start);times.push(predicted);
+    }
+    times.sort();starts.sort();
+    let weight=times[times.len()*3/5];let test=times[times.len()*4/5];
+    let fit=starts[0];
+    if !(fit<weight&&weight<test&&test<now){return None;}
+    let before=times.iter().filter(|t|**t<weight).count();
+    let middle=times.iter().filter(|t|**t>=weight&&**t<test).count();
+    let after=times.len()-before-middle;
+    if before<20||middle<10||after<10{return None;}
+    Some(json!({"fitStart":fit.to_rfc3339(),"weightStart":weight.to_rfc3339(),
+        "testStart":test.to_rfc3339(),"testEnd":now.to_rfc3339(),
+        "evaluationAsOf":now.to_rfc3339(),"clientBuildVersion":build}))
+}
 
 fn blend_registry_exists(conn:&Connection)->Result<bool,String>{
     conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN
@@ -1820,6 +1958,31 @@ mod ocr_layout_tests {
 #[cfg(test)]
 mod reception_edit_audit_tests {
     use super::*;
+    #[test]
+    fn automatic_retrain_uses_distinct_time_windows_and_new_order_threshold(){
+        let old=(0..60).map(|i|(format!("id-{i}"),"a".repeat(64))).collect::<LearningDigests>();
+        let mut current=old.clone();
+        assert!(!auto_retrain_due(&old,&current));
+        for i in 60..79{current.insert(format!("id-{i}"),"b".repeat(64));}
+        assert!(!auto_retrain_due(&old,&current));
+        current.insert("id-79".into(),"b".repeat(64));
+        assert!(auto_retrain_due(&old,&current));
+        let mut changed=old.clone();changed.insert("id-0".into(),"b".repeat(64));
+        assert!(auto_retrain_due(&old,&changed));
+        let base=chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z").unwrap();
+        let orders=(0..60).map(|i|{
+            let start=base+chrono::Duration::hours(i*2);
+            let predicted=start+chrono::Duration::minutes(1);
+            let confirmed=start+chrono::Duration::minutes(2);
+            json!({"confirmedAt":confirmed.to_rfc3339(),"confirmationSnapshot":{"recognitionBaseline":{"initialAnalysis":{
+                "initialPredictionCapture":{"analysisStartedAt":start.to_rfc3339(),"learningShadow":{"capturedAt":predicted.to_rfc3339()}}
+            }}}})
+        }).collect::<Vec<_>>();
+        let now=base+chrono::Duration::days(10);
+        assert!(auto_retrain_config(&orders,now,"test").is_some());
+        assert!(auto_retrain_config(&orders[..59],now,"test").is_none());
+        assert!(auto_retrain_config(&vec![orders[0].clone();60],now,"test").is_none());
+    }
 
     #[test]
     fn blend_registry_stores_immutable_revisions_and_separate_selection(){

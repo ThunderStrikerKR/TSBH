@@ -1157,6 +1157,7 @@ pub(crate) fn start_recognition_learning_worker(){
         use std::time::{Duration,Instant};
         let mut cursor=String::new();
         let mut next_scan=Instant::now();
+        let mut next_retrain=Instant::now();
         loop{
             match receiver.recv_timeout(Duration::from_secs(2)){
                 Ok(ids)=>{
@@ -1173,6 +1174,13 @@ pub(crate) fn start_recognition_learning_worker(){
             match PreviewStore::recognition_learning_page(&cursor,16){
                 Ok(ids) if ids.is_empty()=>{
                     cursor.clear();
+                    if Instant::now()>=next_retrain{
+                        next_retrain=Instant::now()+Duration::from_secs(3600);
+                        if PreviewStore::auto_retrain_blend(|payload|
+                            recognition::execute("learn_blend_weights",payload.clone())).is_err(){
+                            eprintln!("[BANDO HUB] 결합 모델 자동 재학습 보류: 다음 주기에 재검증합니다.");
+                        }
+                    }
                     next_scan=Instant::now()+Duration::from_secs(60);
                 }
                 Ok(ids)=>{
@@ -1215,6 +1223,12 @@ pub(crate) fn sync_recognition_learning(ids:&[String])->Result<Value,String>{
 pub(crate) fn recognition_learning_support(input:&Value)->Result<Value,String>{
     let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
     if !mode.trim().eq_ignore_ascii_case("local"){return Err("학습 지지도는 로컬 DB에서만 조회합니다.".into());}
+    if let Some(config)=input.get("autoBlendRetraining"){
+        if input.as_object().is_none_or(|o|o.len()!=1)||config.as_object().is_none_or(|o|!o.is_empty()){
+            return Err("자동 재학습은 빈 설정으로 별도 요청해야 합니다.".into());
+        }
+        return PreviewStore::auto_retrain_blend(|payload|recognition::execute("learn_blend_weights",payload.clone()));
+    }
     PreviewStore::recognition_learning_support(input,|orders|{
         if let Some(config)=input.get("legacyScoreCalibration"){
             recognition::execute("calibrate_legacy_scores",serde_json::json!({"orders":orders,"config":config}))
