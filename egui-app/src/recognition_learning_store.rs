@@ -274,6 +274,11 @@ pub(super) fn assess_support(tx:&Transaction<'_>,scope:&str,input:&Value)->Resul
     recognition_support::assess(tx,scope,input)
 }
 
+pub(super) fn assess_local_replay(tx:&Transaction<'_>,scope:&str,input:&Value,
+    orders:&[Value],digests:&BTreeMap<String,String>)->Result<Value,String>{
+    recognition_support::local_replay(tx,scope,input,orders,digests)
+}
+
 pub(super) fn order_page(conn:&Connection,scope:&str,after:&str,limit:usize)->Result<Vec<String>,String>{
     if !(1..=25).contains(&limit){return Err("학습 원장 페이지 범위 오류".into());}
     let mut stmt=conn.prepare("SELECT order_id FROM recognition_learning_orders

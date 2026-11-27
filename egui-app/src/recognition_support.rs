@@ -7,7 +7,7 @@ use std::collections::{BTreeMap,BTreeSet};
 
 const MAX_ORDERS:usize=50_000;
 const MAX_FACTS:usize=2_000_000;
-const SUPPORT_VERSION:i64=3;
+const SUPPORT_VERSION:i64=4;
 
 #[derive(Default)]
 struct Evidence{
@@ -361,6 +361,109 @@ fn chronological_calibration(input:&Value,allowed:&BTreeSet<String>,key:&str,tar
         "sourceProvenanceVerified":false,"chronologicalHoldoutVerified":false,
         "representativeLabelsVerified":false,"calibratedProbability":null,
         "eligibleForAutomaticDecision":false,"decisionChanged":false}))
+}
+
+// Selected current authoritative snapshots, not archived historical model state.
+// Never accept predictions or labels from the caller on this path.
+pub(super) fn local_replay(tx:&Transaction<'_>,scope:&str,input:&Value,
+    orders:&[Value],digests:&BTreeMap<String,String>)->Result<Value,String>{
+    use chrono::DateTime;
+    use sha2::{Digest,Sha256};
+    let (family,key,target,allowed,ratio)=request(input)?;
+    let config=&input["localChronologicalReplay"];
+    let date=|v:&Value|v.as_str().and_then(|s|DateTime::parse_from_rfc3339(s).ok());
+    let cutoff=date(&config["trainingDataThrough"]).ok_or("학습 종료 시각 오류")?;
+    let start=date(&config["calibrationStart"]).ok_or("보정 시작 시각 오류")?;
+    let test_start=date(&config["testStart"]).ok_or("검증 시작 시각 오류")?;
+    let end=date(&config["testEnd"]).ok_or("검증 종료 시각 오류")?;
+    let as_of=date(&config["evaluationAsOf"]).ok_or("평가 시각 오류")?;
+    if !(cutoff<start && start<test_start && test_start<end && end<=as_of){
+        return Err("학습·보정·검증 시각 순서 오류".into());
+    }
+    let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending WHERE scope=?1 AND feature_version=?2",
+        params![scope,FEATURE_VERSION],|r|r.get(0)).map_err(|e|e.to_string())?;
+    if pending!=0{return Err("복구 대기 학습 주문이 있습니다.".into());}
+    let mut train=Aggregate::default();
+    let mut evaluation=Vec::new();
+    let mut missing_time=0u64;let mut no_context=0u64;let mut excluded=0u64;
+    let mut ambiguous=0u64;let mut gap=0u64;
+    let mut train_digests=BTreeMap::new();
+    for order in orders{
+        let id=order["id"].as_str().ok_or("확정 주문 ID 누락")?;
+        if id==target || order["learningActive"]!=true ||
+            order["deletedAt"].as_str().is_some_and(|s|!s.is_empty()){
+            excluded+=1;continue;
+        }
+        let digest=digests.get(id).ok_or("학습 원본 지문 누락")?;
+        let count=cached_count(tx,scope,id,digest)?.ok_or("학습 원장이 최신 원본과 불일치합니다.")?;
+        if count==0{no_context+=1;continue;}
+        let facts=existing(tx,scope,id)?;
+        if !facts.iter().any(|f|f.0==family&&f.1==key){no_context+=1;continue;}
+        let evidence=Evidence::from_facts(&facts,family,key)?;
+        let snapshot=&order["confirmationSnapshot"];
+        let capture=&snapshot["recognitionBaseline"]["initialAnalysis"]["initialPredictionCapture"];
+        let times=(date(&capture["analysisStartedAt"]),date(&capture["analysisCompletedAt"]),date(&order["confirmedAt"]));
+        let (Some(began),Some(predicted),Some(confirmed))=times else{missing_time+=1;continue;};
+        if capture["schemaVersion"]!=1 || capture["origin"]!="native_reception_worker" ||
+            capture["orderId"].as_str()!=Some(id) || snapshot["at"]!=order["confirmedAt"] ||
+            began>predicted || predicted>=confirmed{
+            missing_time+=1;continue;
+        }
+        // All audit events must be after the initial recognition, and no
+        // later than the frozen confirmation. Cache proof checks manifest
+        // coverage and exact source bytes through the caller's digest.
+        let Some(events)=order["recognitionAuditEvents"].as_array()else{missing_time+=1;continue;};
+        if events.iter().any(|e|date(&e["at"]).is_none_or(|t|t<=predicted||t>confirmed)){
+            missing_time+=1;continue;
+        }
+        if confirmed<=cutoff{
+            train_digests.insert(id.to_owned(),digest.clone());
+            train.add(evidence,&allowed,ratio)?;
+        }else if predicted>=start && predicted<end{
+            if evidence.positive.len()!=1 || evidence.pending!=0 || evidence.unresolved!=0{
+                ambiguous+=1;continue;
+            }
+            evaluation.push((id.to_owned(),predicted,confirmed,evidence.positive.keys().next().unwrap().clone()));
+        }else{gap+=1;}
+    }
+    // ID binds the exact currently verified training inputs, query and
+    // algorithm version. It does not imply that this model existed then.
+    let mut hash=Sha256::new();
+    hash.update(serde_json::to_vec(&json!([SUPPORT_VERSION,FEATURE_VERSION,CONTRIBUTION_VERSION,
+        key,allowed,ratio,config["trainingDataThrough"],train_digests])).map_err(|_|"학습 집합 지문 오류")?);
+    let model=format!("replay-{:x}",hash.finalize());
+    let mut ranking=allowed.iter().map(|id|(id.as_str(),train.candidates.get(id).map_or(0.0,|c|c.support)))
+        .collect::<Vec<_>>();
+    ranking.sort_by(|a,b|b.1.total_cmp(&a.1));
+    let winner=ranking.first().filter(|(_,mass)|train.weight>0.0 && *mass>train.outside_support+1e-10 &&
+        ranking.get(1).is_none_or(|other|*mass>other.1+1e-10));
+    let mut samples=Vec::new();
+    if let Some((top,mass))=winner{
+        for (id,predicted,confirmed,actual) in &evaluation{
+            samples.push(json!({"orderId":id,"frozenModelId":model,"contextKey":key,
+                "explicitToWeakRatio":ratio,"labelKind":"explicit_correction",
+                "predictedAt":predicted.to_rfc3339(),"labelAvailableAt":confirmed.to_rfc3339(),
+                "topCandidate":top,"actualCandidate":actual,"topSupportShare":(mass/train.weight).clamp(0.0,1.0)}));
+        }
+    }
+    let mut config=config.clone();
+    config["frozenModelId"]=json!(model);
+    config["samples"]=json!(samples);
+    let mut report=chronological_calibration(&config,&allowed,key,target,ratio)?;
+    report["status"]=json!("local_snapshot_replay_diagnostic_only");
+    report["currentSourceDigestsVerified"]=json!(true);
+    report["historicalModelVerified"]=json!(false);
+    report["trainingOrders"]=json!(train_digests.len());
+    report["trainingSupportedOrders"]=json!(train.supported_orders);
+    report["excludedMissingOrInvalidTimeOrders"]=json!(missing_time);
+    report["excludedNoContextOrders"]=json!(no_context);
+    report["excludedInactiveOrTargetOrders"]=json!(excluded);
+    report["excludedAmbiguousLabelOrders"]=json!(ambiguous);
+    report["excludedOutsideWindowsOrders"]=json!(gap);
+    report["noUniquePredictionOrders"]=json!(evaluation.len()-samples.len());
+    report["selectedCurrentSnapshots"]=json!(orders.len());
+    report["fullHistoryReconciled"]=json!(false);
+    Ok(report)
 }
 
 /// Read only one context from the verified per-order ledger. Do not use

@@ -913,7 +913,41 @@ impl PreviewStore {
         let (mut conn,business,scope)=Self::learning_connection()?;
         let tx=conn.transaction().map_err(|e|e.to_string())?;
         // Diagnostic only: no preparation/migration or writes on this path.
-        let report=recognition_learning_store::assess_support(&tx,&scope,input)?;
+        let report=if let Some(config)=input.get("localChronologicalReplay"){
+            if input.get("chronologicalValidation").is_some() || config.get("samples").is_some() ||
+                config.get("frozenModelId").is_some(){
+                return Err("로컬 재현에 외부 예측·정답·모델을 혼합할 수 없습니다.".into());
+            }
+            let ids=config["orderIds"].as_array().filter(|v|!v.is_empty()&&v.len()<=250)
+                .ok_or("로컬 재현은 1~250개 주문 ID를 명시해야 합니다.")?
+                .iter().map(|id|id.as_str().filter(|s|!s.trim().is_empty()&&s.len()<=1024)
+                    .map(str::to_owned).ok_or("재현 주문 ID 오류".to_owned()))
+                .collect::<Result<Vec<_>,_>>()?;
+            if ids.iter().collect::<std::collections::BTreeSet<_>>().len()!=ids.len(){
+                return Err("재현 주문 ID 중복".into());
+            }
+            let (frozen,mut orders,digests)=crate::business_state::read_learning_inputs(&ids,|sources|{
+                let (misses,digests)=select_learning_changes(&tx,&scope,sources)?;
+                if !misses.is_empty(){return Err("원본과 불일치하는 학습 주문을 먼저 동기화하세요.".into());}
+                let active=sources.iter().filter(|(_,s)|s.active).map(|(id,_)|id.clone()).collect();
+                Ok((active,digests))
+            })?;
+            let audit_ids=orders.iter().filter_map(|o|o["id"].as_str())
+                .filter(|id|frozen.get(*id).is_some_and(|s|s.audit_needed)).map(str::to_owned).collect::<Vec<_>>();
+            let mut audit=if audit_ids.is_empty(){std::collections::BTreeMap::new()}
+                else{query_reception_audit_batch(&tx,&audit_ids)?};
+            for order in &mut orders{
+                let id=order["id"].as_str().ok_or("재현 주문 ID 누락")?;
+                if let Some(events)=audit.remove(id){order["recognitionAuditEvents"]=json!(events);}
+            }
+            let mut result=recognition_learning_store::assess_local_replay(&tx,&scope,input,&orders,&digests)?;
+            if crate::business_state::read_learning_sources(&ids)?!=frozen{
+                return Err("로컬 재현 중 확정 주문이 변경되었습니다.".into());
+            }
+            result["requestedOrders"]=json!(ids.len());
+            result["missingOrInactiveSourceOrders"]=json!(ids.len()-orders.len());
+            result
+        }else{recognition_learning_store::assess_support(&tx,&scope,input)?};
         if crate::business_state::authorized_business_write_path()?.canonicalize()
             .map_err(|_|"업무 DB 식별 실패")?!=business{
             return Err("학습 지지도 조회 중 업무 DB가 변경되었습니다.".into());
