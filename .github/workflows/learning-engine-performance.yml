@@ -73,6 +73,7 @@ jobs:
             'field_blend_rejects_overlapping_time_windows_and_duplicate_orders',
             'field_dependency_contract_blocks_joint_edits_and_preserves_owner_selection',
             'field_blend_registry_keeps_tasks_and_revisions_separate',
+            'model_registry_rejects_manual_selection_and_clear',
             'field_runtime_shadow_uses_frozen_model_and_preserves_initial_product',
             'field_paired_replay_excludes_training_orders_and_duplicate_ids'
           )
