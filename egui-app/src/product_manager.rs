@@ -84,11 +84,17 @@ fn rows(value: &Value) -> &[Value] {
 /// Search by the displayed brand name AND its catalog Korean name/aliases.
 /// Selection continues to use the unchanged catalog ID.
 fn brand_search_choices(
-    brands:&[Value],empty_label:&str
+    brands:&[Value],empty_label:&str,include_unassigned_filter:bool
 )->Vec<crate::dropdown::ManagementSearchChoice>{
     let mut choices=vec![crate::dropdown::ManagementSearchChoice::new(
         String::new(),empty_label.to_owned(),empty_label.to_owned()
     )];
+    if include_unassigned_filter{
+        choices.push(crate::dropdown::ManagementSearchChoice::new(
+            crate::catalog_query_bridge::UNASSIGNED_BRAND_FILTER.to_owned(),
+            "브랜드 미지정".to_owned(),"브랜드 미지정".to_owned()
+        ));
+    }
     for brand in brands{
         let id=field(brand,"id");
         if id.is_empty(){continue;}
@@ -850,7 +856,7 @@ impl ProductManager {
                         self.brands.on_saved(&catalog);
                     }else if job.kind=="delete_brand"{
                         self.brands.on_deleted();
-                        if !self.brand.is_empty()&&!rows(&catalog["brands"]).iter().any(|b|field(b,"id")==self.brand){self.brand.clear();}
+                        if !self.brand.is_empty()&&self.brand!=crate::catalog_query_bridge::UNASSIGNED_BRAND_FILTER&&!rows(&catalog["brands"]).iter().any(|b|field(b,"id")==self.brand){self.brand.clear();}
                     }
                     if job.kind=="upsert_product" || job.kind=="archive_product" {
                         self.selected=None;
@@ -1286,9 +1292,11 @@ impl ProductManager {
                         }else{self.changed(filter.ctx());}
                     }
                     let before_brand=self.brand.clone();
-                    let brand_text=brands.iter().find(|b|field(b,"id")==self.brand)
-                        .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
-                    let brand_choices=brand_search_choices(&brands,"전체 브랜드");
+                    let brand_text=if self.brand==crate::catalog_query_bridge::UNASSIGNED_BRAND_FILTER{
+                        "브랜드 미지정"
+                    }else{brands.iter().find(|b|field(b,"id")==self.brand)
+                        .map(|b|field(b,"name")).unwrap_or("전체 브랜드")};
+                    let brand_choices=brand_search_choices(&brands,"전체 브랜드",true);
                     crate::dropdown::management_searchable_dropdown(
                         filter,brand_text,theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,
                         true,&mut self.brand,&brand_choices,"브랜드 검색"
@@ -1979,7 +1987,7 @@ impl ProductManager {
                 .map(|b|field(b,"name")).unwrap_or("브랜드 미지정");
             row.add_enabled_ui(editable&&!busy,|input|{
                 let width=input.available_width().max(1.0);
-                let brand_choices=brand_search_choices(brands,"브랜드 미지정");
+                let brand_choices=brand_search_choices(brands,"브랜드 미지정",false);
                 crate::dropdown::management_searchable_dropdown(
                     input,crate::dropdown::DropdownCaption::new(label,
                         !brands.iter().any(|b|!brand_id.is_empty()&&field(b,"id")==brand_id)),width,true,
@@ -2545,15 +2553,22 @@ mod tests {
             "id":"brand-1","name":"K&M","korean":"케이앤엠",
             "aliases":["독일브랜드","K and M"]
         })];
-        let options=brand_search_choices(&brands,"전체 브랜드");
-        assert_eq!(options.len(),2);
+        let options=brand_search_choices(&brands,"전체 브랜드",true);
+        assert_eq!(options.len(),3);
         assert_eq!(options[0].value,"");
         assert_eq!(options[0].label,"전체 브랜드");
-        assert_eq!(options[1].value,"brand-1");
-        assert_eq!(options[1].label,"K&M");
+        assert_eq!(options[1].value,crate::catalog_query_bridge::UNASSIGNED_BRAND_FILTER);
+        assert_eq!(options[1].label,"브랜드 미지정");
+        assert_eq!(options[2].value,"brand-1");
+        assert_eq!(options[2].label,"K&M");
         for fragment in ["K&M","케이앤엠","독일브랜드","K and M"]{
-            assert!(options[1].search_text.contains(fragment));
+            assert!(options[2].search_text.contains(fragment));
         }
+        let detail=brand_search_choices(&brands,"브랜드 미지정",false);
+        assert_eq!(detail.len(),2);
+        assert_eq!(detail[0].value,"");
+        assert_eq!(detail[0].label,"브랜드 미지정");
+        assert_eq!(detail[1].value,"brand-1");
         let source=include_str!("product_manager.rs");
         let filter=source.split("let brand_choices=brand_search_choices(&brands").nth(1).unwrap()
             .split("let before_missing=").next().unwrap();
