@@ -1196,7 +1196,7 @@ impl PreviewStore {
         };
         if ids.len()<AUTO_RETRAIN_MIN_ORDERS{return Ok(auto_retrain_status("insufficient_orders",ids.len()));}
         let prior:Option<String>=tx.query_row("SELECT cohort FROM recognition_blend_retrain_state
-            WHERE scope=?1 AND build=?2 AND policy_version=1",params![scope,build],|r|r.get(0))
+            WHERE scope=?1 AND build=?2 AND policy_version=?3",params![scope,build,AUTO_RETRAIN_POLICY_VERSION],|r|r.get(0))
             .optional().map_err(|e|e.to_string())?;
         let previous=prior.as_deref().map(serde_json::from_str::<LearningDigests>).transpose().map_err(|_|"자동 재학습 상태 손상")?;
         let (frozen,mut orders,(digests,due))=crate::business_state::learning_inputs_from_snapshot(&source,&ids,|sources|{
@@ -1230,7 +1230,7 @@ impl PreviewStore {
         let fit_ms=started.elapsed().as_millis() as u64;
         let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
         let latest:Option<String>=tx.query_row("SELECT cohort FROM recognition_blend_retrain_state
-            WHERE scope=?1 AND build=?2 AND policy_version=1",params![scope,build],|r|r.get(0))
+            WHERE scope=?1 AND build=?2 AND policy_version=?3",params![scope,build,AUTO_RETRAIN_POLICY_VERSION],|r|r.get(0))
             .optional().map_err(|e|e.to_string())?;
         let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending WHERE scope=?1 AND feature_version=1",
             [&scope],|r|r.get(0)).map_err(|e|e.to_string())?;
@@ -1255,7 +1255,7 @@ impl PreviewStore {
             model["businessScope"]=json!(scope);
             model["sourceDigests"]=json!(digests);
             model["generationKind"]=json!("automatic_candidate_v1");
-            model["generationPolicyVersion"]=json!(1);
+            model["generationPolicyVersion"]=json!(AUTO_RETRAIN_POLICY_VERSION);
             // Record the actual cutoff boundaries, not only availableAfter.
             model["trainingWindows"]=config.clone();
             verify_blend_model_sources(&tx,&scope,&business,&model,None)?;
@@ -1265,10 +1265,10 @@ impl PreviewStore {
             result["storedModelId"]=json!(model_id);
         }
         let cohort=serde_json::to_string(&digests).map_err(|_|"재학습 표본 직렬화 오류")?;
-        tx.execute("INSERT INTO recognition_blend_retrain_state VALUES(?1,?2,1,?3,?4,?5,?6)
+        tx.execute("INSERT INTO recognition_blend_retrain_state VALUES(?1,?2,?3,?4,?5,?6,?7)
             ON CONFLICT(scope,build,policy_version) DO UPDATE SET cohort=excluded.cohort,
             attempted_at=excluded.attempted_at,status=excluded.status,model_id=excluded.model_id",
-            params![scope,build,cohort,now.to_rfc3339(),result["status"].as_str(),model_id]).map_err(|e|e.to_string())?;
+            params![scope,build,AUTO_RETRAIN_POLICY_VERSION,cohort,now.to_rfc3339(),result["status"].as_str(),model_id]).map_err(|e|e.to_string())?;
         result["trainingWindows"]=config;
         result["fitElapsedMs"]=json!(fit_ms);
         result["weightOrdersWithBothModels"]=report["weightOrdersWithBothModels"].clone();
@@ -1359,6 +1359,26 @@ impl PreviewStore {
         let status=|s:&str|json!({"status":s,"policyVersion":1,"automaticChangeAuthorized":false,"decisionChanged":false});
         if !blend_registry_exists(&tx)?{return Ok(status("no_registry"));}
         let selected=selected_blend_model(&tx,&scope)?;
+        // Retire only the selected reference; preserve immutable revisions and
+        // their source records. Never use a pre-change model as a baseline.
+        if let Some(id)=selected.as_deref(){
+            let model=read_blend_model_payload(&tx,&scope,id)?;
+            if model["calibrationScope"]!=OWNER_CALIBRATION_SCOPE{
+                let expected=blend_governance_state(&tx,&scope)?;
+                tx.commit().map_err(|e|e.to_string())?;
+                let write=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+                revalidate_governance_state(&write,&scope,&expected)?;
+                if read_blend_model_payload(&write,&scope,id)?!=model||
+                    crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
+                    return Err("보정 규격 갱신 중 모델 또는 업무 DB 변경".into());
+                }
+                set_selected_blend_model(&write,&scope,None)?;
+                write.execute("DELETE FROM recognition_blend_monitor WHERE scope=?1",[&scope]).map_err(|e|e.to_string())?;
+                write.execute("DELETE FROM recognition_blend_monitor_checkpoint WHERE scope=?1",[&scope]).map_err(|e|e.to_string())?;
+                write.commit().map_err(|e|e.to_string())?;
+                return Ok(status("obsolete_calibration_selection_retired"));
+            }
+        }
         let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending WHERE scope=?1 AND feature_version=1",
             [&scope],|r|r.get(0)).map_err(|e|e.to_string())?;
         if pending!=0{return Ok(status("pending_reconciliation"));}
@@ -1366,6 +1386,8 @@ impl PreviewStore {
         let Some(current)=selected else{
             let candidate:Option<(String,String)>=tx.query_row("SELECT m.model_id,m.created_at FROM recognition_blend_models m
                 WHERE m.scope=?1 AND json_extract(m.payload,'$.generationKind')='automatic_candidate_v1'
+                AND json_extract(m.payload,'$.calibrationScope')='conditional_traced_owner_pair_v1'
+                AND json_extract(m.payload,'$.generationPolicyVersion')=2
                 AND json_extract(m.payload,'$.clientBuildVersion')=?2
                 AND NOT EXISTS(SELECT 1 FROM recognition_blend_blocked b WHERE b.scope=m.scope AND b.model_id=m.model_id)
                 ORDER BY julianday(m.created_at) ASC,m.model_id LIMIT 1",
@@ -1457,6 +1479,8 @@ impl PreviewStore {
         let candidate:Option<(String,String)>=tx.query_row("SELECT m.model_id,m.created_at FROM recognition_blend_models m
             WHERE m.scope=?1 AND julianday(m.created_at)>julianday(?2)
             AND json_extract(m.payload,'$.generationKind')='automatic_candidate_v1'
+                AND json_extract(m.payload,'$.calibrationScope')='conditional_traced_owner_pair_v1'
+                AND json_extract(m.payload,'$.generationPolicyVersion')=2
             AND json_extract(m.payload,'$.clientBuildVersion')=?3
             AND NOT EXISTS(SELECT 1 FROM recognition_blend_blocked b WHERE b.scope=m.scope AND b.model_id=m.model_id)
             ORDER BY julianday(m.created_at) ASC,m.model_id LIMIT 1",
@@ -1728,10 +1752,14 @@ fn remaining_model_sources(expected:&serde_json::Map<String,Value>,verified:&Lea
     }
     Ok(extra)
 }
+const OWNER_CALIBRATION_SCOPE:&str="conditional_traced_owner_pair_v1";
+// Calibration compatibility revision, not a change to cadence or thresholds.
+const AUTO_RETRAIN_POLICY_VERSION:i64=2;
 const AUTO_RETRAIN_MIN_ORDERS:usize=60;
 const AUTO_RETRAIN_NEW_ORDERS:usize=20;
 fn auto_retrain_status(status:&str,n:usize)->Value{
     json!({"status":status,"candidateOrders":n,"policyVersion":1,
+        "retrainCompatibilityVersion":AUTO_RETRAIN_POLICY_VERSION,
         "minimumOrders":AUTO_RETRAIN_MIN_ORDERS,"minimumNewOrders":AUTO_RETRAIN_NEW_ORDERS,
         "modelAutomaticallySelected":false,"automaticChangeAuthorized":false,"decisionChanged":false})
 }
@@ -1892,7 +1920,8 @@ fn blend_model_identity(model:&Value)->Result<(String,String),String>{
 fn validate_registry_model(scope:&str,model:&Value)->Result<(),String>{
     if model["businessScope"].as_str()!=Some(scope)||model["schemaVersion"]!=1||
         model["automaticChangeAuthorized"]!=false||model["clientBuildVersion"].as_str()!=Some(env!("CARGO_PKG_VERSION"))||
-        model["scorePolicyVersion"]!="owner-margin-30-v1"||model["captureVersion"]!=4||model["supportVersion"]!=4||
+        model["scorePolicyVersion"]!="owner-margin-30-v1"||model["calibrationScope"]!=OWNER_CALIBRATION_SCOPE||
+        model["captureVersion"]!=4||model["supportVersion"]!=4||
         model["featureVersion"]!=1||model["contributionVersion"]!=2||model["safetyPolicyVersion"]!=1||
         model["explicitToWeakRatio"].as_f64()!=Some(3.0){
         return Err("결합 모델 규격 또는 업무 DB 불일치".into());
@@ -1923,7 +1952,7 @@ fn store_blend_model(conn:&Connection,scope:&str,model:&Value)->Result<String,St
     if read_registered_blend_model(conn,scope,&id)?!=*model{return Err("결합 모델 충돌".into());}
     Ok(id)
 }
-fn read_registered_blend_model(conn:&Connection,scope:&str,id:&str)->Result<Value,String>{
+fn read_blend_model_payload(conn:&Connection,scope:&str,id:&str)->Result<Value,String>{
     if id.len()!=70||!id.starts_with("blend-"){return Err("결합 모델 ID 오류".into());}
     let (version,payload):(i64,String)=conn.query_row("SELECT registry_version,payload FROM recognition_blend_models
         WHERE scope=?1 AND model_id=?2",params![scope,id],|r|Ok((r.get(0)?,r.get(1)?)))
@@ -1932,6 +1961,10 @@ fn read_registered_blend_model(conn:&Connection,scope:&str,id:&str)->Result<Valu
     let model:Value=serde_json::from_str(&payload).map_err(|_|"결합 모델 JSON 오류")?;
     let (actual,encoded)=blend_model_identity(&model)?;
     if actual!=id||encoded!=payload{return Err("결합 모델 지문 불일치".into());}
+    Ok(model)
+}
+fn read_registered_blend_model(conn:&Connection,scope:&str,id:&str)->Result<Value,String>{
+    let model=read_blend_model_payload(conn,scope,id)?;
     validate_registry_model(scope,&model)?;
     Ok(model)
 }
@@ -2746,6 +2779,7 @@ mod reception_edit_audit_tests {
         prepare_blend_registry(&conn).unwrap();
         let mut model=json!({"businessScope":"scope","schemaVersion":1,"automaticChangeAuthorized":false,
             "clientBuildVersion":env!("CARGO_PKG_VERSION"),"scorePolicyVersion":"owner-margin-30-v1",
+            "calibrationScope":OWNER_CALIBRATION_SCOPE,
             "captureVersion":4,"supportVersion":4,"featureVersion":1,"contributionVersion":2,"safetyPolicyVersion":1,
             "explicitToWeakRatio":3.0,"availableAfter":"2020-01-01T00:00:00Z",
             "sourceDigests":{"synthetic":"a".repeat(64)},"legacyBins":[{}],"legacyGates":[{}],
