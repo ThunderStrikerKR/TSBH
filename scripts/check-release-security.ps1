@@ -18,14 +18,22 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Tracked egui Cargo.lock is required." }
     & gitleaks.exe git --redact=100 --no-banner --log-opts="--all" .
     if ($LASTEXITCODE -ne 0) { throw "Git secret scan failed or found a leak." }
-    & cargo.exe audit --file (Join-Path $repo "egui-app\Cargo.lock")
-    if ($LASTEXITCODE -ne 0) { throw "Rust dependency audit failed." }
+    foreach ($lock in @("egui-app/Cargo.lock","crates/bando-data-access/Cargo.lock")) {
+        & git.exe ls-files --error-unmatch $lock | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Tracked Cargo.lock required: $lock" }
+        & cargo.exe audit --file (Join-Path $repo $lock)
+        if ($LASTEXITCODE -ne 0) { throw "Rust dependency audit failed: $lock" }
+    }
     Assert-ApprovedOcr $OcrRoot $ApprovalManifest $ApprovalSha256
     # Inspect package metadata with a separately installed trusted audit tool;
     # never start the candidate OCR interpreter before integrity checks.
     & pip-audit.exe --path (Join-Path $OcrRoot "runtime\Lib\site-packages") --strict
     if ($LASTEXITCODE -ne 0) { throw "OCR dependency audit failed." }
-    Write-Host "[SECURITY] Required static release checks passed."
+    & (Join-Path $PSScriptRoot "test-ocr-release-trust.ps1")
+    # Existing backup/restore regression tests create synthetic temporary DBs.
+    & cargo.exe test --locked --manifest-path (Join-Path $repo "crates\bando-data-access\Cargo.toml") backup_service::tests
+    if ($LASTEXITCODE -ne 0) { throw "Synthetic database backup and restore tests failed." }
+    Write-Host "[SECURITY] Required release checks passed."
     exit 0
 } catch {
     [Console]::Error.WriteLine($_.Exception.Message)
