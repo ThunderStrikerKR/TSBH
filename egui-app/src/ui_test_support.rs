@@ -145,7 +145,7 @@ mod unaligned_detector_tests{
             let warnings=painted_text_rects(&output,"Unaligned");
             if malformed{
                 assert!(!warnings.is_empty(),"positive control failed to emit native egui warning");
-                let result=std::panic::catch_unwind(||assert_no_unaligned(&output,"positive control"));
+                let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||assert_no_unaligned(&output,"positive control")));
                 assert!(result.is_err(),"detector accepted native warning");
             }else{
                 assert_no_unaligned(&output,"aligned control");
