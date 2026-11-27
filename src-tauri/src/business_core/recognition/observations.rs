@@ -390,6 +390,10 @@ fn reconcile_field_audits(units:&[u16],events:&[&Value],candidates:&BTreeMap<Spa
         o["negativeCandidates"]=o["initialCandidates"].clone();
         o["positiveCandidates"]=o["finalCandidates"].clone();
         o["verifiedTransitionCount"]=json!(chain.changes);
+        if chain.same_client{
+            o["auditClientId"]=event["context"]["clientId"].clone();
+            o["auditClientSelection"]=event["context"]["clientSelection"].clone();
+        }
     }
 }
 
