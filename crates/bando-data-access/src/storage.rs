@@ -292,8 +292,8 @@ fn move_factory_core(before:&mut Value,next:&mut Value)->Result<(),String>{
 }
 
 /// Called only after immutable-core scope validation, normalization guard
-/// and trigger exclusion. Preserve the same global validators as the
-/// generic writer; only the old core lookup borrows the new state's trees.
+/// and trigger exclusion. Check factory-specific changes rather than
+/// revalidating unrelated historical business records.
 fn finish_factory_shared_core(tx:&Transaction<'_>,before:&Value,mut next:Value,
     expected_revision:u64)->Result<Value,String>{
     // The caller has proved all non-workflow fields equal to the
