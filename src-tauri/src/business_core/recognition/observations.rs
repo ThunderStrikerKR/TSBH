@@ -1514,11 +1514,15 @@ const MIN_CHANGE_MARGIN:f64=0.25;
 const MAX_CHANGE_OUTSIDE:f64=0.05;
 // Pure diagnostic proposal. No operational authority is issued even if
 // every screening check passes. Never consume evaluation labels here.
+// A normalized vector is necessary for comparison, not proof of calibration.
+fn valid_candidate_distribution(v:&[f64],n:usize)->bool{
+    n>=3&&v.len()==n&&v.iter().all(|p|p.is_finite()&&(0.0..=1.0).contains(p))&&
+        (v.iter().sum::<f64>()-1.0).abs()<1e-8
+}
 fn screen_blend_change(sample:&BlendSample,w:Option<f64>)->(&'static str,Option<usize>){
     let Some(w)=w.filter(|w|w.is_finite()&&(0.0..=1.0).contains(w))else{return ("missing_weight",None);};
-    let valid=|v:&[f64]|v.len()==3&&v.iter().all(|p|p.is_finite()&&*p>=0.0&&*p<=1.0)&&
-        (v.iter().sum::<f64>()-1.0).abs()<1e-8;
-    if sample.legacy_choice>1||!valid(&sample.legacy)||!valid(&sample.shadow){return ("invalid_distribution",None);}
+    if sample.legacy_choice>1||!valid_candidate_distribution(&sample.legacy,3)||
+        !valid_candidate_distribution(&sample.shadow,3){return ("invalid_distribution",None);}
     let p=blend_distribution(&sample.legacy,&sample.shadow,w);
     let target=1-sample.legacy_choice;
     if p[sample.legacy_choice]>=p[target]{return ("retain_legacy",None);}
@@ -1811,6 +1815,9 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
     report["historicalModelVerified"]=json!(false);
     report["sourceProvenanceVerified"]=json!(false);
     report["calibratedProbability"]=Value::Null;
+    report["commonProbabilityVerified"]=json!(false);
+    report["legacyCalibrationScope"]=json!("conditional_traced_owner_pair");
+    report["outsideLegacyProbabilityEstimated"]=json!(false);
     report["eligibleForAutomaticDecision"]=json!(false);
     report["decisionChanged"]=json!(false);
     Ok(report)
@@ -1857,8 +1864,8 @@ impl FieldCalibration{
 }
 fn field_sample_with_parameters(r:&FieldBlendRecord,p:[f64;3],t:f64,s:f64)->Option<BlendSample>{
     let n=r.shadow.distribution.len().checked_sub(1)?;
-    if n<2||r.old>=n||p.iter().any(|v|!v.is_finite()||!(0.0..=1.0).contains(v))||
-        (p.iter().sum::<f64>()-1.0).abs()>1e-8||
+    if n<2||r.old>=n||r.candidate_ids.len()!=n||
+        !valid_candidate_distribution(&r.shadow.distribution,n+1)||!valid_candidate_distribution(&p,3)||
         !SHADOW_TEMPERATURES.contains(&t)||!SHADOW_SMOOTHING.contains(&s){return None;}
     let mut legacy=vec![p[1]/(n-1) as f64;n+1];
     legacy[r.old]=p[0];legacy[n]=p[2];
@@ -1866,7 +1873,9 @@ fn field_sample_with_parameters(r:&FieldBlendRecord,p:[f64;3],t:f64,s:f64)->Opti
         actual:r.shadow.actual,label:r.shadow.label,legacy_choice:r.old,transfer_block:None})
 }
 fn field_blend_top(sample:&BlendSample,w:f64)->Option<usize>{
-    if !(0.0..=1.0).contains(&w){return None;}
+    let n=sample.legacy.len();
+    if !(0.0..=1.0).contains(&w)||n<3||sample.legacy_choice>=n-1||
+        !valid_candidate_distribution(&sample.legacy,n)||!valid_candidate_distribution(&sample.shadow,n){return None;}
     let p=blend_distribution(&sample.legacy,&sample.shadow,w);
     let outside=*p.last()?;
     let mut ranked=p[..p.len()-1].iter().copied().enumerate().collect::<Vec<_>>();
@@ -2988,6 +2997,26 @@ mod tests{
                 actual:2,label:"explicit_correction",legacy_choice:0,transfer_block:None};
             assert_eq!(field_blend_top(&outside,1.0),None);
         }
+    }
+    #[test]
+    fn common_candidate_distribution_rejects_mismatched_or_invalid_vectors(){
+        let mut sample=BlendSample{legacy:vec![0.8,0.2,0.0],shadow:vec![0.2,0.7,0.1],
+            actual:0,label:"unchanged_proxy",legacy_choice:0,transfer_block:None};
+        for i in 0..=10{
+            assert!(valid_candidate_distribution(&blend_distribution(&sample.legacy,&sample.shadow,i as f64/10.0),3));
+        }
+        sample.shadow=vec![0.5,0.5];
+        assert_eq!(field_blend_top(&sample,0.5),None);
+        assert_eq!(screen_blend_change(&sample,Some(0.5)),("invalid_distribution",None));
+        sample.shadow=vec![0.0,1.1,-0.1];
+        assert_eq!(field_blend_top(&sample,1.0),None);
+        sample.shadow=vec![0.0,f64::NAN,1.0];
+        assert_eq!(field_blend_top(&sample,1.0),None);
+        sample.shadow=vec![0.0,0.5,0.0];
+        assert_eq!(field_blend_top(&sample,1.0),None);
+        sample.shadow=vec![0.0,1.0,0.0];
+        sample.legacy_choice=2;
+        assert_eq!(field_blend_top(&sample,1.0),None);
     }
     #[test]
     fn field_blend_evaluation_and_inference_share_protected_fallback(){
