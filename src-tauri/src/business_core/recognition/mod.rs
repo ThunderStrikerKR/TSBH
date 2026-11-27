@@ -599,15 +599,50 @@ fn blank_recipient(id: &str, name: &str, anchor: Option<&Evidence>, raw: &str) -
     value
 }
 fn owner_index(anchors: &[usize], events: &[Evidence], offset: usize) -> usize {
-    anchors.iter().enumerate().rev().find(|(_, i)| events[**i].start <= offset)
-        .map(|(idx,_)|idx).unwrap_or(0)
+    anchors.partition_point(|&i|events[i].start<=offset).saturating_sub(1)
+}
+// Reuse source-coordinate evidence for all candidate ownership decisions.
+// No source text or per-candidate duplicate evidence is copied.
+struct DeliveryGeometry{
+    delivery_starts:HashMap<usize,Vec<usize>>,
+    address_lines:HashMap<usize,Vec<usize>>,
+}
+impl DeliveryGeometry{
+    fn new(events:&[Evidence])->Self{
+        let mut delivery_starts=HashMap::<usize,Vec<usize>>::new();
+        let mut address_lines=HashMap::<usize,Vec<usize>>::new();
+        for e in events{
+            if matches!(e.kind,"address"|"phone"|"mobile"){
+                delivery_starts.entry(e.paragraph).or_default().push(e.start);
+            }
+            if e.kind=="address"{
+                address_lines.entry(e.paragraph).or_default().push(e.line);
+            }
+        }
+        for starts in delivery_starts.values_mut(){starts.sort_unstable();starts.dedup();}
+        for lines in address_lines.values_mut(){lines.sort_unstable();lines.dedup();}
+        Self{delivery_starts,address_lines}
+    }
+    fn between(&self,paragraph:usize,after:usize,before:usize)->bool{
+        self.delivery_starts.get(&paragraph).is_some_and(|starts|{
+            let i=starts.partition_point(|&start|start<=after);
+            starts.get(i).is_some_and(|&start|start<before)
+        })
+    }
+    fn nearby_address(&self,paragraph:usize,line:usize,radius:usize)->bool{
+        self.address_lines.get(&paragraph).is_some_and(|lines|{
+            let i=lines.partition_point(|&n|n<line.saturating_sub(radius));
+            lines.get(i).is_some_and(|&n|n<=line.saturating_add(radius))
+        })
+    }
 }
 // Recipient identity boundaries are stronger than a raw character offset.
 // A delivery address/contact placed BEFORE the next person's name can belong
 // to that next recipient when the preceding name is in another paragraph.
 // Distances are supporting evidence only: they never create recipients.
 fn recipient_owner_index(
-    anchors: &[usize], events: &[Evidence], evidence_index: usize, geometry: &SourceGeometry
+    anchors: &[usize], events: &[Evidence], evidence_index: usize, geometry: &SourceGeometry,
+    delivery:&DeliveryGeometry
 ) -> usize {
     let candidate=&events[evidence_index];
     let previous=owner_index(anchors,events,candidate.start);
@@ -630,11 +665,7 @@ fn recipient_owner_index(
     // that blank line may still be the FIRST recipient's own address, not
     // an address preceding the next recipient's name. Prefer preserving
     // ownership over an unsupported automatic handoff.
-    let previous_has_delivery=events.iter().any(|e|
-        e.start>preceding.start && e.start<candidate.start
-            && e.paragraph==preceding.paragraph
-            && matches!(e.kind,"address"|"phone"|"mobile")
-    );
+    let previous_has_delivery=delivery.between(preceding.paragraph,preceding.start,candidate.start);
     if !previous_has_delivery {return previous;}
     // A separating line containing only spaces/tabs counts as a block
     // boundary too. This is a conservative overlay on the existing gates.
@@ -643,10 +674,7 @@ fn recipient_owner_index(
     if following_gap.blank_lines>0 {return previous;}
     let next_distance=following.line.saturating_sub(candidate.line);
     if next_distance>3 {return previous;}
-    let has_nearby_address=events.iter().any(|e|
-        e.kind=="address" && e.paragraph==candidate.paragraph
-            && e.line.abs_diff(candidate.line)<=4
-    );
+    let has_nearby_address=delivery.nearby_address(candidate.paragraph,candidate.line,4);
     // A phone just before the next name is not sufficient on its own.
     // A nearby Korean delivery address is independent corroboration.
     if matches!(candidate.kind,"phone"|"mobile") && !has_nearby_address {
@@ -1174,6 +1202,9 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
         anchors = events.iter().enumerate()
             .filter_map(|(i,e)| (e.kind=="address").then_some(i)).collect();
     }
+    // Address fallback anchors must obey the same sorted-offset contract.
+    anchors.sort_by_key(|i|events[*i].start);
+    let delivery=DeliveryGeometry::new(&events);
     // If a document has only one unnamed destination, keep exactly one row.
     if anchors.is_empty() && raw.trim().is_empty() {
         return Ok(json!({"recipients":[],"candidates":[],"unassigned":[]}));
@@ -1189,7 +1220,7 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     let mut postcodes=vec![HashSet::<String>::new();recipients.len()];
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
-        let row_index = recipient_owner_index(&anchors,&events,index,&geometry);
+        let row_index = recipient_owner_index(&anchors,&events,index,&geometry,&delivery);
         let rid = recipients[row_index]["id"].as_str().unwrap_or("").to_owned();
         let e = &events[index];
         let kind = e.kind;
@@ -1857,6 +1888,29 @@ mod tests {
         assert_eq!(recipients.len(),1);
         assert_eq!(recipients[0]["mobile"],"010-1234-5678");
         assert_eq!(recipients[0]["phone"],"010-3456-7890");
+    }
+    #[test]
+    fn indexed_delivery_geometry_preserves_original_boundary_rules(){
+        let raw="김가상\n010-0000-0001\n서울특별시 중구 가상로 1\n\n박가상\n010-0000-0002";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        let index=DeliveryGeometry::new(&doc.events);
+        for paragraph in 0..3{
+            for after in 0..raw.len(){
+                for before in [after,after+1,raw.len()]{
+                    let expected=doc.events.iter().any(|e|e.paragraph==paragraph&&
+                        e.start>after&&e.start<before&&matches!(e.kind,"address"|"phone"|"mobile"));
+                    assert_eq!(index.between(paragraph,after,before),expected);
+                }
+            }
+            for line in 0..10{
+                for radius in 0..5{
+                    let expected=doc.events.iter().any(|e|e.kind=="address"&&
+                        e.paragraph==paragraph&&e.line.abs_diff(line)<=radius);
+                    assert_eq!(index.nearby_address(paragraph,line,radius),expected);
+                }
+            }
+        }
     }
     #[test]
     fn explicit_recipient_records_keep_distinct_original_offsets(){
