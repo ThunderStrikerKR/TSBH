@@ -78,3 +78,71 @@ mod shared_checkbox_contract_tests {
         assert!(!products.contains("filter.checkbox("));
     }
 }
+
+
+#[cfg(test)]
+mod shared_checkbox_rendered_geometry_tests{
+    use eframe::egui::{self,Rect,Vec2,Sense};
+    use crate::{checkbox,theme};
+    use crate::ui_test_support::{test_context,assert_rect_geometry,assert_rect_inside,
+        assert_painted_caption,assert_geometry_value};
+
+    #[test]
+    fn checkbox_list_preserves_hit_caption_and_next_row_across_states(){
+        let ctx=test_context();
+        let mut baseline:Option<(Rect,Rect,Rect)>=None;
+        for (checked,enabled) in [(false,true),(true,true),(true,false),(false,false)]{
+            let mut value=checked;
+            let mut geometry=None;
+            let output=ctx.run(egui::RawInput{
+                screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(800.0,500.0))),
+                ..Default::default()
+            },|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    let response=checkbox::checkbox_list_row(ui,"render-check", &mut value,
+                        "부가세 적용",enabled,theme::INPUT_HEIGHT);
+                    assert_eq!(response.enabled(),enabled);
+                    let next=ui.allocate_exact_size(Vec2::new(80.0,20.0),Sense::hover()).0;
+                    geometry=Some((response.rect,next));
+                });
+            });
+            let (hit,next)=geometry.expect("checkbox geometry");
+            let ink=assert_painted_caption(&output,"부가세 적용",hit);
+            assert!(hit.height()<=theme::INPUT_HEIGHT+1.0);
+            assert!(next.top()>=hit.bottom()-0.5);
+            assert_eq!(value,checked,"drawing must not modify selection");
+            if let Some((old_hit,old_ink,old_next))=baseline{
+                assert_rect_geometry("checkbox hit",hit,old_hit,0.5);
+                assert_rect_geometry("checkbox caption",ink,old_ink,1.0);
+                assert_rect_geometry("following row",next,old_next,0.5);
+            }else{baseline=Some((hit,ink,next));}
+        }
+    }
+
+    #[test]
+    fn rendered_table_checkbox_stays_in_header_and_body_cells(){
+        let ctx=test_context();
+        for (width,height) in [(44.0,34.0),(48.0,42.0)]{
+            let mut previous=None;
+            for (checked,enabled) in [(false,true),(true,true),(true,false)]{
+                let mut value=checked;
+                let mut actual=None;
+                let _=ctx.run(egui::RawInput::default(),|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        let cell=ui.allocate_exact_size(Vec2::new(width,height),Sense::hover()).0;
+                        let response=checkbox::management_table_checkbox(ui,cell,cell,
+                            &mut value,enabled,"checkbox-cell");
+                        assert_eq!(response.enabled(),enabled);
+                        actual=Some((cell,response.rect));
+                    });
+                });
+                let (cell,hit)=actual.expect("table checkbox geometry");
+                assert_rect_inside("table checkbox",hit,cell,1.0);
+                assert_geometry_value("table checkbox","vertical center",hit.center().y,cell.center().y,1.0);
+                if let Some(old)=previous{assert_rect_geometry("table checkbox state",hit,old,0.5);}
+                else{previous=Some(hit);}
+                assert_eq!(value,checked);
+            }
+        }
+    }
+}
