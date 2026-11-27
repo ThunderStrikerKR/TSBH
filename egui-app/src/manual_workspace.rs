@@ -3240,7 +3240,7 @@ mod manual_assignment_gesture_tests{
         let model=json!({"rows":[{"id":"r1","items":[]},{"id":"r2","items":[]}],
             "blocks":[{"id":"p","field":"product","text":"270"},
                 {"id":"q","field":"quantity","text":"2개"}],"assignments":{}});
-        let state=json!({"clients":[{"id":"c1","tier":"wholesale"}],"products":[]});
+        let state=json!({"clients":[{"id":"c1","tier":"wholesale"}],"products":[],"aliases":[]});
         let order=json!({"clientId":"c1"});
         let mut payload=json!({"model":model,"order":order,"state":state,
             "assignmentOrder":[],"id":"p","recipientId":"r1","itemId":"i1"});

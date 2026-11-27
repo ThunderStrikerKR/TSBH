@@ -177,6 +177,19 @@ pub fn read_clients(bytes:&[u8])->Result<Value,String>{
     Ok(json!({"sourceRevision":revision,"input":input}))
 }
 
+#[cfg(test)]
+mod client_binary_unit_tests{
+    use super::*;
+    #[test]
+    fn client_reader_preserves_text_identity_and_revision(){
+        let state=json!({"revision":7,"clients":[{"id":"001","name":"합성 거래처","postcode":"01234","phone":"02-1234-5678","mobile":"010-0000-0000","tier":"special","payment":"PREPAID","active":true}],"settings":{"accounts":[]},"orders":[]});
+        let parsed=read_clients(&export_clients(&state).unwrap()).unwrap();
+        assert_eq!(parsed["sourceRevision"],7);
+        assert_eq!(parsed["input"][0]["cells"][0],"001");
+        assert_eq!(parsed["input"][0]["cells"][3],"01234");
+    }
+}
+
 /// Shared instructions for reply review and contextual help.
 pub const FACTORY_REPLY_FORMAT_GUIDANCE:&str="회신 Excel: G열에 실제 택배운임(0 이상의 정수), Q열에 운송장번호(텍스트 8~30자리)를 입력하세요. A열 수하인명으로 최근 출력 주문을 찾고, 같은 날짜에 이름이 중복되면 I열 품목을 비교합니다. R열 등 다른 열의 운임은 반영되지 않습니다.";
 

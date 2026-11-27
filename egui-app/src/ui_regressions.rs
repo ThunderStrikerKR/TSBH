@@ -633,7 +633,10 @@ mod common_action_tooltip_tests{
                     let output=ctx.run(egui::RawInput{
                         screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(800.0,500.0))),
                         time:Some(frame as f64*0.1),predicted_dt:0.1,
-                        events:vec![egui::Event::PointerMoved(pointer)],
+                        // Send a movement only when the pointer actually changes.
+                        // Repeated synthetic movements can reset native hover settling.
+                        events:if frame<=1{vec![egui::Event::PointerMoved(pointer)]}else{Vec::new()},
+                        focused:true,
                         ..Default::default()
                     },|ctx|{
                         egui::CentralPanel::default().show(ctx,|ui|{
@@ -1948,8 +1951,10 @@ pub(crate) mod general_screen_geometry_tests {
                     "recipient note has excess gap or is clipped: {note:?} in {recipient_card:?}");
                 let review=first(&first_recipient,"review card");
                 let items=first(&first_recipient,"items card");
-                assert!((review.height()-items.height()).abs()<=0.5,
-                    "variable card height mismatch: review={review:?}, items={items:?}");
+                let previous_review=(review.height()+items.height())*0.5;
+                let expected=(previous_review*0.85).max(theme::RECEPTION_SECTION_CHROME_HEIGHT.min(previous_review));
+                assert!((review.height()-expected).abs()<=0.5,
+                    "review must transfer 15% of former height to items: review={review:?}, items={items:?}");
                 assert!((total_card.height()-theme::RECEPTION_ORDER_TOTAL_SECTION_HEIGHT).abs()<=0.5);
             }
             app.selected_recipient=1;

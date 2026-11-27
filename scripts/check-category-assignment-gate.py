@@ -62,6 +62,7 @@ ALLOWED = {
     ("crates/bando-data-access/src/lib.rs",None,"store_v2_relational"): 1,
     ("crates/bando-data-access/src/recovery.rs","migrate","store_v2_relational"): 1,
     ("src-tauri/src/relational_store.rs","store","store_v2_relational"): 1,
+    ("egui-app/src/test_workspace_init.rs","initialize_new","store_v2_relational"): 1,
     (TAURI,"write_snapshot","relational_store::store"): 1,
 }
 
@@ -91,6 +92,14 @@ def check_contract(path, source):
         for call in calls:
             if body is None or body.count(call)!=1:
                 findings.append(f"{fn}: missing or repeated required delegation {call}")
+    if path=="egui-app/src/test_workspace_init.rs":
+        # Only the isolated, exclusive-create bootstrap is a reviewed full
+        # writer. New product assignments must pass the authoritative validator.
+        body=body_for(code,"initialize_new") or ""
+        check="bando_data_access::validate_category_transition(&serde_json::json!({:[],:[]}),&state)?;"
+        write="bando_data_access::store_v2_relational(&tx,&state)?;"
+        if check+write not in body:
+            findings.append("initialize_new: full seed write requires immediately preceding category validation")
     if path==RELATIONAL:
         # Verify the equality of the category collection as well as the
         # product collection in the order-only boundary. Match in the
@@ -151,6 +160,10 @@ def self_test():
     assert ownership("src-tauri/src/new.rs","fn write(){relational_store :: store(tx,state);}")
     assert not ownership("crates/bando-data-access/src/recovery.rs","fn migrate(){crate::store_v2_relational(tx,state)?;}")
     assert not ownership("crates/bando-data-access/src/lib.rs","pub use relational_write::store_v2_relational;")
+    bootstrap="egui-app/src/test_workspace_init.rs"
+    assert not ownership(bootstrap,"fn initialize_new(){bando_data_access::store_v2_relational(&tx,&state)?;}")
+    assert check_contract(bootstrap,"fn initialize_new(){bando_data_access::store_v2_relational(&tx,&state)?;}")
+    assert ownership(bootstrap,"fn other(){bando_data_access::store_v2_relational(&tx,&state)?;}")
 
 def main():
     self_test()

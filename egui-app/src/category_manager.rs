@@ -945,8 +945,9 @@ impl CategoryManager {
                         crate::ui_primitives::section_divider(body);
                         product_category_creation_fields(body,pending.target_products,&mut pending.new_product_category,editable&&!busy&&!stale);
                     }
-                    if stale{body.label(typography::body("분류 또는 상품 소속이 변경되었습니다. 취소한 뒤 다시 이동해 주세요."));}
-                    if let Some(error)=self.error.as_deref(){body.label(typography::body(error));}
+                    crate::floating_notice::section(body.ctx(),"category.folder.move",body.clip_rect());
+                    let notice=if stale{Some("분류 또는 상품 소속이 변경되었습니다. 취소한 뒤 다시 이동해 주세요.")}else{self.error.as_deref()};
+                    crate::floating_notice::sync(body.ctx(),"category.folder.move.error","category.folder.move",crate::floating_notice::Tone::Error,notice);
                 });
                 decision.actions(|right|{
                     let valid=!needs_category||valid_product_category_name(&cats,&pending.request.target,&pending.name,&pending.new_product_category);

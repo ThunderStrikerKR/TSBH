@@ -24,6 +24,7 @@ pub(super) fn initialize_new(path:&Path)->Result<(),String>{
             }
         }
         let tx=db.transaction().map_err(|e|e.to_string())?;
+        bando_data_access::validate_category_transition(&serde_json::json!({"products":[],"categories":[]}),&state)?;
         bando_data_access::store_v2_relational(&tx,&state)?;
         for product in state["products"].as_array().ok_or("초기 상품 누락")?{
             tx.execute("INSERT INTO product_index(id,code,name,payload) VALUES (?1,?2,?3,?4)",
