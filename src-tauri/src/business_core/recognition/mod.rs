@@ -806,7 +806,17 @@ fn dated_dispatch_instruction(text:&str)->bool{
     )).expect("dated dispatch instruction"));
     re.is_match(text)
 }
-fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, String> {
+// Extraction is separated from assignment at the real production boundary.
+// This is the existing evidence/hit set, not a claim that earlier type
+// gates already retain every competing candidate.
+struct ExtractedDocument<'a>{
+    raw:&'a str,
+    lines:Vec<Line<'a>>,
+    events:Vec<Evidence>,
+    product_hits:Vec<ProductHit>,
+    geometry:SourceGeometry,
+}
+fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->ExtractedDocument<'a>{
     let client_id = client_id(client);
     let lines = physical_lines(raw);
     let geometry=SourceGeometry::new(raw);
@@ -1102,6 +1112,13 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         }
     }
 
+    ExtractedDocument{raw,lines,events,product_hits,geometry}
+}
+fn analyze(raw:&str,state:&Value,client:Option<&Value>)->Result<Value,String>{
+    assign_document(extract_document(raw,state,client),state,client)
+}
+fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Value>)->Result<Value,String>{
+    let ExtractedDocument{raw,lines,mut events,product_hits,geometry}=document;
     let mut anchors: Vec<usize> = events.iter().enumerate()
         .filter_map(|(i,e)| (e.kind == "name").then_some(i)).collect();
     anchors.sort_by_key(|i| events[*i].start);
@@ -1793,6 +1810,17 @@ mod tests {
         assert_eq!(recipients.len(),1);
         assert_eq!(recipients[0]["mobile"],"010-1234-5678");
         assert_eq!(recipients[0]["phone"],"010-3456-7890");
+    }
+    #[test]
+    fn extracted_document_is_pre_assignment_and_reused_by_normal_analysis(){
+        let raw="김가상\n010-0000-0001\n709 2개";
+        let state=state();
+        let document=extract_document(raw,&state,None);
+        assert!(!document.events.is_empty());
+        assert!(document.events.iter().all(|e|e.recipient.is_none()&&e.item_id.is_none()
+            &&e.start<e.end&&raw.get(e.start..e.end).is_some()));
+        assert!(!document.product_hits.is_empty());
+        assert_eq!(assign_document(document,&state,None).unwrap(),analyze(raw,&state,None).unwrap());
     }
     #[test]
     fn sender_quantity_does_not_become_recipient_evidence(){
