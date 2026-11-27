@@ -836,6 +836,69 @@ mod tests{
         found
     }
     #[test]
+    fn multi_product_audit_counts_only_initial_and_final_and_rejects_gaps(){
+        let mut p=field_audit_fixture("709","709","product","product",
+            json!({"name":"BD 708","productId":"old"}),
+            json!({"name":"BD 709","productId":"new"}));
+        let mut final_event=p["recognitionAuditEvents"][0].clone();
+        let mut first_event=final_event.clone();
+        let mut middle=first_event["beforeRows"].clone();
+        middle[0]["items"][0]["productId"]=json!("intermediate");
+        middle[0]["items"][0]["name"]=json!("BD 707");
+        first_event["id"]=json!("first");
+        first_event["at"]=json!("2026-11-26T23:57:00Z");
+        first_event["afterRows"]=middle.clone();
+        first_event["context"]["afterClassification"]["assignments"]["block"]["value"]=json!("BD 707");
+        final_event["beforeRows"]=middle;
+        final_event["context"]["beforeClassification"]["assignments"]=
+            first_event["context"]["afterClassification"]["assignments"].clone();
+        // Direct product correction may retain the original assignment.
+        p["recognitionAuditEvents"]=json!([final_event.clone(),first_event.clone()]);
+        let o=field_observation(&p,"product");
+        assert_eq!(o["outcome"],"explicit_correction_observed");
+        assert_eq!(o["verifiedTransitionCount"],2);
+        assert_eq!(o["negativeCandidates"],json!(["old"]));
+        assert_eq!(o["positiveCandidates"],json!(["new"]));
+        let mut gap=p.clone();
+        gap["recognitionAuditEvents"]=json!([final_event.clone()]);
+        assert_eq!(field_observation(&gap,"product")["outcome"],"changed_requires_review");
+        let mut tie=p.clone();
+        tie["recognitionAuditEvents"][1]["at"]=final_event["at"].clone();
+        assert_eq!(field_observation(&tie,"product")["outcome"],"changed_requires_review");
+        let summary=super::super::learning_context::statistics(&json!({"orders":[p]})).unwrap();
+        let product=rows(&summary["fieldStatistics"]).find(|v|v["task"]=="product").unwrap();
+        assert_eq!(product["counts"]["explicitCorrectionCount"],1);
+        assert!(product["counts"]["explicitPositiveCandidates"].get("intermediate").is_none());
+    }
+    #[test]
+    fn multi_owner_audit_uses_final_anchor_and_reverted_chain_is_not_weak_success(){
+        let mut p=audited_reassignment();
+        let first=p["recognitionAuditEvents"][0].clone();
+        let mut undo=first.clone();
+        undo["id"]=json!("undo");
+        undo["at"]=json!("2026-11-26T23:59:10Z");
+        undo["beforeRows"]=first["afterRows"].clone();
+        undo["afterRows"]=first["beforeRows"].clone();
+        undo["context"]["beforeClassification"]=first["context"]["afterClassification"].clone();
+        undo["context"]["afterClassification"]["assignments"]["6:19"]["recipientId"]=json!("a");
+        let mut last=first.clone();
+        last["id"]=json!("last");
+        last["at"]=json!("2026-11-26T23:59:20Z");
+        last["context"]["beforeClassification"]=undo["context"]["afterClassification"].clone();
+        p["recognitionAuditEvents"]=json!([last,undo.clone(),first.clone(),first.clone()]);
+        let o=owner_result(&p);
+        assert_eq!(o["outcome"],"explicit_correction_observed");
+        assert_eq!(o["verifiedTransitionCount"],3);
+        assert_eq!(o["negativeCandidates"],json!(["previous"]));
+        assert_eq!(o["positiveCandidates"],json!(["next"]));
+        p["confirmationSnapshot"]["recipients"]=undo["afterRows"].clone();
+        p["recognitionAuditEvents"]=json!([first,undo]);
+        let o=owner_result(&p);
+        assert_eq!(o["outcome"],"changed_requires_review");
+        assert_eq!(o["eligibleForCandidateLearning"],false);
+    }
+
+    #[test]
     fn field_audit_product_and_type_corrections_have_opposite_polarities(){
         let p=field_audit_fixture("😀709","709","product","product",
             json!({"name":"BD 708","productId":"old","variantId":"old-v"}),
