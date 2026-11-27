@@ -125,7 +125,7 @@ fn reception_keycap(ui:&mut Ui,key:&str){
 /// prose, each shortcut key has its own bordered background and hit-free box.
 pub fn reception_capture_shortcut_hint(ui:&mut Ui){
     ui.horizontal_wrapped(|line|{
-        line.set_min_height(theme::RECEPTION_SHORTCUT_ROW_HEIGHT);
+        crate::ui_layout::geometry::reserve_min_height(line,theme::RECEPTION_SHORTCUT_ROW_HEIGHT);
         line.spacing_mut().item_spacing=egui::vec2(
             theme::SPACE_4,theme::SPACE_4
         );

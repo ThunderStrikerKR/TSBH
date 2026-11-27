@@ -330,7 +330,7 @@ mod tests{
         assert_eq!(palette(Role::LightHover).ink,Some(theme::primary_action_colors().1));
         assert_eq!(palette(Role::DropHovered).fill,palette(Role::Hover).fill);
         assert_eq!(palette(Role::Selected).fill,Some(theme::selected_palette().fill));
-        assert_eq!(palette(Role::RequiredInput).stroke.unwrap().color,theme::border_ink(theme::BorderRole::Error));
+        assert_eq!(palette(Role::RequiredInput).stroke.unwrap().color,Color32::from_rgb(199,107,107));
         assert_ne!(palette(Role::LinkedPreview).fill,palette(Role::RequiredReview).fill);
     }
     #[test]
@@ -351,7 +351,7 @@ mod tests{
         assert_eq!(States{required:false,selected:false,linked:false,..all}.resolve(),Some(Role::RequiredReview));
         assert_eq!(States{focused:true,hovered:true,..States::default()}.resolve(),Some(Role::Focus));
         assert_eq!(States::default().resolve(),None);
-        assert_eq!(prioritized_stroke(Stroke::NONE,all).color,theme::border_ink(theme::BorderRole::Error));
+        assert_eq!(prioritized_stroke(Stroke::NONE,all).color,Color32::from_rgb(199,107,107));
         let fields=FieldHighlights::new([true,true,false],[true,true,false],[false,true,false]);
         assert_eq!(fields.role(0,true),Some(Role::RequiredInput));
         assert_eq!(fields.role(1,true),None);
@@ -359,7 +359,7 @@ mod tests{
         assert_eq!(fields.role(2,true),Some(Role::RequiredReview));
         assert_eq!(freight_role(true,true),Some(Role::RequiredInput));
         assert_eq!(freight_role(false,true),Some(Role::ReviewTint));
-        assert_eq!(persistent_surface(theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill,Stroke::NONE,freight_role(true,true)).1.color,theme::border_ink(theme::BorderRole::Error));
+        assert_eq!(persistent_surface(theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill,Stroke::NONE,freight_role(true,true)).1.color,Color32::from_rgb(199,107,107));
     }
     #[test]
     fn common_painter_preserves_parent_clip(){

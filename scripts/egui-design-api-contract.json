@@ -18,7 +18,7 @@
     "module | # [ derive ( Clone , Copy , Debug ) ] pub struct ManagementMasterTableSpec < const N : usize > {",
     "module | # [ derive ( Clone , Copy , Debug , PartialEq ) ] pub ( crate ) struct CheckboxPalette {",
     "module | # [ derive ( Clone , Copy , Debug , PartialEq ) ] pub ( crate ) struct ScrollRailGeometry {",
-    "module | # [ derive ( Clone , Copy , Debug , PartialEq , Eq ) ] pub ( crate ) enum BorderRole { Standard , Divider , Focus , TableHeader , Error }",
+    "module | # [ derive ( Clone , Copy , Debug , PartialEq , Eq ) ] pub ( crate ) enum BorderRole { Standard , Divider , Focus , TableHeader , TreeGuide }",
     "module | # [ derive ( Clone , Copy , Debug , PartialEq , Eq ) ] pub ( crate ) enum CategoryInkRole { Current , Ancestor , Separator }",
     "module | # [ derive ( Clone , Copy , Debug , PartialEq , Eq ) ] pub ( crate ) enum ClientTierRole { Wholesale , Semi , Retail , Special , Unclassified }",
     "module | # [ derive ( Clone , Copy , Debug , PartialEq , Eq ) ] pub ( crate ) enum IconRole { Secondary , Interactive , Navigation , SortIndicator }",

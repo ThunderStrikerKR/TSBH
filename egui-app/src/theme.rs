@@ -892,9 +892,9 @@ pub(crate) const fn surface_palette(role:SurfaceRole,state:VisualState)->Surface
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub(crate) enum BorderRole{Standard,Divider,Focus,TableHeader,Error}
+pub(crate) enum BorderRole{Standard,Divider,Focus,TableHeader,TreeGuide}
 pub(crate) const fn border_ink(role:BorderRole)->Color32{
-    match role{BorderRole::Standard=>BORDER,BorderRole::Divider=>DIVIDER,BorderRole::Focus=>SELECTION,BorderRole::TableHeader=>TABLE_HEADER_OUTLINE,BorderRole::Error=>ERROR_BORDER}
+    match role{BorderRole::Standard=>BORDER,BorderRole::Divider=>DIVIDER,BorderRole::Focus=>SELECTION,BorderRole::TableHeader=>TABLE_HEADER_OUTLINE,BorderRole::TreeGuide=>Color32::from_rgb(74,74,74)}
 }
 
 /// Opaque white is the identity tint, not a UI foreground color.
@@ -1573,6 +1573,6 @@ mod final_color_role_tests {
         assert_eq!(message_ink(MessageInkRole::Error),Color32::from_rgb(240,160,160));
         assert_eq!(primary_action_colors(),(Color32::WHITE,Color32::from_gray(23)));
         assert_eq!(border_ink(BorderRole::TableHeader),Color32::from_gray(106));
-        assert_eq!(border_ink(BorderRole::Error),Color32::from_rgb(199,107,107));
+        assert_eq!(border_ink(BorderRole::TreeGuide),Color32::from_rgb(74,74,74));
     }
 }
