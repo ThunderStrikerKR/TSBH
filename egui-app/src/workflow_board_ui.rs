@@ -1908,7 +1908,7 @@ mod linked_highlight_palette_tests {
         assert_eq!(theme::WORKFLOW_SELECTED_ROW_TEXT,Color32::from_rgb(244,214,162));
         assert_eq!(shipment_row_fill(true,true),shipment_row_fill(true,false));
         assert_eq!(theme::ReviewTone::Action.palette(),(
-            theme::PANEL,theme::REQUIRED_REVIEW_BORDER,
+            theme::ORANGE_EMPHASIS_BG,theme::REQUIRED_REVIEW_BORDER,
             theme::REQUIRED_REVIEW_TEXT,Color32::from_rgb(217,188,152)
         ));
         assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,Color32::from_rgb(214,214,214));

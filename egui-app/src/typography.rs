@@ -1173,6 +1173,20 @@ mod shared_text_hierarchy_contract_tests{
     }
 
     #[test]
+    fn missing_values_and_query_state_are_distinct_from_real_zero(){
+        assert_eq!(TextState::value(Some(0_i64).is_some()),TextState::Normal);
+        assert_eq!(TextState::value(None::<i64>.is_some()),TextState::Unconfirmed);
+        assert_eq!(TextState::optional(false),TextState::Missing);
+        assert_eq!(TextState::query(false),TextState::Pending);
+        let missing=inline_quantity_amount("Order ",2," / ",None,"unknown",false);
+        let known=inline_quantity_amount("Order ",2," / ",Some(0),"unknown",false);
+        assert!(missing.sections.iter().any(|s|s.byte_range.start>="Order 2 / ".len()&&s.format.color==MUTED));
+        assert!(known.sections.iter().all(|s|s.format.color==TEXT));
+        assert_eq!(management_table_cell_color(ManagementTableCellRole::Quantity),TEXT);
+        assert_ne!(crate::theme::ReviewTone::Action.text_color(),crate::theme::ReviewTone::Action.detail_color());
+    }
+
+    #[test]
     fn table_and_kpi_state_changes_preserve_font_and_galley_geometry(){
         let ctx=crate::ui_test_support::test_context();
         let _=ctx.run(egui::RawInput::default(),|ctx|{
