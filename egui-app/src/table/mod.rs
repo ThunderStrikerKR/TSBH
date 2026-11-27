@@ -1,5 +1,7 @@
 //! Shared table renderer: surface, header, row/viewport geometry and sort hit testing.
 //! Screens retain column data, stable IDs and business sort state.
+use crate::ui_layout::SharedUiClipExt as _;
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Color32,Rect,Stroke,Ui,Vec2};
@@ -17,7 +19,7 @@ pub(crate) fn paint_editable_cell_text(
     let overflow=label!=full || text_exceeds_rect(galley.size(),clip.intersect(ui.clip_rect()));
     let mut origin=reception_item_value_origin(clip,galley.size(),right);
     origin.y+=y_adjust;
-    ui.painter().with_clip_rect(clip).galley(origin,galley,ink);
+    ui.painter().with_shared_clip(clip).galley(origin,galley,ink);
     overflow
 }
 
@@ -46,12 +48,12 @@ fn header_begin(ui:&Ui,header:Rect,content:Rect)->Rect{
     let text=Rect::from_min_max(content.min,egui::pos2(
         content.right(),content.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT
     ));
-    ui.painter().with_clip_rect(header).rect_filled(header,0.0,theme::surface_palette(theme::SurfaceRole::TableHeader,theme::VisualState::Normal).fill);
+    ui.painter().with_shared_clip(header).rect_filled(header,0.0,theme::surface_palette(theme::SurfaceRole::TableHeader,theme::VisualState::Normal).fill);
     text
 }
 
 pub(crate) fn header_finish(ui:&Ui,header:Rect){
-    ui.painter().with_clip_rect(header).rect_filled(
+    ui.painter().with_shared_clip(header).rect_filled(
         Rect::from_min_max(egui::pos2(header.left(),
             header.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT),
             header.right_bottom()),0.0,theme::TABLE_HEADER_OUTLINE);
@@ -68,7 +70,7 @@ fn finish(ui:&Ui,header:Rect,body:Rect){
 
 fn paint_frame(ui:&Ui,bounds:Rect){
     if bounds.width()>0.0 && bounds.height()>0.0{
-        ui.painter().with_clip_rect(bounds.intersect(ui.clip_rect())).rect_stroke(
+        ui.painter().with_shared_clip(bounds.intersect(ui.clip_rect())).rect_stroke(
             bounds,0.0,Stroke::new(theme::FRAME_STROKE_WIDTH,theme::border_ink(theme::BorderRole::Standard)),
             egui::StrokeKind::Inside);
     }
@@ -104,7 +106,7 @@ impl TableGeometry{
     fn paint(self,ui:&Ui){
         if let Some(rect)=self.separator{
             let clip=self.frame.intersect(ui.clip_rect());
-            ui.painter().with_clip_rect(clip).rect_filled(rect,0.0,theme::border_ink(theme::BorderRole::Standard));
+            ui.painter().with_shared_clip(clip).rect_filled(rect,0.0,theme::border_ink(theme::BorderRole::Standard));
             #[cfg(test)]
             crate::ui_test_support::record("table scrollbar separator",rect);
         }
@@ -215,7 +217,7 @@ pub(crate) fn management_master_column_rules(
 ){
     let clip=region.intersect(ui.clip_rect());
     if clip.width()<=0.0 || clip.height()<=0.0{return;}
-    let painter=ui.painter().with_clip_rect(clip);
+    let painter=ui.painter().with_shared_clip(clip);
     for x in boundaries{
         if x>clip.left() && x<clip.right() {
             let half=theme::SOFT_DIVIDER_WIDTH/2.0;
@@ -416,7 +418,7 @@ pub(crate) fn registry_tag_cell(ui:&Ui,rect:Rect,tags:&[String],id:impl std::has
 pub(crate) fn registry_actions<R>(ui:&mut Ui,cell:Rect,draw:impl FnOnce(&mut Ui)->R)->R{
     ui.scope_builder(egui::UiBuilder::new().aligned_max_rect(crate::ui_layout::aligned_rect(cell.shrink2(Vec2::new(theme::MANAGEMENT_TABLE_ACTION_INSET,0.0))))
         .layout(egui::Layout::right_to_left(Align::Center)),|actions|{
-            actions.set_clip_rect(actions.clip_rect().intersect(cell));
+            actions.restrict_shared_clip(actions.clip_rect().intersect(cell));
             draw(actions)
         }).inner
 }
@@ -497,7 +499,7 @@ pub(crate) fn variable_rows_snapshot<R>(
         let clip=strict_viewport_clip(body,visible);
         body.scope_builder(egui::UiBuilder::new().id_salt(rows_id).aligned_max_rect(visible_rect),|visible|{
             visible.spacing_mut().item_spacing.y=0.0;
-            visible.set_clip_rect(clip);
+            visible.restrict_shared_clip(clip);
             visible.skip_ahead_auto_ids(first);
             draw(visible,origin,first..last)
         }).inner
@@ -523,7 +525,7 @@ pub(crate) fn fixed_row<const N:usize>(
     widths:&[f32;N],gap:f32,tone:RowTone,draw:impl FnOnce(&mut Ui,[Rect;N]),
 ){
     row_scope(ui,id,rect,|row|{
-        row.set_clip_rect(row.clip_rect().intersect(rect));
+        row.restrict_shared_clip(row.clip_rect().intersect(rect));
         row.shared_allocate_exact_size(rect.size(),egui::Sense::hover());
         #[cfg(test)]
         crate::ui_test_support::record_highlight_target("table row",rect,row.clip_rect());
@@ -589,7 +591,7 @@ pub(crate) fn heading(
         },
     };
     let label_width=label.size().x;
-    let painter=ui.painter().with_clip_rect(clip);
+    let painter=ui.painter().with_shared_clip(clip);
     painter.galley(egui::pos2(x,area.center().y-label.size().y/2.0),label,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
     if let Some((glyph,color))=arrow{
         painter.galley(egui::pos2(x+label_width+gap,area.center().y-glyph.size().y/2.0),glyph,color);
@@ -675,7 +677,7 @@ pub(crate) fn virtual_fixed_rows<R>(
                 .aligned_max_rect(visible_rect),
             |visible|{
                 visible.spacing_mut().item_spacing.y=0.0;
-                visible.set_clip_rect(clip);
+                visible.restrict_shared_clip(clip);
                 visible.skip_ahead_auto_ids(first);
                 add_visible(visible,first..last)
             }
@@ -908,7 +910,7 @@ pub(crate) fn management_readonly_table(
                 let row_rect=fixed_row_rect(origin,index,first,layout.table_width,row_height);
                 row_left.get_or_insert(row_rect.left());
                 row_scope(body,index,row_rect,|row|{
-                    row.set_clip_rect(row.clip_rect().intersect(row_rect));
+                    row.restrict_shared_clip(row.clip_rect().intersect(row_rect));
                     row.shared_allocate_exact_size(row_rect.size(),Sense::hover());
                     paint_management_table_row_background(row.painter(),row_rect,index);
                     let mut x=row_rect.left();
@@ -1022,7 +1024,7 @@ pub(crate) fn paint_table_galley(
     let visible=cell.intersect(ui.clip_rect());
     let overflow=text_exceeds_rect(galley.size(),visible);
     if visible.width()>0.0&&visible.height()>0.0{
-        ui.painter().with_clip_rect(visible).galley(
+        ui.painter().with_shared_clip(visible).galley(
             egui::pos2(x,cell.center().y-galley.size().y/2.0),galley,color
         );
     }
@@ -1220,7 +1222,7 @@ pub(crate) fn reception_items_header(ui:&mut Ui,remove_slot:bool)->Rect{
             cell.right() - galley.size().x
         };
         let text_center_y = text_rect.center().y;
-        ui.painter().with_clip_rect(cell).galley(
+        ui.painter().with_shared_clip(cell).galley(
             egui::pos2(x, text_center_y - galley.size().y / 2.0),
             galley, theme::text_ink(theme::TextRole::Label,theme::TextState::Normal),
         );
@@ -1370,7 +1372,7 @@ pub(crate) fn control_cell<R>(ui:&mut Ui,id:impl std::hash::Hash,rect:Rect,clip:
     let mut builder=egui::UiBuilder::new().id_salt(id).aligned_max_rect(rect).layout(layout);
     if !enabled{builder=builder.disabled();}
     ui.scope_builder(builder,|control|{
-        control.set_clip_rect(clip.intersect(control.clip_rect()));
+        control.restrict_shared_clip(clip.intersect(control.clip_rect()));
         if fixed_width{control.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());}
         draw(control)
     }).inner
