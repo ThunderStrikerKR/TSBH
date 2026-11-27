@@ -1148,36 +1148,21 @@ impl FreightManager {
                     });
                 if editor.ask_discard {
                     crate::popup::modal_backdrop(ctx,"freight-discard-backdrop",true);
-                    crate::popup::show_decision_window(ctx,"저장하지 않은 운임","freight-discard-confirm",area,|dialog|{
-                        crate::popup::decision_workspace(dialog,|decision|{
-                            if decision.header("저장하지 않은 운임","취소",enabled
-                            ){editor.ask_discard=false;}
-                            decision.body(|dialog|{
-                                dialog.label(typography::body(
-                                    "운임 수정사항을 저장하지 않고 닫을까요?"
-                                ));
-                            });
-                            decision.actions(|bar|{
-                                if crate::button::action(bar,"저장하고 닫기",
-                                    theme::ButtonRole::Primary,enabled&&editor.dirty()).clicked(){
-                                    match editor.write_action(){
-                                        Ok(command)=>{
-                                            editor.error=None;
-                                            action=Some(command);
-                                        }
-                                        Err(message)=>{
-                                            editor.error=Some(message);
-                                            editor.ask_discard=false;
-                                        }
-                                    }
-                                }
-                                if crate::button::action(bar,"저장 안 함",
-                                    theme::ButtonRole::Danger,enabled).clicked(){
-                                    close_editor=true;
-                                }
-                            });
-                        });
-                    });
+                    match crate::popup::show_save_confirmation(
+                        ctx,area,"freight-discard-confirm","저장하지 않은 운임",
+                        "운임 수정사항을 저장하지 않고 닫을까요?","저장하고 닫기",
+                        enabled,enabled&&editor.dirty()
+                    ){
+                        crate::popup::ChangeDecision::Cancel=>editor.ask_discard=false,
+                        crate::popup::ChangeDecision::Save=>{
+                            match editor.write_action(){
+                                Ok(command)=>{editor.error=None;action=Some(command);}
+                                Err(message)=>{editor.error=Some(message);editor.ask_discard=false;}
+                            }
+                        }
+                        crate::popup::ChangeDecision::Discard=>close_editor=true,
+                        crate::popup::ChangeDecision::Pending=>{}
+                    }
                 }
             }else if let Some(target)=self.basis_target.as_ref(){
                 let name=target.as_deref().map(|id|group_name(&groups,id));
@@ -1239,30 +1224,18 @@ impl FreightManager {
             if close{self.exception_target=None;}
         }
         if let Some(next)=self.requested_tab {
-            let mut cancel=false;
-            let mut discard=false;
-            let mut save=false;
             let can_save=self.can_save_dirty();
             let ctx=ui.ctx();
             crate::popup::modal_backdrop(ctx,"freight-tab-leave-backdrop",
                 self.rate_editor.is_some());
-            crate::popup::show_decision_window(ctx,"저장하지 않은 변경사항","freight-tab-leave",ui.max_rect(),|dialog|{
-                crate::popup::decision_workspace(dialog,|decision|{
-                    cancel=decision.header("저장하지 않은 변경사항","취소",enabled
-                    );
-                    decision.body(|dialog|{
-                        dialog.label(typography::body(
-                            "운임 관리에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
-                        ));
-                    });
-                    decision.actions(|bar|{
-                        if crate::button::action(bar,"저장하고 이동",
-                            theme::ButtonRole::Primary,can_save).clicked(){save=true;}
-                        if crate::button::action(bar,"저장 안 함",
-                            theme::ButtonRole::Danger,enabled).clicked(){discard=true;}
-                    });
-                });
-            });
+            let decision=crate::popup::show_save_confirmation(
+                ctx,ui.max_rect(),"freight-tab-leave","저장하지 않은 변경사항",
+                "운임 관리에서 수정한 내용이 있습니다. 변경사항을 저장할까요?",
+                "저장하고 이동",enabled,can_save
+            );
+            let cancel=decision==crate::popup::ChangeDecision::Cancel;
+            let discard=decision==crate::popup::ChangeDecision::Discard;
+            let save=decision==crate::popup::ChangeDecision::Save;
             if cancel{self.requested_tab=None;}
             else if discard{
                 self.discard_drafts();
