@@ -97,8 +97,8 @@ pub const fn text_ink(role:TextRole,state:TextState)->Color32{
 }
 pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
 const INTERACTION_BLUE_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,20);
-pub const SOURCE_BLOCK_FILL:Color32=Color32::from_rgb(66,66,66);
-pub const SOURCE_CONTEXT_FILL:Color32=Color32::from_rgb(73,73,73);
+const SOURCE_BLOCK_FILL:Color32=Color32::from_rgb(66,66,66);
+const SOURCE_CONTEXT_FILL:Color32=Color32::from_rgb(73,73,73);
 pub const MANUAL_ASSIGNMENT_TINT:Color32=INTERACTION_BLUE_TINT;
 pub const MANUAL_ASSIGNMENT_STROKE_WIDTH:f32=1.25;
 const CARD_BORDER:Color32=DIVIDER;
@@ -110,12 +110,12 @@ pub const BUTTON_HOVER_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,18
 pub const BUTTON_HOVER_LIGHT_BG:Color32=Color32::from_rgb(143,197,255);
 pub const BUTTON_HOVER_LIGHT_BORDER:Color32=Color32::from_rgb(35,103,174);
 pub const BUTTON_HOVER_BORDER_WIDTH:f32=2.0;
-pub const LINKED_PREVIEW_BG:Color32=Color32::from_rgb(23,67,109);
-pub const LINKED_PREVIEW_TEXT:Color32=Color32::from_rgb(234,244,255);
-pub const LINKED_PREVIEW_BORDER:Color32=Color32::from_rgb(117,181,255);
+const LINKED_PREVIEW_BG:Color32=Color32::from_rgb(23,67,109);
+const LINKED_PREVIEW_TEXT:Color32=Color32::from_rgb(234,244,255);
+const LINKED_PREVIEW_BORDER:Color32=Color32::from_rgb(117,181,255);
 pub const LINKED_PREVIEW_BORDER_WIDTH:f32=2.0;
-pub const REQUIRED_REVIEW_TEXT:Color32=ORANGE_EMPHASIS_TEXT;
-pub const REQUIRED_REVIEW_BORDER:Color32=SELECTED_ORDER;
+const REQUIRED_REVIEW_TEXT:Color32=ORANGE_EMPHASIS_TEXT;
+const REQUIRED_REVIEW_BORDER:Color32=SELECTED_ORDER;
 const ERROR_BG:Color32=Color32::from_rgb(51,37,37);
 pub const ERROR_TEXT:Color32=Color32::from_rgb(240,160,160);
 pub const ERROR_BORDER:Color32=Color32::from_rgb(199,107,107);
@@ -758,7 +758,7 @@ pub const MANAGEMENT_MODAL_BODY_MAX_HEIGHT: f32 = 670.0;
 // (plus separators), and a tier badge followed by its transaction terms.
 // Recognized source tokens in Reception and classified manual blocks share
 // the same subdued gray 1pt outline. Focused blue evidence keeps its own 2pt stroke.
-pub const SOURCE_RECOGNIZED_BORDER: Color32 = Color32::from_rgb(96, 96, 96);
+const SOURCE_RECOGNIZED_BORDER: Color32 = Color32::from_rgb(96, 96, 96);
 pub const SOURCE_RECOGNIZED_BORDER_WIDTH: f32 = 1.0;
 // All source blocks (Reception, manual classification, and linked focus)
 // use one geometry regardless of state. Horizontal padding follows text;
@@ -772,12 +772,12 @@ pub const SOURCE_BLOCK_ADJACENT_GAP: f32 = 0.5;
 // Unassigned source tokens are 10% dimmer than the primary white button.
 // Scale the neutral sRGB channel with rounding; never change the button itself.
 const MANUAL_SOURCE_UNASSIGNED_GRAY: u8 = ((LEGACY_SOURCE_REFERENCE_GRAY as u16 * 9 + 5) / 10) as u8;
-pub const MANUAL_SOURCE_UNASSIGNED_FILL: Color32 = Color32::from_rgb(MANUAL_SOURCE_UNASSIGNED_GRAY, MANUAL_SOURCE_UNASSIGNED_GRAY, MANUAL_SOURCE_UNASSIGNED_GRAY);
-pub const MANUAL_SOURCE_UNASSIGNED_TEXT: Color32 = BRIGHT_TEXT;
-pub const MANUAL_SOURCE_UNASSIGNED_BORDER: Color32 = MANUAL_SOURCE_UNASSIGNED_FILL;
-pub const MANUAL_SOURCE_CLASSIFIED_FILL: Color32 = Color32::from_rgb(48, 48, 48);
-pub const MANUAL_SOURCE_CLASSIFIED_TEXT: Color32 = Color32::from_rgb(232, 232, 232);
-pub const MANUAL_SOURCE_CLASSIFIED_BORDER: Color32 = SOURCE_RECOGNIZED_BORDER;
+const MANUAL_SOURCE_UNASSIGNED_FILL: Color32 = Color32::from_rgb(MANUAL_SOURCE_UNASSIGNED_GRAY, MANUAL_SOURCE_UNASSIGNED_GRAY, MANUAL_SOURCE_UNASSIGNED_GRAY);
+const MANUAL_SOURCE_UNASSIGNED_TEXT: Color32 = BRIGHT_TEXT;
+const MANUAL_SOURCE_UNASSIGNED_BORDER: Color32 = MANUAL_SOURCE_UNASSIGNED_FILL;
+const MANUAL_SOURCE_CLASSIFIED_FILL: Color32 = Color32::from_rgb(48, 48, 48);
+const MANUAL_SOURCE_CLASSIFIED_TEXT: Color32 = Color32::from_rgb(232, 232, 232);
+const MANUAL_SOURCE_CLASSIFIED_BORDER: Color32 = SOURCE_RECOGNIZED_BORDER;
 pub const MANUAL_SOURCE_BLOCK_BORDER_WIDTH: f32 = SOURCE_RECOGNIZED_BORDER_WIDTH;
 
 
@@ -1330,5 +1330,53 @@ mod semantic_status_palette_tests {
             (WorkflowSignalRole::Current,WORKFLOW_SIGNAL_CURRENT,WORKFLOW_SIGNAL_CURRENT_BORDER),
             (WorkflowSignalRole::Pending,WORKFLOW_SIGNAL_PENDING,WORKFLOW_SIGNAL_PENDING_BORDER),
         ] { assert_eq!(workflow_signal_colors(role),(fill,border)); }
+    }
+}
+
+
+// Semantic palettes shared by source rendering and linked destinations.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) struct TextSurfacePalette {
+    pub fill:Color32,
+    pub text:Color32,
+    pub border:Color32,
+}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum SourceBlockRole { Recognized, Context, ManualUnassigned, ManualClassified }
+
+pub(crate) const fn source_block_palette(role:SourceBlockRole)->TextSurfacePalette {
+    let (fill,text,border)=match role {
+        SourceBlockRole::Recognized=>(SOURCE_BLOCK_FILL,TEXT,SOURCE_RECOGNIZED_BORDER),
+        SourceBlockRole::Context=>(SOURCE_CONTEXT_FILL,TEXT,SOURCE_RECOGNIZED_BORDER),
+        SourceBlockRole::ManualUnassigned=>(MANUAL_SOURCE_UNASSIGNED_FILL,MANUAL_SOURCE_UNASSIGNED_TEXT,MANUAL_SOURCE_UNASSIGNED_BORDER),
+        SourceBlockRole::ManualClassified=>(MANUAL_SOURCE_CLASSIFIED_FILL,MANUAL_SOURCE_CLASSIFIED_TEXT,MANUAL_SOURCE_CLASSIFIED_BORDER),
+    };
+    TextSurfacePalette{fill,text,border}
+}
+
+pub(crate) const fn linked_preview_palette()->TextSurfacePalette {
+    TextSurfacePalette{fill:LINKED_PREVIEW_BG,text:LINKED_PREVIEW_TEXT,border:LINKED_PREVIEW_BORDER}
+}
+
+#[cfg(test)]
+mod source_palette_tests {
+    use super::*;
+    #[test]
+    fn source_and_linked_palettes_preserve_approved_ink() {
+        let linked=linked_preview_palette();
+        assert_eq!((linked.fill,linked.text,linked.border),(
+            Color32::from_rgb(23,67,109),Color32::from_rgb(234,244,255),Color32::from_rgb(117,181,255)));
+        let recognized=source_block_palette(SourceBlockRole::Recognized);
+        let context=source_block_palette(SourceBlockRole::Context);
+        assert_eq!(recognized.fill,Color32::from_gray(66));
+        assert_eq!(context.fill,Color32::from_gray(73));
+        assert_eq!(recognized.border,Color32::from_gray(96));
+        let unassigned=source_block_palette(SourceBlockRole::ManualUnassigned);
+        assert_eq!((unassigned.fill,unassigned.text,unassigned.border),(
+            Color32::from_gray(214),Color32::from_gray(23),Color32::from_gray(214)));
+        let classified=source_block_palette(SourceBlockRole::ManualClassified);
+        assert_eq!((classified.fill,classified.text,classified.border),(
+            Color32::from_gray(48),Color32::from_gray(232),Color32::from_gray(96)));
     }
 }

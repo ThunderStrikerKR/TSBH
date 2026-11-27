@@ -1910,10 +1910,10 @@ mod linked_highlight_palette_tests {
         assert_eq!(theme::WORKFLOW_SELECTED_ROW_TEXT,Color32::from_rgb(244,214,162));
         assert_eq!(shipment_row_fill(true,true),shipment_row_fill(true,false));
         assert_eq!(theme::ReviewTone::Action.palette(),(
-            theme::ORANGE_EMPHASIS_BG,theme::REQUIRED_REVIEW_BORDER,
-            theme::REQUIRED_REVIEW_TEXT,Color32::from_rgb(217,188,152)
+            theme::ORANGE_EMPHASIS_BG,Color32::from_rgb(245,158,11),
+            Color32::from_rgb(255,228,188),Color32::from_rgb(217,188,152)
         ));
-        assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,Color32::from_rgb(214,214,214));
+        assert_eq!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill,Color32::from_rgb(214,214,214));
         assert_eq!(theme::BRIGHT,Color32::WHITE);
     }
 }

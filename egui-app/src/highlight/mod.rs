@@ -107,7 +107,7 @@ pub(crate) fn palette(role:Role)->Palette{
     let (fill,stroke,ink)=match role{
         Hover=>(Some(theme::BUTTON_HOVER_TINT),Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::SELECTION)),None),
         LightHover=>(Some(theme::BUTTON_HOVER_LIGHT_BG),Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::BUTTON_HOVER_LIGHT_BORDER)),Some(theme::BRIGHT_TEXT)),
-        LinkedPreview=>(Some(theme::LINKED_PREVIEW_BG),Some(Stroke::new(theme::LINKED_PREVIEW_BORDER_WIDTH,theme::LINKED_PREVIEW_BORDER)),Some(theme::LINKED_PREVIEW_TEXT)),
+        LinkedPreview=>(Some(theme::linked_preview_palette().fill),Some(Stroke::new(theme::LINKED_PREVIEW_BORDER_WIDTH,theme::linked_preview_palette().border)),Some(theme::linked_preview_palette().text)),
         Selected=>(Some(theme::ORANGE_EMPHASIS_BG),Some(Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::SELECTED_ORDER)),Some(theme::ORANGE_EMPHASIS_TEXT)),
         RequiredReview=>(Some(theme::ONE_TOUCH_BG),Some(Stroke::new(theme::ONE_TOUCH_BORDER_WIDTH,theme::ONE_TOUCH_BORDER)),Some(theme::ONE_TOUCH_TEXT)),
         RequiredInput=>(Some(theme::REQUIRED_INPUT_TINT),Some(Stroke::new(theme::REQUIRED_INPUT_STROKE_WIDTH,theme::REQUIRED_INPUT_BORDER)),None),

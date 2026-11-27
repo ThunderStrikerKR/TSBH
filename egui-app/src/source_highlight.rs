@@ -370,9 +370,9 @@ pub fn key(recipient:&str,target:&str,field:&str)->LinkKey {
 /// Shared evidence emphasis for source, recipient input values and item cells.
 /// All three destinations use the same blue fill, text and four-sided inset
 /// border. The source only projects native evidence; never alters ownership.
-pub const ACTIVE_FILL:Color32=theme::LINKED_PREVIEW_BG;
-pub const ACTIVE_TEXT:Color32=theme::LINKED_PREVIEW_TEXT;
-pub const ACTIVE_BORDER:Color32=theme::LINKED_PREVIEW_BORDER;
+pub const ACTIVE_FILL:Color32=theme::linked_preview_palette().fill;
+pub const ACTIVE_TEXT:Color32=theme::linked_preview_palette().text;
+pub const ACTIVE_BORDER:Color32=theme::linked_preview_palette().border;
 pub const ACTIVE_BORDER_WIDTH:f32=theme::LINKED_PREVIEW_BORDER_WIDTH;
 
 pub fn is_active(active:Option<&LinkKey>, key:&LinkKey)->bool {
@@ -454,8 +454,8 @@ pub fn hovered_key_at_pointer(
 // The source token palette is intentionally quiet in this dark theme.
 // 16pt SUIT stays unchanged. Normal blocks use the fixed line box with
 // horizontal glyph clearance and a consistent vertical inset.
-const SOURCE_BLOCK:Color32=theme::SOURCE_BLOCK_FILL;        // #424242
-const SOURCE_CONTEXT:Color32=theme::SOURCE_CONTEXT_FILL;      // #494949
+const SOURCE_BLOCK:Color32=theme::source_block_palette(theme::SourceBlockRole::Recognized).fill;        // #424242
+const SOURCE_CONTEXT:Color32=theme::source_block_palette(theme::SourceBlockRole::Context).fill;      // #494949
 const SOURCE_ACTIVE:Color32=ACTIVE_FILL;
 const SOURCE_ACTIVE_TEXT:Color32=ACTIVE_TEXT;
 const SOURCE_ACTIVE_BORDER:Color32=ACTIVE_BORDER;
@@ -619,8 +619,8 @@ fn style_visual_blocks(
         });
         let fill=if is_focused {SOURCE_ACTIVE}
             else {match manual_state {
-                Some(ManualBlockState::Unassigned)=>theme::MANUAL_SOURCE_UNASSIGNED_FILL,
-                Some(ManualBlockState::Classified)=>theme::MANUAL_SOURCE_CLASSIFIED_FILL,
+                Some(ManualBlockState::Unassigned)=>theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill,
+                Some(ManualBlockState::Classified)=>theme::source_block_palette(theme::SourceBlockRole::ManualClassified).fill,
                 None if is_context=>SOURCE_CONTEXT,
                 None=>SOURCE_BLOCK,
             }};
@@ -697,8 +697,8 @@ fn layout_with_states(
             line_height:Some(typography::RECEPTION_SOURCE_LINE_HEIGHT),
             color:if block.focused {SOURCE_ACTIVE_TEXT} else {
                 match block.manual_state {
-                    Some(ManualBlockState::Unassigned)=>theme::MANUAL_SOURCE_UNASSIGNED_TEXT,
-                    Some(ManualBlockState::Classified)=>theme::MANUAL_SOURCE_CLASSIFIED_TEXT,
+                    Some(ManualBlockState::Unassigned)=>theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).text,
+                    Some(ManualBlockState::Classified)=>theme::source_block_palette(theme::SourceBlockRole::ManualClassified).text,
                     None=>color,
                 }
             },
@@ -803,16 +803,16 @@ pub fn manual_source_block_style(
         }
     } else if span.source_id.as_ref().is_some_and(|id|assigned_ids.contains(id)) {
         ManualSourceBlockStyle {
-            fill:theme::MANUAL_SOURCE_CLASSIFIED_FILL,
-            text:theme::MANUAL_SOURCE_CLASSIFIED_TEXT,
-            border:theme::MANUAL_SOURCE_CLASSIFIED_BORDER,
+            fill:theme::source_block_palette(theme::SourceBlockRole::ManualClassified).fill,
+            text:theme::source_block_palette(theme::SourceBlockRole::ManualClassified).text,
+            border:theme::source_block_palette(theme::SourceBlockRole::ManualClassified).border,
             border_width:theme::MANUAL_SOURCE_BLOCK_BORDER_WIDTH,
         }
     } else {
         ManualSourceBlockStyle {
-            fill:theme::MANUAL_SOURCE_UNASSIGNED_FILL,
-            text:theme::MANUAL_SOURCE_UNASSIGNED_TEXT,
-            border:theme::MANUAL_SOURCE_UNASSIGNED_BORDER,
+            fill:theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill,
+            text:theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).text,
+            border:theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).border,
             border_width:theme::MANUAL_SOURCE_BLOCK_BORDER_WIDTH,
         }
     }
@@ -955,15 +955,15 @@ fn block_shapes_with_states(
                     // geometry but use independent state-specific colors.
                     let (border,width)=match block.manual_state {
                         Some(ManualBlockState::Unassigned)=>(
-                            theme::MANUAL_SOURCE_UNASSIGNED_BORDER,
+                            theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).border,
                             theme::MANUAL_SOURCE_BLOCK_BORDER_WIDTH
                         ),
                         Some(ManualBlockState::Classified)=>(
-                            theme::MANUAL_SOURCE_CLASSIFIED_BORDER,
+                            theme::source_block_palette(theme::SourceBlockRole::ManualClassified).border,
                             theme::MANUAL_SOURCE_BLOCK_BORDER_WIDTH
                         ),
                         None=>(
-                            theme::SOURCE_RECOGNIZED_BORDER,
+                            theme::source_block_palette(theme::SourceBlockRole::Recognized).border,
                             theme::SOURCE_RECOGNIZED_BORDER_WIDTH
                         ),
                     };
@@ -1233,15 +1233,15 @@ mod tests {
     #[test]
     fn manual_assignment_state_changes_only_manual_palette_and_ink() {
         assert_eq!(theme::PRIMARY_ACTION_FILL,Color32::WHITE);
-        assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,Color32::from_rgb(214,214,214));
-        assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_TEXT,theme::BRIGHT_TEXT);
-        assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_BORDER,theme::MANUAL_SOURCE_UNASSIGNED_FILL);
+        assert_eq!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill,Color32::from_rgb(214,214,214));
+        assert_eq!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).text,theme::BRIGHT_TEXT);
+        assert_eq!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).border,theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill);
         assert_eq!(theme::SOURCE_BLOCK_RADIUS,4.0);
         assert_eq!(crate::highlight::SOURCE_RADIUS,theme::SOURCE_BLOCK_RADIUS);
-        assert_eq!(theme::MANUAL_SOURCE_CLASSIFIED_BORDER,theme::SOURCE_RECOGNIZED_BORDER);
-        assert_ne!(theme::MANUAL_SOURCE_UNASSIGNED_BORDER,theme::SOURCE_RECOGNIZED_BORDER);
-        assert_ne!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,ACTIVE_FILL);
-        assert_ne!(theme::MANUAL_SOURCE_UNASSIGNED_BORDER,ACTIVE_BORDER);
+        assert_eq!(theme::source_block_palette(theme::SourceBlockRole::ManualClassified).border,theme::source_block_palette(theme::SourceBlockRole::Recognized).border);
+        assert_ne!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).border,theme::source_block_palette(theme::SourceBlockRole::Recognized).border);
+        assert_ne!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill,ACTIVE_FILL);
+        assert_ne!(theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).border,ACTIVE_BORDER);
         // Both reading states must remain legible; use the actual palette
         // luminance contrast instead of hard-coding obsolete gray swatches.
         let luminance=|c:Color32|{
@@ -1250,8 +1250,8 @@ mod tests {
             0.2126*linear(c.r())+0.7152*linear(c.g())+0.0722*linear(c.b())
         };
         for (ink,fill) in [
-            (theme::MANUAL_SOURCE_UNASSIGNED_TEXT,theme::MANUAL_SOURCE_UNASSIGNED_FILL),
-            (theme::MANUAL_SOURCE_CLASSIFIED_TEXT,theme::MANUAL_SOURCE_CLASSIFIED_FILL)
+            (theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).text,theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill),
+            (theme::source_block_palette(theme::SourceBlockRole::ManualClassified).text,theme::source_block_palette(theme::SourceBlockRole::ManualClassified).fill)
         ]{
             let ink_luminance=luminance(ink);
             let fill_luminance=luminance(fill);
@@ -1277,9 +1277,9 @@ mod tests {
         let manual=visual_blocks_with_manual_states(raw,&spans,None,None,Some(&assigned));
         assert_eq!(manual.len(),2);
         assert_eq!(manual[0].manual_state,Some(ManualBlockState::Classified));
-        assert_eq!(manual[0].fill,theme::MANUAL_SOURCE_CLASSIFIED_FILL);
+        assert_eq!(manual[0].fill,theme::source_block_palette(theme::SourceBlockRole::ManualClassified).fill);
         assert_eq!(manual[1].manual_state,Some(ManualBlockState::Unassigned));
-        assert_eq!(manual[1].fill,theme::MANUAL_SOURCE_UNASSIGNED_FILL);
+        assert_eq!(manual[1].fill,theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill);
         let reception=visual_blocks(raw,&spans,None,None);
         assert!(reception.iter().all(|b|b.manual_state.is_none()));
         assert!(reception.iter().all(|b|b.fill==SOURCE_BLOCK));
@@ -1304,10 +1304,10 @@ mod tests {
             FontId::proportional(16.0),Color32::WHITE
         );
         assert!(manual_layout.sections.iter().any(|section|
-            section.format.color==theme::MANUAL_SOURCE_CLASSIFIED_TEXT
+            section.format.color==theme::source_block_palette(theme::SourceBlockRole::ManualClassified).text
         ));
         assert!(manual_layout.sections.iter().any(|section|
-            section.format.color==theme::MANUAL_SOURCE_UNASSIGNED_TEXT
+            section.format.color==theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).text
         ));
 
         let ctx=egui::Context::default();
@@ -1323,9 +1323,9 @@ mod tests {
                 "each classified/unclassified source block needs its own stroke");
             assert_eq!(manual_fills.len(),2);
             assert!(manual_fills.iter().any(|shape|matches!(shape,
-                egui::Shape::Rect(rect) if rect.fill==theme::MANUAL_SOURCE_UNASSIGNED_FILL)));
+                egui::Shape::Rect(rect) if rect.fill==theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill)));
             assert!(manual_strokes.iter().any(|shape|matches!(shape,
-                egui::Shape::Rect(rect) if rect.stroke.color==theme::MANUAL_SOURCE_UNASSIGNED_BORDER)));
+                egui::Shape::Rect(rect) if rect.stroke.color==theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).border)));
             for shape in manual_fills.iter().chain(manual_strokes.iter()){
                 assert!(matches!(shape,egui::Shape::Rect(rect)
                     if rect.corner_radius==egui::CornerRadius::same(4)),
@@ -1344,7 +1344,7 @@ mod tests {
             }
             assert!(receipt_strokes.iter().all(|shape|matches!(
                 shape,egui::Shape::Rect(rect)
-                    if rect.stroke.color==theme::SOURCE_RECOGNIZED_BORDER
+                    if rect.stroke.color==theme::source_block_palette(theme::SourceBlockRole::Recognized).border
                     && rect.stroke.width==theme::SOURCE_RECOGNIZED_BORDER_WIDTH
             )));
         });
@@ -1371,7 +1371,7 @@ mod tests {
             assert_eq!(white.len(),2);
             assert!(white.iter().all(|shape|matches!(
                 shape,egui::Shape::Rect(rect)
-                    if rect.stroke.color==theme::SOURCE_RECOGNIZED_BORDER
+                    if rect.stroke.color==theme::source_block_palette(theme::SourceBlockRole::Recognized).border
                     && rect.stroke.width==theme::SOURCE_RECOGNIZED_BORDER_WIDTH
             )));
             let active=spans[0].key.clone();

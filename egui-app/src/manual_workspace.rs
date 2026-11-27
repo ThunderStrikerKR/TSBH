@@ -3835,11 +3835,11 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(data.assigned_ids.contains(id),classified);
         let style=source_highlight::manual_source_block_style(span,None,&data.assigned_ids);
         let (fill,ink,border)=if classified{
-            (theme::MANUAL_SOURCE_CLASSIFIED_FILL,theme::MANUAL_SOURCE_CLASSIFIED_TEXT,
-                theme::MANUAL_SOURCE_CLASSIFIED_BORDER)
+            (theme::source_block_palette(theme::SourceBlockRole::ManualClassified).fill,theme::source_block_palette(theme::SourceBlockRole::ManualClassified).text,
+                theme::source_block_palette(theme::SourceBlockRole::ManualClassified).border)
         }else{
-            (theme::MANUAL_SOURCE_UNASSIGNED_FILL,theme::MANUAL_SOURCE_UNASSIGNED_TEXT,
-                theme::MANUAL_SOURCE_UNASSIGNED_BORDER)
+            (theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).fill,theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).text,
+                theme::source_block_palette(theme::SourceBlockRole::ManualUnassigned).border)
         };
         assert_eq!((style.fill,style.text,style.border),(fill,ink,border));
     }
