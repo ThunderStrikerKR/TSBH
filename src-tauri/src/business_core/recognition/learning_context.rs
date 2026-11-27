@@ -54,7 +54,7 @@ impl OwnerOrderEvidence{
                 let before=roles[..name].contains(&field);
                 let after=roles[name+1..].contains(&field);
                 direction[slot]=match (before,after){(true,false)=>-1,(false,true)=>1,_=>0};
-                if direction[slot]!=0{out.totals[slot][usize::from(direction[slot]>0)]+=1;}
+                if direction[slot]!=0{out.totals[slot][if direction[slot]>0{1}else{0}]+=1;}
             }
             if direction==[0,0]{continue;}
             // Collapse adjacent equal roles (e.g. multiple contacts) without
@@ -72,7 +72,7 @@ impl OwnerOrderEvidence{
         for (i,p) in excluded.iter().enumerate(){
             if excluded[..i].contains(p){continue;}
             if let Some((_,d))=self.paragraphs.get(p){
-                if d[slot]!=0{votes[usize::from(d[slot]>0)]-=1;}
+                if d[slot]!=0{votes[if d[slot]>0{1}else{0}]-=1;}
             }
         }
         votes
@@ -1064,6 +1064,27 @@ fn statistics_with_comparison(payload:&Value,prepared:Option<&Value>)->Result<Va
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn owner_order_evidence_excludes_target_and_conflicting_paragraphs(){
+        let mut source=Vec::new();
+        for p in 0..5u64{
+            let start=p as usize*100;
+            source.extend([("name",p,start,start+1),("phone",p,start+2,start+3),
+                ("address",p,start+4,start+5)]);
+        }
+        // Two names, overlap, and before/after ambiguity are not independent
+        // directional observations.
+        source.extend([("name",5,500,501),("name",5,502,503),("phone",5,504,505),
+            ("name",6,600,603),("phone",6,602,604),
+            ("phone",7,700,701),("name",7,702,703),("mobile",7,704,705)]);
+        let index=OwnerOrderEvidence::new(source);
+        assert_eq!(index.votes("phone",[0,1,2]),[0,2]);
+        assert_eq!(index.votes("mobile",[0,0,1]),[0,3]);
+        assert_eq!(index.votes("address",[0,1,2]),[0,2]);
+        assert_eq!(index.repeated_shape_count(0,[0,1,2]),2);
+        assert_eq!(index.repeated_shape_count(5,[0,1,2]),0);
+        assert_eq!(index.votes("product",[0,1,2]),[0,0]);
+    }
     #[test]
     fn document_pattern_candidate_preserves_order_and_ignores_item_count(){
         // Synthetic single-character spans; no customer data.
