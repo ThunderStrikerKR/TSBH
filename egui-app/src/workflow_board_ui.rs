@@ -40,6 +40,12 @@ impl PendingTarget{
         Self{order_id:id.into(),recipient_id:(!recipient.is_empty()).then(||recipient.into())}
     }
 }
+#[derive(Clone,Debug,PartialEq,Eq)]
+enum PreviewTrigger{
+    ConfirmedTitle(String),
+    ConfirmedStage(String),
+    PendingStage(String),
+}
 #[derive(Default)]
 pub struct BoardUi {
     pub selection:Option<Selection>,
@@ -47,8 +53,8 @@ pub struct BoardUi {
     // Canonical slot identity is unchanged when a draft becomes group:<id>.
     card_order:Vec<String>,
     normal_order:Vec<String>,
-    preview_pending:Option<(String,Instant)>,
-    preview_active:Option<String>,
+    preview_pending:Option<(PreviewTrigger,Instant)>,
+    preview_active:Option<PreviewTrigger>,
     preview_leave:Option<Instant>,
     preview_rect:Option<Rect>,
     pub preview_shipment:Option<String>,
@@ -106,10 +112,22 @@ impl BoardUi{
         self.stop_preview();
     }
     pub fn active_preview(&self)->Option<&str>{
-        self.preview_active.as_deref().filter(|id|!id.starts_with("pending-stage:"))
+        match self.preview_active.as_ref()?{
+            PreviewTrigger::ConfirmedTitle(id)|PreviewTrigger::ConfirmedStage(id)=>Some(id),
+            PreviewTrigger::PendingStage(_)=>None,
+        }
+    }
+    pub fn active_stage_preview(&self)->Option<&str>{
+        match self.preview_active.as_ref()?{
+            PreviewTrigger::ConfirmedStage(id)=>Some(id),
+            _=>None,
+        }
     }
     pub fn active_pending_stage(&self)->Option<&str>{
-        self.preview_active.as_deref()?.strip_prefix("pending-stage:")
+        match self.preview_active.as_ref()?{
+            PreviewTrigger::PendingStage(id)=>Some(id),
+            _=>None,
+        }
     }
     pub fn pending_preview(&self)->Option<&PendingTarget>{
         self.pending_stage_target.as_ref().or(self.pending_visible.as_ref())
@@ -216,17 +234,19 @@ impl BoardUi{
         }
     }
 
-    /// Hovering a stage label previews its group after 250ms. The anchored
-    /// overlay is part of the hover region and stays for 250ms on exit.
-    pub fn update_hover(&mut self, incoming:Option<String>, ctx:&egui::Context){
-        let now=Instant::now();
+    /// Titles and stage buttons share the same overlay lifecycle, but
+    /// only a stage trigger may activate one-touch guidance.
+    fn update_hover(&mut self,incoming:Option<PreviewTrigger>,ctx:&egui::Context){
+        self.update_hover_at(incoming,ctx,Instant::now());
+    }
+    fn update_hover_at(&mut self,incoming:Option<PreviewTrigger>,ctx:&egui::Context,now:Instant){
         let over_overlay=self.preview_rect
             .zip(ctx.input(|i|i.pointer.hover_pos()))
             .is_some_and(|(rect,pointer)|rect.contains(pointer));
         if let Some(group)=incoming.filter(|_|true)
             .or_else(||over_overlay.then(||self.preview_active.clone()).flatten()){
             self.preview_leave=None;
-            if self.preview_active.as_deref()==Some(group.as_str()){
+            if self.preview_active.as_ref()==Some(&group){
                 self.preview_pending=None;
                 return;
             }
@@ -250,7 +270,11 @@ impl BoardUi{
             self.preview_pending=None;
             if self.preview_active.is_some(){
                 let until=*self.preview_leave.get_or_insert(now+HOVER_EXIT);
-                if now>=until {self.stop_preview();ctx.request_repaint();}
+                if now>=until {
+                    self.preview_active=None;self.preview_pending=None;self.preview_leave=None;
+                    self.preview_rect=None;self.preview_shipment=None;self.row_pending=None;self.row_release=None;
+                    ctx.request_repaint();
+                }
                 else{ctx.request_repaint_after(HOVER_EXIT);}
             }
         }
@@ -668,7 +692,8 @@ fn group_frame(
     ui:&mut Ui,group:&GroupRow,selected:Option<&Selection>,
     open:bool,in_preview:bool,previewed_id:Option<&str>,writable:bool,
     freight_stage_group:Option<&str>,linked_selection:Option<(&str,&str)>,
-    trigger:&mut Option<String>,hovered_row:&mut Option<String>,stage_emphasis:bool
+    trigger:&mut Option<PreviewTrigger>,hovered_row:&mut Option<String>,stage_emphasis:bool,
+    previews_allowed:bool
 )->Option<Event>{
     let mut event=None;
     let active=selected.is_some_and(|s|s.group_id==group.id);
@@ -677,8 +702,12 @@ fn group_frame(
         let btn=workflow_header(
             ui,top,&group.id,&group.dealer_name,open || in_preview,
             Some(group.stage_validity),in_preview,
-            true,writable && !group.transferred,true
+            true,writable && !group.transferred,
+            pending_title_tooltip_allowed(previews_allowed,active,open,in_preview)
         );
+        if !active && btn.title.hovered(){
+            *trigger=Some(PreviewTrigger::ConfirmedTitle(group.id.clone()));
+        }
         if btn.manage{event=Some(Event::ManageGroup(group.id.clone()));}
         if btn.delete{event=Some(Event::DeleteGroup(group.id.clone()));}
             if btn.title.clicked(){
@@ -705,8 +734,8 @@ fn group_frame(
         );
         if advance_clicked{event=Some(Event::AdvanceGroup(group.id.clone()));}
         if undo_clicked{event=Some(Event::UndoGroup(group.id.clone()));}
-        if stage_hovered && !in_preview{
-            *trigger=Some(group.id.clone());
+        if stage_hovered{
+            *trigger=Some(PreviewTrigger::ConfirmedStage(group.id.clone()));
         }
         if open || in_preview{
             workflow_details(ui,|ui|{
@@ -860,7 +889,7 @@ fn pending_frame(
     ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool,in_preview:bool,
     writable:bool,dealer_name:&str,committed_recipient:Option<&str>,
     preview:Option<&PendingTarget>,linked_selection:Option<(&str,&str)>,
-    hovered_pending:&mut Option<PendingTarget>,stage_trigger:&mut Option<String>,
+    hovered_pending:&mut Option<PendingTarget>,stage_trigger:&mut Option<PreviewTrigger>,
     previews_allowed:bool
 )->Option<Event>{
     let mut event=None;
@@ -900,7 +929,7 @@ fn pending_frame(
             false,in_preview,false,(has_client && retail).then_some("소매 발주서")
         );
         if stage_hovered && quote_ready && draft.order_type!="RETAIL"{
-            *stage_trigger=Some(format!("pending-stage:{}",draft.id));
+            *stage_trigger=Some(PreviewTrigger::PendingStage(draft.id.clone()));
             *hovered_pending=Some(PendingTarget::order(&draft.id));
         }
         if confirm_clicked{
@@ -1077,7 +1106,7 @@ pub fn show(
             let mut ignored_row=None;
             if let Some(value)=group_frame(ui,group,current,open,false,None,
                 writable,freight_stage_group,linked_selection,&mut trigger,&mut ignored_row,
-                state.active_preview()==Some(group.id.as_str())){
+                state.active_stage_preview()==Some(group.id.as_str()),previews_allowed){
                 match value{
                     Event::ToggleGroup(id)=>{
                         state.folded=if open{Some(id)}else{None};
@@ -1166,14 +1195,11 @@ pub fn show(
         state.pending_release=None;
         state.pending_content_hovered=None;
     }
-    let hovered=trigger.clone();
-    if previews_allowed{state.update_hover(hovered,ui.ctx());}
-    else{state.stop_preview();}
-    state.pending_stage_target=state.active_pending_stage().map(PendingTarget::order);
     if let Some((group,pos,width))=overlay{
         let pane_clip=ui.clip_rect();
         let mut overlay_event=None;
         let mut hovered_row=None;
+        let mut overlay_trigger=None;
         let area=crate::overlay::area(Id::new(("workflow-card-overlay",group.id.clone())),crate::overlay::AreaRole::Preview)
             .fixed_pos(Pos2::new(pos.x,pos.y))
             .movable(false);
@@ -1182,14 +1208,18 @@ pub fn show(
             // over the source/details panes or the app header.
             ui.set_clip_rect(pane_clip);
             ui.apply_shared_width(crate::card::CardWidthPolicy::Bounded,width);
-            let mut ignored_hover=None;
             overlay_event=group_frame(
                 ui,group,current,true,true,state.preview_shipment.as_deref(),
-                writable,freight_stage_group,linked_selection,&mut ignored_hover,&mut hovered_row,
-                state.active_preview()==Some(group.id.as_str())
+                writable,freight_stage_group,linked_selection,&mut overlay_trigger,&mut hovered_row,
+                state.active_stage_preview()==Some(group.id.as_str()),previews_allowed
             );
         });
-        state.preview_rect=Some(response.response.rect);
+        state.preview_rect=Some(response.response.rect.intersect(pane_clip));
+        if overlay_trigger.is_some(){trigger=overlay_trigger;}
+        else if ui.ctx().input(|input|input.pointer.hover_pos()
+            .is_some_and(|pointer|response.response.rect.intersect(pane_clip).contains(pointer))){
+            trigger=state.preview_active.clone();
+        }
         state.update_row_hover(hovered_row,ui.ctx());
         if let Some(overlay_event)=overlay_event {
             if let Event::ToggleGroup(id)=overlay_event {
@@ -1210,6 +1240,9 @@ pub fn show(
         state.preview_rect=None;
         state.update_row_hover(None,ui.ctx());
     }
+    if previews_allowed&&event.is_none(){state.update_hover(trigger,ui.ctx());}
+    else{state.stop_preview();}
+    state.pending_stage_target=state.active_pending_stage().map(PendingTarget::order);
     event
 }
 
@@ -1519,6 +1552,30 @@ mod pending_matching_tests {
 #[cfg(test)]
 mod pending_hover_navigation_tests{
     use super::*;
+    #[test]
+    fn confirmed_title_and_stage_share_delay_but_only_stage_enables_guidance(){
+        let ctx=egui::Context::default();
+        let mut board=BoardUi::default();
+        let start=Instant::now();
+        let title=PreviewTrigger::ConfirmedTitle("group:a".into());
+        let stage=PreviewTrigger::ConfirmedStage("group:a".into());
+        board.update_hover_at(Some(title.clone()),&ctx,start);
+        board.update_hover_at(Some(title.clone()),&ctx,start+Duration::from_millis(249));
+        assert!(board.active_preview().is_none());
+        board.update_hover_at(Some(title),&ctx,start+HOVER_ENTER);
+        assert_eq!(board.active_preview(),Some("group:a"));
+        assert!(board.active_stage_preview().is_none());
+        let next=start+HOVER_ENTER+Duration::from_millis(1);
+        board.update_hover_at(Some(stage.clone()),&ctx,next);
+        board.update_hover_at(Some(stage),&ctx,next+HOVER_ENTER);
+        assert_eq!(board.active_preview(),Some("group:a"));
+        assert_eq!(board.active_stage_preview(),Some("group:a"));
+        assert!(board.selection.is_none());
+        let leave=next+HOVER_ENTER+Duration::from_millis(1);
+        board.update_hover_at(None,&ctx,leave);
+        board.update_hover_at(None,&ctx,leave+HOVER_EXIT);
+        assert!(board.active_preview().is_none());
+    }
     #[test]
     fn pending_title_overflow_tooltip_never_preempts_recipient_preview(){
         assert!(!pending_title_tooltip_allowed(true,false,false,false));
