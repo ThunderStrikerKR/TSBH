@@ -1045,6 +1045,38 @@ mod tests{
         assert_eq!(exact_role_period(roles.len(),prefix_role_period(&roles)),3);
     }
     #[test]
+    fn shared_local_features_keep_legacy_context_keys_and_cache_once(){
+        let raw="A\nT\nB";
+        let units=raw.encode_utf16().collect::<Vec<_>>();
+        let gap=json!({"blankLines":0,"contentLines":0,"maxConsecutiveBlankLines":0});
+        let first=json!({"candidates":[
+            {"start":0,"end":1,"text":"A","kind":"name","line":0,"paragraph":0},
+            {"start":2,"end":3,"text":"T","kind":"phone","line":1,"paragraph":0},
+            {"start":4,"end":5,"text":"B","kind":"name","line":2,"paragraph":0}],
+            "recipientOwnerTrace":{"schemaVersion":1,"decisions":[{
+                "source":{"start":2,"end":3,"kind":"phone"},
+                "previousHasDelivery":false,"nearbyAddress":true,
+                "candidates":[
+                    {"relation":"previous","anchor":{"start":0,"end":1,"kind":"name"},
+                        "sameParagraph":true,"lineDistance":1,"gap":gap},
+                    {"relation":"next","anchor":{"start":4,"end":5,"kind":"name"},
+                        "sameParagraph":true,"lineDistance":1,"gap":gap}]}]}});
+        let events=event_index(&units,&first);
+        let lead=document_lead(&events);
+        let mut locals=LocalContextCache::new();
+        let owner=owner_contexts_from_events(&units,&first,&events,lead,&mut locals);
+        assert_eq!(owner.len(),1);
+        assert_eq!(locals.len(),1);
+        let saved=locals[&1].clone();
+        let fields=field_contexts_from_events(&units,&first,&events,lead,&mut locals);
+        assert_eq!(fields.len(),3);
+        assert_eq!(locals.len(),3);
+        assert_eq!(locals[&1],saved);
+        assert_eq!(owner,contexts(&units,&first));
+        assert_eq!(fields,field_contexts(&units,&first));
+        assert_eq!(saved,json!([["name",false,1,true],["contact",true,0,true],["name",false,1,true]]));
+    }
+    #[test]
     fn document_features_preserve_exact_unicode_distance_and_boundaries(){
         let raw="A😀\n \nB";
         let first=json!({"candidates":[
