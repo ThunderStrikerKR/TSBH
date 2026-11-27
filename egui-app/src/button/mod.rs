@@ -258,6 +258,54 @@ pub(crate) fn window_control(ui: &mut Ui, control: WindowControl) -> Response {
     response
 }
 
+/// Fixed notification surface: bell and count own disjoint slots in all
+/// unread states. The ordinary action renderer owns the frame and hover.
+fn notification_button_slots(rect:Rect,count_width:f32)->(Rect,Rect){
+    let bell=Rect::from_min_size(rect.min,Vec2::new(ACTION_STANDARD_HEIGHT,rect.height()));
+    let count=Rect::from_min_max(
+        egui::pos2(bell.right()+SPACE_4,rect.top()),
+        egui::pos2((bell.right()+SPACE_4+count_width).min(rect.right()),rect.bottom())
+    );
+    (bell,count)
+}
+pub(crate) fn notification_button(ui:&mut Ui,unread:usize)->Response{
+    let max_count=typography::client_table_metadata_galley(ui,"99+",ERROR_TEXT);
+    let width=ACTION_STANDARD_HEIGHT+max_count.size().x+SPACE_8;
+    let response=action_with_min_width(ui,"",ButtonRole::Standard,true,width);
+    let (bell,count)=notification_button_slots(response.rect,max_count.size().x);
+    let center=bell.center();
+    let ink=if response.hovered(){TEXT}else{SECONDARY};
+    let stroke=Stroke::new(1.55,ink);
+    let p=|x:f32,y:f32|center+egui::vec2(x,y);
+    let painter=ui.painter();
+    // Native vector bell, independent of platform emoji/font availability.
+    painter.add(egui::Shape::line(vec![p(-7.0,4.0),p(-5.0,1.0),p(-5.0,-3.0),
+        p(-3.5,-6.0),p(0.0,-7.5),p(3.5,-6.0),p(5.0,-3.0),
+        p(5.0,1.0),p(7.0,4.0),p(-7.0,4.0)],stroke));
+    painter.add(egui::Shape::line(vec![p(-2.0,6.0),p(0.0,7.5),p(2.0,6.0)],stroke));
+    if unread>0{
+        let label=if unread>99{"99+".to_owned()}else{unread.to_string()};
+        let galley=typography::client_table_metadata_galley(ui,&label,ERROR_TEXT);
+        let origin=count.center()-galley.size()/2.0;
+        painter.with_clip_rect(count.intersect(ui.clip_rect())).galley(origin,galley,ERROR_TEXT);
+    }
+    response
+}
+#[cfg(test)]
+mod notification_button_geometry_tests{
+    use super::*;
+    #[test]
+    fn bell_and_maximum_badge_have_disjoint_fixed_slots(){
+        let width=26.0;
+        let rect=Rect::from_min_size(egui::Pos2::ZERO,
+            Vec2::new(ACTION_STANDARD_HEIGHT+width+SPACE_8,ACTION_STANDARD_HEIGHT));
+        let (bell,count)=notification_button_slots(rect,width);
+        assert!(bell.right()<count.left());
+        assert!(rect.contains_rect(bell)&&rect.contains_rect(count));
+        assert_eq!(count.width(),width);
+    }
+}
+
 /// Shared zero-padding allocation for compact action roles.
 fn compact_action_surface(ui:&mut Ui,enabled:bool,button:egui::Button<'_>)->Response{
     ui.scope(|slot|{

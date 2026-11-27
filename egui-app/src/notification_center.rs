@@ -47,14 +47,7 @@ impl Center{
     }
     pub fn header_button(&mut self,ui:&mut Ui){
         let unread=self.items.iter().filter(|n|n["read"]!=true).count();
-        let response=crate::button::action_with_min_width(ui,"알림",theme::ButtonRole::Standard,true,72.0);
-        if unread>0{
-            let count=if unread>99{"99+".to_owned()}else{unread.to_string()};
-            let galley=typography::client_table_metadata_galley(ui,&count,theme::ERROR_TEXT);
-            let anchor=response.rect.right_center()-egui::vec2(theme::SPACE_4,0.0);
-            let origin=anchor-egui::vec2(galley.size().x,galley.size().y/2.0);
-            ui.painter().galley(origin,galley,theme::ERROR_TEXT);
-        }
+        let response=crate::button::notification_button(ui,unread);
         if response.clicked(){self.open=true;self.request(ui.ctx(),Action::Load);}
     }
     pub fn show(&mut self,ctx:&Context,area:Rect){
@@ -62,32 +55,48 @@ impl Center{
         let busy=self.pending.is_some();let mut close=false;let mut action=None;
         crate::popup::modal_backdrop(ctx,"notification-center-backdrop",false);
         crate::popup::modal_window(ctx,"알림","notification-center",area)
-            .default_width(area.width().min(560.0)).show(ctx,|ui|{
+            .default_width(area.width().min(theme::MODAL_DECISION_MAX_WIDTH)).show(ctx,|ui|{
                 crate::popup::modal_flow_workspace(ui,|workspace|{
-                    close=workspace.header("알림","닫기",true);
-                    workspace.scroll_region("notification-center-list",crate::popup::modal_editor_body_max_height(area.height()),|ui|{
-                        ui.horizontal_wrapped(|bar|{
-                            if crate::button::action(bar,"모두 읽음",theme::ButtonRole::Standard,!busy&&!self.items.is_empty()).clicked(){action=Some(Action::Read(None));}
+                    let (closed,())=workspace.header_with_toolbar("알림","닫기",true,|toolbar|{
+                        toolbar.with_layout(egui::Layout::right_to_left(egui::Align::Center),|bar|{
                             if crate::button::action(bar,"전체 삭제",theme::ButtonRole::Standard,!busy&&!self.items.is_empty()).clicked(){action=Some(Action::Dismiss(None));}
+                            if crate::button::action(bar,"모두 읽음",theme::ButtonRole::Standard,!busy&&!self.items.is_empty()).clicked(){action=Some(Action::Read(None));}
+                            // One stable status slot; native elision is the only tooltip owner.
+                            let error=self.error.as_deref().unwrap_or("");
+                            bar.add(crate::ui_primitives::truncated_label(typography::caption(
+                                if error.is_empty(){" "}else{error}
+                            )));
                         });
-                        // Reserve one fixed status line; overflow is available on hover.
-                        let error=self.error.as_deref().unwrap_or("");
-                        let status=ui.add(egui::Label::new(typography::caption(
-                            if error.is_empty(){" "}else{error}
-                        )).truncate());
-                        if !error.is_empty(){status.on_hover_text(error);}
+                    });
+                    close=closed;
+                    let height=crate::popup::modal_body_height_budget(
+                        area.height()-(crate::popup::modal_master_header_with_toolbar_height()-theme::MODAL_HEADER_HEIGHT),false);
+                    workspace.scroll_region("notification-center-list",height,|ui|{
                         if self.items.is_empty(){crate::ui_primitives::management_body_state_inline(ui,if busy{"조회 중"}else{"알림이 없습니다."});}
-                        for n in &self.items{
-                            let text=|k:&str|n[k].as_str().unwrap_or("");
-                            crate::ui_primitives::section_divider(ui);
-                            ui.horizontal_wrapped(|bar|{
-                                bar.label(typography::field_label(text("title")));
-                                bar.label(typography::caption(text("at")));
-                                if crate::button::action(bar,if n["read"]==true{"읽음 완료"}else{"읽음"},theme::ButtonRole::Standard,!busy&&n["read"]!=true).clicked(){action=Some(Action::Read(Some(text("id").to_owned())));}
-                                if crate::button::action(bar,"삭제",theme::ButtonRole::Standard,!busy).clicked(){action=Some(Action::Dismiss(Some(text("id").to_owned())));}
-                            });
-                            ui.add(egui::Label::new(typography::body(text("detail"))).wrap());
-                        }
+                        ui.vertical(|list|{
+                            list.spacing_mut().item_spacing.y=theme::SPACE_8;
+                            for n in &self.items{
+                                let text=|k:&str|n[k].as_str().unwrap_or("");
+                                crate::card::section_frame().show(list,|card|{
+                                    let width=card.available_width();
+                                    crate::card::apply_width_policy(card,crate::card::CardWidthPolicy::FillAvailable,width);
+                                    // The action column has a stable width for both read states.
+                                    card.horizontal(|row|{
+                                        row.with_layout(egui::Layout::right_to_left(egui::Align::Center),|bar|{
+                                            if crate::button::action(bar,"삭제",theme::ButtonRole::Standard,!busy).clicked(){action=Some(Action::Dismiss(Some(text("id").to_owned())));}
+                                            if crate::button::action_with_min_width(bar,if n["read"]==true{"읽음 완료"}else{"읽음"},theme::ButtonRole::Standard,!busy&&n["read"]!=true,theme::NOTIFICATION_READ_ACTION_WIDTH).clicked(){action=Some(Action::Read(Some(text("id").to_owned())));}
+                                            bar.add(crate::ui_primitives::truncated_label(typography::field_label(text("title"))));
+                                        });
+                                    });
+                                    card.label(typography::caption(text("at")));
+                                    crate::card::preview_surface_frame().show(card,|detail|{
+                                        let width=detail.available_width();
+                                        crate::card::apply_width_policy(detail,crate::card::CardWidthPolicy::FillAvailable,width);
+                                        detail.add(egui::Label::new(typography::body(text("detail"))).wrap());
+                                    });
+                                });
+                            }
+                        });
                     });
                 });
             });

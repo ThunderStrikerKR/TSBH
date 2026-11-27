@@ -371,6 +371,8 @@ pub const ACTION_PRIMARY_HEIGHT: f32 = 36.0;
 pub const ACTION_STANDARD_HEIGHT: f32 = 34.0;
 pub const ACTION_EMPHASIZED_HEIGHT: f32 = ACTION_STANDARD_HEIGHT;
 pub const ACTION_QUIET_HEIGHT: f32 = 32.0;
+// Equal width for the existing read/unread labels in notification rows.
+pub const NOTIFICATION_READ_ACTION_WIDTH:f32=3.0*ACTION_STANDARD_HEIGHT;
 // Reserve space for the single-row order total at the bottom of its pane.
 // The four freight KPIs remain separate cards, each with a centered value
 // above its supporting label (not a merged summary strip).
