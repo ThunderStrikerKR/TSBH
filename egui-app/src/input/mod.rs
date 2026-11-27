@@ -499,6 +499,7 @@ fn reception_text_editor_at_click(
     ui:&mut Ui,cell:Rect,edit:egui::TextEdit<'_>,
     request_focus:bool,click_at:Option<egui::Pos2>
 )->Response{
+    let cell=crate::ui_layout::aligned_rect(cell);
     let mut placed=ui.new_child(
         egui::UiBuilder::new()
             .max_rect(cell)
