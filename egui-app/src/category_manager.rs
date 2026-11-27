@@ -193,6 +193,7 @@ fn direct_count(catalog:&Value,id:&str)->usize{
 struct CategoryMapIndex {
     children:std::sync::Arc<HashMap<String,Vec<usize>>>,
     totals:std::sync::Arc<HashMap<String,usize>>,
+    products:std::sync::Arc<HashMap<String,Vec<String>>>,
     visible:Option<HashSet<String>>,
 }
 impl CategoryMapIndex {
@@ -205,6 +206,7 @@ impl CategoryMapIndex {
             by_id.entry(item.id.as_str()).or_insert(index);
         }
         let mut totals=HashMap::new();
+        let mut products:HashMap<String,Vec<String>>=HashMap::new();
         // A product contributes at most once to any ancestor even when it
         // belongs to multiple nested categories. Deleted or superseded
         // products remain excluded exactly as in the original total_count().
@@ -215,21 +217,33 @@ impl CategoryMapIndex {
             field(p,"supersededBy").is_empty()
         ){
             counted.clear();
+            let mut assigned=HashSet::new();
+            let mut parents=HashSet::new();
             for category in items(product,"categories").iter()
                 .filter_map(Value::as_str){
                 walked.clear();
+                let Some(&leaf)=by_id.get(category)else{continue;};
+                assigned.insert(leaf);
                 let mut cursor=category;
                 while let Some(&index)=by_id.get(cursor){
                     if !walked.insert(index){break;}
+                    if index!=leaf{parents.insert(index);}
                     if counted.insert(index){
                         *totals.entry(cats[index].id.clone()).or_insert(0_usize)+=1;
                     }
                     cursor=cats[index].parent.as_str();
                 }
             }
+            // An explicit parent in the stored path is not another product
+            // placement. Independent deepest memberships remain visible.
+            let name=field(product,"name");
+            let name=if name.is_empty(){field(product,"id")}else{name};
+            for leaf in assigned.difference(&parents){
+                products.entry(cats[*leaf].id.clone()).or_default().push(name.to_owned());
+            }
         }
         Self{children:std::sync::Arc::new(children),totals:std::sync::Arc::new(totals),
-            visible:Self::visibility(cats,query)}
+            products:std::sync::Arc::new(products),visible:Self::visibility(cats,query)}
     }
     fn visibility(cats:&[Category],query:&str)->Option<HashSet<String>>{
         let q=query.trim().to_lowercase();
@@ -255,6 +269,9 @@ impl CategoryMapIndex {
     }
     fn branches(&self,id:&str)->&[usize]{
         self.children.get(id).map(Vec::as_slice).unwrap_or(&[])
+    }
+    fn products(&self,id:&str)->&[String]{
+        self.products.get(id).map(Vec::as_slice).unwrap_or(&[])
     }
     fn total(&self,id:&str)->usize{
         self.totals.get(id).copied().unwrap_or(0)
@@ -520,7 +537,7 @@ impl CategoryManager {
     }
     fn visible_descendants(&self,cats:&[Category],index:&CategoryMapIndex,id:&str,seen:&mut HashSet<String>)->usize{
         if !seen.insert(id.to_owned()){return 0;}
-        index.branches(id).iter().filter(|&&i|index.shows(&cats[i].id)).map(|&i|{
+        index.products(id).len()+index.branches(id).iter().filter(|&&i|index.shows(&cats[i].id)).map(|&i|{
             let child=&cats[i];
             1+if self.expanded.contains(&child.id){self.visible_descendants(cats,index,&child.id,seen)}else{0}
         }).sum()
@@ -530,6 +547,8 @@ impl CategoryManager {
         if !ancestors.insert(item.id.clone()){return;}
         if !index.shows(&item.id){ancestors.remove(&item.id);return;}
         let branches=index.branches(&item.id);
+        let products=index.products(&item.id);
+        let has_children=!branches.is_empty()||!products.is_empty();
         let open=self.expanded.contains(&item.id)||!self.query.trim().is_empty();
         let motion=self.tree_motion.clone().filter(|m|m.id==item.id);
         let locked=self.tree_motion.is_some()||self.nav_motion.is_some()||self.mode_motion.is_some();
@@ -541,7 +560,7 @@ impl CategoryManager {
         };
         let response=category_tree::category_tree_row(ui,category_tree::CategoryTreeRow{
             name:&item.name,summary:&summary,depth,ancestor_guides,is_last,
-            root:is_root(&item.id),has_children:!branches.is_empty(),open,
+            root:is_root(&item.id),has_children,open,
             selected:self.selected==item.id,
         });
         #[cfg(test)]
@@ -554,7 +573,7 @@ impl CategoryManager {
         if response.clicked()&&!locked{
             self.select_map(cats,&item.id,ui.input(|i|i.time));
             ui.ctx().request_repaint();
-            if !branches.is_empty() && self.query.trim().is_empty(){
+            if has_children && self.query.trim().is_empty(){
                 self.start_fold(&item.id,!open,ui.input(|i|i.time),1);
                 ui.ctx().request_repaint();
             }
@@ -568,7 +587,11 @@ impl CategoryManager {
             let draw=|this:&mut Self,rows:&mut Ui,ancestors:&mut HashSet<String>|{
                 for (position,&child) in visible_children.iter().enumerate(){
                     this.node(rows,cats,index,&cats[child],depth+1,&child_guides,
-                        position+1==visible_children.len(),ancestors);
+                        position+1==visible_children.len()&&products.is_empty(),ancestors);
+                }
+                for (position,name) in products.iter().enumerate(){
+                    category_tree::product_tree_row(rows,name,depth+1,&child_guides,
+                        position+1==products.len());
                 }
             };
             if let Some(m)=motion{
@@ -695,7 +718,7 @@ impl CategoryManager {
                     .max(theme::CATALOG_TREE_ROW_HEIGHT);
                 let search_focused=panel.ctx().memory(|mem|mem.focused().is_some());
                 category_dropdown::explorer_body(panel,&nodes,&node_index,&mut self.focus,
-                    !busy,height,search_focused,Some(&index.totals));
+                    !busy,height,search_focused,Some(&index.totals),Some(&index.products));
                 if !self.focus.moving(){
                     let new=self.focus.path.last().cloned().unwrap_or_default();
                     if self.selected!=new{
@@ -1164,6 +1187,9 @@ mod modal_layout_contract_tests{
             assert_eq!(index.total(id),expected,"{id}");
         }
         assert_eq!(index.branches("b").len(),2);
+        assert!(index.products("b").is_empty());
+        assert_eq!(index.products("c"),&["p1".to_owned(),"p2".to_owned()]);
+        assert_eq!(index.products("d"),&["p3".to_owned()]);
         assert!(index.shows("d"));
     }
     #[test]

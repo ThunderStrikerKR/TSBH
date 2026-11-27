@@ -321,7 +321,7 @@ fn menu_body(
     ).inner;
     let list_height=theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT
         .min((menu.ctx().content_rect().height()-270.0).max(100.0));
-    explorer_body(menu,nodes,index,state,enabled,list_height,search_response.has_focus(),None);
+    explorer_body(menu,nodes,index,state,enabled,list_height,search_response.has_focus(),None,None);
     let busy=state.moving();
     crate::ui_primitives::soft_divider(menu);
     let mut applied=false;
@@ -339,7 +339,7 @@ fn menu_body(
 /// Shared focused explorer: the manager uses this without an Apply footer.
 pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&str,&CategoryNode>,
     state:&mut ExplorerState,enabled:bool,list_height:f32,search_focused:bool,
-    totals:Option<&HashMap<String,usize>>){
+    totals:Option<&HashMap<String,usize>>,products:Option<&HashMap<String,Vec<String>>>){
     let now=menu.input(|i|i.time);
     if state.motion.as_ref().is_some_and(|m|m.elapsed(now)>=450.0){state.finish_motion();menu.ctx().request_repaint();}
     else if state.motion.is_some(){menu.ctx().request_repaint();}
@@ -367,6 +367,11 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
     let context=context_path(nodes,&visual_path);
     let current=context.last().map(String::as_str).unwrap_or("");
     let items=if searching{search_results(nodes,index,&state.search)}else{direct_children(nodes,index,current)};
+    // Only management supplies product leaves. Category choice popups
+    // and category-name search results retain their existing behavior.
+    let product_rows=if searching{&[][..]}else{
+        products.and_then(|rows|rows.get(current)).map(Vec::as_slice).unwrap_or(&[])
+    };
     let row_h=theme::CATALOG_TREE_ROW_HEIGHT;
     let mut child_counts=HashMap::<&str,usize>::new();
     for node in nodes{*child_counts.entry(node.parent.as_str()).or_default()+=1;}
@@ -419,7 +424,8 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                     }
                 };
                 if !searching{
-                    paint_row(list,label_for(index,&context),context.clone(),0,true,!items.is_empty(),!items.is_empty());
+                    let has_children=!items.is_empty()||!product_rows.is_empty();
+                    paint_row(list,label_for(index,&context),context.clone(),0,true,has_children,has_children);
                 }
                 // Empty search feedback occupies a reserved row, not a new conditional layout.
                 if searching{
@@ -430,9 +436,16 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                     let path=if searching{chain(index,&node.id)}else{
                         let mut path=context.clone();path.push(node.id.clone());path
                     };
-                    let has_children=child_counts.contains_key(node.id.as_str());
+                    let has_children=child_counts.contains_key(node.id.as_str())||
+                        products.is_some_and(|rows|rows.get(&node.id).is_some_and(|p|!p.is_empty()));
                     let label=if searching{full_name(index,&path)}else{node.name.clone()};
-                    paint_row(list,&label,path,usize::from(!searching),i+1==items.len(),has_children,false);
+                    paint_row(list,&label,path,usize::from(!searching),i+1==items.len()&&product_rows.is_empty(),has_children,false);
+                }
+                for (i,name) in product_rows.iter().enumerate(){
+                    list.scope(|row|{
+                        if alpha<1.0{row.set_opacity(alpha);}
+                        category_tree::product_tree_row(row,name,1,&[],i+1==product_rows.len());
+                    });
                 }
             });
             crate::scrollbar::track_native(tree_ui,&output);

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "category-products-157",
+  "screen": "상품 관리 / 카테고리 관리 / 일반 및 집중 탐색",
+  "files": [
+    "egui-app/src/category_manager.rs",
+    "egui-app/src/category_tree/mod.rs",
+    "egui-app/src/category_dropdown.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "사용자 요청에 따라 실제 상품을 가장 깊은 소속 분류의 읽기 전용 하위 행으로 표시. 기존 카테고리 선택·검색 팝업 제외. 공통 트리 행/연결선/스크롤 및 애니메이션 높이 공유. Rust 컴파일, 회귀 테스트, Windows 실화면 미확인.",
+  "defects": [],
+  "releaseDecision": "NOT_APPROVED",
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "noClipping",
+      "footerVisible",
+      "scrollReachable",
+      "inputReadable",
+      "alignment",
+      "interaction",
+      "hoverAndFocus"
+    ]
+  }
+}

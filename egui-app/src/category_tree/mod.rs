@@ -99,16 +99,30 @@ fn paint_category_tree_folder(painter:&egui::Painter,rect:Rect,open:bool,ink:Col
 }
 
 pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
+    tree_row(ui,item,false)
+}
+
+/// Read-only product leaf: same guide, indent, row height and text layout
+/// as a category, but never acts as a category selection or folder.
+pub(crate) fn product_tree_row(ui:&mut Ui,name:&str,depth:usize,ancestor_guides:&[bool],is_last:bool){
+    tree_row(ui,CategoryTreeRow{
+        name,summary:"",depth,ancestor_guides,is_last,
+        root:false,has_children:false,open:false,selected:false,
+    },true);
+}
+
+fn tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>,product:bool)->Response{
     let (rect,response)=ui.shared_allocate_exact_size(
-        Vec2::new(ui.available_width().max(1.0),theme::CATALOG_TREE_ROW_HEIGHT),Sense::click()
+        Vec2::new(ui.available_width().max(1.0),theme::CATALOG_TREE_ROW_HEIGHT),
+        if product{Sense::hover()}else{Sense::click()}
     );
     #[cfg(test)]
-    crate::ui_test_support::record_highlight_target("category row",rect,ui.clip_rect());
+    if !product{crate::ui_test_support::record_highlight_target("category row",rect,ui.clip_rect());}
     let geo=CategoryTreeGeometry::new(rect,item.depth);
     let painter=ui.painter().with_shared_clip(rect);
     if item.selected{
         crate::highlight::paint(ui,rect,crate::highlight::Geometry::Control,crate::highlight::Role::Selected);
-    }else{
+    }else if !product{
         crate::button::paint_button_hover(ui,&response,crate::highlight::Geometry::Control);
     }
     let guide=Stroke::new(theme::CATALOG_TREE_GUIDE_WIDTH,theme::CATALOG_TREE_GUIDE_COLOR);
@@ -119,7 +133,19 @@ pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
             if item.open{ManagementChevronDirection::Down}else{ManagementChevronDirection::Right});
     }
     let ink=if item.selected{theme::CATALOG_TREE_SELECTED_INK}else{theme::CATALOG_TREE_FOLDER_COLOR};
-    paint_category_tree_folder(&painter,geo.folder,item.has_children&&item.open,ink);
+    if product{
+        // A small parcel glyph occupies the exact shared folder slot.
+        let p=|x:f32,y:f32|egui::pos2(geo.folder.left()+geo.folder.width()*x/20.0,
+            geo.folder.top()+geo.folder.height()*y/20.0);
+        let stroke=Stroke::new(theme::CATALOG_TREE_FOLDER_STROKE,
+            theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
+        painter.add(egui::Shape::closed_line(vec![p(3.0,5.0),p(10.0,2.0),p(17.0,5.0),
+            p(17.0,14.0),p(10.0,18.0),p(3.0,14.0)],stroke));
+        painter.add(egui::Shape::line(vec![p(3.0,5.0),p(10.0,9.0),p(17.0,5.0)],stroke));
+        painter.line_segment([p(10.0,9.0),p(10.0,18.0)],stroke);
+    }else{
+        paint_category_tree_folder(&painter,geo.folder,item.has_children&&item.open,ink);
+    }
     // Reserve metadata first and clip both label regions at the shared inset.
     // No full-width row dividers: hierarchy rails own the grouping.
     let right=(rect.right()-theme::CATALOG_TREE_INSET).max(rect.left());
