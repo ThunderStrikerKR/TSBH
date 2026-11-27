@@ -284,15 +284,14 @@ impl ReviewPanel {
                 )).wrap());
                 });
         }
-        if !inherited.is_empty(){
-            crate::button::collapsing_header(
-                format!("공통 상품 자동 적용 / {}개 항목",inherited.len())
-            ).show(ui,|details|{
-                    for &index in inherited {
-                        issue_card(details,&self.issues[index],analysis,interactive,&mut selected);
-                    }
+        for (caption,indices) in inherited_message_groups(
+            &self.issues,inherited,&analysis.recognition
+        ){
+            crate::button::collapsing_header(caption).show(ui,|details|{
+                for index in indices {
+                    issue_card(details,&self.issues[index],analysis,interactive,&mut selected);
                 }
-            );
+            });
         }
         for &index in facts {
             issue_card(ui,&self.issues[index],analysis,interactive,&mut selected);
@@ -448,6 +447,51 @@ pub(crate) fn show_inquiry_action(ui:&mut Ui,issue:&Value,enabled:bool)->Option<
         ButtonRole::Standard,enabled).clicked().then_some(cancel)
 }
 pub(crate) const INQUIRY_GUIDANCE:&str="복사용 자동 메시지를 전달하고 회신 내용을 입력하세요.";
+// Presentation only: retain native issue identity, approval and routing.
+fn review_item_context<'a>(issue:&Value,recognition:&'a Value)->Option<(&'a Value,&'a Value)>{
+    let rid=text(issue,"recipientId");
+    let iid=text(issue,"itemId");
+    if rid.is_empty()||iid.is_empty(){return None;}
+    let row=recognition.get("recipients")?.as_array()?.iter()
+        .find(|r|text(r,"id")==rid)?;
+    let item=row.get("items")?.as_array()?.iter().find(|i|text(i,"id")==iid)?;
+    Some((row,item))
+}
+fn unidentified_product_caption(issue:&Value,recognition:&Value)->Option<String>{
+    if text(issue,"kind")!="MODEL"||text(issue,"severity")=="INFO"{return None;}
+    let (row,item)=review_item_context(issue,recognition)?;
+    let who=text(row,"name").trim();
+    let product=text(item,"name").trim();
+    let raw=text(item,"raw").trim();
+    let product=if product.is_empty(){raw}else{product};
+    if product.is_empty(){return None;}
+    Some(format!("{} \"{product}\" 제품 선택 필요",if who.is_empty(){"수취인"}else{who}))
+}
+fn inherited_message_groups(issues:&[Value],indices:&[usize],recognition:&Value)
+    ->Vec<(String,Vec<usize>)>{
+    let mut groups:Vec<(Option<(String,String)>,Vec<usize>)>=Vec::new();
+    for &index in indices {
+        let issue=&issues[index];
+        let key=review_item_context(issue,recognition).and_then(|(_,item)|{
+            let term=text(&item["match"],"term").trim();
+            let model=text(item,"name").split('/').next().unwrap_or("").trim();
+            if term.is_empty()||model.is_empty(){None}
+            else{Some((term.to_owned(),model.to_owned()))}
+        });
+        if let Some((_,members))=groups.iter_mut().find(|(k,_)|*k==key){
+            members.push(index);
+        }else{groups.push((key,vec![index]));}
+    }
+    groups.into_iter().map(|(key,members)|{
+        let deliveries=members.iter().map(|&i|text(&issues[i],"recipientId"))
+            .filter(|id|!id.is_empty()).collect::<std::collections::HashSet<_>>().len();
+        let caption=match key{
+            Some((term,model))=>format!("'{term}'를 {model}로 잠정 적용 (배송 {deliveries}건)"),
+            None=>format!("공통 상품 자동 적용 / {}개 항목",members.len()),
+        };
+        (caption,members)
+    }).collect()
+}
 fn issue_card(
     ui:&mut Ui,issue:&Value,analysis:&ReceptionAnalysis,
     enabled:bool,selected:&mut Option<Action>,
@@ -460,6 +504,7 @@ fn issue_card(
     let severity=text(issue,"severity");
     let link_key=issue.get("linkKey").and_then(Value::as_str);
     let tone=issue_tone(issue);
+    let product_caption=unidentified_product_caption(issue,&analysis.recognition);
     crate::card::review_issue_card(ui,tone,|cell|{
             if text(issue,"resolution")=="USER_APPROVED"{
                 cell.add(egui::Label::new(typography::review_title(detail,tone)).wrap());
@@ -477,7 +522,7 @@ fn issue_card(
                 if kind=="QUANTITY_MISSING"
                     &&text(issue,"resolution")=="PROVISIONALLY_APPROVED"{
                     "수량 1개 잠정 처리됨"
-                }else{title},tone
+                }else{product_caption.as_deref().unwrap_or(title)},tone
             )).wrap());
             let model_action=model_resolution_kind(kind)&&severity!="INFO"&&!rid.is_empty()&&iid.is_some_and(|id|!id.is_empty());
             if model_action{
@@ -485,7 +530,7 @@ fn issue_card(
                     *selected=Some(model_navigation(issue));
                 }
             }
-            if !detail.is_empty() && detail!=title {
+            if product_caption.is_none() && !detail.is_empty() && detail!=title {
                 cell.add(egui::Label::new(typography::review_detail(detail,tone)).wrap());
             }
             if kind=="UNASSIGNED_EVIDENCE" {
@@ -624,6 +669,30 @@ fn issue_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unidentified_product_caption_names_recipient_and_product(){
+        let recognition=json!({"recipients":[{"id":"r","name":"가상 수취인","items":[{"id":"i","name":"709"}]}]});
+        let issue=json!({"kind":"MODEL","severity":"ACTION","recipientId":"r","itemId":"i"});
+        assert_eq!(unidentified_product_caption(&issue,&recognition).as_deref(),
+            Some("가상 수취인 \"709\" 제품 선택 필요"));
+        assert!(unidentified_product_caption(&issue,&json!({})).is_none());
+    }
+    #[test]
+    fn inherited_caption_counts_distinct_deliveries_and_preserves_issue_indices(){
+        let recognition=json!({"recipients":[
+            {"id":"a","items":[{"id":"i1","name":"709 / 보면대","match":{"term":"보면대"}},
+                {"id":"i2","name":"709 / 보면대","match":{"term":"보면대"}}]},
+            {"id":"b","items":[{"id":"i3","name":"709 / 보면대","match":{"term":"보면대"}}]},
+            {"id":"c","items":[{"id":"i4","name":"709 / 보면대","match":{"term":"보면대"}},
+                {"id":"i5","name":"710 / 보면대","match":{"term":"보면대"}}]}
+        ]});
+        let issues=vec![json!({"recipientId":"a","itemId":"i1"}),
+            json!({"recipientId":"a","itemId":"i2"}),json!({"recipientId":"b","itemId":"i3"}),
+            json!({"recipientId":"c","itemId":"i4"}),json!({"recipientId":"c","itemId":"i5"})];
+        let groups=inherited_message_groups(&issues,&[0,1,2,3,4],&recognition);
+        assert_eq!(groups,vec![("'보면대'를 709로 잠정 적용 (배송 3건)".into(),vec![0,1,2,3]),
+            ("'보면대'를 710로 잠정 적용 (배송 1건)".into(),vec![4])]);
+    }
     #[test]
     fn fixed_model_shortcut_prefers_visible_recipient_and_requires_item_identity(){
         let issues=vec![
