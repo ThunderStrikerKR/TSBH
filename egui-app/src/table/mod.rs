@@ -254,19 +254,37 @@ pub(crate) fn show<R>(
 pub(crate) struct RegistryColumns<const N:usize>{
     base:[f32;N],
     stretch:usize,
+    redistribution:Option<([f32;N],usize)>,
 }
 impl<const N:usize> From<[f32;N]> for RegistryColumns<N>{
-    fn from(base:[f32;N])->Self{Self{base,stretch:1}}
+    fn from(base:[f32;N])->Self{Self{base,stretch:1,redistribution:None}}
 }
 impl<const N:usize> RegistryColumns<N>{
     pub(crate) fn balanced_text(base:[f32;N],stretch:usize)->Self{
-        Self{base,stretch:stretch.clamp(1,N)}
+        Self{base,stretch:stretch.clamp(1,N),redistribution:None}
+    }
+    /// Retain each specified fraction of its resolved width and transfer
+    /// the released space to one column. Fixed columns use a scale of 1.
+    pub(crate) fn redistribute_to(mut self,scales:[f32;N],target:usize)->Self{
+        assert!(target<N && scales[target]==1.0);
+        assert!(scales.iter().all(|scale|(0.0..=1.0).contains(scale)));
+        self.redistribution=Some((scales,target));
+        self
     }
     fn widths(&self,available:f32,gap:f32)->[f32;N]{
         let mut widths=self.base;
         let minimum=widths.iter().sum::<f32>()+N.saturating_sub(1) as f32*gap;
         let extra=(available-minimum).max(0.0)/self.stretch as f32;
         for width in widths.iter_mut().take(self.stretch){*width+=extra;}
+        if let Some((scales,target))=self.redistribution{
+            let mut released=0.0;
+            for (width,scale) in widths.iter_mut().zip(scales){
+                let retained=*width*scale;
+                released+=*width-retained;
+                *width=retained;
+            }
+            widths[target]+=released;
+        }
         widths
     }
 }
@@ -1135,6 +1153,23 @@ fn registry_balances_text_columns_without_widening_actions(){
     let widths=columns.widths(1200.0,theme::SPACE_8);
     assert_eq!(widths,[496.0,476.0,96.0,108.0]);
     assert_eq!(columns.widths(500.0,theme::SPACE_8),columns.base);
+}
+
+#[cfg(test)]
+#[test]
+fn registry_redistributes_resolved_widths_and_preserves_fixed_columns(){
+    let original=RegistryColumns::balanced_text([240.0,220.0,96.0,108.0],2);
+    let revised=RegistryColumns::balanced_text([240.0,220.0,96.0,108.0],2)
+        .redistribute_to([0.7,0.8,1.0,1.0],3);
+    for available in [500.0,900.0,1200.0,1800.0]{
+        let old=original.widths(available,theme::SPACE_8);
+        let new=revised.widths(available,theme::SPACE_8);
+        assert!((new[0]-old[0]*0.7).abs()<0.01);
+        assert!((new[1]-old[1]*0.8).abs()<0.01);
+        assert_eq!(new[2],old[2]);
+        assert!((new[3]-(old[3]+old[0]*0.3+old[1]*0.2)).abs()<0.01);
+        assert!((new.iter().sum::<f32>()-old.iter().sum::<f32>()).abs()<0.01);
+    }
 }
 
 #[cfg(test)]

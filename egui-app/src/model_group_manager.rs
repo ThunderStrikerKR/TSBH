@@ -229,8 +229,9 @@ impl ModelGroupManager {
                     }).collect::<Vec<_>>();
                     let body_height=(panel.available_height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
                     let selected_id=self.selected.clone();
-                    let rect=crate::table::registry_table(panel,"family-list",["모델군","대표모델","상품 수","관리"],
-                        crate::table::RegistryColumns::balanced_text([240.0,220.0,96.0,108.0],2),
+                    let rect=crate::table::registry_table(panel,"family-list",["모델군","대표모델","상품 수","비고"],
+                        crate::table::RegistryColumns::balanced_text([240.0,220.0,96.0,108.0],2)
+                            .redistribute_to([0.7,0.8,1.0,1.0],3),
                         body_height,visible.len(),
                         |i|visible[i].0==selected_id,|row,cells,i,rect|{
                             let (id,g)=visible[i];
@@ -247,10 +248,8 @@ impl ModelGroupManager {
                             crate::table::registry_cell(row,cells[2],&items(&g["productIds"]).len().to_string(),Role::Quantity,true,(id,2));
                             #[cfg(test)]
                             crate::ui_test_support::record("catalog data row",rect);
-                            let edit=crate::table::registry_actions(row,cells[3],|actions|{
-                                crate::button::action(actions,"편집",theme::ButtonRole::Standard,!busy&&!self.editor_open).clicked()
-                            });
-                            if (response.clicked()||edit)&&!busy&&!self.editor_open{self.request_exit(Exit::Select(id.clone()));}
+                            crate::table::registry_cell(row,cells[3],"",Role::Text,false,(id,3));
+                            if response.clicked()&&!busy&&!self.editor_open{self.request_exit(Exit::Select(id.clone()));}
                         });
                     if visible.is_empty(){
                         crate::status_notice::management_body_state_overlay(panel,rect,Some(
@@ -471,13 +470,17 @@ mod responsiveness_tests{
         assert!(body.contains("crate::table::registry_table("));
         assert!(body.contains("crate::table::registry_cell("));
         assert!(body.contains("crate::table::registry_actions("));
-        assert!(body.contains("[\"모델군\",\"대표모델\",\"상품 수\",\"관리\"]"));
+        assert!(body.contains("[\"모델군\",\"대표모델\",\"상품 수\",\"비고\"]"));
         assert!(body.contains("[\"상품명\",\"상세 정보\",\"대표모델\",\"관리\"]"));
         assert!(body.contains("ProductManager::new_reference_selection("));
         assert!(!body.contains("model-group-search-results"));
         assert!(!body.contains("직원"));
         let list=body.split("    fn show_editor(").next().unwrap();
         assert!(!list.contains("allocate_ui_with_layout("));
+        assert!(!list.contains("crate::table::registry_actions("));
+        assert!(list.contains(".redistribute_to([0.7,0.8,1.0,1.0],3)"));
+        assert!(list.contains("if response.clicked()&&!busy&&!self.editor_open"));
+        assert!(list.contains("crate::table::registry_cell(row,cells[3],\"\",Role::Text"));
         assert!(body.contains("crate::popup::modal_window("));
         assert!(body.contains("crate::popup::modal_flow_workspace("));
     }
