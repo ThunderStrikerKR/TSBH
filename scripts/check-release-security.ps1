@@ -16,6 +16,8 @@ try {
     if ($LASTEXITCODE -ne 0 -or $dirty.Count -ne 0) { throw "Release requires a clean Git checkout." }
     & git.exe ls-files --error-unmatch egui-app/Cargo.lock | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Tracked egui Cargo.lock is required." }
+    $shallow = (& git.exe rev-parse --is-shallow-repository)
+    if ($LASTEXITCODE -ne 0 -or $shallow -ne "false") { throw "Full Git history is required for secret scanning." }
     & gitleaks.exe git --redact=100 --no-banner --log-opts="--all" .
     if ($LASTEXITCODE -ne 0) { throw "Git secret scan failed or found a leak." }
     foreach ($lock in @("egui-app/Cargo.lock","crates/bando-data-access/Cargo.lock")) {
