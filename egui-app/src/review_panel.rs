@@ -609,6 +609,17 @@ fn review_instruction(kind:&str)->Option<&'static str>{
 // Shared UI projection for confirmed orders. Never change the native issue
 // object or its original detail used by error deduplication.
 pub(crate) fn workflow_review_text(issue:&Value,label:&str,recognition:&Value)->String{
+    if text(issue,"kind")=="CHARGE_CALCULATION"{
+        let targets=issue["calculationTargets"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+        if targets.is_empty(){
+            return format!("청구액 계산 불가\n{label}");
+        }
+        let names=targets.iter().map(|target|{
+            let name=text(target,"name");
+            if name.is_empty(){"수취인 미지정"}else{name}
+        }).collect::<Vec<_>>().join(", ");
+        return format!("청구액 계산 불가 (배송 {}건)\n{names}",targets.len());
+    }
     if text(issue,"resolution")=="USER_APPROVED"||text(issue,"severity")=="INFO"{
         return label.to_owned();
     }
@@ -626,6 +637,9 @@ pub(crate) fn workflow_review_text(issue:&Value,label:&str,recognition:&Value)->
 pub(crate) fn issue_instruction(issue:&Value)->Option<&'static str>{
     if text(issue,"severity")=="INFO"{return None;}
     let kind=text(issue,"kind");
+    if kind=="CHARGE_CALCULATION"{
+        return Some("해당 배송 건의 상품 단가, 수량, 운임 및 부가세를 확인하세요. 입금 확인 단계에서는 기존 입금 내역도 확인하세요.");
+    }
     if kind=="STAGE_BLOCKER"{
         let detail=text(issue,"detail").trim().trim_end_matches('.');
         let problem=detail.rsplit_once(": ").map(|(_,problem)|problem).unwrap_or(detail);
@@ -839,6 +853,18 @@ fn issue_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unified_calculation_card_keeps_scope_and_requires_real_resolution(){
+        let issue=json!({"kind":"CHARGE_CALCULATION","severity":"ACTION","detail":"가상 거래처 입금 청구액 확인 필요",
+            "calculationTargets":[{"name":"가상 수취인 01"},{"name":"가상 수취인 02"}]});
+        assert_eq!(workflow_review_text(&issue,text(&issue,"detail"),&Value::Null),
+            "청구액 계산 불가 (배송 2건)\n가상 수취인 01, 가상 수취인 02");
+        assert_eq!(issue_tone(&issue),ReviewTone::Action);
+        assert!(issue_instruction(&issue).unwrap().contains("부가세"));
+        assert_ne!(issue["canApproveCurrent"],true);
+        let unknown=json!({"kind":"CHARGE_CALCULATION","severity":"ACTION","detail":"가상 거래처 입금 청구액 확인 필요"});
+        assert!(workflow_review_text(&unknown,text(&unknown,"detail"),&Value::Null).contains("가상 거래처"));
+    }
     #[test]
     fn routine_stage_notices_stay_visible_blue_without_changing_native_blockers(){
         for detail in ["가상 수취인: 운임 적용 필요","가상 수취인: 계좌 안내 완료 필요",
