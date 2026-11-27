@@ -404,9 +404,9 @@ fn weak_recipient_hint(text: &str) -> bool {
 fn delivery_boundary(line:&str,phone:&Regex)->bool{
     address_begin(line).is_some() || phone.is_match(line)
 }
-// Cache exact source slices only within the current logical record. The
-// catalog/client are fixed for that record; no cross-order cache or new
-// persistent data is needed. Different slices are independent candidates.
+// Cache exact source slices within one document, including logical record
+// boundary checks. Catalog/client are fixed; source offsets still belong
+// to each evidence occurrence, not to the cached decision.
 struct ProductSearch<'a,'s>{
     state:&'s Value,
     client_id:&'s str,
@@ -419,6 +419,10 @@ impl<'a,'s> ProductSearch<'a,'s>{
     fn decision(&mut self,text:&'a str)->&Value{
         let state=self.state;
         let client=self.client_id;
+        // Bound retained decisions for unusually large documents.
+        if self.decisions.len()>=512&&!self.decisions.contains_key(text){
+            self.decisions.clear();
+        }
         self.decisions.entry(text).or_insert_with(||model::decision_json(&model::decide(text,state,client)))
     }
 }
@@ -448,6 +452,56 @@ fn split_recipient_records<'a>(lines:Vec<Line<'a>>,label:&Regex,phone:&Regex)->V
         if valid{
             for (a,b) in ranges{
                 out.push(Line{text:&line.text[a..b],start:line.start+a,
+                    number:line.number,paragraph:line.paragraph});
+            }
+        }else{out.push(line);}
+    }
+    out
+}
+// Product records can share one physical line. Only split when each
+// segment independently has a registered leading model and an explicit
+// terminal quantity. Unknown models, prose, and options that cannot be
+// isolated safely retain their original line for the existing parser.
+fn split_product_records<'a>(lines:Vec<Line<'a>>,label:&Regex,phone:&Regex,
+    search:&mut ProductSearch<'a,'_>)->Vec<Line<'a>>{
+    let mut out=Vec::with_capacity(lines.len());
+    for line in lines{
+        let t=line.text;
+        if label.is_match(t)||phone.is_match(t)||address_begin(t).is_some()||
+            t.contains('|')||is_money_or_header(t)||
+            ["공통","모두","전부","전원","각각","씩","메모","메시지","메세지","요청","구성","포함","송하인","보내는"]
+                .iter().any(|word|t.contains(word)){
+            out.push(line);continue;
+        }
+        let quantities=quantity::extract(t);
+        if quantities.len()<2||quantities.len()>16||
+            !t[quantities.last().unwrap().end..].trim().is_empty(){
+            out.push(line);continue;
+        }
+        let mut ranges=Vec::with_capacity(quantities.len());
+        let mut start=0usize;
+        let mut valid=true;
+        for (i,q) in quantities.iter().enumerate(){
+            let prefix=&t[start..q.start];
+            let leading=prefix.len()-prefix.trim_start_matches(|c:char|
+                c.is_whitespace()||(i>0&&matches!(c,';'|'；'|'/'))).len();
+            let begin=start+leading;
+            if begin>=q.start||(i>0&&leading==0){valid=false;break;}
+            let segment=&t[begin..q.end];
+            let qty_start=q.start-begin;
+            let decision=search.decision(segment);
+            let evidence=&decision["evidence"];
+            let end=evidence["end"].as_u64().and_then(|v|usize::try_from(v).ok());
+            let registered=decision["productId"].as_str().is_some_and(|v|!v.is_empty());
+            let bounded=evidence["start"].as_u64()==Some(0)&&end.is_some_and(|end|
+                end>0&&end<=qty_start&&segment.get(end..qty_start).is_some_and(|tail|
+                    tail.chars().all(|c|c.is_whitespace()||c=='/')));
+            if !registered||!bounded{valid=false;break;}
+            ranges.push((begin,q.end));start=q.end;
+        }
+        if valid{
+            for (a,b) in ranges{
+                out.push(Line{text:&t[a..b],start:line.start+a,
                     number:line.number,paragraph:line.paragraph});
             }
         }else{out.push(line);}
@@ -896,7 +950,10 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
     let client_id = client_id(client);
     let phone = phone_regex();
     let person_label = recipient_label();
-    let lines=split_recipient_records(physical_lines(raw),&person_label,&phone);
+    let mut search=ProductSearch::new(state,client_id);
+    let lines=split_product_records(
+        split_recipient_records(physical_lines(raw),&person_label,&phone),
+        &person_label,&phone,&mut search);
     let geometry=SourceGeometry::new(raw);
     let mut events: Vec<Evidence> = Vec::new();
     let mut product_hits: Vec<ProductHit> = Vec::new();
@@ -909,7 +966,6 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
     let mut sender_section = false;
     let mut sender_lines=HashSet::new();
     for (line_index,line) in lines.iter().enumerate() {
-        let mut search=ProductSearch::new(state,client_id);
         let text = line.text.trim();
         let explicit_name=explicit_recipient_span(line.text,&person_label,&phone);
         let near_delivery=lines.get(line_index+1).is_some_and(|next|
@@ -1888,6 +1944,35 @@ mod tests {
         assert_eq!(recipients.len(),1);
         assert_eq!(recipients[0]["mobile"],"010-1234-5678");
         assert_eq!(recipients[0]["phone"],"010-3456-7890");
+    }
+    #[test]
+    fn same_line_registered_products_keep_independent_quantity_sources(){
+        let state=state();
+        for products in ["709 2개; GT-1 3개","709 2개 GT-1 3개","709 2개 / GT-1 3개"]{
+            let raw=format!("김가상\n010-0000-0001\n{products}");
+            let result=execute("analyze_order",json!({"raw":raw,"state":state})).unwrap();
+            let rows=result["recipients"].as_array().unwrap();
+            assert_eq!(rows.len(),1);
+            let items=rows[0]["items"].as_array().unwrap();
+            assert_eq!(items.len(),2,"{products}: {result}");
+            assert_eq!(items[0]["productId"],"p709");
+            assert_eq!(items[0]["quantity"],2);
+            assert_eq!(items[1]["productId"],"pgt");
+            assert_eq!(items[1]["quantity"],3);
+            let units=raw.encode_utf16().collect::<Vec<_>>();
+            for item in items{
+                for source in item["sources"].as_array().unwrap(){
+                    let a=source["start"].as_u64().unwrap() as usize;
+                    let b=source["end"].as_u64().unwrap() as usize;
+                    assert_eq!(source["text"],String::from_utf16(&units[a..b]).unwrap());
+                }
+            }
+        }
+        let mut search=ProductSearch::new(&state,"");
+        for raw in ["709 2개 구성 GT-1 3개","메모: 709 2개 GT-1 3개","709 2개 알수없는상품 3개",
+            "공통 709 2개 GT-1 3개","709 2개 GT-1 3개 부탁"]{
+            assert_eq!(split_product_records(physical_lines(raw),&recipient_label(),&phone_regex(),&mut search).len(),1, "{raw}");
+        }
     }
     #[test]
     fn indexed_delivery_geometry_preserves_original_boundary_rules(){
