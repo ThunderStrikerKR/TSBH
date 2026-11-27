@@ -2,6 +2,7 @@
 //! Never use this for empty/loading/dirty states or decisions that require a modal.
 //! All coordinates are egui logical points, not OS/device pixels.
 
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use std::{collections::HashMap, time::{Duration, Instant}};
 use crate::ui_primitives::UiWidthPolicyExt;
@@ -471,7 +472,7 @@ pub fn show(ctx: &Context) {
         .movable(false)
         .interactable(active.tone==Tone::Error || galley.size().y > size.y-2.0*pad_y)
         .show(ctx, |ui| {
-            let (rect, _) = ui.allocate_exact_size(size,Sense::hover());
+            let (rect, _) = ui.shared_allocate_exact_size(size,Sense::hover());
             #[cfg(test)]
             crate::ui_test_support::record_component_geometry("notice",rect,ui.clip_rect(),None);
             let painter = ui.painter().clone();
@@ -719,7 +720,7 @@ mod shared_floating_notice_rendered_geometry_tests{
                         predicted_dt:0.1,..Default::default()},|ctx|{
                         egui::CentralPanel::default().show(ctx,|ui|{
                             let action=crate::button::action(ui,"검증",theme::ButtonRole::Standard,true);
-                            let next=ui.allocate_exact_size(Vec2::new(80.0,20.0),Sense::hover()).0;
+                            let next=ui.shared_allocate_exact_size(Vec2::new(80.0,20.0),Sense::hover()).0;
                             geometry=Some((action.rect,next));
                             if let Some(text)=message{
                                 action_rect(ctx,"geometry.notice",action.rect);
