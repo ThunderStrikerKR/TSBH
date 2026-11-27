@@ -231,8 +231,12 @@ fn run(reconcile:bool)->Result<Option<Duration>,String>{
 /// Start once on the first application frame, not once per poll interval.
 pub fn start(){
     if cfg!(test){return}
-    WORKER.get_or_init(||{
-        if !crate::excel_service::writable(){return None}
+    let _=WORKER.get_or_init(||{
+        // Launch configuration is fixed, but an authorized DB may be
+        // temporarily unavailable. Actual authorization stays in open_db().
+        if std::env::var("BANDO_EGUI_ENABLE_EXCEL_WRITE").ok().as_deref()!=Some("1")
+            ||std::env::var("BANDO_EGUI_ENABLE_SETTINGS_WRITE").ok().as_deref()!=Some("1")
+            ||std::env::var_os("BANDO_EGUI_BUSINESS_DB").is_none_or(|p|p.is_empty()){return None}
         let (tx,rx)=mpsc::sync_channel(1);
         match std::thread::Builder::new().name("bando-excel-aggregate".into()).spawn(move||worker_loop(rx)){
             Ok(_)=>Some(tx),Err(e)=>{eprintln!("Excel aggregate worker: {e}");None}
@@ -244,25 +248,32 @@ pub fn start(){
 pub(crate) fn notify(reconcile:bool){
     if cfg!(test){return}
     if reconcile{RECONCILE_REQUESTED.store(true,Ordering::Release);}
+    // Initialization can race with the first commit. Ensure the channel
+    // has been published before sending the wakeup.
+    start();
     if let Some(Some(tx))=WORKER.get(){let _=tx.try_send(());}
 }
 fn worker_loop(rx:Receiver<()>){
+    worker_loop_with(rx,&RECONCILE_REQUESTED,RECONCILE,WORKER_ERROR_RETRY,run);
+}
+fn worker_loop_with<F>(rx:Receiver<()>,requested_flag:&AtomicBool,reconcile_interval:Duration,error_retry:Duration,mut run_work:F)
+where F:FnMut(bool)->Result<Option<Duration>,String>{
     let mut reconcile_due=Instant::now();
     let mut retry_reconcile=false;
     loop{
-        let requested=RECONCILE_REQUESTED.swap(false,Ordering::AcqRel);
+        let requested=requested_flag.swap(false,Ordering::AcqRel);
         let reconcile=retry_reconcile||Instant::now()>=reconcile_due||requested;
-        let retry=match run(reconcile){
+        let retry=match run_work(reconcile){
             Ok(next)=>{
                 retry_reconcile=false;
-                if reconcile{reconcile_due=Instant::now()+RECONCILE;}
+                if reconcile{reconcile_due=Instant::now()+reconcile_interval;}
                 next
             },
             Err(e)=>{
                 eprintln!("Excel aggregate: {e}");
                 retry_reconcile=reconcile;
-                if reconcile{reconcile_due=Instant::now()+WORKER_ERROR_RETRY;}
-                Some(WORKER_ERROR_RETRY)
+                if reconcile{reconcile_due=Instant::now()+error_retry;}
+                Some(error_retry)
             }
         };
         let until_reconcile=reconcile_due.saturating_duration_since(Instant::now());
@@ -282,6 +293,30 @@ fn spawn_worker(ctx:&eframe::egui::Context,work:impl FnOnce()+Send+'static)->std
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn resident_worker_waits_for_events_and_durable_retry_without_idle_polling(){
+        let (wake_tx,wake_rx)=mpsc::sync_channel(1);
+        let (observed_tx,observed_rx)=mpsc::channel();
+        let requested=std::sync::Arc::new(AtomicBool::new(false));
+        let flag=requested.clone();
+        let handle=std::thread::spawn(move||{
+            let mut count=0;
+            worker_loop_with(wake_rx,&flag,Duration::from_secs(900),Duration::from_secs(60),|reconcile|{
+                count+=1;observed_tx.send((count,reconcile)).unwrap();
+                Ok(if count==2{Some(Duration::from_millis(30))}else{None})
+            });
+        });
+        let bound=Duration::from_secs(5);
+        assert_eq!(observed_rx.recv_timeout(bound).unwrap(),(1,true));
+        assert!(matches!(observed_rx.recv_timeout(Duration::from_millis(100)),Err(RecvTimeoutError::Timeout)));
+        wake_tx.send(()).unwrap();
+        assert_eq!(observed_rx.recv_timeout(bound).unwrap(),(2,false));
+        assert_eq!(observed_rx.recv_timeout(bound).unwrap(),(3,false));
+        assert!(matches!(observed_rx.recv_timeout(Duration::from_millis(100)),Err(RecvTimeoutError::Timeout)));
+        requested.store(true,Ordering::Release);wake_tx.send(()).unwrap();
+        assert_eq!(observed_rx.recv_timeout(bound).unwrap(),(4,true));
+        drop(wake_tx);handle.join().unwrap();
+    }
     #[test]
     fn serialized_reply_keeps_q_waybill_and_g_freight_as_text(){
         let mut row=vec![String::new();17];row[0]="가상 수하인".into();row[6]="3000".into();row[16]="0000123456".into();
