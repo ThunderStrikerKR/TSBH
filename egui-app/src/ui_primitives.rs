@@ -1,4 +1,5 @@
 //! Low-level UI primitives independent of composite screens and controls.
+use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Stroke,Ui,UiBuilder,Vec2};
 
 use crate::{theme,typography};
@@ -215,7 +216,7 @@ pub(crate) fn navigation_segment_child(
 )->Ui{
     let rect=crate::ui_layout::aligned_rect(rect);
     let mut child=parent.new_child(UiBuilder::new().id_salt(id)
-        .max_rect(rect).layout(layout));
+        .aligned_max_rect(rect).layout(layout));
     child.set_clip_rect(rect.intersect(parent.clip_rect()));
     child
 }
