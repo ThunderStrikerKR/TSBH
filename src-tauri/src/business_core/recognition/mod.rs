@@ -1446,8 +1446,11 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
         recipients.push(blank_recipient("recognition:recipient:0","",None,raw));
     }
     let mut owner_trace=collect_owner_trace.then(Vec::new);
-    let comparison_order=compare_owner_policy.then(||
-        learning_context::OwnerOrderEvidence::new(events.iter().map(|e|(e.kind,e.paragraph as u64,e.start,e.end))));
+    let comparison_order=compare_owner_policy.then(||{
+        let common=product_hits.iter().filter(|h|h.common).map(|h|h.evidence).collect::<HashSet<_>>();
+        learning_context::OwnerOrderEvidence::new(events.iter().enumerate().filter(|(i,_)|!common.contains(i))
+            .map(|(_,e)|(e.kind,e.paragraph as u64,e.start,e.end)))
+    });
     let mut postcodes=vec![HashSet::<String>::new();recipients.len()];
     let mut applied=0usize;
     for index in 0..events.len() {
@@ -1571,10 +1574,25 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
                             "lineDelta":relation.line_delta,"sameParagraph":relation.same_paragraph}))
                     }).collect::<Vec<_>>()
             };
-            product_owner_trace.push(json!({"source":{"start":utf16(raw,e.start),"end":utf16(raw,e.end)},
+            let mut record=json!({"source":{"start":utf16(raw,e.start),"end":utf16(raw,e.end)},
                 "mode":if hit.common{"common"}else if has_leading{"document_leading_product"}else{"preceding_anchor"},
                 "selectedRecipientIndices":attach_to,"localAlternatives":local,
-                "candidatePolicyApplied":false}));
+                "candidatePolicyApplied":false});
+            if let Some(order)=comparison_order.as_ref(){
+                // Explicit common goods are governed by business rules, not
+                // a single-owner proximity score. Preserve boundary cases.
+                let comparison=if hit.common{
+                    json!({"status":"explicit_common_excluded","eligibleForAutomaticDecision":false})
+                }else if let (Some(&a),Some(&b))=(anchors.get(anchor_index),anchors.get(anchor_index+1)){
+                    let (a,b)=(&events[a],&events[b]);
+                    let previous=SourceRelation::between(a.line as u64,a.paragraph as u64,e.line as u64,e.paragraph as u64);
+                    let following=SourceRelation::between(e.line as u64,e.paragraph as u64,b.line as u64,b.paragraph as u64);
+                    compare_owner_candidates(e,a,b,&previous,&following,
+                        &geometry.between(a.line,e.line),&geometry.between(e.line,b.line),order)
+                }else{json!({"status":"no_two_adjacent_anchors","eligibleForAutomaticDecision":false})};
+                record["candidatePolicyComparison"]=comparison;
+            }
+            product_owner_trace.push(record);
         }
         for idx in attach_to {
             let (display_raw,display_start)=ts_product_display(hit,&events);
@@ -2342,6 +2360,20 @@ mod tests {
         assert_eq!(recipients.len(),1);
         assert_eq!(recipients[0]["mobile"],"010-1234-5678");
         assert_eq!(recipients[0]["phone"],"010-3456-7890");
+    }
+    #[test]
+    fn product_owner_comparison_reuses_shared_geometry_without_mutating_order(){
+        let raw="김가상\n서울특별시 마포구 월드컵로 20\n010-1234-5678\n709 2개\n\n박가상\n경기도 성남시 분당구 불정로 6\n010-2345-6789";
+        let baseline=execute("analyze_order",json!({"raw":raw,"state":state(),"collectCandidateTrace":true,"collectOwnerTrace":true})).unwrap();
+        let mut compared=execute("analyze_order",json!({"raw":raw,"state":state(),"collectCandidateTrace":true,"compareOwnerPolicy":true})).unwrap();
+        let products=compared["classificationCandidateTrace"]["productOwnerDecisions"].as_array_mut().unwrap();
+        assert!(!products.is_empty());
+        assert!(products.iter().any(|p|p["candidatePolicyComparison"]["status"]=="provisional_comparison"));
+        for p in products{p.as_object_mut().unwrap().remove("candidatePolicyComparison");}
+        for r in compared["recipientOwnerTrace"]["decisions"].as_array_mut().unwrap(){
+            r.as_object_mut().unwrap().remove("candidatePolicyComparison");
+        }
+        assert_eq!(baseline,compared);
     }
     #[test]
     fn symmetric_owner_comparison_can_choose_either_candidate_or_abstain(){
