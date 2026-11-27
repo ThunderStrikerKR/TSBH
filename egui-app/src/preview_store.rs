@@ -1120,7 +1120,7 @@ impl PreviewStore {
             if ids.is_empty(){break;}
             if totals.scanned+ids.len() as u64>100_000{return Err("전체 평가 100000건 안전 한도 초과".into());}
             let sources=crate::business_state::learning_sources(&source,&ids)?;
-            let (_,digests)=select_learning_changes(&tx,&scope,&sources)?;
+            let digests=learning_source_digests(&tx,&sources)?;
             totals.scanned+=ids.len() as u64;
             totals.inactive+=(ids.len()-digests.len()) as u64;
             recognition_learning_store::accumulate_combined_performance(&tx,&scope,&digests,&mut totals)?;
@@ -1287,12 +1287,12 @@ impl PreviewStore {
         evaluate:impl Fn(&Value)->Result<Value,String>)->Result<Value,String>{
         let load=|id:&str|->Result<Value,String>{
             let model=read_registered_blend_model(tx,scope,id)?;
-            verify_blend_model_sources(tx,scope,business,&model,None)?;
             let created:String=tx.query_row("SELECT created_at FROM recognition_blend_models WHERE scope=?1 AND model_id=?2",
                 params![scope,id],|r|r.get(0)).map_err(|e|e.to_string())?;
             Ok(json!({"modelId":id,"createdAt":created,"model":model}))
         };
         let baseline=load(a)?;let candidate=load(b)?;
+        verify_blend_model_pair_sources(tx,scope,business,&baseline["model"],&candidate["model"])?;
         let (frozen,mut orders,digests)=crate::business_state::read_learning_inputs(ids,|sources|{
             let (misses,digests)=select_learning_changes(tx,scope,sources)?;
             if !misses.is_empty(){return Err("독립 평가 원본 동기화 필요".into());}
@@ -1316,8 +1316,7 @@ impl PreviewStore {
             crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?.as_path()!=business{
             return Err("독립 평가 중 원본 변경".into());
         }
-        verify_blend_model_sources(tx,scope,business,&baseline["model"],None)?;
-        verify_blend_model_sources(tx,scope,business,&candidate["model"],None)?;
+        verify_blend_model_pair_sources(tx,scope,business,&baseline["model"],&candidate["model"])?;
         report["requestedOrders"]=json!(ids.len());
         report["missingOrInactiveOrders"]=json!(ids.len()-digests.len());
         report["evaluationSourceDigests"]=json!(digests);
@@ -1330,14 +1329,15 @@ impl PreviewStore {
     /// A manual selection is required to bootstrap the comparison baseline.
     pub(crate) fn auto_govern_blend(evaluate:impl Fn(&Value)->Result<Value,String>+Copy)->Result<Value,String>{
         let (mut conn,business,scope)=Self::learning_connection()?;
-        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        prepare_blend_governance(&conn)?;
+        let mut tx=conn.transaction().map_err(|e|e.to_string())?;
         let status=|s:&str|json!({"status":s,"policyVersion":1,"automaticChangeAuthorized":false,"decisionChanged":false});
         if !blend_registry_exists(&tx)?{return Ok(status("no_registry"));}
         let Some(current)=selected_blend_model(&tx,&scope)?else{return Ok(status("no_manual_baseline"));};
         let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending WHERE scope=?1 AND feature_version=1",
             [&scope],|r|r.get(0)).map_err(|e|e.to_string())?;
         if pending!=0{return Ok(status("pending_reconciliation"));}
-        prepare_blend_governance(&tx)?;
+        let expected_state=blend_governance_state(&tx,&scope)?;
         let monitor:Option<(String,String,String)>=tx.query_row("SELECT previous_model,selected_model,selected_at
             FROM recognition_blend_monitor WHERE scope=?1",[&scope],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))
             .optional().map_err(|e|e.to_string())?;
@@ -1352,6 +1352,9 @@ impl PreviewStore {
             let alpha=governance_alpha(look as u64+1);
             let report=Self::paired_blend_in_transaction(&tx,&scope,&business,&previous,&selected,&ids,Some(&after),Some(alpha),evaluate)?;
             let verdict=governance_verdict(&report,alpha);
+            tx.commit().map_err(|e|e.to_string())?;
+            tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+            revalidate_governance_result(&tx,&scope,&business,&expected_state,&ids,&previous,&selected,&report)?;
             if verdict=="rollback"{
                 // Both revisions and current evaluation inputs were verified
                 // within this transaction by the replay path.
@@ -1375,7 +1378,13 @@ impl PreviewStore {
             if !matches!(verdict,"promote"|"stable"){
                 tx.commit().map_err(|e|e.to_string())?;return Ok(status("monitoring_inconclusive"));
             }
+            tx.commit().map_err(|e|e.to_string())?;
+            tx=conn.transaction().map_err(|e|e.to_string())?;
+            if selected_blend_model(&tx,&scope)?.as_deref()!=Some(current.as_str()){
+                return Err("감시 이후 선택 모델 변경".into());
+            }
         }
+        let expected_state=blend_governance_state(&tx,&scope)?;
         let current_created:String=tx.query_row("SELECT created_at FROM recognition_blend_models WHERE scope=?1 AND model_id=?2",
             params![scope,current],|r|r.get(0)).map_err(|e|e.to_string())?;
         let candidate:Option<(String,String)>=tx.query_row("SELECT m.model_id,m.created_at FROM recognition_blend_models m
@@ -1395,6 +1404,12 @@ impl PreviewStore {
         }
         let alpha=0.0125;
         let report=Self::paired_blend_in_transaction(&tx,&scope,&business,&current,&candidate,&ids,Some(&created),Some(alpha),evaluate)?;
+        tx.commit().map_err(|e|e.to_string())?;
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        revalidate_governance_result(&tx,&scope,&business,&expected_state,&ids,&current,&candidate,&report)?;
+        let blocked:i64=tx.query_row("SELECT count(*) FROM recognition_blend_blocked WHERE scope=?1 AND model_id=?2",
+            params![scope,candidate],|r|r.get(0)).map_err(|e|e.to_string())?;
+        if blocked!=0{return Err("후보 모델 상태 변경".into());}
         if governance_verdict(&report,alpha)!="promote"{
             // The first 250 post-creation orders form the capped evaluation
             // cohort. Do not let a rejected mature candidate starve later ones.
@@ -1603,6 +1618,34 @@ fn auto_retrain_config(orders:&[Value],now:chrono::DateTime<chrono::FixedOffset>
         "evaluationAsOf":now.to_rfc3339(),"clientBuildVersion":build}))
 }
 
+fn blend_governance_state(conn:&Connection,scope:&str)->Result<Value,String>{
+    let selected=selected_blend_model(conn,scope)?;
+    let monitor:Option<(String,String,String)>=conn.query_row("SELECT previous_model,selected_model,selected_at
+        FROM recognition_blend_monitor WHERE scope=?1",[scope],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))
+        .optional().map_err(|e|e.to_string())?;
+    let checkpoint:Option<(String,String,String,i64)>=conn.query_row("SELECT selected_model,selected_at,after_at,look_no
+        FROM recognition_blend_monitor_checkpoint WHERE scope=?1",[scope],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)))
+        .optional().map_err(|e|e.to_string())?;
+    let revision:i64=conn.query_row("SELECT coalesce(max(id),0) FROM recognition_blend_transitions WHERE scope=?1",[scope],|r|r.get(0))
+        .map_err(|e|e.to_string())?;
+    Ok(json!([selected,monitor,checkpoint,revision]))
+}
+fn revalidate_governance_result(tx:&rusqlite::Transaction<'_>,scope:&str,business:&std::path::Path,
+    expected_state:&Value,ids:&[String],a:&str,b:&str,report:&Value)->Result<(),String>{
+    if &blend_governance_state(tx,scope)?!=expected_state{return Err("모델 선택 또는 감시 상태 변경".into());}
+    let sources=crate::business_state::read_learning_sources(ids)?;
+    let (misses,digests)=select_learning_changes(tx,scope,&sources)?;
+    if !misses.is_empty()||json!(digests)!=report["evaluationSourceDigests"]{
+        return Err("독립 평가 원본 변경".into());
+    }
+    let first=read_registered_blend_model(tx,scope,a)?;
+    let second=read_registered_blend_model(tx,scope,b)?;
+    verify_blend_model_pair_sources(tx,scope,business,&first,&second)?;
+    if crate::business_state::read_learning_sources(ids)?!=sources{
+        return Err("독립 평가 원본 재검증 중 변경".into());
+    }
+    Ok(())
+}
 fn prepare_blend_governance(conn:&Connection)->Result<(),String>{
     conn.execute_batch("CREATE TABLE IF NOT EXISTS recognition_blend_monitor(
         scope TEXT PRIMARY KEY,previous_model TEXT NOT NULL,selected_model TEXT NOT NULL,selected_at TEXT NOT NULL);
@@ -1766,6 +1809,46 @@ fn set_selected_blend_model(conn:&Connection,scope:&str,id:Option<&str>)->Result
         conn.execute("INSERT INTO recognition_blend_selection(scope,model_id) VALUES(?1,?2)
             ON CONFLICT(scope) DO UPDATE SET model_id=excluded.model_id",params![scope,id]).map_err(|e|e.to_string())?;
     }else{conn.execute("DELETE FROM recognition_blend_selection WHERE scope=?1",[scope]).map_err(|e|e.to_string())?;}
+    Ok(())
+}
+fn verify_blend_model_pair_sources(tx:&rusqlite::Transaction<'_>,scope:&str,business:&std::path::Path,
+    first:&Value,second:&Value)->Result<(),String>{
+    let mut expected=LearningDigests::new();
+    for model in [first,second]{
+        validate_registry_model(scope,model)?;
+        for (id,value) in model["sourceDigests"].as_object().ok_or("모델 원본 지문 누락")?{
+            let digest=value.as_str().ok_or("모델 원본 지문 오류")?;
+            if expected.insert(id.clone(),digest.to_owned()).is_some_and(|old|old!=digest){
+                return Err("두 모델의 공통 원본 지문 불일치".into());
+            }
+        }
+    }
+    let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending WHERE scope=?1 AND feature_version=1",
+        [scope],|r|r.get(0)).map_err(|e|e.to_string())?;
+    if pending!=0{return Err("복구 대기 학습 주문".into());}
+    let ids=expected.keys().cloned().collect::<Vec<_>>();
+    let source=crate::business_state::open_business_read_snapshot()?;
+    let mut frozen=crate::business_state::LearningSources::new();
+    for chunk in ids.chunks(250){
+        let current=crate::business_state::learning_sources(&source,chunk)?;
+        let (misses,digests)=select_learning_changes(tx,scope,&current)?;
+        if !misses.is_empty()||digests.len()!=chunk.len()||digests.iter().any(|(id,d)|expected.get(id)!=Some(d)){
+            return Err("결합 모델 원본 변경".into());
+        }
+        frozen.extend(current);
+    }
+    source.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+    let latest=crate::business_state::open_business_read_snapshot()?;
+    for chunk in ids.chunks(250){
+        let current=crate::business_state::learning_sources(&latest,chunk)?;
+        if current.len()!=chunk.len()||current.iter().any(|(id,s)|frozen.get(id)!=Some(s)){
+            return Err("결합 모델 원본 재검증 중 변경".into());
+        }
+    }
+    latest.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+    if crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
+        return Err("업무 DB 변경".into());
+    }
     Ok(())
 }
 fn verify_blend_model_sources(tx:&rusqlite::Transaction<'_>,scope:&str,business:&std::path::Path,

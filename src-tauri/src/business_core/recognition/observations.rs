@@ -1062,6 +1062,9 @@ impl OwnerTest{
     }
 }
 pub(super) fn calibrate_legacy_scores(payload:&Value)->Result<Value,String>{
+    calibrate_legacy_scores_prepared(payload,None)
+}
+fn calibrate_legacy_scores_prepared(payload:&Value,cache:Option<&ComparisonCache>)->Result<Value,String>{
     let config=&payload["config"];
     let date=|v:&Value|v.as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
     let fit_start=date(&config["fitStart"]).ok_or("보정 시작 시각 오류")?;
@@ -1103,7 +1106,7 @@ pub(super) fn calibrate_legacy_scores(payload:&Value)->Result<Value,String>{
         if (fit&&confirmed>=test_start)||(!fit&&confirmed>as_of){late+=1;continue;}
         let Some(events)=order["recognitionAuditEvents"].as_array()else{skipped+=1;continue;};
         if events.iter().any(|e|date(&e["at"]).is_none_or(|t|t<=end||t>confirmed)){skipped+=1;continue;}
-        let compared=compare(order)?;
+        let compared=shared_comparison(order,cache)?;
         if compared["auditCoverage"]!="verified_manifest"{skipped+=1;continue;}
         let raw=snap["raw"].as_str().ok_or("보정 원문 누락")?;
         let units=raw.encode_utf16().collect::<Vec<_>>();
@@ -1266,13 +1269,19 @@ impl ShadowFit{
     fn add_order(&mut self,samples:&[ShadowCalibrationSample]){
         if samples.is_empty(){return;}
         self.orders+=1;
-        for (i,t) in SHADOW_TEMPERATURES.iter().enumerate(){
-            for (j,s) in SHADOW_SMOOTHING.iter().enumerate(){
-                let loss=samples.iter().map(|v|multiclass_brier(
-                    &shadow_transform(&v.distribution,*t,*s),v.actual)).sum::<f64>()/samples.len() as f64;
-                self.losses[i*5+j]+=loss;
+        let mut sums=[0.0;25];
+        for v in samples{
+            for (i,t) in SHADOW_TEMPERATURES.iter().enumerate(){
+                let power=v.distribution.iter().map(|p|p.powf(1.0/t)).collect::<Vec<_>>();
+                let total=power.iter().sum::<f64>();
+                for (j,s) in SHADOW_SMOOTHING.iter().enumerate(){
+                    let uniform=s/power.len() as f64;
+                    sums[i*5+j]+=power.iter().enumerate().map(|(k,p)|
+                        ((1.0-s)*p/total+uniform-if k==v.actual{1.0}else{0.0}).powi(2)).sum::<f64>();
+                }
             }
         }
+        for (loss,sum) in self.losses.iter_mut().zip(sums){*loss+=sum/samples.len() as f64;}
     }
     fn parameters(&self)->Option<(f64,f64)>{
         if self.orders<MIN_CALIBRATION_ORDERS{return None;}
@@ -1318,6 +1327,9 @@ impl ShadowCalTest{
     }
 }
 pub(super) fn calibrate_shadow_candidates(payload:&Value)->Result<Value,String>{
+    calibrate_shadow_candidates_prepared(payload,None)
+}
+fn calibrate_shadow_candidates_prepared(payload:&Value,cache:Option<&ComparisonCache>)->Result<Value,String>{
     let config=&payload["config"];
     let date=|v:&Value|v.as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
     let fit_start=date(&config["fitStart"]).ok_or("학습 보정 시작 시각 오류")?;
@@ -1355,7 +1367,7 @@ pub(super) fn calibrate_shadow_candidates(payload:&Value)->Result<Value,String>{
         if (fit&&confirmed>=test_start)||(!fit&&confirmed>as_of){late+=1;continue;}
         let Some(events)=order["recognitionAuditEvents"].as_array()else{skipped+=1;continue;};
         if events.iter().any(|e|date(&e["at"]).is_none_or(|t|t<=predicted||t>confirmed)){skipped+=1;continue;}
-        let compared=compare(order)?;
+        let compared=shared_comparison(order,cache)?;
         if compared["auditCoverage"]!="verified_manifest"{skipped+=1;continue;}
         let raw=snap["raw"].as_str().ok_or("학습 보정 원문 누락")?;
         let units=raw.encode_utf16().collect::<Vec<_>>();
@@ -1552,8 +1564,9 @@ impl BlendFit{
         if samples.is_empty(){return;}
         self.orders+=1;
         for (i,loss) in self.loss.iter_mut().enumerate(){
-            *loss+=samples.iter().map(|s|multiclass_brier(
-                &blend_distribution(&s.legacy,&s.shadow,i as f64/10.0),s.actual))
+            let w=i as f64/10.0;
+            *loss+=samples.iter().map(|s|s.legacy.iter().zip(&s.shadow).enumerate().map(|(j,(a,b))|
+                ((1.0-w)*a+w*b-if j==s.actual{1.0}else{0.0}).powi(2)).sum::<f64>())
                 .sum::<f64>()/samples.len() as f64;
         }
     }
@@ -1599,6 +1612,15 @@ impl BlendTest{
             "orderMacroCombinedBrier":div(self.macro_combined,self.covered_orders)})
     }
 }
+type ComparisonCache=std::cell::RefCell<BTreeMap<String,std::rc::Rc<Value>>>;
+fn shared_comparison(order:&Value,cache:Option<&ComparisonCache>)->Result<std::rc::Rc<Value>,String>{
+    let Some(cache)=cache else{return Ok(std::rc::Rc::new(compare(order)?));};
+    let id=order["id"].as_str().ok_or("학습 주문 ID 누락")?;
+    if let Some(value)=cache.borrow().get(id){return Ok(value.clone());}
+    let value=std::rc::Rc::new(compare(order)?);
+    cache.borrow_mut().insert(id.to_owned(),value.clone());
+    Ok(value)
+}
 pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
     let config=&payload["config"];
     let date=|v:&Value|v.as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
@@ -1626,8 +1648,10 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
     let fit_config=json!({"fitStart":config["fitStart"],"testStart":config["weightStart"],
         "testEnd":config["testStart"],"evaluationAsOf":config["testStart"],"clientBuildVersion":build});
     let fit_payload=json!({"orders":fit_orders,"config":fit_config});
-    let legacy=calibrate_legacy_scores(&fit_payload)?;
-    let shadow_model=calibrate_shadow_candidates(&fit_payload)?;
+    let cache=ComparisonCache::default();
+    let legacy=calibrate_legacy_scores_prepared(&fit_payload,Some(&cache))?;
+    let shadow_model=calibrate_shadow_candidates_prepared(&fit_payload,Some(&cache))?;
+    drop(cache);
     let mut fits=BTreeMap::<BlendGroup,BlendFit>::new();
     let mut tests=Vec::new();
     let (mut excluded,mut late,mut unavailable,mut valid_weight_orders,mut valid_test_orders)=(0usize,0usize,0usize,0usize,0usize);
@@ -1990,9 +2014,10 @@ fn binomial_tail(n:usize,k:usize,p:f64,upper:bool)->f64{
     if p<=0.0{return if if upper{0>=k}else{0<=k}{1.0}else{0.0};}
     if p>=1.0{return if if upper{n>=k}else{n<=k}{1.0}else{0.0};}
     let mut log_choose=0.0;let mut sum=0.0;
+    let log_p=p.ln();let log_q=(-p).ln_1p();
     for i in 0..=n{
         if (upper&&i>=k)||(!upper&&i<=k){
-            sum+=(log_choose+i as f64*p.ln()+(n-i) as f64*(-p).ln_1p()).exp();
+            sum+=(log_choose+i as f64*log_p+(n-i) as f64*log_q).exp();
         }
         if i<n{log_choose+=((n-i) as f64).ln()-((i+1) as f64).ln();}
     }

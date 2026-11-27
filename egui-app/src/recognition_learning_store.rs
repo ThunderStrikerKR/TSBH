@@ -241,14 +241,17 @@ fn save_fingerprint(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str,facts:&[F
 
 // Independent derived evaluation; no contribution to learning support.
 pub(super) fn combined_evaluation_cached(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str)->Result<bool,String>{
+    Ok(verified_combined_payload(tx,scope,id,digest)?.is_some())
+}
+fn verified_combined_payload(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str)->Result<Option<String>,String>{
     let row:Option<(String,String,String,i64)>=tx.query_row("SELECT source_digest,payload,payload_digest,evaluation_version
         FROM recognition_combined_evaluation WHERE scope=?1 AND feature_version=?2 AND order_id=?3",
         params![scope,FEATURE_VERSION,id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)))
         .optional().map_err(|e|e.to_string())?;
-    let Some((source,payload,proof,version))=row else{return Ok(false);};
-    if version!=1||source!=digest{return Ok(false);}
+    let Some((source,payload,proof,version))=row else{return Ok(None);};
+    if version!=1||source!=digest{return Ok(None);}
     if format!("{:x}",Sha256::digest(payload.as_bytes()))!=proof{return Err("결합 평가 지문 불일치".into());}
-    Ok(true)
+    Ok(Some(payload))
 }
 fn save_combined_evaluation(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str,report:&Value)->Result<(),String>{
     let fallback=json!({"schemaVersion":1,"status":"no_combined_prediction","groups":[],
@@ -268,10 +271,7 @@ fn save_combined_evaluation(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str,r
 pub(super) fn combined_evaluation_report(tx:&Transaction<'_>,scope:&str,digests:&BTreeMap<String,String>)->Result<Value,String>{
     let mut reports=Vec::new();let mut missing=0;
     for (id,digest) in digests{
-        if !combined_evaluation_cached(tx,scope,id,digest)?{missing+=1;continue;}
-        let payload:String=tx.query_row("SELECT payload FROM recognition_combined_evaluation
-            WHERE scope=?1 AND feature_version=?2 AND order_id=?3",params![scope,FEATURE_VERSION,id],|r|r.get(0))
-            .map_err(|e|e.to_string())?;
+        let Some(payload)=verified_combined_payload(tx,scope,id,digest)?else{missing+=1;continue;};
         reports.push(serde_json::from_str::<Value>(&payload).map_err(|_|"결합 평가 JSON 오류")?);
     }
     Ok(json!({"status":"stored_combined_evaluation_diagnostic_only","orders":reports,
@@ -404,10 +404,7 @@ pub(super) fn accumulate_combined_performance(tx:&Transaction<'_>,scope:&str,dig
     totals:&mut CombinedPerformance)->Result<(),String>{
     for (id,digest) in digests{
         if cached_count(tx,scope,id,digest)?.is_none(){totals.unsynchronized+=1;continue;}
-        if !combined_evaluation_cached(tx,scope,id,digest)?{totals.missing+=1;continue;}
-        let payload:String=tx.query_row("SELECT payload FROM recognition_combined_evaluation
-            WHERE scope=?1 AND feature_version=?2 AND order_id=?3",params![scope,FEATURE_VERSION,id],|r|r.get(0))
-            .map_err(|e|e.to_string())?;
+        let Some(payload)=verified_combined_payload(tx,scope,id,digest)?else{totals.missing+=1;continue;};
         totals.add(&serde_json::from_str::<Value>(&payload).map_err(|_|"결합 평가 JSON 오류")?)?;
     }
     Ok(())
