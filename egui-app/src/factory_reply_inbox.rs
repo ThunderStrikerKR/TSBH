@@ -496,6 +496,45 @@ mod tests{
     }
 
     #[test]
+    fn ambiguous_and_invalid_freight_rows_reach_notification_center_without_blocking_valid_rows(){
+        let base=Temp::new();
+        let (mut conn,inbox)=synthetic_db(&base.0);
+        let mut book=rust_xlsxwriter::Workbook::new();
+        let sheet=book.add_worksheet();
+        sheet.write_string(0,0,"수하인명").unwrap();
+        sheet.write_string(0,16,"운송장번호").unwrap();
+        for (row,tracking,freight) in [
+            (1,"001111111111",3000.),
+            (2,"001111111111",3000.),
+            (3,"002222222222",-1.),
+            (4,"003333333333",4000.),
+        ]{
+            sheet.write_string(row,0,"합성 수취인").unwrap();
+            sheet.write_string(row,2,"서울 종로구 10").unwrap();
+            sheet.write_string(row,3,"010-0000-0000").unwrap();
+            sheet.write_number(row,6,freight).unwrap();
+            sheet.write_string(row,16,tracking).unwrap();
+        }
+        let bytes=book.save_to_buffer().unwrap();
+        fs::write(inbox.join("mixed.xlsx"),&bytes).unwrap();
+        let outcome=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert!(outcome.error.is_none(),"{:?}",outcome.error);
+        assert_eq!((outcome.files,outcome.applied,outcome.held),(1,1,3));
+        let notices=bando_data_access::notification_store::load(&conn).unwrap();
+        assert_eq!(notices.len(),3);
+        assert_eq!(notices.iter().filter(|n|n["issueCode"]=="AMBIGUOUS_TARGET").count(),2);
+        assert_eq!(notices.iter().filter(|n|n["issueCode"]=="INVALID_FREIGHT").count(),1);
+        assert!(notices.iter().all(|n|n["read"]==false&&n["applied"]==false));
+        assert_eq!(snapshot(&mut conn).unwrap()["workflow"]["shipments"][0]["tracking"]["FACTORY"],"003333333333");
+        fs::write(inbox.join("renamed.xlsx"),&bytes).unwrap();
+        let replay=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert_eq!((replay.files,replay.applied,replay.held),(0,0,0));
+        drop(conn);
+        let conn=Connection::open(base.0.join("synthetic.sqlite")).unwrap();
+        assert_eq!(bando_data_access::notification_store::load(&conn).unwrap(),notices);
+    }
+
+    #[test]
     fn scanner_processes_more_than_eight_ready_files_in_one_pass(){
         let base=Temp::new();
         let (mut conn,inbox)=synthetic_db(&base.0);
