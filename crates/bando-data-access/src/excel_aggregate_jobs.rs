@@ -1,7 +1,7 @@
 //! Durable, derived Excel archive jobs. Never changes the business revision.
 use rusqlite::{params,Connection,OptionalExtension};
 use serde_json::Value;
-use std::{collections::{HashMap,HashSet},path::{Path,PathBuf}};
+use std::{collections::{BTreeMap,HashMap,HashSet},path::{Path,PathBuf}};
 use chrono::NaiveDate;
 
 fn err(e:impl std::fmt::Display)->String{e.to_string()}
@@ -120,7 +120,7 @@ pub fn invalidate(conn:&Connection,j:&Job)->Result<(),String>{
 }
 /// Project only the aggregate-owned arrays at the SQLite boundary. JSON1
 /// still parses the envelope; unrelated workflow data is not materialized in Rust.
-fn read_history(conn:&Connection,origin:Option<&str>)->Result<Value,String>{
+fn history_prefix(conn:&Connection)->Result<&'static str,String>{
     let version=crate::recovery::schema_version(conn)?;
     if version>3{return Err("이 프로그램보다 새로운 DB 구조입니다.".into())}
     if crate::workflow_events::active(conn)?!=(version==3){return Err("업무 이벤트 테이블과 DB 버전 불일치".into())}
@@ -129,6 +129,10 @@ fn read_history(conn:&Connection,origin:Option<&str>)->Result<Value,String>{
         AND (?2=0 OR (json_type(payload)='array' AND json_array_length(payload)=1)) FROM app_state WHERE id=1",
         params![prefix,version==3],|r|r.get(0)).map_err(err)?;
     if !root_valid{return Err("업무 상태 저장 형식 오류".into())}
+    Ok(prefix)
+}
+fn read_history(conn:&Connection,origin:Option<&str>)->Result<Value,String>{
+    let prefix=history_prefix(conn)?;
     let path=|key:&str|format!("{prefix}.{key}");
     let raw:String=conn.query_row("SELECT json_object(
         'revision',json_extract(payload,?1),
@@ -223,8 +227,65 @@ where F:FnMut(&Value,&Value)->Result<Vec<String>,String>{
 }
 pub fn daily_rows_with_binding<F>(conn:&Connection,j:&Job,ids:&[String],legacy:F)->Result<Vec<Vec<String>>,String>
 where F:FnMut(&Value,&Value)->Result<Vec<String>,String>{
-    let state=read_history(conn,Some(&j.origin))?;
+    let state=read_daily_history(conn,j,ids)?;
     project_with(&state,j,ids,legacy)
+}
+// Only deserialize candidate records. SQLite still parses the physical JSON
+// envelope; the original business record remains the source of truth.
+fn read_daily_history(conn:&Connection,j:&Job,ids:&[String])->Result<Value,String>{
+    let prefix=history_prefix(conn)?;
+    let mut state=serde_json::Map::new();
+    if j.origin!="REPLY"{
+        let path=format!("{prefix}.exports");
+        let day=NaiveDate::parse_from_str(&j.date,"%Y-%m-%d").map_err(err)?.format("%Y%m%d").to_string();
+        // The required filename date is a conservative prefilter, including
+        // noncanonical separators. Rust still validates exact origin/path.
+        let mut stmt=conn.prepare("SELECT e.value FROM app_state a, json_each(a.payload,?1) e
+            WHERE a.id=1 AND e.type='object' AND instr(json_extract(e.value,'$.savedPath'),?2)>0
+            ORDER BY CAST(e.key AS INTEGER)").map_err(err)?;
+        let mut exports=Vec::new();
+        for raw in stmt.query_map(params![path,day],|r|r.get::<_,String>(0)).map_err(err)?{
+            exports.push(serde_json::from_str(&raw.map_err(err)?).map_err(err)?);
+        }
+        state.insert("exports".into(),Value::Array(exports));
+    }else{
+        let path=format!("{prefix}.factoryReplies");
+        let bindings=serde_json::to_string(ids).map_err(err)?;
+        let mut stmt=conn.prepare("SELECT CAST(e.key AS INTEGER),e.value
+            FROM app_state a,json_each(a.payload,?1) e WHERE a.id=1 AND e.type='object'
+            AND (json_extract(e.value,'$.aggregateTargetPath')=?2 OR
+            (CASE WHEN json_type(e.value,'$.aggregateTargetPath')='text'
+              THEN json_extract(e.value,'$.aggregateTargetPath') ELSE '' END = ''
+            AND json_extract(e.value,'$.id') IN (SELECT value FROM json_each(?3))))").map_err(err)?;
+        let mut selected:BTreeMap<i64,Value>=BTreeMap::new();
+        let mut referenced=HashSet::new();
+        for item in stmt.query_map(params![path,j.path,bindings],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?))).map_err(err)?{
+            let (position,raw)=item.map_err(err)?;
+            let record:Value=serde_json::from_str(&raw).map_err(err)?;
+            if reply_date(&record).as_deref()!=Some(j.date.as_str()){continue}
+            let reference=s(&record["resolves"],"id");
+            if !reference.is_empty(){referenced.insert(reference.to_owned());}
+            selected.insert(position,record);
+        }
+        drop(stmt);
+        // A correction may reference an original on a different business
+        // day. Keep that source at its original relative ledger position,
+        // not at the approval time. Include all matches (last ID wins).
+        if !referenced.is_empty(){
+            let keys=serde_json::to_string(&referenced).map_err(err)?;
+            let mut stmt=conn.prepare("SELECT CAST(e.key AS INTEGER),e.value FROM app_state a,
+                json_each(a.payload,?1) e WHERE a.id=1 AND e.type='object'
+                AND json_extract(e.value,'$.id') IN (SELECT value FROM json_each(?2))").map_err(err)?;
+            for item in stmt.query_map(params![path,keys],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?))).map_err(err)?{
+                let (position,raw)=item.map_err(err)?;
+                if let std::collections::btree_map::Entry::Vacant(entry)=selected.entry(position){
+                    entry.insert(serde_json::from_str(&raw).map_err(err)?);
+                }
+            }
+        }
+        state.insert("factoryReplies".into(),Value::Array(selected.into_values().collect()));
+    }
+    Ok(Value::Object(state))
 }
 fn values(v:&Value,n:usize)->Result<Vec<String>,String>{
     let arr=v.as_array().ok_or("취합 출력값 누락")?;
@@ -361,6 +422,44 @@ mod tests{
             "outputRows":[{"values":vec![format!("{n}");16]}]})
     }
     #[test]
+    fn scoped_projection_preserves_cross_day_correction_and_ledger_order(){
+        let c=Connection::open_in_memory().unwrap();let root=root();
+        let path=target(&root,"2026-11-28","REPLY").unwrap();
+        let j=Job{date:"2026-11-28".into(),origin:"REPLY".into(),path:path.to_str().unwrap().into(),desired:8,saved:0,retries:0,hash:None};
+        let old=target(&root,"2026-11-27","REPLY").unwrap();
+        let state=json!({"revision":8,"factoryReplies":[
+            {"id":"original","businessDate":"2026-11-27","aggregateTargetPath":old,"rows":[{"row":2,"applied":false}]},
+            {"id":"unrelated","businessDate":"2026-11-27","aggregateTargetPath":old,"rows":[]},
+            {"id":"newer","businessDate":"2026-11-28","aggregateTargetPath":j.path,"rows":[{"row":2,"applied":true,"shipmentId":"s","actual":3000,"tracking":"00000009","aggregateValues":vec!["";17]}]},
+            {"id":"correction","businessDate":"2026-11-28","resolves":{"id":"original","row":2},"rows":[{"row":2,"applied":true,"shipmentId":"s","actual":0,"tracking":"00000002"}]},
+            {"id":"other-correction","businessDate":"2026-11-28","resolves":{"id":"original","row":2},"rows":[{"row":2,"applied":true,"shipmentId":"t","actual":0,"tracking":"00000003"}]}]});
+        metadata(&c,&state);
+        let ids=vec!["correction".into(),"other-correction".into()];
+        let legacy=|r:&Value,_:&Value|{assert_eq!(r["id"],"original");Ok(vec!["".to_owned();17])};
+        let scoped=read_daily_history(&c,&j,&ids).unwrap();
+        assert_eq!(rows(&scoped,"factoryReplies").len(),4);
+        let a=project_with(&state,&j,&ids,legacy).unwrap();
+        let b=daily_rows_with_binding(&c,&j,&ids,legacy).unwrap();
+        assert_eq!(a,b);assert_eq!(b[0][16],"00000009");assert_eq!(b[1][16],"00000003");
+    }
+    #[test]
+    fn scoped_history_benchmark_10000_historical_records(){
+        use std::time::Instant;
+        let c=Connection::open_in_memory().unwrap();let root=root();
+        let p=target(&root,"2026-11-27","STORE").unwrap();
+        let j=Job{date:"2026-11-27".into(),origin:"STORE".into(),path:p.to_str().unwrap().into(),desired:1,saved:0,retries:0,hash:None};
+        let mut exports=(1..=10_000).map(|n|export(&root,"2025-11-27","STORE",n)).collect::<Vec<_>>();
+        exports.extend((1..=100).map(|n|export(&root,"2026-11-27","STORE",n)));
+        metadata(&c,&json!({"revision":1,"exports":exports}));
+        let start=Instant::now();let full=read_history(&c,Some("STORE")).unwrap();
+        let expected=project(&full,&j).unwrap();let full_elapsed=start.elapsed();
+        let start=Instant::now();let actual=daily_rows_with_binding(&c,&j,&[],|_,_|panic!("no reply")).unwrap();
+        let scoped_elapsed=start.elapsed();
+        assert_eq!(expected,actual);assert_eq!(actual.len(),100);
+        assert_eq!(rows(&read_daily_history(&c,&j,&[]).unwrap(),"exports").len(),100);
+        eprintln!("aggregate projection 10100 records: baseline={full_elapsed:?}, scoped={scoped_elapsed:?}; materialized 10100 -> 100 records");
+    }
+    #[test]
     fn ten_exports_accumulate_without_cross_origin_or_date(){
         let c=Connection::open_in_memory().unwrap();let root=root();
         let mut records:Vec<_>=(1..=10).map(|n|export(&root,"2026-11-27","STORE",n)).collect();
@@ -425,7 +524,7 @@ mod tests{
         invalidate_after_restore(&c,20).unwrap();
         let now=current(&c,&old).unwrap().unwrap();
         assert_eq!((now.desired,now.saved,now.hash),(20,0,None));
-        assert_eq!(read_history(&c).unwrap()["revision"],7);
+        assert_eq!(read_history(&c,None).unwrap()["revision"],7);
     }
     #[test]
     fn retry_delays_cap_and_new_work_resets_wait(){
