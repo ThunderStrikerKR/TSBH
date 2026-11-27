@@ -1,9 +1,9 @@
 [package]
 name = "bando-hub-egui"
-version = "0.1.0"
+version = "0.8.0"
 edition = "2021"
 publish = false
-description = "Isolated native egui shell for BANDO HUB's UI rebuild"
+description = "BANDO HUB native Windows application"
 
 [dependencies]
 eframe = { version = "=0.33.3", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
