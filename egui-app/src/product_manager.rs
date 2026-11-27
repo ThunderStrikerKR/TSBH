@@ -1,8 +1,8 @@
 //! React ProductManager 상품 목록: Rust-owned catalog selection and a
 //! read-only price/detail projection. Product and price writes must not target
 //! the isolated egui preview DB or bypass Tauri's operational save boundary.
-use crate::ui_layout::SharedPainterClipExt as _;
-use crate::ui_layout::SharedAllocationExt as _;
+use crate::ui_layout::geometry::SharedPainterClipExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
 use crate::{
     category_manager::{CategoryManager,ROOTS},
     category_dropdown,
@@ -17,7 +17,7 @@ use crate::{
     product_images::{self,ProductImageCache},
     theme, typography,
 };
-use crate::ui_primitives::UiWidthPolicyExt;
+use crate::ui_layout::geometry::UiWidthPolicyExt;
 #[cfg(test)]
 use crate::cell_navigation::CellNavigationKey;
 use eframe::egui::{self, Align, Context, Layout, Sense, Ui, Rect, Vec2};
@@ -614,7 +614,7 @@ impl ProductManager {
         crate::popup::modal_window(ctx,"상품 선택",window_id,work_area)
             .default_width(width).show(ctx,|ui|{
 
-                ui.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,width);
+                ui.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,width);
                 crate::popup::modal_flow_workspace(ui,|workspace|{
                     cancelled=workspace.header("상품 선택","취소",!busy);
                     if busy{workspace.disable();}
@@ -1250,7 +1250,7 @@ impl ProductManager {
         crate::card::measured_management_master_card(ui,|panel|{
             if selecting{
                 let width=panel.available_width().max(1.0);
-                crate::ui_primitives::apply_width_policy(panel,crate::ui_primitives::CardWidthPolicy::FillAvailable,width);
+                crate::ui_layout::geometry::apply_width_policy(panel,crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,width);
                 crate::card::apply_height_policy(panel,crate::card::CardHeightPolicy::FillAvailable,card_min_height);
             }else{
                 crate::card::fill_management_primary_card(panel,card_min_height);
