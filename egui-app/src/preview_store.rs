@@ -1279,6 +1279,7 @@ impl PreviewStore {
         verify_blend_model_sources(tx,scope,business,&candidate["model"],None)?;
         report["requestedOrders"]=json!(ids.len());
         report["missingOrInactiveOrders"]=json!(ids.len()-digests.len());
+        report["evaluationSourceDigests"]=json!(digests);
         report["currentSourceDigestsVerified"]=json!(true);
         report["crossDatabaseAtomicSnapshot"]=json!(false);
         Ok(report)
@@ -1326,14 +1327,25 @@ impl PreviewStore {
             AND json_extract(m.payload,'$.generationKind')='automatic_candidate_v1'
             AND json_extract(m.payload,'$.clientBuildVersion')=?3
             AND NOT EXISTS(SELECT 1 FROM recognition_blend_blocked b WHERE b.scope=m.scope AND b.model_id=m.model_id)
-            ORDER BY julianday(m.created_at) DESC,m.model_id LIMIT 1",
+            ORDER BY julianday(m.created_at) ASC,m.model_id LIMIT 1",
             params![scope,current_created,env!("CARGO_PKG_VERSION")],|r|Ok((r.get(0)?,r.get(1)?)))
             .optional().map_err(|e|e.to_string())?;
         let Some((candidate,created))=candidate else{return Ok(status("no_new_candidate"));};
         let ids=governance_orders(&created,false)?;
         if ids.len()<40{return Ok(status("waiting_for_independent_orders"));}
         let report=Self::paired_blend_in_transaction(&tx,&scope,&business,&current,&candidate,&ids,Some(&created),evaluate)?;
-        if governance_verdict(&report)!="promote"{return Ok(status("candidate_not_approved"));}
+        if governance_verdict(&report)!="promote"{
+            // The first 250 post-creation orders form the capped evaluation
+            // cohort. Do not let a rejected mature candidate starve later ones.
+            if ids.len()==250{
+                record_blend_transition(&tx,&scope,&current,&candidate,"reject",&report)?;
+                tx.execute("INSERT OR IGNORE INTO recognition_blend_blocked VALUES(?1,?2)",params![scope,candidate])
+                    .map_err(|e|e.to_string())?;
+                tx.commit().map_err(|e|e.to_string())?;
+                return Ok(status("candidate_rejected_at_cohort_limit"));
+            }
+            return Ok(status("candidate_not_approved"));
+        }
         record_blend_transition(&tx,&scope,&current,&candidate,"promote",&report)?;
         set_selected_blend_model(&tx,&scope,Some(&candidate))?;
         tx.execute("INSERT INTO recognition_blend_monitor VALUES(?1,?2,?3,?4)
