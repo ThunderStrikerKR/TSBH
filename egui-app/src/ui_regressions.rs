@@ -1011,46 +1011,70 @@ mod shared_tag_chip_contract_tests {
 mod shared_general_screen_audit_tests {
     use super::*;
 
-    fn scan(path:&std::path::Path,violations:&mut Vec<String>){
-        for entry in std::fs::read_dir(path).expect("read egui source directory"){
-            let p=entry.expect("source entry").path();
-            if p.is_dir(){scan(&p,violations);continue;}
-            if p.extension().and_then(|v|v.to_str())!=Some("rs"){continue;}
-            let name=p.file_name().and_then(|v|v.to_str()).unwrap_or("");
-            if name=="theme.rs"{continue;}
-            let source=std::fs::read_to_string(&p).expect("read source");
-            if source.starts_with("#![cfg(test)]"){continue;}
-            for (index,line) in source.lines().enumerate(){
-                let code=line.trim_start();
-                if code.starts_with("//") || code.starts_with("/*") || code.starts_with('*'){continue;}
-                // One existing native caret fixture intentionally tests egui
-                // selection state, not an operating screen.
-                if name=="product_manager.rs"
-                    && code=="let response=ui.add(egui::TextEdit::singleline(&mut value));"
-                    && source.lines().skip(index.saturating_sub(12)).take(12.min(index)).any(|l|
-                        l.contains("fn focused_price_cell_selects_existing_amount_for_direct_replacement(")){
-                    continue;
-                }
-                for token in [
-                    "Button::new(","Frame::new(","TextEdit::singleline(",
-                    "TextEdit::multiline(","Checkbox::new(","ComboBox::",
-                    ".button(",".checkbox(",".text_edit_singleline(",
-                    ".text_edit_multiline(","ScrollStyle::solid(","ScrollStyle::floating(",
-                ] {
-                    if let Some(pos)=code.find(token){
-                        if !code[..pos].contains('"'){
-                            violations.push(format!("{}:{}: {}",p.display(),index+1,token));
-                        }
+    // Ownership is per primitive, not a blanket exemption for all
+    // component files. Specialised renderers may compose shared controls.
+    const PRIMITIVES:&[(&str,&[&str])]=&[
+        ("Button::new(",&["button/mod.rs","dropdown/mod.rs"]),
+        ("Frame::new(",&["theme.rs","card/mod.rs"]),
+        ("TextEdit::singleline(",&["input/mod.rs"]),
+        ("TextEdit::multiline(",&["input/mod.rs"]),
+        ("Checkbox::new(",&["checkbox/mod.rs"]),
+        ("ComboBox::",&["dropdown/mod.rs"]),
+        (".button(",&[]),(".checkbox(",&[]),
+        (".text_edit_singleline(",&[]),(".text_edit_multiline(",&[]),
+        (".collapsing(",&[]),("CollapsingHeader::new(",&["button/mod.rs"]),
+        ("Window::new(",&["overlay.rs"]),
+        ("ScrollArea::vertical(",&["scrollbar/mod.rs"]),
+        ("ScrollArea::horizontal(",&["scrollbar/mod.rs"]),
+        ("ScrollArea::both(",&["scrollbar/mod.rs"]),
+        ("ScrollStyle::solid(",&["scrollbar/mod.rs"]),
+        ("ScrollStyle::floating(",&["scrollbar/mod.rs"]),
+        ("Slider::new(",&["input/mod.rs"]),("Grid::new(",&["navigation.rs"]),
+    ];
+    fn primitive_violations(name:&str,source:&str)->Vec<String>{
+        let mut violations=Vec::new();
+        for (index,line) in source.lines().enumerate(){
+            let code=line.trim_start();
+            if code.starts_with("//")||code.starts_with("/*")||code.starts_with('*'){continue;}
+            let code=code.split("//").next().unwrap_or("");
+            let compact=code.split_whitespace().collect::<String>();
+            for &(token,owners) in PRIMITIVES{
+                if owners.contains(&name){continue;}
+                if let Some(pos)=compact.find(token){
+                    if !compact[..pos].contains('"'){
+                        violations.push(format!("{name}:{}: {token}",index+1));
                     }
                 }
             }
         }
+        violations
     }
-
+    fn scan(root:&std::path::Path,path:&std::path::Path,violations:&mut Vec<String>){
+        for entry in std::fs::read_dir(path).expect("read egui source directory"){
+            let p=entry.expect("source entry").path();
+            if p.is_dir(){scan(root,&p,violations);continue;}
+            if p.extension().and_then(|v|v.to_str())!=Some("rs"){continue;}
+            let name=p.strip_prefix(root).unwrap().to_string_lossy().replace('\\',"/");
+            if name.ends_with("regression_tests.rs")||name=="ui_regressions.rs"||name=="ui_test_support.rs"{continue;}
+            let source=std::fs::read_to_string(&p).expect("read source");
+            if source.starts_with("#![cfg(test)]"){continue;}
+            let source=crate::ui_test_support::production_source_for_contract(&source);
+            violations.extend(primitive_violations(&name,&source));
+        }
+    }
+    #[test]
+    fn primitive_ownership_rejects_bypasses_but_allows_implementations(){
+        assert!(primitive_violations("button/mod.rs","egui::Button::new(label);").is_empty());
+        assert_eq!(primitive_violations("button/mod.rs","egui::TextEdit::singleline(value);").len(),1);
+        assert_eq!(primitive_violations("review_panel.rs","ui.collapsing(label, |ui| {});").len(),1);
+        assert_eq!(primitive_violations("settings_view.rs","egui::ScrollArea::vertical();").len(),1);
+        assert!(primitive_violations("review_panel.rs","crate::button::collapsing_header(label);").is_empty());
+    }
     #[test]
     fn new_and_existing_screen_modules_use_shared_controls_and_surfaces(){
         let mut violations=Vec::new();
-        scan(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),&mut violations);
+        let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        scan(&root,&root,&mut violations);
         assert!(violations.is_empty(),"general screen UI bypass:\n{}",violations.join("\n"));
     }
 

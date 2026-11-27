@@ -367,20 +367,14 @@ pub(crate) fn paint_tag_blocks(ui:&Ui,cell:Rect,tags:&[String],id:impl std::hash
     if tags.is_empty()||!cell.is_positive(){return;}
     let clip=cell.intersect(ui.clip_rect());
     if !clip.is_positive(){return;}
-    let frame=crate::popup::modal_nested_role_frame(crate::popup::ModalNestedRole::CompactTag);
-    let inset=frame.inner_margin.left as f32+frame.stroke.width;
-    let height=(theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH+
-        2.0*(frame.inner_margin.top as f32+frame.stroke.width)).min(cell.height());
     let gap=theme::SPACE_8;
-    let make=|text:&str|typography::management_control_text_galley(ui,text,theme::TEXT);
-    let width=|galley:&egui::Galley|galley.size().x.ceil()+2.0*inset;
-    let draw=|x:f32,galley:std::sync::Arc<egui::Galley>|{
+    let make=|text:&str|crate::popup::TagChip::new(ui,text,false);
+    let width=|chip:&crate::popup::TagChip|chip.size().x;
+    let draw=|x:f32,chip:crate::popup::TagChip|{
+        let height=chip.size().y.min(cell.height());
         let rect=Rect::from_min_size(egui::pos2(x,cell.center().y-height*0.5),
-            Vec2::new(width(&galley),height));
-        let painter=ui.painter().with_clip_rect(clip);
-        theme::paint_bordered_surface(&painter,rect,frame.corner_radius,frame.fill,frame.stroke.color);
-        let pos=egui::pos2(rect.left()+inset,rect.center().y-galley.size().y*0.5);
-        painter.with_clip_rect(rect.intersect(clip)).galley(pos,galley,theme::TEXT);
+            Vec2::new(chip.size().x,height));
+        chip.paint(ui,rect,clip);
         #[cfg(test)]
         crate::ui_test_support::record("table tag chip",rect);
     };

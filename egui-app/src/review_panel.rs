@@ -285,9 +285,9 @@ impl ReviewPanel {
                 });
         }
         if !inherited.is_empty(){
-            ui.collapsing(
-                format!("공통 상품 자동 적용 / {}개 항목",inherited.len()),
-                |details|{
+            crate::button::collapsing_header(
+                format!("공통 상품 자동 적용 / {}개 항목",inherited.len())
+            ).show(ui,|details|{
                     for &index in inherited {
                         issue_card(details,&self.issues[index],analysis,interactive,&mut selected);
                     }

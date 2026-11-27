@@ -29,6 +29,8 @@ pub(crate) fn production_source_for_contract(file:&str)->String {
         if line.trim_end()=="#[cfg(test)]" &&
             lines.peek().is_some_and(|next|next.starts_with("mod ")){
             let declaration=lines.next().unwrap();
+            // External regression modules contain no production code here.
+            if declaration.trim_end().ends_with(';'){continue;}
             assert!(declaration.trim_end().ends_with('{'),
                 "unsupported source-contract test module declaration: {declaration}");
             assert!(lines.by_ref().any(|line|line.trim_end()=="}"),
