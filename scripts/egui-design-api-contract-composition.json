@@ -65,7 +65,6 @@
     "impl Stage | pub fn item ( self , index : usize ) -> bool {",
     "impl Stage | pub fn recipient ( self , index : usize , remote : bool ) -> bool {",
     "module | # [ derive ( Clone , Copy , Debug , Default , PartialEq , Eq ) ] pub enum Stage { # [ default ] None , Review , Freight , PaymentCopy , PaymentConfirm }",
-    "module | pub const INK : Color32 =",
     "module | pub fn background ( ui : & Ui , rect : Rect ) {",
     "module | pub fn outline ( ui : & Ui , rect : Rect ) {",
     "module | pub fn payment_message ( ui : & mut Ui , text : & str , signature : & str , emphasis : bool ) {",

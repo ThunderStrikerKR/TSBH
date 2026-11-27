@@ -600,9 +600,23 @@ def constant_access_self_test():
     assert not check("button/mod.rs", "const PRIVATE_SIZE:f32=10.0;")
 
 
+def retired_color_alias_violations(name, code):
+    findings = []
+    for match in re.finditer(
+        r"\b(?:source_highlight\s*::\s*(?:ACTIVE_FILL|ACTIVE_TEXT|ACTIVE_BORDER)|one_touch\s*::\s*INK)\b"
+        r"|\bsource_highlight\s*::\s*\{[^}]*\b(?:ACTIVE_FILL|ACTIVE_TEXT|ACTIVE_BORDER)\b"
+        r"|\bone_touch\s*::\s*\{[^}]*\bINK\b", code):
+        findings.append((code.count("\n", 0, match.start())+1, "retired color forwarding alias; use semantic theme API"))
+    if name in {"source_highlight.rs", "one_touch.rs"}:
+        names = r"ACTIVE_FILL|ACTIVE_TEXT|ACTIVE_BORDER" if name == "source_highlight.rs" else r"INK"
+        for match in re.finditer(r"\b(?:const|static)\s+(?:" + names + r")\b", code):
+            findings.append((code.count("\n", 0, match.start())+1, "retired color alias declaration"))
+    return findings
+
 def violations(name, source):
     code = production(source)
     findings = pixel_paint_violations(name, code) + pixel_math_violations(name, code)
+    findings += retired_color_alias_violations(name, code)
     owner_calls = 0
     if name == OWNER:
         for match in re.finditer(r"\b(?:crate|super)\s*::", code):
@@ -653,6 +667,12 @@ def violations(name, source):
     return sorted(findings)
 
 def self_test():
+    assert violations("source_highlight.rs", "pub const ACTIVE_FILL:Color32 = palette.fill;")
+    assert violations("one_touch.rs", "pub const INK:Color32 = palette.text;")
+    assert violations("screen.rs", "let c = source_highlight::ACTIVE_BORDER;")
+    assert violations("screen.rs", "use crate::one_touch::{INK as OLD};")
+    assert not violations("screen.rs", "let w = source_highlight::ACTIVE_BORDER_WIDTH;")
+    assert not violations("screen.rs", "let c = theme::linked_preview_palette().border;")
     assert not violations("screen.rs", "let x=ui.max_rect(); let y=ui.max_rect( );")
     assert not violations("screen.rs", "builder.aligned_max_rect(rect);")
     assert not violations("screen.rs", '// builder.max_rect(rect)\nlet s="builder.max_rect(rect)";')
