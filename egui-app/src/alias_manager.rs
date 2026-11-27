@@ -281,27 +281,28 @@ impl AliasManager {
                             }));
                         }
                         body.add_enabled_ui(editable&&!busy&&!nested&&!self.confirm_delete,|body|{
-                            body.label(typography::field_label("별칭"));
-                            let width=body.available_width();
-                            crate::input::flexible_text_field(body,&mut self.form.text,width,"관리 별칭");
-                            body.label(typography::field_label("적용 범위"));
+                            crate::popup::modal_form_row_spacing(body);
+                            crate::popup::modal_compact_text_field(body,"별칭",&mut self.form.text,"관리 별칭");
                             let scope_name=if self.form.scope=="common"{"회사 공통 별칭"}else{
                                 rows(&catalog["clients"]).iter().find(|c|field(c,"id")==self.form.scope)
                                     .map(|c|field(c,"name")).unwrap_or("거래처 확인 필요")};
-                            let width=body.available_width();
-                            crate::dropdown::management_dropdown(body,scope_name,width,true,|choices|{
+                            crate::popup::modal_labeled_row_with_width(body,"적용 범위",theme::MODAL_FORM_WIDE_LABEL_WIDTH,|line|{
+                            let width=line.available_width();
+                            crate::dropdown::management_dropdown(line,scope_name,width,true,|choices|{
                                 crate::dropdown::management_dropdown_option(choices,&mut self.form.scope,"common".to_owned(),"회사 공통 별칭");
                                 for client in rows(&catalog["clients"]).iter().filter(|c|is_client_active(c)){
                                     crate::dropdown::management_dropdown_option(choices,&mut self.form.scope,
                                         field(client,"id").to_owned(),field(client,"name"));
                                 }
                             });
-                            body.label(typography::field_label("연결 상품"));
-                            let label=product(catalog,&self.form.target).map(|p|display_model(field(p,"name")))
-                                .unwrap_or_else(||"등록 상품 선택".into());
-                            if crate::button::action(body,&label,theme::ButtonRole::Standard,true).clicked(){
-                                self.product_search=true;
-                            }
+                            });
+                            crate::popup::modal_labeled_row_with_width(body,"연결 상품",theme::MODAL_FORM_WIDE_LABEL_WIDTH,|line|{
+                                let label=product(catalog,&self.form.target).map(|p|display_model(field(p,"name")))
+                                    .unwrap_or_else(||"등록 상품 선택".into());
+                                if crate::button::action(line,&label,theme::ButtonRole::Standard,true).clicked(){
+                                    self.product_search=true;
+                                }
+                            });
                         });
                         if let Some(error)=self.error.as_deref(){body.label(typography::caption(error));}
                     });

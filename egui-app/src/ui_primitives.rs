@@ -264,8 +264,9 @@ pub fn form_field_label_sized(ui:&mut Ui,label:&str,width:f32)->Response {
     );
     let pos=egui::pos2(rect.left(),
         rect.top()+typography::form_label_text_y(rect.height(),galley.size().y));
-    ui.painter().with_clip_rect(rect).galley(pos,galley,theme::SECONDARY);
-    response
+    let overflow=galley.size().x>rect.width()+0.5;
+    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).galley(pos,galley,theme::SECONDARY);
+    overflow_tooltip(response,overflow,label)
 }
 pub fn form_field_label(ui:&mut Ui,label:&str)->Response {
     let width=typography::field_label_galley(ui,label).size().x;

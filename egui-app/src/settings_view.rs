@@ -104,24 +104,14 @@ fn account_complete(account:&Value)->bool {
 fn edit_input_width(
     ui:&mut Ui,draft:&mut Value,key:&str,label:&str,width:f32
 ){
-    ui.label(typography::field_label(label));
     let mut current=if key=="senderName"{
         canonical(key,draft.get(key)).as_str().unwrap_or("").to_owned()
     }else{field(draft,key)};
-    if crate::input::flexible_text_field(
-        ui,&mut current,width.min(ui.available_width()),""
-    ).changed(){
-        draft[key]=json!(current);
-    }
-}
-fn setting_field_column(
-    ui:&mut Ui,draft:&mut Value,key:&str,label:&str,width:f32
-){
-    let width=width.min(ui.available_width());
-    ui.vertical(|col|{
-        col.apply_shared_width(crate::card::CardWidthPolicy::Fixed,width);
-        edit_input_width(col,draft,key,label,width);
+    let response=crate::popup::modal_labeled_row(ui,label,|line|{
+        let width=width.min(line.available_width());
+        crate::input::flexible_text_field(line,&mut current,width,"")
     });
+    if response.changed(){draft[key]=json!(current);}
 }
 fn section(ui:&mut Ui,title:&str,body:impl FnOnce(&mut Ui)){
     crate::settings_help::heading(ui,title);
@@ -139,16 +129,16 @@ fn account_display(account:&Value)->String{
 /// Both brand recommendation selectors share the same account master
 /// and are stacked vertically for consistent settings-form flow.
 fn recommendation_picker(ui:&mut Ui,draft:&mut Value,key:&str,label:&str){
-    ui.label(typography::field_label(label));
     let mut selected=draft.pointer(&format!("/brandAccounts/{key}"))
         .and_then(Value::as_str).unwrap_or("").to_owned();
     let options=draft.get("accounts").and_then(Value::as_array)
         .cloned().unwrap_or_default();
     let preview=options.iter().find(|account|field(account,"id")==selected)
         .map(account_display).unwrap_or_else(||"계좌 선택".to_owned());
+    crate::popup::modal_labeled_row_with_width(ui,label,theme::MODAL_FORM_WIDE_LABEL_WIDTH,|line|{
     crate::dropdown::management_dropdown(
-        ui,&preview,
-        ui.available_width().min(theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH),
+        line,&preview,
+        line.available_width().min(theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH),
         true,|choices|{
             crate::dropdown::management_dropdown_option(
                 choices,&mut selected,String::new(),"계좌 선택"
@@ -163,6 +153,7 @@ fn recommendation_picker(ui:&mut Ui,draft:&mut Value,key:&str,label:&str){
             }
         }
     );
+    });
     if !draft.get("brandAccounts").is_some_and(Value::is_object){
         draft["brandAccounts"]=json!({"BANDOSTAND":"","BANDOMALL":""});
     }
@@ -614,17 +605,9 @@ impl SettingsView{
         crate::card::measured_management_section_card(ui,|card|{
             card.add_enabled_ui(editable,|form|{
                 section(form,"작업 환경",|content|{
-                    content.horizontal(|row|{
-                        crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
-                        row.vertical(|size|{
-                            size.apply_shared_width(crate::card::CardWidthPolicy::Fixed,theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH);
-                            self.scale_selector(size,Arc::clone(&gateway));
-                        });
-                        setting_field_column(
-                            row,&mut self.draft,"operatorName","작업자 이름",
-                            theme::SETTINGS_OPERATOR_FIELD_WIDTH
-                        );
-                    });
+                    crate::popup::modal_form_row_spacing(content);
+                    self.scale_selector(content,Arc::clone(&gateway));
+                    edit_input_width(content,&mut self.draft,"operatorName","작업자 이름",theme::SETTINGS_OPERATOR_FIELD_WIDTH);
                 });
             });
         });
@@ -633,80 +616,27 @@ impl SettingsView{
         crate::card::measured_management_section_card(ui,|card|{
             card.add_enabled_ui(editable,|form|{
                 section(form,"반도스탠드 정보",|content|{
-                    let width=content.available_width();
-                    if width>=theme::SETTINGS_SENDER_WIDE_MIN_WIDTH{
-                        content.horizontal(|row|{
-                            crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
-                            for (key,label,field_width) in [
-                                ("senderName","상호명",theme::SETTINGS_SENDER_NAME_WIDTH),
-                                ("senderPostcode","우편번호",theme::SETTINGS_SENDER_POSTCODE_WIDTH),
-                                ("senderPhone","전화번호",theme::SETTINGS_SENDER_PHONE_WIDTH),
-                                ("senderMobile","휴대폰 번호",theme::SETTINGS_SENDER_PHONE_WIDTH),
-                            ]{
-                                setting_field_column(
-                                    row,&mut self.draft,key,label,field_width
-                                );
-                            }
-                        });
-                        content.add_space(theme::SPACE_4);
-                        edit_input_width(
-                            content,&mut self.draft,"senderAddress","주소",
-                            theme::SETTINGS_SENDER_ADDRESS_WIDTH
-                        );
-                    }else{
-                        content.horizontal(|row|{
-                            crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
-                            setting_field_column(
-                                row,&mut self.draft,"senderName","상호명",
-                                theme::SETTINGS_SENDER_NAME_WIDTH
-                            );
-                            setting_field_column(
-                                row,&mut self.draft,"senderPostcode","우편번호",
-                                theme::SETTINGS_SENDER_POSTCODE_WIDTH
-                            );
-                        });
-                        content.add_space(theme::SPACE_4);
-                        edit_input_width(
-                            content,&mut self.draft,"senderAddress","주소",
-                            theme::SETTINGS_SENDER_ADDRESS_WIDTH
-                        );
-                        content.add_space(theme::SPACE_4);
-                        if width>=2.0*theme::SETTINGS_SENDER_PHONE_WIDTH
-                            +theme::SPACE_12
-                        {
-                            content.horizontal(|row|{
-                                crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
-                                setting_field_column(
-                                    row,&mut self.draft,"senderPhone","전화번호",
-                                    theme::SETTINGS_SENDER_PHONE_WIDTH
-                                );
-                                setting_field_column(
-                                    row,&mut self.draft,"senderMobile","휴대폰 번호",
-                                    theme::SETTINGS_SENDER_PHONE_WIDTH
-                                );
-                            });
-                        }else{
-                            edit_input_width(
-                                content,&mut self.draft,"senderPhone","전화번호",
-                                theme::SETTINGS_SENDER_PHONE_WIDTH
-                            );
-                            edit_input_width(
-                                content,&mut self.draft,"senderMobile","휴대폰 번호",
-                                theme::SETTINGS_SENDER_PHONE_WIDTH
-                            );
-                        }
+                    crate::popup::modal_form_row_spacing(content);
+                    for (key,label,width) in [
+                        ("senderName","상호명",theme::SETTINGS_SENDER_NAME_WIDTH),
+                        ("senderPostcode","우편번호",theme::SETTINGS_SENDER_POSTCODE_WIDTH),
+                        ("senderAddress","주소",theme::SETTINGS_SENDER_ADDRESS_WIDTH),
+                        ("senderPhone","전화번호",theme::SETTINGS_SENDER_PHONE_WIDTH),
+                        ("senderMobile","휴대폰 번호",theme::SETTINGS_SENDER_PHONE_WIDTH),
+                    ]{
+                        edit_input_width(content,&mut self.draft,key,label,width);
                     }
                 });
             });
         });
     }
     fn scale_selector(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
-        ui.label(typography::field_label("전체 UI 크기"));
         let mut scale=self.draft.get("uiScale").and_then(Value::as_u64)
             .unwrap_or(100);
+        crate::popup::modal_labeled_row(ui,"전체 UI 크기",|line|{
         crate::dropdown::management_dropdown(
-            ui,&format!("{scale}%"),
-            theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH.min(ui.available_width()),
+            line,&format!("{scale}%"),
+            theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH.min(line.available_width()),
             !self.read_only()&&!self.busy(),|choices|{
                 for candidate in [90u64,100,110,125]{
                     crate::dropdown::management_dropdown_option(
@@ -715,6 +645,7 @@ impl SettingsView{
                 }
             }
         );
+        });
         if self.draft.get("uiScale").and_then(Value::as_u64)!=Some(scale){
             self.draft["uiScale"]=json!(scale);
             // React persists only uiScale immediately. Unrelated edits
@@ -727,8 +658,8 @@ impl SettingsView{
             section(card,"입금 계좌",|content|{
                 content.add_enabled_ui(editable,|form|{
                     let wide_recommendations=form.available_width()
-                        >=2.0*theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH
-                            +theme::SPACE_12;
+                        >=2.0*(theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH+
+                            theme::MODAL_FORM_WIDE_LABEL_WIDTH+theme::SPACE_8)+theme::SPACE_12;
                     let fixed_height=theme::SETTINGS_ACCOUNT_PANEL_FIXED_HEIGHT
                         +if wide_recommendations{0.0}
                          else{theme::SETTINGS_ACCOUNT_STACKED_EXTRA_HEIGHT};
@@ -769,7 +700,8 @@ impl SettingsView{
                             crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
                             for (key,label) in recommendations{
                                 row.vertical(|col|{
-                                    col.apply_shared_width(crate::card::CardWidthPolicy::Fixed,theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH);
+                                    col.apply_shared_width(crate::card::CardWidthPolicy::Fixed,theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH+
+                                        theme::MODAL_FORM_WIDE_LABEL_WIDTH+theme::SPACE_8);
                                     recommendation_picker(
                                         col,&mut self.draft,key,label
                                     );
@@ -794,60 +726,36 @@ impl SettingsView{
         let mut delete=None;
         let account_count=accounts.len();
         for (index,account) in accounts.iter_mut().enumerate(){
-            if ui.available_width()>=theme::SETTINGS_ACCOUNT_ROW_MIN_WIDTH{
+            let labels=[("bank","은행명"),("number","계좌번호"),("holder","예금주")];
+            let label_space=theme::MODAL_FORM_LABEL_WIDTH+theme::SPACE_8;
+            let wide=theme::SETTINGS_ACCOUNT_ROW_MIN_WIDTH+3.0*label_space;
+            if ui.available_width()>=wide{
                 ui.horizontal(|row|{
                     crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::AccountFields);
-                    let usable=(row.available_width()
-                        -theme::SETTINGS_ACCOUNT_DELETE_WIDTH
-                        -3.0*theme::SPACE_8).max(1.0);
+                    let usable=(row.available_width()-theme::SETTINGS_ACCOUNT_DELETE_WIDTH
+                        -3.0*theme::SPACE_8-3.0*label_space).max(1.0);
                     let targets=theme::SETTINGS_ACCOUNT_FIELD_WIDTHS;
-                    let sum=targets.iter().sum::<f32>();
-                    let factor=(usable/sum).min(1.0);
-                    for (column,(key,label)) in [
-                        ("bank","은행명"),("number","계좌번호"),("holder","예금주")
-                    ].into_iter().enumerate(){
+                    let factor=(usable/targets.iter().sum::<f32>()).min(1.0);
+                    for (column,(key,label)) in labels.into_iter().enumerate(){
                         let width=targets[column]*factor;
                         row.allocate_ui_with_layout(
-                            Vec2::new(width,theme::SPACE_24+theme::INPUT_HEIGHT),
+                            Vec2::new(width+label_space,theme::INPUT_HEIGHT),
                             Layout::top_down(Align::Min),|input|{
-                                input.apply_shared_width(crate::card::CardWidthPolicy::Fixed,width);
+                                input.apply_shared_width(crate::card::CardWidthPolicy::Fixed,width+label_space);
                                 edit_input_width(input,account,key,label,width);
-                            }
-                        );
+                            });
                     }
-                    row.allocate_ui_with_layout(
-                        Vec2::new(
-                            theme::SETTINGS_ACCOUNT_DELETE_WIDTH,
-                            theme::SPACE_24+theme::INPUT_HEIGHT
-                        ),
-                        Layout::top_down(Align::Min),|delete_ui|{
-                            delete_ui.add_space(theme::SPACE_24);
-                            if crate::button::action_full_width(
-                                delete_ui,"계좌 삭제",ButtonRole::Danger,true
-                            ).clicked(){
-                                delete=Some(index);
-                            }
-                        }
-                    );
+                    if crate::button::action(row,"계좌 삭제",ButtonRole::Danger,true).clicked(){
+                        delete=Some(index);
+                    }
                 });
             }else{
-                ui.horizontal_wrapped(|row|{
-                    crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::AccountFields);
-                    setting_field_column(
-                        row,account,"bank","은행명",
-                        theme::SETTINGS_ACCOUNT_FIELD_WIDTHS[0]
-                    );
-                    setting_field_column(
-                        row,account,"number","계좌번호",
-                        theme::SETTINGS_ACCOUNT_FIELD_WIDTHS[1]
-                    );
-                    setting_field_column(
-                        row,account,"holder","예금주",
-                        theme::SETTINGS_ACCOUNT_FIELD_WIDTHS[2]
-                    );
-                    if crate::button::action(
-                        row,"계좌 삭제",ButtonRole::Danger,true
-                    ).clicked(){
+                crate::popup::modal_form_row_spacing(ui);
+                for (column,(key,label)) in labels.into_iter().enumerate(){
+                    edit_input_width(ui,account,key,label,theme::SETTINGS_ACCOUNT_FIELD_WIDTHS[column]);
+                }
+                ui.with_layout(Layout::right_to_left(Align::Center),|row|{
+                    if crate::button::action(row,"계좌 삭제",ButtonRole::Danger,true).clicked(){
                         delete=Some(index);
                     }
                 });

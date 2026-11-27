@@ -207,14 +207,14 @@ impl BrandManager {
                     close=workspace.header(title,"닫기",!busy&&!nested);
                     workspace.scroll_region("brand-editor-body",crate::popup::modal_editor_body_max_height(work_area.height()),|body|{
                         body.add_enabled_ui(editable&&!busy&&!nested,|body|{
+                            crate::popup::modal_form_row_spacing(body);
                             for (label,value,hint) in [
                                 ("브랜드명",&mut self.form.name,"브랜드명"),
                                 ("한글 표기",&mut self.form.korean,"확인된 한글 표기")]{
-                                body.label(typography::field_label(label));
-                                let width=body.available_width();
-                                crate::input::flexible_text_field(body,value,width,hint);
+                                crate::popup::modal_compact_text_field(body,label,value,hint);
                             }
-                            body.label(typography::field_label("검색 별칭"));
+                            crate::popup::modal_labeled_row_with_width(body,"검색 별칭",theme::MODAL_FORM_WIDE_LABEL_WIDTH,|line|{
+                            line.vertical(|body|{
                             let interaction=crate::input::tag_block_editor(body,&self.form.aliases,
                                 &mut self.alias_input,"검색 별칭 입력");
                             if interaction.changed{self.alias_notice=None;}
@@ -228,9 +228,9 @@ impl BrandManager {
                             }else if !self.alias_input.trim().is_empty(){
                                 body.label(typography::caption("입력한 별칭은 추가 버튼으로 등록하세요."));
                             }
-                            body.label(typography::field_label("확인 근거 URL"));
-                            let width=body.available_width();
-                            crate::input::flexible_text_field(body,&mut self.form.evidence,width,"확인 근거 URL");
+                            });
+                            });
+                            crate::popup::modal_compact_text_field(body,"확인 근거 URL",&mut self.form.evidence,"확인 근거 URL");
                         });
                         if let Some(error)=self.error.as_deref(){body.label(typography::caption(error));}
                     });

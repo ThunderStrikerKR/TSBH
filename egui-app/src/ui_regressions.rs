@@ -2095,3 +2095,30 @@ mod shared_composite_control_contract_tests{
         assert!(include_str!("composite_workflow.rs").contains("source_highlight::paint_active_outline("));
     }
 }
+
+#[cfg(test)]
+mod inline_labeled_form_contract_tests{
+    #[test]
+    fn editor_forms_use_common_inline_label_layout(){
+        let popup=include_str!("popup/mod.rs");
+        for (start,end) in [("fn modal_compact_text_field(","fn modal_named_text_field("),
+            ("fn modal_named_text_field(","enum ManagementMenuRole")]{
+            let section=popup.split(start).nth(1).unwrap().split(end).next().unwrap();
+            assert!(section.contains("modal_labeled_row_with_width("));
+            assert!(!section.contains(".label(typography::field_label("));
+        }
+        for source in [include_str!("brand_manager.rs"),include_str!("alias_manager.rs"),
+            include_str!("automatic_message_manager.rs")]{
+            let production=crate::ui_test_support::production_source_for_contract(source);
+            assert!(!production.contains(".label(typography::field_label("));
+        }
+        let settings=include_str!("settings_view.rs");
+        for (start,end) in [("fn edit_input_width(","fn section("),
+            ("fn recommendation_picker(","fn settings_title_row("),
+            ("fn scale_selector(","fn show_accounts(")]{
+            let section=settings.split(start).nth(1).unwrap().split(end).next().unwrap();
+            assert!(section.contains("modal_labeled_row"));
+            assert!(!section.contains(".label(typography::field_label("));
+        }
+    }
+}

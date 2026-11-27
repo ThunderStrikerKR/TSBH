@@ -858,26 +858,22 @@ pub(crate) fn modal_form_row_spacing(ui:&mut Ui){
 pub(crate) fn modal_compact_text_field(
     ui:&mut Ui,label:&str,value:&mut String,hint:&str
 )->Response{
-    ui.vertical(|field|{
-        field.spacing_mut().item_spacing.y=theme::SPACE_4;
-        field.label(typography::field_label(label));
-        crate::input::flexible_text_field(field,value,field.available_width(),hint)
-    }).inner
+    modal_labeled_row_with_width(ui,label,theme::MODAL_FORM_WIDE_LABEL_WIDTH,|field|{
+        let width=field.available_width();
+        crate::input::flexible_text_field(field,value,width,hint)
+    })
 }
 
 /// Identical label, spacing and input sizing for create/rename/memo forms.
 pub(crate) fn modal_named_text_field(
     ui:&mut Ui,label:&str,value:&mut String,hint:&str,enabled:bool
 )->Response{
-    ui.scope(|field|{
-        modal_form_row_spacing(field);
-        field.label(typography::field_label(label));
+    modal_labeled_row_with_width(ui,label,theme::MODAL_FORM_WIDE_LABEL_WIDTH,|field|{
         field.add_enabled_ui(enabled,|input|{
-            crate::input::flexible_text_field(
-                input,value,theme::MANAGEMENT_SEARCH_MIN_WIDTH,hint
-            )
+            let width=input.available_width().min(theme::MANAGEMENT_SEARCH_MIN_WIDTH);
+            crate::input::flexible_text_field(input,value,width,hint)
         }).inner
-    }).inner
+    })
 }
 
 /// A management menu exposes content roles, not its raw UI or style.
@@ -1345,7 +1341,10 @@ pub(crate) fn modal_labeled_row_with_width<R>(
     ui.horizontal(|line|{
         line.spacing_mut().item_spacing.x=theme::SPACE_8;
         line.spacing_mut().interact_size.y=theme::INPUT_HEIGHT;
-        form_field_label_sized(line,label,label_width);
+        // Leave room for the control on narrow windows; never turn the
+        // label into a separate vertical row.
+        let width=label_width.min((line.available_width()-theme::SPACE_8-60.0).max(1.0));
+        form_field_label_sized(line,label,width);
         control(line)
     }).inner
 }

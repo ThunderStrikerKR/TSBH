@@ -472,11 +472,10 @@ impl AutomaticMessageManager {
             settings_help::icon(heading,"상품별 안내문");
         });
         ui.add_space(theme::SPACE_8);
-        ui.label(typography::field_label("안내문을 등록할 상품 검색"));
-        let width=ui.available_width();
-        crate::input::management_search_field(
-            ui,&mut self.product_search,width,"상품명 검색"
-        );
+        crate::popup::modal_labeled_row_with_width(ui,"안내문을 등록할 상품 검색",theme::MODAL_FORM_WIDE_LABEL_WIDTH,|line|{
+            let width=line.available_width();
+            crate::input::management_search_field(line,&mut self.product_search,width,"상품명 검색");
+        });
         ui.add_space(theme::SPACE_8);
         let visible=self.provisional_visible();
         crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical).id_salt("provisional-notice-products")
@@ -523,12 +522,12 @@ impl AutomaticMessageManager {
         });
         ui.label(typography::caption(def.description));
         crate::ui_primitives::section_divider(ui);
-        ui.label(typography::field_label("복사용 자동 메시지 편집"));
         let mut content=Self::template_value(&self.draft_templates,def);
-        let width=ui.available_width();
-        if crate::input::multiline_text_field(
-            ui,&mut content,!self.busy(),width,6,None
-        ).changed(){
+        let response=crate::popup::modal_labeled_row_with_width(ui,"복사용 자동 메시지 편집",theme::MODAL_FORM_WIDE_LABEL_WIDTH,|line|{
+            let width=line.available_width();
+            crate::input::multiline_text_field(line,&mut content,!self.busy(),width,6,None)
+        });
+        if response.changed(){
             self.draft_templates.insert(def.id.into(),json!(content.clone()));
             self.error=None;
         }
@@ -569,14 +568,15 @@ impl AutomaticMessageManager {
                 });
             });
             crate::ui_primitives::section_divider(ui);
-            ui.label(typography::field_label(
-                "잠정 선택 시 복사용 계좌안내에 추가할 문구"
-            ));
-            let width=ui.available_width();
-            if crate::input::multiline_text_field(
-                ui,&mut content,!self.busy(),width,5,
-                Some("예: 709는 상판에 구멍이 있습니다. 구멍이 없는 제품은 709-1 모델을 확인해 주세요.")
-            ).changed(){
+            let response=crate::popup::modal_labeled_row_with_width(
+                ui,"잠정 선택 시 복사용 계좌안내에 추가할 문구",theme::MODAL_FORM_WIDE_LABEL_WIDTH,|line|{
+                    let width=line.available_width();
+                    crate::input::multiline_text_field(
+                        line,&mut content,!self.busy(),width,5,
+                        Some("예: 709는 상판에 구멍이 있습니다. 구멍이 없는 제품은 709-1 모델을 확인해 주세요.")
+                    )
+                });
+            if response.changed(){
                 if content.trim().is_empty(){self.draft_notices.remove(id);self.product_cache.invalidate();}
                 else{self.draft_notices.insert(id.into(),json!(content.clone()));self.product_cache.invalidate();}
                 self.error=None;
