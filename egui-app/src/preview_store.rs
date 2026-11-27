@@ -1463,9 +1463,9 @@ impl PreviewStore {
         }
         let persist=input["blendWeightLearning"]["persistModel"]==true;
         let (mut conn,business,scope)=Self::learning_connection()?;
-        let tx=if persist{conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)}
-            else{conn.transaction()}.map_err(|e|e.to_string())?;
-        // Explicit persistence only; ordinary evaluations remain read-only.
+        let mut tx=conn.transaction().map_err(|e|e.to_string())?;
+        // Read first even for explicit persistence. The fit runs outside the
+        // transaction; take a write lock only to validate and store the model.
         let evaluation=input.get("shadowEvaluation");
         let combined_evaluation=input.get("combinedEvaluation");
         let calibration=input.get("legacyScoreCalibration");
@@ -1487,25 +1487,29 @@ impl PreviewStore {
             if ids.iter().collect::<std::collections::BTreeSet<_>>().len()!=ids.len(){
                 return Err("재현 주문 ID 중복".into());
             }
-            let (frozen,mut orders,digests)=crate::business_state::read_learning_inputs(&ids,|sources|{
+            let (frozen,orders,digests)=crate::business_state::read_learning_inputs(&ids,|sources|{
                 let (misses,digests)=select_learning_changes(&tx,&scope,sources)?;
                 if !misses.is_empty(){return Err("원본과 불일치하는 학습 주문을 먼저 동기화하세요.".into());}
-                let active=sources.iter().filter(|(_,s)|s.active).map(|(id,_)|id.clone()).collect();
+                // Stored combined evaluations need fingerprints, not decoded
+                // confirmation snapshots or audit event bodies.
+                let active=if combined_evaluation.is_some(){Vec::new()}else{
+                    sources.iter().filter(|(_,s)|s.active).map(|(id,_)|id.clone()).collect()
+                };
                 Ok((active,digests))
             })?;
-            let audit_ids=orders.iter().filter_map(|o|o["id"].as_str())
-                .filter(|id|frozen.get(*id).is_some_and(|s|s.audit_needed)).map(str::to_owned).collect::<Vec<_>>();
-            let mut audit=if audit_ids.is_empty(){std::collections::BTreeMap::new()}
-                else{query_reception_audit_batch(&tx,&audit_ids)?};
-            for order in &mut orders{
-                let id=order["id"].as_str().ok_or("재현 주문 ID 누락")?;
-                if let Some(events)=audit.remove(id){order["recognitionAuditEvents"]=json!(events);}
-            }
+            let orders=attach_learning_audit(&tx,&frozen,orders)?;
             let mut result=if combined_evaluation.is_some(){
                 let mut value=recognition_learning_store::combined_evaluation_report(&tx,&scope,&digests)?;
                 value["currentSourceDigestsVerified"]=json!(true);value
             }else if evaluation.is_some()||calibration.is_some()||shadow_calibration.is_some()||blend.is_some(){
+                tx.commit().map_err(|e|e.to_string())?;
                 let mut value=evaluate(&orders)?;
+                tx=if persist{conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)}
+                    else{conn.transaction()}.map_err(|e|e.to_string())?;
+                let current=crate::business_state::read_learning_sources(&ids)?;
+                verify_learning_sync_sources(&tx,&frozen,&digests,&current)?;
+                let (misses,latest)=select_learning_changes(&tx,&scope,&current)?;
+                if !misses.is_empty()||latest!=digests{return Err("로컬 재현 중 학습 원장이 변경되었습니다.".into());}
                 value["currentSourceDigestsVerified"]=json!(true);
                 value
             }else{recognition_learning_store::assess_local_replay(&tx,&scope,input,&orders,&digests)?};
@@ -1530,7 +1534,7 @@ impl PreviewStore {
                 result["modelAutomaticallySelected"]=json!(false);
             }
             result["requestedOrders"]=json!(ids.len());
-            result["missingOrInactiveSourceOrders"]=json!(ids.len()-orders.len());
+            result["missingOrInactiveSourceOrders"]=json!(ids.len()-digests.len());
             result
         }else{recognition_learning_store::assess_support(&tx,&scope,input)?};
         if crate::business_state::authorized_business_write_path()?.canonicalize()
