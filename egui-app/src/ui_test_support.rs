@@ -189,3 +189,63 @@ mod shared_component_screen_trace_tests{
         assert_eq!(finish_component_geometry(screen).len(),1);
     }
 }
+
+
+/// Real screen popup transition harness. Hold the same records, viewport and
+/// scroll state; change only transient UI state in the caller. Capture the final
+/// egui pass of *every* displayed frame, not just the settled transition.
+pub(crate) fn assert_popup_transition_geometry(
+    ctx:&egui::Context,screen:Rect,phases:usize,
+    mut render:impl FnMut(&egui::Context,usize)
+){
+    let mut baseline:Option<Vec<Sample>>=None;
+    for phase in 0..phases{
+        for frame in 0..6{
+            let _=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+                begin_component_geometry();
+                crate::floating_notice::begin_page(ctx,"actual popup transition");
+                render(ctx,phase);
+                crate::floating_notice::show(ctx);
+            });
+            let samples=finish_component_geometry(screen);
+            let slots=samples.into_iter().filter(|s|matches!(s.role,
+                "popup"|"input"|"button"|"dropdown"|"checkbox"|"scrollbar"))
+                .map(|s|(s.role,s.rect)).collect::<Vec<_>>();
+            if phase==0{
+                if frame==5{
+                    assert!(slots.iter().any(|(role,_)|*role=="popup"),"real popup trace is empty");
+                    assert!(slots.iter().any(|(role,_)|*role=="button"),"real popup controls are missing");
+                    baseline=Some(slots);
+                }
+            }else{
+                assert_layout_rects_invariant(baseline.as_ref().unwrap(),&slots);
+            }
+        }
+    }
+}
+
+/// Isolated test gateway for rendering screen-owned popups without touching
+/// any real catalog or operational database. Mutations are never authorized
+/// beyond the UI permission bit and always fail if accidentally dispatched.
+pub(crate) struct PopupGeometryGateway{
+    pub writable:bool,
+}
+impl crate::gateway::BandoGateway for PopupGeometryGateway{
+    fn label(&self)->&'static str{"synthetic popup geometry"}
+    fn load_catalog(&self)->Result<serde_json::Value,String>{
+        Err("isolated popup fixture".into())
+    }
+    fn load_working_source(&self)->Result<crate::preview_store::WorkingSource,String>{
+        Err("isolated popup fixture".into())
+    }
+    fn save_working_source(&self,_:&crate::preview_store::WorkingSource)->Result<u64,String>{
+        Err("popup fixture may not write".into())
+    }
+    fn execute(&self,_:crate::gateway::ReadOperation,_:serde_json::Value)->Result<serde_json::Value,String>{
+        Err("isolated popup fixture".into())
+    }
+    fn model_group_write_enabled(&self)->bool{self.writable}
+    fn product_write_enabled(&self)->bool{self.writable}
+    fn shipping_write_enabled(&self)->bool{self.writable}
+    fn excel_write_enabled(&self)->bool{self.writable}
+}
