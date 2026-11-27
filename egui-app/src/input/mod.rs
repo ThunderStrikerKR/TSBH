@@ -10,7 +10,7 @@ use crate::ui_primitives::{navigation_segment_child,date_navigation_segmented_su
 use crate::ui_test_support::test_context;
 
 /// Placeholder ink is independent of the actual input value and general UI text.
-pub(crate) const INPUT_PLACEHOLDER_COLOR:egui::Color32=
+const INPUT_PLACEHOLDER_COLOR:egui::Color32=
     theme::text_ink(theme::TextRole::Value,theme::TextState::Placeholder);
 
 fn input_placeholder(text:&str)->egui::RichText{
@@ -628,7 +628,7 @@ fn reception_money_editor_at_rect(
 /// The unit occupies the former external label's width, keeping the
 /// overall freight/COD group stable. Resting and focused money controls
 /// use identical suffix geometry; only their interaction mode differs.
-pub(crate) const RECEPTION_FREIGHT_MONEY_WIDTH:f32=104.0;
+const RECEPTION_FREIGHT_MONEY_WIDTH:f32=104.0;
 
 pub(crate) struct FreightAmountState{
     exempt:bool,role:Option<crate::highlight::Role>,editor_owns:bool,

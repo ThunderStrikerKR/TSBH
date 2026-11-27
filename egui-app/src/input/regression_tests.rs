@@ -74,7 +74,7 @@ mod sized_multiline_field_geometry_tests {
             egui::CentralPanel::default().show(ctx,|ui|{
                 actual=multiline_text_field_sized(
                     ui,&mut value,true,Vec2::new(280.0,96.0),
-                    egui::FontId::proportional(typography::FONT_OCR_REVIEW_TEXT),
+                    typography::ocr_review_font(),
                     false,egui::Margin::same(theme::SPACE_12 as i8),1
                 ).rect;
             });

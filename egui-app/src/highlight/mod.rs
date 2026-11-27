@@ -217,10 +217,10 @@ pub(crate) fn action_hover(ui:&Ui,response:&Response,geometry:Geometry,light:boo
 }
 /// Common highlight geometry preserves each approved surface hierarchy.
 /// A surface uses its own corners, never a second independent outline radius.
-pub(crate) const VALUE_PADDING:f32=theme::SPACE_4;
+const VALUE_PADDING:f32=theme::SPACE_4;
 pub(crate) const CONTROL_RADIUS:u8=theme::CONTROL_RADIUS;
-pub(crate) const NAVIGATION_RADIUS:u8=5;
-pub(crate) const COMPACT_RADIUS:u8=4;
+const NAVIGATION_RADIUS:u8=5;
+const COMPACT_RADIUS:u8=4;
 pub(crate) const SOURCE_RADIUS:f32=theme::SOURCE_BLOCK_RADIUS;
 pub(crate) fn value_rect(ink:Rect,slot:Rect)->Rect{
     ink.expand(VALUE_PADDING).intersect(slot)

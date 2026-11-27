@@ -139,7 +139,7 @@ mod shared_checkbox_rendered_geometry_tests{
                     });
                 });
                 if checked{
-                    assert!(output.shapes.iter().any(|s|has_fill(&s.shape,hit,theme::CHECKBOX_CHECKED_BG)));
+                    assert!(output.shapes.iter().any(|s|has_fill(&s.shape,hit,theme::checkbox_palette(true,theme::VisualState::Normal).expect("checked palette").fill)));
                 }
                 assert!(!output.shapes.iter().any(|s|
                     has_fill(&s.shape,hit,theme::ORANGE_EMPHASIS_BG)||

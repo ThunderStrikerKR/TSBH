@@ -21,7 +21,6 @@ use crate::card::*;
 
 use crate::input::{reception_recipient_inline_cell_editor,reception_inline_cell_editor,reception_freight_inline_cell_editor};
 use crate::input::{reception_recipient_text_edit,reception_freight_money_readonly};
-use crate::input::{RECEPTION_FREIGHT_MONEY_WIDTH};
 
 
 
@@ -342,7 +341,7 @@ mod management_toolbar_geometry_tests {
         let (original,focused,before,after)=measured.expect("freight geometry");
         assert_eq!(original,focused);
         assert_eq!(original.height(),theme::INPUT_HEIGHT);
-        assert_eq!(original.width(),RECEPTION_FREIGHT_MONEY_WIDTH);
+        assert_eq!(original.width(),104.0,"approved freight editor width");
         assert_eq!(before,after,
             "freight focus cannot consume the following row's vertical padding");
     }
@@ -456,7 +455,7 @@ mod management_toolbar_geometry_tests {
             let [product,quantity,amount]=reception_item_columns(area);
             assert_eq!(quantity.width(),theme::RECEPTION_ITEMS_QTY_WIDTH);
             assert_eq!(amount.width(),theme::RECEPTION_ITEMS_AMOUNT_MAX_WIDTH);
-            assert!(product.width()>=theme::RECEPTION_ITEMS_PRODUCT_MIN_WIDTH);
+            assert!(product.width()>=180.0,"approved minimum product column width");
             assert_eq!(product.right(),quantity.left());
             assert_eq!(quantity.right(),amount.left());
             assert_eq!(amount.right(),area.right());
@@ -499,7 +498,6 @@ mod management_toolbar_geometry_tests {
         let rail=management_table_scroll_track_geometry(bounds,bounds.height());
         assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION,0.0);
         assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET,0.0);
-        assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET,0.0);
         assert_eq!(rail.top(),bounds.top()); // no gap under the header
         assert_eq!(rail.bottom(),rows_bottom);
         assert_eq!(rail.bottom(),784.0);

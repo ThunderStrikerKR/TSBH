@@ -11,14 +11,14 @@ use eframe::egui::{
 };
 
 pub const CANVAS: Color32 = Color32::from_rgb(16, 16, 16);
-pub const HEADER_BG: Color32 = Color32::from_rgb(27, 27, 27);
+const HEADER_BG: Color32 = Color32::from_rgb(27, 27, 27);
 // Level-2 / primary section surface. Darker than INPUT (#292929) so
 // repeated order cards remain distinguishable inside the workflow pane.
 // This shared token intentionally updates every egui panel using PANEL.
 pub const PANEL: Color32 = Color32::from_rgb(24, 24, 24);
 // Shared surface level 2.5: subtle alternate rows inside PANEL lists.
 // Never use INPUT/RAISED (fields/buttons) as a table zebra fill.
-pub const TABLE_ROW_ALT_BG: Color32 = Color32::from_rgb(30, 30, 30);
+const TABLE_ROW_ALT_BG: Color32 = Color32::from_rgb(30, 30, 30);
 pub const INPUT: Color32 = Color32::from_rgb(34, 34, 34);
 // Strong disabled styling shared by management select and action controls.
 // Avoid changing the approved enabled #292929 field / #303030 button roles.
@@ -50,7 +50,7 @@ pub const TABLE_HEADER_OUTLINE: Color32 = Color32::from_rgb(106, 106, 106);
 pub const TEXT: Color32 = Color32::from_rgb(237, 237, 237);
 pub const SECONDARY: Color32 = Color32::from_rgb(185, 185, 185);
 pub const MUTED: Color32 = Color32::from_rgb(153, 153, 153);
-pub const PLACEHOLDER_TEXT:Color32=Color32::from_gray(96);
+const PLACEHOLDER_TEXT:Color32=Color32::from_gray(96);
 
 /// Information role is independent of typography, widget and business state.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -109,12 +109,12 @@ pub const fn text_ink(role:TextRole,state:TextState)->Color32{
     }
 }
 pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
-pub const INTERACTION_BLUE_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,20);
+const INTERACTION_BLUE_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,20);
 pub const SOURCE_BLOCK_FILL:Color32=Color32::from_rgb(66,66,66);
 pub const SOURCE_CONTEXT_FILL:Color32=Color32::from_rgb(73,73,73);
 pub const MANUAL_ASSIGNMENT_TINT:Color32=INTERACTION_BLUE_TINT;
 pub const MANUAL_ASSIGNMENT_STROKE_WIDTH:f32=1.25;
-pub const CARD_BORDER:Color32=DIVIDER;
+const CARD_BORDER:Color32=DIVIDER;
 // Restore the original shared blue pointer feedback; focus stays independent.
 pub const BUTTON_HOVER_BG:Color32=Color32::from_rgb(47,62,74);
 const ACTIVE_NAVIGATION_BG:Color32=Color32::from_rgb(41,72,92);
@@ -129,7 +129,7 @@ pub const LINKED_PREVIEW_BORDER:Color32=Color32::from_rgb(117,181,255);
 pub const LINKED_PREVIEW_BORDER_WIDTH:f32=2.0;
 pub const REQUIRED_REVIEW_TEXT:Color32=ORANGE_EMPHASIS_TEXT;
 pub const REQUIRED_REVIEW_BORDER:Color32=SELECTED_ORDER;
-pub const ERROR_BG:Color32=Color32::from_rgb(51,37,37);
+const ERROR_BG:Color32=Color32::from_rgb(51,37,37);
 pub const ERROR_TEXT:Color32=Color32::from_rgb(240,160,160);
 pub const ERROR_BORDER:Color32=Color32::from_rgb(199,107,107);
 const DANGER_ACTION_BG:Color32=Color32::from_rgb(53,37,37);
@@ -165,7 +165,7 @@ pub const ORANGE_EMPHASIS_BG: Color32 = Color32::from_rgb(59, 43, 27); // #3B2B1
 // whether the trigger is a persistent review card or a one-touch hover.
 pub const ORANGE_EMPHASIS_TEXT:Color32=Color32::from_rgb(255,228,188);
 // Checkbox marks are neutral; row/option selection retains its independent orange palette.
-pub const CHECKBOX_CHECKED_BG:Color32=RAISED;
+const CHECKBOX_CHECKED_BG:Color32=RAISED;
 const CHECKBOX_CHECKED_MARK:Color32=BRIGHT;
 const CHECKBOX_CHECKED_STROKE_WIDTH:f32=2.0;
 pub const ONE_TOUCH_BG:Color32=ORANGE_EMPHASIS_BG;
@@ -176,7 +176,7 @@ pub const ONE_TOUCH_TINT:Color32=Color32::from_rgba_unmultiplied_const(245,158,1
 // Approved selected shipment row: a single rounded surface, not an
 // added left stripe. The enclosing order card retains its own accent.
 pub const WORKFLOW_SELECTED_ROW_TEXT:Color32=Color32::from_rgb(244,214,162);
-pub const WORKFLOW_SELECTED_ROW_BG:Color32=Color32::from_rgb(48,42,34); // #302A22
+const WORKFLOW_SELECTED_ROW_BG:Color32=Color32::from_rgb(48,42,34); // #302A22
 pub const WORKFLOW_SELECTED_ROW_BORDER:Color32=Color32::TRANSPARENT;
 pub fn workflow_selected_row_fill() -> Color32 {
     WORKFLOW_SELECTED_ROW_BG
@@ -293,7 +293,7 @@ pub const SETTINGS_ACCOUNT_LIST_MAX_HEIGHT:f32=260.0;
 pub const SETTINGS_ACCOUNT_PANEL_FIXED_HEIGHT:f32=190.0;
 pub const SETTINGS_ACCOUNT_STACKED_EXTRA_HEIGHT:f32=62.0;
 pub const SPACING: f32 = SPACE_8;
-pub const HEADER_PADDING_X: i8 = SPACE_16 as i8;
+const HEADER_PADDING_X: i8 = SPACE_16 as i8;
 pub const BRAND_ICON_SIZE: f32 = 38.0;
 // Optical alignment of the visible red glyph within the PNG canvas.
 // Keep text and navigation on the original header centerline.
@@ -322,7 +322,7 @@ pub const SECTION_HEADER_HEIGHT: f32 = 34.0;
 // and 28pt arrow targets as the Order History date picker, with the current
 // recipient name and 1/N progress between arrows. No extra tab/body row.
 pub const RECEPTION_RECIPIENT_NAV_ARROW_WIDTH:f32 = MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
-pub const RECEPTION_RECIPIENT_NAV_NAME_WIDTH:f32 = 116.0;
+const RECEPTION_RECIPIENT_NAV_NAME_WIDTH:f32 = 116.0;
 pub const RECEPTION_RECIPIENT_NAV_COUNT_WIDTH:f32 = 38.0;
 // Clear non-interactive end stops. Their darker face and near-background
 // vector chevrons are deliberately lower contrast than active arrows.
@@ -337,7 +337,7 @@ pub const RECEPTION_RECIPIENT_NAV_WIDTH:f32 =
     +2.0*FRAME_STROKE_WIDTH;
 // Compact reception header only; ordinary management/modal rules stay 12pt.
 pub const RECEPTION_SECTION_DIVIDER_GAP: f32 = SPACE_8;
-pub const RECEPTION_SECTION_DIVIDER_HEIGHT: f32 =
+const RECEPTION_SECTION_DIVIDER_HEIGHT: f32 =
     2.0 * RECEPTION_SECTION_DIVIDER_GAP + SOFT_DIVIDER_WIDTH;
 // Canvas/footer clearance must be counted in the message editor's height.
 pub const RECEPTION_MESSAGE_ACTION_GAP: f32 = RECEPTION_SECTION_DIVIDER_HEIGHT;
@@ -378,7 +378,7 @@ pub const PANEL_GAP: f32 = SPACE_6;
 // Kakao dock toolbar: one compact row (2pt vertical gap around 22pt controls).
 // Only its body rect is passed to the Win32 dock.
 pub const KAKAO_TOOLBAR_HEIGHT: f32 = 26.0;
-pub const KAKAO_CONTROL_HEIGHT: f32 = 22.0;
+const KAKAO_CONTROL_HEIGHT: f32 = 22.0;
 pub const KAKAO_TOOLBAR_PAD_X: f32 = SPACE_4;
 // Deliberately separate the Kakao identity icon from the mode group;
 // mode-to-mode spacing stays at the shared 4pt.
@@ -437,7 +437,7 @@ pub const RECEPTION_ITEMS_ROW_HEIGHT: f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
 // Reception item table: only product text ellipsizes; quantity and amount
 // columns never expand or contract with their values or the pane width.
 // On very narrow panes the fixed minimum table scrolls horizontally.
-pub const RECEPTION_ITEMS_PRODUCT_MIN_WIDTH: f32 = 180.0;
+const RECEPTION_ITEMS_PRODUCT_MIN_WIDTH: f32 = 180.0;
 pub const RECEPTION_ITEMS_QTY_WIDTH: f32 = 84.0; // left stepper + 999개
 pub const RECEPTION_ITEM_REMOVE_WIDTH: f32 = 28.0;
 pub const RECEPTION_ITEMS_AMOUNT_MAX_WIDTH: f32 = 136.0; // up to 99,999,999원
@@ -449,7 +449,7 @@ pub const RECEPTION_ITEMS_MIN_TABLE_WIDTH: f32 =
 pub const RECEPTION_SECTION_CHROME_HEIGHT: f32 =
     2.0 * RECEPTION_PANE_PADDING_Y
     + SECTION_HEADER_HEIGHT + RECEPTION_SECTION_DIVIDER_HEIGHT;
-pub const RECEPTION_RECIPIENT_BODY_HEIGHT: f32 =
+const RECEPTION_RECIPIENT_BODY_HEIGHT: f32 =
     4.0 * INPUT_HEIGHT + 3.0 * RECIPIENT_ROW_GAP;
 pub const RECEPTION_RECIPIENT_SECTION_HEIGHT: f32 =
     RECEPTION_SECTION_CHROME_HEIGHT + RECEPTION_RECIPIENT_BODY_HEIGHT;
@@ -468,7 +468,7 @@ pub const HEADER_HEIGHT: f32 = 62.0;
 pub const NAV_HEIGHT: f32 = 44.0;
 // Both navigation levels remain comfortable click targets; hierarchy comes
 // from placement, active colors and the 18pt/16pt typography difference.
-pub const MANAGEMENT_TAB_HEIGHT: f32 = 38.0;
+const MANAGEMENT_TAB_HEIGHT: f32 = 38.0;
 // The top of every management page's primary outlined content card aligns
 // with Freight > Shipping Group Assignment (the approved reference).
 // The offset starts at the management page's content origin, not at the
@@ -478,7 +478,7 @@ pub const MANAGEMENT_TAB_HEIGHT: f32 = 38.0;
 // gutter), then 8pt title-to-tabs, 12pt tabs-to-KPIs and 12pt KPIs-to-card.
 // The three top-content frames also each advance the parent by the default
 // 8pt item spacing. Do not revive the older 12pt/16pt pre-title-inset layout.
-pub const MANAGEMENT_REFERENCE_HEADING_LINE_HEIGHT: f32 =
+const MANAGEMENT_REFERENCE_HEADING_LINE_HEIGHT: f32 =
     crate::ui_tokens::FONT_PAGE_HEADING + 8.0;
 pub fn management_primary_card_top_offset(available_width: f32) -> f32 {
     // KPIs are inset 12pt on each side. Wrapped rows must use this same
@@ -509,7 +509,7 @@ pub const MANUAL_ITEMS_CARD_MIN_HEIGHT: f32 = 340.0 + (RECEPTION_ITEMS_TO_FREIGH
 // inherit these values instead of locally painted one-off geometry.
 // Popup chrome uses the same neutral surface hierarchy as the Freight
 // Shipping-Group Assignment master. No independent popup color palette.
-pub const MODAL_SECTION_BG: Color32 = TABLE_ROW_ALT_BG;
+const MODAL_SECTION_BG: Color32 = TABLE_ROW_ALT_BG;
 // Approved OCR review chrome is now the common popup structural master.
 // These are visual-role tokens; pane counts and OCR document gutters remain
 // content-specific. Changing one master token updates all adopted dialogs.
@@ -798,8 +798,6 @@ pub const MANAGEMENT_MODAL_BODY_MAX_HEIGHT: f32 = 670.0;
 pub const MANAGEMENT_CLIENT_NAME_COLUMN_WIDTH:f32 = 172.0;
 pub const MANAGEMENT_CLIENT_PHONE_COLUMN_WIDTH:f32 = 154.0;
 pub const MANAGEMENT_CLIENT_TERMS_COLUMN_WIDTH:f32 = 350.0;
-#[cfg(test)]
-pub const MANUAL_TABLE_ROW_HEIGHT: f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
 // Recognized source tokens in Reception and classified manual blocks share
 // the same subdued gray 1pt outline. Focused blue evidence keeps its own 2pt stroke.
 pub const SOURCE_RECOGNIZED_BORDER: Color32 = Color32::from_rgb(96, 96, 96);
@@ -1166,8 +1164,6 @@ pub const MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING:f32=SECTION_PADDING;
 /// The native rail begins at the first row's exact top edge: a 3pt top
 /// inset left a visible break beneath the full-width fixed-header border.
 /// Keep this zero for all management tables sharing that header role.
-#[cfg(test)]
-pub const MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET:f32=0.0;
 /// Table rails end at the body boundary. Card padding is independent.
 #[cfg(test)]
 pub const MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET:f32=0.0;

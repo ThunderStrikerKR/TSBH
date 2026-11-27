@@ -50,7 +50,7 @@ fn manual_linked_table_cell(
     // Read-only manual fields must not shrink when focus leaves a cell.
     let text=typography::body(label).size(typography::FONT_RECEPTION_RECIPIENT_TEXT);
     let response=ui.add_sized(
-        Vec2::new(width,theme::MANUAL_TABLE_ROW_HEIGHT),
+        Vec2::new(width,theme::MANAGEMENT_COMPACT_ROW_HEIGHT),
         egui::Button::new(
             if linked{text.color(source_highlight::ACTIVE_TEXT)}else{text}
         )

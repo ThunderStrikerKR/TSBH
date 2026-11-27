@@ -481,7 +481,7 @@ mod shared_card_rendered_geometry_tests {
                 assert_geometry_value("parallel modal","allocated width",cards[i].width(),widths[i],TOL);
                 assert_card_content_insets("parallel modal",cards[i],content[i],
                     [pad,header_inset,pad,pad+slack],TOL);
-                assert_painted(&output,"parallel modal border",theme::MODAL_SECTION_BG,cards[i]);
+                assert_painted(&output,"parallel modal border",theme::surface_palette(theme::SurfaceRole::ModalSection,theme::VisualState::Normal).fill,cards[i]);
                 assert_painted(&output,"parallel modal content",PROBE,content[i]);
             }
             if policy==CardHeightPolicy::MatchTallest{

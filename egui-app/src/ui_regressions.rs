@@ -2526,7 +2526,7 @@ mod shared_placeholder_color_contract_tests{
 
     #[test]
     fn actual_input_hints_keep_approved_ink_when_empty_hovered_and_focused(){
-        assert_eq!(crate::input::INPUT_PLACEHOLDER_COLOR,APPROVED);
+        assert_eq!(theme::text_ink(theme::TextRole::Value,theme::TextState::Placeholder),APPROVED);
         for kind in 0..4{
             let ctx=test_context();
             let mut value=String::new();

@@ -15,7 +15,7 @@ pub use crate::ui_tokens::{FONT_FIELD_LABEL,FONT_FREIGHT_SUMMARY_NUMBER,FONT_FRE
 
 // Caps height is visually close to the 38pt brand icon (whose bitmap
 // includes transparent margins). Do not alter overall header geometry.
-pub const FONT_BRAND: f32 = 28.0;
+const FONT_BRAND: f32 = 28.0;
 /// The font galley includes ascent/descent whitespace, so centering its box
 /// places the visible capital letters above the icon and navigation center.
 /// Compensate in this one typography token without moving the header row.
@@ -24,7 +24,7 @@ pub const BRAND_OPTICAL_CENTER_Y: f32 = 5.0;
 pub const FONT_OCR_PROGRESS_TITLE: f32 = 28.0;
 // Readable side-by-side OCR source verification. All reception source
 // documents use this same 16pt size; general body text remains 14pt.
-pub const FONT_OCR_REVIEW_TEXT: f32 = 16.0;
+const FONT_OCR_REVIEW_TEXT: f32 = 16.0;
 pub const FONT_RECEPTION_SOURCE_TEXT: f32 = FONT_OCR_REVIEW_TEXT;
 /// Explicit source-document row pitch, independent of glyph/fallback metrics.
 pub const RECEPTION_SOURCE_LINE_HEIGHT: f32 = 22.0;
@@ -33,9 +33,9 @@ pub const RECEPTION_SOURCE_LINE_HEIGHT: f32 = 22.0;
 pub const FONT_RECEPTION_RECIPIENT_TEXT: f32 = FONT_OCR_REVIEW_TEXT;
 // The source-linked item/quantity/amount and freight values share 16pt.
 pub const FONT_RECEPTION_ITEM_TEXT: f32 = FONT_OCR_REVIEW_TEXT;
-pub const FONT_MODAL_TITLE: f32 = 18.0;
-pub const FONT_SECTION_HEADING: f32 = 16.0;
-pub const FONT_SUBSECTION_HEADING: f32 = 14.0;
+const FONT_MODAL_TITLE: f32 = 18.0;
+const FONT_SECTION_HEADING: f32 = 16.0;
+const FONT_SUBSECTION_HEADING: f32 = 14.0;
 pub const FONT_BODY: f32 = 14.0;
 pub const FONT_METADATA: f32 = 12.0;
 pub const FONT_MAIN_NAV: f32 = 18.0;
@@ -209,7 +209,7 @@ pub fn management_dropdown_option_text_y(row_height:f32,text_height:f32)->f32 {
 /// Date TextEdit optical centering: the original ink appeared too low, while
 /// the full -2pt correction appeared too high in subsequent Windows captures.
 /// Use the midpoint -1pt without moving control or table rectangles.
-pub const MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y: i8 = INPUT_TEXT_OPTICAL_SHIFT_Y;
+const MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y: i8 = INPUT_TEXT_OPTICAL_SHIFT_Y;
 
 /// Common form rows: label glyphs in the 19pt emphasized Korean line box
 /// look above the optical center of a 36pt field. Apply the adjustment only
@@ -248,7 +248,7 @@ pub fn management_date_text_margin() -> egui::Margin {
 }
 
 // Shared line boxes used for balanced reception guidance geometry.
-pub const SUBSECTION_LINE_HEIGHT: f32 = 21.0;
+const SUBSECTION_LINE_HEIGHT: f32 = 21.0;
 pub const METADATA_LINE_HEIGHT: f32 = 18.0;
 
 const EMPHASIS_FAMILY: &str = "bando-ui-emphasis";
