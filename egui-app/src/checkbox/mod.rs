@@ -33,6 +33,7 @@ pub(crate) fn management_table_checkbox(
     let rect=management_table_checkbox_rect(
         cell,vertical_area,ui.spacing().icon_width,ui.spacing().icon_spacing
     );
+    let rect=crate::ui_layout::aligned_rect(rect);
     let clip=cell.intersect(vertical_area).intersect(ui.clip_rect());
     let mut builder=egui::UiBuilder::new()
         .id_salt(id)
