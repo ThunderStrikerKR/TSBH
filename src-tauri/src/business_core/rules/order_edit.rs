@@ -290,7 +290,7 @@ fn change_confirmed_dispatch_origin(payload:&Value)->Result<Value,String>{
     let audit=json!({
         "id":format!("{seed}:confirmed-origin"),"at":now,
         "actor":field(field(before,"settings"),"operatorName").as_str()
-            .filter(|name|!name.trim().is_empty()).unwrap_or("직원"),
+            .filter(|name|!name.trim().is_empty()).unwrap_or(super::terminology::UNASSIGNED_ACTOR),
         "action":"발송지 변경","shipmentIds":[shipment_id],"groupId":group_id,
         "before":{"dispatchOrigin":field(previous,"dispatchOrigin"),
             "itemOrigins":rows(field(previous,"items")).iter().map(|item|json!({
@@ -372,7 +372,7 @@ fn edit_confirmed_recipient(payload:&Value)->Result<Value,String>{
             set(&mut state["orders"][oi],"recipients",recipients.clone())?;
             let audit=json!({"id":format!("{seed}:vat"),"at":now,
                 "actor":field(field(before,"settings"),"operatorName").as_str()
-                    .filter(|s|!s.trim().is_empty()).unwrap_or("직원"),
+                    .filter(|s|!s.trim().is_empty()).unwrap_or(super::terminology::UNASSIGNED_ACTOR),
                 "action":"부가세 설정 변경","shipmentIds":[sid],"groupId":gid,
                 "before":field(order,"recipients"),"after":recipients});
             state["workflow"]["events"].as_array_mut().ok_or("업무 이벤트 목록 누락")?.push(audit);
@@ -524,7 +524,7 @@ fn edit_confirmed_recipient(payload:&Value)->Result<Value,String>{
     }
     let audit=json!({"id":format!("{seed}:confirmed-edit"),"at":now,
         "actor":field(field(before,"settings"),"operatorName").as_str()
-            .filter(|s|!s.trim().is_empty()).unwrap_or("직원"),
+            .filter(|s|!s.trim().is_empty()).unwrap_or(super::terminology::UNASSIGNED_ACTOR),
         "action":"확정 주문 수정","shipmentIds":[sid],"groupId":gid,
         "reason":key,"before":old,"after":recipient});
     state["workflow"]["events"].as_array_mut().ok_or("업무 이벤트 목록 누락")?.push(audit);

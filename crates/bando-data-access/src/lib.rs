@@ -34,6 +34,7 @@ mod settings_commands;
 // classification rules resolve super::super::recognition.
 #[path = "../../../src-tauri/src/business_core/rules/mod.rs"]
 mod rules;
+pub use rules::terminology;
 #[path = "../../../src-tauri/src/business_core/recognition/mod.rs"]
 mod recognition;
 mod reception_manual;

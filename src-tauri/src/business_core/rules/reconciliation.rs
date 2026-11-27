@@ -599,7 +599,7 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
                 let actor=str_field(field(&state,"settings"),"operatorName").trim().to_string();
                 audit.emit(&mut state,"거래처 변경",&ship_ids,&gid,
                     Some(json!(old_dealer)),Some(json!(dealer_id)),None,
-                    if actor.is_empty() {"직원"} else {&actor})?;
+                    if actor.is_empty() {super::terminology::UNASSIGNED_ACTOR} else {&actor})?;
             }
             if let Some(edits)=order.get("groupMessageEdits") {
                 if let Some(value)=edits.get(&gid) {
@@ -794,7 +794,7 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
             set(&mut state["workflow"]["shipments"][si],"legacyArchived",json!(true))?;
             audit.emit(&mut state,"배송 건 제외",
                 &[str_field(&ship,"id").to_string()],str_field(&ship,"groupId"),
-                None,None,None,"직원")?;
+                None,None,None,super::terminology::UNASSIGNED_ACTOR)?;
         }
     }
     for (si,(to,freight_changed,reason)) in pending_rechecks {

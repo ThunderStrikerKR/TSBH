@@ -239,7 +239,7 @@ fn append_event(state:&mut Value,payload:&Value,action:&str,ids:&[String],
     if find_by_id(&state["workflow"]["events"],id).is_some() {
         return Err("업무 이벤트 ID가 중복됩니다.".into());
     }
-    let mut event=json!({"id":id,"at":now,"actor":if actor.is_empty() {"직원(이름 미설정)"}else{actor},
+    let mut event=json!({"id":id,"at":now,"actor":if actor.is_empty() {super::terminology::UNASSIGNED_ACTOR}else{actor},
         "action":action,"shipmentIds":ids});
     // Original TypeScript event() receives optional before/after/groupId
     // arguments. An absent argument serializes as an OMITTED property, not
@@ -408,7 +408,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             }
             let now=required_str(payload,"now")?.to_string();
             let actor=if str_field(payload,"actor").trim().is_empty() {
-                "직원(이름 미설정)".to_string()
+                super::terminology::UNASSIGNED_ACTOR.to_string()
             } else {str_field(payload,"actor").to_string()};
             let client=party(&state,&state["orders"][oi])
                 .ok_or_else(||"거래처 정보를 확인하세요.".to_string())?.clone();
@@ -728,7 +728,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 }
                 state["workflow"]["shipments"][si]["rechecks"].as_array_mut()
                     .ok_or("재확인 이력 목록 오류")?.push(json!({
-                    "at":required_str(payload,"now")?,"reason":"직원이 운임 설정 변경",
+                    "at":required_str(payload,"now")?,"reason":"운임 설정 변경",
                     "fromStage":old_step,"toStage":1
                 }));
                 let seed=required_str(payload,"eventId")?;
@@ -741,14 +741,14 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                     audit_cursor+=1;
                     append_extra_event(&mut state,payload,id,
                         "입금 승인 재확인 필요",&[ship_id.to_string()],&group_id,
-                        json!(confirmation_id),Value::Null,"시스템","직원이 운임 설정 변경")?;
+                        json!(confirmation_id),Value::Null,"시스템","운임 설정 변경")?;
                 }
                 let fallback=format!("{seed}:recheck:{ship_id}");
                 let id=audit_ids.get(audit_cursor).and_then(Value::as_str)
                     .unwrap_or(fallback.as_str());
                 append_extra_event(&mut state,payload,id,"재검증 필요",
                     &[ship_id.to_string()],&group_id,json!(old_step),json!(1),
-                    "시스템","직원이 운임 설정 변경")?;
+                    "시스템","운임 설정 변경")?;
             }
             let after=json!({
                 "origin":origin,
@@ -776,7 +776,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             }
             let issues=stage_issues(&state,group_id,4)?;
             if !issues.is_empty(){return Err(issues.join("\n"));}
-            let actor=if str_field(payload,"actor").is_empty() {"직원(이름 미설정)"}
+            let actor=if str_field(payload,"actor").is_empty() {super::terminology::UNASSIGNED_ACTOR}
                 else {str_field(payload,"actor")}.to_string();
             let now=required_str(payload,"now")?.to_string();
             let mut entries=Vec::new();
@@ -933,7 +933,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 "id":confirmation_id,"groupId":group_id,
                 "dealerId":field(group,"dealerId"),"shipmentIds":shipment_ids,
                 "amount":total,"confirmedAt":required_str(payload,"now")?,
-                "actor":if str_field(payload,"actor").is_empty() {"직원(이름 미설정)"}
+                "actor":if str_field(payload,"actor").is_empty() {super::terminology::UNASSIGNED_ACTOR}
                     else {str_field(payload,"actor")},
                 "announcedAccount":field(notice,"account"),
                 "amounts":notice_amounts,"allocations":allocations
@@ -1015,7 +1015,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             let payment=json!({"id":payment_id,"dealerId":field(group,"dealerId"),
                 "account":account,"amount":paid,"paidAt":paid_at,
                 "recordedAt":required_str(payload,"now")?,
-                "actor":if str_field(payload,"actor").is_empty() {"직원(이름 미설정)"}
+                "actor":if str_field(payload,"actor").is_empty() {super::terminology::UNASSIGNED_ACTOR}
                     else {str_field(payload,"actor")},
                 "memo":str_field(payload,"memo"),"allocations":result_allocations});
             state["workflow"]["payments"].as_array_mut()
@@ -1088,7 +1088,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             if find_by_id(field(&state["workflow"],"changeRequests"),request_id).is_some(){
                 return Err("변경 요청 ID가 중복됩니다.".into());
             }
-            let actor=if str_field(payload,"actor").is_empty() {"직원(이름 미설정)"}
+            let actor=if str_field(payload,"actor").is_empty() {super::terminology::UNASSIGNED_ACTOR}
                 else {str_field(payload,"actor")};
             let entry=json!({"id":request_id,"shipmentId":ship_id,"text":reason,
                 "actor":actor,"at":required_str(payload,"now")?});
@@ -1278,7 +1278,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 set(&mut state["workflow"]["groups"][target_gi],"needsNotice",json!(true))?;
             }
             let actor=if str_field(payload,"actor").trim().is_empty() {
-                "직원(이름 미설정)"
+                super::terminology::UNASSIGNED_ACTOR
             } else {str_field(payload,"actor")};
             let event_id=required_str(payload,"eventId")?.to_string();
             append_extra_event(&mut state,payload,&event_id,"다시 묶기",
@@ -1327,7 +1327,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 return Err("출고지별 운임 확인 기록 ID가 누락되었습니다.".into());
             }
             let now=required_str(payload,"now")?.to_string();
-            let actor=if str_field(payload,"actor").is_empty() {"직원(이름 미설정)"}
+            let actor=if str_field(payload,"actor").is_empty() {super::terminology::UNASSIGNED_ACTOR}
                 else {str_field(payload,"actor")}.to_string();
             let group_id=str_field(&ship,"groupId").to_string();
             let mut record_ids=Vec::new();

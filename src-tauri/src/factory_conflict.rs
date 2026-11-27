@@ -65,7 +65,7 @@ fn correct_state(
     if row_number < 2 || target["applied"] == true
         || !text(&target, "issue").contains("충돌")
         || text(&target, "shipmentId").is_empty() {
-        return Err("직원 정정을 허용하는 충돌 행이 아닙니다.".into());
+        return Err("정정할 수 없는 충돌 항목입니다.".into());
     }
     if replies.iter().any(|r| r["resolves"]["id"] == id
         && r["resolves"]["row"] == row_number) {
@@ -134,7 +134,7 @@ fn correct_state(
     }
     let actor = state["settings"]["operatorName"].as_str()
         .map(str::trim).filter(|s| !s.is_empty())
-        .unwrap_or("직원").to_owned();
+        .unwrap_or(bando_data_access::terminology::UNASSIGNED_ACTOR).to_owned();
     let now = now_utc(db)?;
     let new_id = unique_id(db)?;
     let before = json!({"tracking":old_tracking,"actual":old_actual});

@@ -364,7 +364,7 @@ fn resolve(payload:&Value)->Result<Value,String>{
             "clientId":if scope=="common"{Value::Null}else{field(&client,"id").clone()},
             "createdAt":required_str(payload,"now")?,
             "actor":if str_field(field(&state,"settings"),"operatorName").is_empty(){
-                "직원"}else{str_field(field(&state,"settings"),"operatorName")}
+                super::terminology::UNASSIGNED_ACTOR}else{str_field(field(&state,"settings"),"operatorName")}
         });
         if needs_customer{
             let errors=alias_problems(&record,&state);

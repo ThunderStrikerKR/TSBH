@@ -32,7 +32,7 @@ pub(super) fn mutate(payload:&Value)->Result<Value,String>{
             let now=required_str(payload,"now")?;
             let event_id=required_str(payload,"eventId")?;
             let actor=str_field(field(&state,"settings"),"operatorName").to_string();
-            let actor=if actor.is_empty(){"직원(이름 미설정)".to_string()}else{actor};
+            let actor=if actor.is_empty(){super::terminology::UNASSIGNED_ACTOR.to_string()}else{actor};
             set(&mut state["workflow"]["groups"][gi],"deletedAt",json!(now))?;
             state["workflow"]["events"].as_array_mut().ok_or("업무 이벤트 목록 누락")?.push(json!({
                 "id":event_id,"at":now,"actor":actor,"action":"묶음 소프트 삭제",
@@ -51,7 +51,7 @@ pub(super) fn mutate(payload:&Value)->Result<Value,String>{
             let now=required_str(payload,"now")?;
             let event_id=required_str(payload,"eventId")?;
             let actor=str_field(field(&state,"settings"),"operatorName").to_string();
-            let actor=if actor.is_empty(){"직원(이름 미설정)".to_string()}else{actor};
+            let actor=if actor.is_empty(){super::terminology::UNASSIGNED_ACTOR.to_string()}else{actor};
             let ship_ids=rows(field(&state["workflow"],"shipments")).iter()
                 .filter(|s|str_field(s,"groupId")==id)
                 .map(|s|str_field(s,"id").to_string()).collect::<Vec<_>>();
