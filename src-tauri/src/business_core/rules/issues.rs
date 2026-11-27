@@ -226,6 +226,14 @@ pub(super) fn prune_validation_approvals(row:&mut Value){
     if let (Some(valid),Some(records))=(valid,row.get_mut("validationApprovals").and_then(Value::as_object_mut)){
         records.retain(|kind,_|valid.contains(kind));
     }
+    if field(row,"customerInquiries").is_object(){
+        let order=json!({"id":"inquiry-recheck","recipients":[&*row],"receptionVersion":1});
+        let keys=order_issues(&order).into_iter().filter(|i|i["inquiryRequested"]==true)
+            .map(|i|if str_field(&i,"itemId").is_empty(){str_field(&i,"kind").to_owned()}
+                 else{format!("{}:{}",str_field(&i,"itemId"),str_field(&i,"kind"))})
+            .collect::<HashSet<_>>();
+        if let Some(records)=row["customerInquiries"].as_object_mut(){records.retain(|k,_|keys.contains(k));}
+    }
 }
 fn address_format_ok(row:&Value,allow_legacy:bool)->bool{
     let address=str_field(row,"address");
@@ -314,6 +322,32 @@ struct Info<'a>{
     customer:Option<String>,
     resolution:Option<&'a str>,
 }
+// Inquiry records do not confirm delivery or validate the field.
+fn inquiry_basis(row:&Value,item:Option<&Value>,kind:&str,evidence:Option<&str>)->Option<Value>{
+    if str_field(row,"id").is_empty(){return None;}
+    let current=match kind{
+        "NAME"|"CANDIDATE_name"=>field(row,"name").clone(),
+        "ADDRESS"|"CANDIDATE_address"=>field(row,"address").clone(),
+        "CONTACT"=>json!([field(row,"phone"),field(row,"mobile")]),
+        "CANDIDATE_phone"=>field(row,"phone").clone(),
+        "CANDIDATE_mobile"=>field(row,"mobile").clone(),
+        "UNASSIGNED_EVIDENCE"=>field(row,"unassignedEvidence").clone(),
+        "ITEM"=>json!([]),
+        "MODEL"|"MODEL_CHOICE"|"ALIAS_CONFLICT"|"CATEGORY_CONFLICT"|"OPTION"|"MODEL_CONFIRM"|
+        "QUANTITY_MISSING"|"QUANTITY_INVALID"|"QUANTITY_LINK"=>{
+            let item=item?;
+            if str_field(item,"id").is_empty(){return None;}
+            let product=json!([field(item,"raw"),field(item,"name"),field(item,"productId"),
+                field(item,"variantId"),field(item,"color"),field(item,"match")]);
+            if kind.starts_with("QUANTITY_"){
+                json!([product,field(item,"quantity"),field(item,"quantityConfirmed"),field(item,"quantityApproval")])
+            }else{product}
+        },
+        _=>return None
+    };
+    Some(json!({"recipientId":field(row,"id"),"itemId":item.map(|i|field(i,"id")),
+        "kind":kind,"current":current,"evidence":evidence}))
+}
 fn emit(result:&mut Vec<Value>,order:&Value,info:Info<'_>){
     let Info{row,item,kind,title,evidence,field:field_name,stage,customer,resolution}=info;
     let id=issue_id(order,row,item,kind);
@@ -326,6 +360,10 @@ fn emit(result:&mut Vec<Value>,order:&Value,info:Info<'_>){
     let user_approval=row.filter(|r|match item{
         Some(i)=>item_approved(r,i,kind),None=>approved(r,kind)})
         .and_then(|r|field(r,"validationApprovals").get(&key));
+    let inquiry_basis=row.and_then(|r|inquiry_basis(r,item,kind,evidence.as_deref()));
+    let inquiry=row.and_then(|r|field(r,"customerInquiries").get(&key))
+        .filter(|record|inquiry_basis.as_ref()==record.get("basis")
+            && !str_field(record,"requestedAt").is_empty());
     let status=if user_approval.is_some(){"USER_APPROVED"}else{resolution.unwrap_or_else(||{
         let approved=kind=="QUANTITY_MISSING"&&item.is_some_and(|i|{
             field(field(i,"quantityApproval"),"quantity").as_i64()==Some(1)&&
@@ -337,10 +375,12 @@ fn emit(result:&mut Vec<Value>,order:&Value,info:Info<'_>){
         if approved{"PROVISIONALLY_APPROVED"}
         else if decision.is_some_and(|d|
              str_field(d,"evidence")==evidence.as_deref().unwrap_or("")
-             && str_field(d,"resolution")=="PENDING_CUSTOMER") {
+             && str_field(d,"resolution")=="PENDING_CUSTOMER" && field(d,"explicitInquiry")!=&Value::Bool(true)) {
             "PENDING_CUSTOMER"
         }else{"UNRESOLVED"}
     })};
+    let inquiry_active=inquiry.is_some() && ["UNRESOLVED","PENDING_CUSTOMER"].contains(&status);
+    let status=if inquiry_active{"PENDING_CUSTOMER"}else{status};
     let detail=if status=="USER_APPROVED" {
         let target=match kind{"ADDRESS"=>"배송주소","CONTACT"=>"연락처",
             "CANDIDATE_name"=>"수취인명","CANDIDATE_address"=>"배송주소",
@@ -357,7 +397,8 @@ fn emit(result:&mut Vec<Value>,order:&Value,info:Info<'_>){
         format!("{} / {}",if str_field(row,"name").is_empty(){"수취인"}else{str_field(row,"name")},
             item.map(|i|internal_model(str_field(i,"name"))).unwrap_or_else(||title.clone()))
     }else{title.clone()};
-    let resolution_source=user_approval.and_then(|d|d.get("approvedBy")).cloned().or_else(||decision
+    let resolution_source=user_approval.and_then(|d|d.get("approvedBy")).cloned()
+        .or_else(||inquiry.filter(|_|inquiry_active).and_then(|d|d.get("requestedBy")).cloned()).or_else(||decision
         .and_then(|d|d.get("resolutionSource")).cloned()).filter(|v|!v.is_null())
         .unwrap_or_else(||json!(match status {
             "AUTO_APPLIED"=>"코어","PROVISIONALLY_APPROVED"=>item
@@ -365,6 +406,7 @@ fn emit(result:&mut Vec<Value>,order:&Value,info:Info<'_>){
                 .filter(|v|!v.is_empty()).unwrap_or("사용자"),_=>"미확인"
         }));
     let updated_at=user_approval.and_then(|d|d.get("approvedAt"))
+        .or_else(||inquiry.filter(|_|inquiry_active).and_then(|d|d.get("requestedAt")))
         .or_else(||decision.and_then(|d|d.get("updatedAt"))).filter(|v|!v.is_null())
         .or_else(||item.and_then(|i|field(i,"quantityApproval").get("at"))
             .filter(|v|!v.is_null()))
@@ -383,6 +425,14 @@ fn emit(result:&mut Vec<Value>,order:&Value,info:Info<'_>){
         issue["approvalBasis"]=basis;
         issue["canApproveCurrent"]=json!(status!="USER_APPROVED");
         issue["canCancelCurrent"]=json!(status=="USER_APPROVED");
+    }
+    if let Some(basis)=inquiry_basis {
+        if issue["severity"]=="ACTION"{
+            issue["inquiryBasis"]=basis;
+            issue["canRequestInquiry"]=json!(!inquiry_active);
+            issue["canCancelInquiry"]=json!(inquiry_active);
+            if inquiry_active{issue["inquiryRequested"]=json!(true);}
+        }
     }
     if let Some(item)=item {let _=set(&mut issue,"itemId",field(item,"id").clone());}
     if let Some(row)=row{
@@ -635,6 +685,11 @@ pub(super) fn synchronize(order:&mut Value)->Result<(),String>{
             "resolution":status,"resolutionSource":field(&issue,"resolutionSource"),
             "updatedAt":updated_at,"evidence":evidence
         }));
+        if issue["inquiryRequested"]==true{
+            if let Some(record)=next.get_mut(str_field(&issue,"issueId")){
+                record["explicitInquiry"]=json!(true);
+            }
+        }
     }
     for (id,prior) in &old{
         if !present.contains(id)&&
@@ -657,6 +712,33 @@ pub(super) fn issue_action(payload:&Value)->Result<Value,String> {
     let action=required_str(payload,"action")?;
     let mut order=req(payload,"order")?.clone();
     match action {
+        "request_customer_inquiry"|"cancel_customer_inquiry"=>{
+            let id=required_str(payload,"issueId")?;
+            let rid=required_str(payload,"recipientId")?;
+            let basis=req(payload,"inquiryBasis")?;
+            let cancel=action=="cancel_customer_inquiry";
+            let issue=order_issues(&order).into_iter().find(|i|
+                str_field(i,"issueId")==id && str_field(i,"recipientId")==rid &&
+                field(i,"inquiryBasis")==basis &&
+                field(i,if cancel{"canCancelInquiry"}else{"canRequestInquiry"})==&Value::Bool(true))
+                .ok_or("문의 대상 정보가 변경되었거나 이미 처리되었습니다.")?;
+            let kind=str_field(&issue,"kind");
+            let iid=str_field(&issue,"itemId");
+            let key=if iid.is_empty(){kind.to_owned()}else{format!("{iid}:{kind}")};
+            let row=order["recipients"].as_array_mut().ok_or("배송 정보 누락")?
+                .iter_mut().find(|r|str_field(r,"id")==rid).ok_or("문의 대상 수취인이 없습니다.")?;
+            if !field(row,"customerInquiries").is_object(){set(row,"customerInquiries",json!({}))?;}
+            if cancel{
+                if let Some(records)=row["customerInquiries"].as_object_mut(){records.remove(&key);}
+            }else{
+                set(&mut row["customerInquiries"],&key,json!({"basis":basis,
+                    "requestedAt":required_str(payload,"now")?,"requestedBy":required_str(payload,"actor")?}))?;
+                if kind=="UNASSIGNED_EVIDENCE"{set(row,"unassignedReviewRetained",json!(true))?;}
+            }
+            set(&mut order,"updatedAt",json!(required_str(payload,"now")?))?;
+            synchronize(&mut order)?;
+            Ok(json!({"order":order}))
+        }
         "approve_current_information"|"cancel_current_information"=>{
             let id=required_str(payload,"issueId")?;
             let rid=required_str(payload,"recipientId")?;

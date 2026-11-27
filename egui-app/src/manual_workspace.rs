@@ -786,7 +786,7 @@ pub fn apply_inline(
         }
     }else{
         match change.field.as_str(){
-            "validationApproval"|"cancelValidationApproval"=>"native_validation_approval",
+            "validationApproval"|"cancelValidationApproval"|"requestCustomerInquiry"|"cancelCustomerInquiry"=>"native_validation_approval",
             "name"|"address"|"mobile"|"phone"|"note"=>"set_manual_recipient_field",
             "shippingCharge"|"dispatchOrigin"|"freightCode"|
             "remoteDelivery"|"vatOverride"=>"set_manual_delivery_option",
@@ -839,9 +839,12 @@ pub fn apply_inline(
                 .filter(|name|!name.is_empty()).map(str::to_owned))
             .unwrap_or_else(||"사용자".to_owned());
         let mut approval_request=json!({
-            "action":if change.field=="validationApproval"{"approve_current_information"}else{"cancel_current_information"},
+            "action":match change.field.as_str(){"validationApproval"=>"approve_current_information",
+                "cancelValidationApproval"=>"cancel_current_information",
+                "requestCustomerInquiry"=>"request_customer_inquiry",_=>"cancel_customer_inquiry"},
             "order":&order,"recipientId":change.recipient_id,
             "issueId":change.value["issueId"],"approvalBasis":change.value["approvalBasis"],
+            "inquiryBasis":change.value["inquiryBasis"],
             "actor":actor,"now":chrono::Utc::now().to_rfc3339()
         });
         if change.value["approvalBasis"]["kind"]=="SALE_STATUS"{
@@ -855,6 +858,7 @@ pub fn apply_inline(
             .find(|r|text(r,"id")==change.recipient_id.as_str()))
             .ok_or("승인할 배송 정보를 찾을 수 없습니다.")?;
         target["validationApprovals"]=row["validationApprovals"].clone();
+        target["customerInquiries"]=row["customerInquiries"].clone();
         if row["unassignedReviewRetained"]==true{
             target["unassignedReviewRetained"]=json!(true);
             target["unassignedEvidence"]=row["unassignedEvidence"].clone();

@@ -79,6 +79,16 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
                 }))?);
             }else if let Some(label)=unconfigured_label(row,issue){
                 labels.push(label);
+            }else if issue["inquiryRequested"]==true{
+                let label=match s(issue,"kind"){
+                    "CANDIDATE_name"=>"수취인명",
+                    "CANDIDATE_address"=>"배송지 주소",
+                    "CANDIDATE_phone"=>"전화번호",
+                    "CANDIDATE_mobile"=>"휴대폰 번호",
+                    "UNASSIGNED_EVIDENCE"=>"추가 주문 상품 / 수량",
+                    _=>s(issue,"title")
+                };
+                labels.push(label.to_owned());
             }
         }
         let notices=list(row,"items").iter().map(|i|{

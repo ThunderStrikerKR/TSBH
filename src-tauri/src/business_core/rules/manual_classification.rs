@@ -262,6 +262,7 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
         if !confirmed.iter().any(|v|v.as_str()==Some(field_name)) {
             confirmed.push(json!(field_name));
         }
+        super::issues::prune_validation_approvals(row);
         return Ok(json!({"model":model}));
     }
     if action == "set_manual_unit_price" {

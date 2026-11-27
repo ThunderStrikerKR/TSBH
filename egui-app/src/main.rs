@@ -3143,6 +3143,11 @@ impl BandoEgui {
                 self.select_client_candidate(&id,ctx);
                 return;
             }
+            review_panel::Action::CustomerInquiry{recipient_id,request,cancel}=>{
+                self.start_review_inline_action(InlineTarget{recipient_id,item_id:None,
+                    field:if cancel{"cancelCustomerInquiry"}else{"requestCustomerInquiry"}},request,ctx);
+                return;
+            }
             review_panel::Action::ValidationApproval{recipient_id,request,cancel}=>{
                 self.start_review_inline_action(InlineTarget{recipient_id,item_id:None,
                     field:if cancel{"cancelValidationApproval"}else{"validationApproval"}},request,ctx);
@@ -7437,6 +7442,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let mut confirmed_cancel=false;
             let mut confirmed_navigation_request:Option<(InlineTarget,CellNavigationKey)>=None;
             let mut confirmed_validation_approval:Option<(String,serde_json::Value,bool)>=None;
+            let mut confirmed_customer_inquiry:Option<(String,serde_json::Value,bool)>=None;
             let mut renotice_approval:Option<(serde_json::Value,bool)>=None;
             let mut confirmed_add=false;
             let mut confirmed_vat=false;
@@ -7484,6 +7490,15 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             issue["orderId"].as_str()==Some(s.order_id.as_str())){
                                             let enabled=confirmed_editable && confirmed_controls_idle
                                                 && !target.transferred && self.workflow_ui.active_preview().is_none();
+                                            if issue["inquiryRequested"]==true{
+                                                content.add(egui::Label::new(typography::review_detail(
+                                                    "거래처 회신 대기",tone)).wrap());
+                                                content.add(egui::Label::new(typography::review_detail(
+                                                    review_panel::INQUIRY_GUIDANCE,tone)).wrap());
+                                            }
+                                            if let Some(cancel)=review_panel::show_inquiry_action(content,issue,enabled){
+                                                confirmed_customer_inquiry=Some((target.id.clone(),review_panel::inquiry_request(issue),cancel));
+                                            }
                                             if let Some(cancel)=review_panel::show_validation_approval_action(content,issue,enabled){
                                                 confirmed_validation_approval=Some((target.id.clone(),
                                                     review_panel::validation_approval_request(issue),cancel));
@@ -7884,6 +7899,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.start_workflow_action_with_args(
                     if cancel{"cancel_renotice_approval"}else{"approve_renotice"},
                     &group.id,None,None,false,serde_json::json!({"approvalBasis":basis}),ui.ctx());
+            }
+            else if let Some((id,request,cancel))=confirmed_customer_inquiry{
+                if let Some(target_ship)=group.shipments.iter().find(|s|s.id==id){
+                    if let Some(bound)=self.confirmed_edit_target(&board,group,target_ship){
+                        self.submit_confirmed_change(&bound,
+                            if cancel{"cancelCustomerInquiry"}else{"requestCustomerInquiry"},None,request,ui.ctx());
+                    }
+                }
             }
             else if let Some((id,request,cancel))=confirmed_validation_approval{
                 if let Some(target_ship)=group.shipments.iter().find(|s|s.id==id){

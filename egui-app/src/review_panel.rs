@@ -61,6 +61,7 @@ pub enum Action {
     ApproveOne{recipient_id:String,item_id:String},
     CancelApproval{recipient_id:String,item_id:String},
     ValidationApproval{recipient_id:String,request:Value,cancel:bool},
+    CustomerInquiry{recipient_id:String,request:Value,cancel:bool},
 }
 impl ReviewPanel {
     pub fn clear(&mut self){*self=Self::default();}
@@ -419,6 +420,16 @@ pub(crate) fn show_validation_approval_action(ui:&mut Ui,issue:&Value,enabled:bo
     crate::button::review_action(ui,if cancel{"승인 취소"}else if text(issue,"kind")=="UNASSIGNED_EVIDENCE"{"주문 정보 아님"}else{"현재 정보 승인"},
         ButtonRole::Standard,enabled).clicked().then_some(cancel)
 }
+pub(crate) fn inquiry_request(issue:&Value)->Value{
+    json!({"issueId":issue["issueId"],"inquiryBasis":issue["inquiryBasis"]})
+}
+pub(crate) fn show_inquiry_action(ui:&mut Ui,issue:&Value,enabled:bool)->Option<bool>{
+    let cancel=issue["canCancelInquiry"]==true;
+    if !cancel && issue["canRequestInquiry"]!=true{return None;}
+    crate::button::review_action(ui,if cancel{"문의 취소"}else{"거래처에 문의"},
+        ButtonRole::Standard,enabled).clicked().then_some(cancel)
+}
+pub(crate) const INQUIRY_GUIDANCE:&str="복사용 자동 메시지를 전달하고 회신 내용을 입력하세요.";
 fn issue_card(
     ui:&mut Ui,issue:&Value,analysis:&ReceptionAnalysis,
     enabled:bool,selected:&mut Option<Action>,
@@ -464,9 +475,13 @@ fn issue_card(
                     "상품 또는 수량으로 인식된 문구입니다. 수동 분류에서 실제 주문 내용과 연결할지 확인하세요.",tone
                 )).wrap());
             }
-            if text(issue,"resolution")=="PENDING_CUSTOMER" {
+            if issue["inquiryRequested"]==true{
                 cell.add(egui::Label::new(typography::review_detail(
-                    "거래처 확인 대기 / 문의 복사만으로 해결되지 않습니다.",tone
+                    "거래처 회신 대기",tone)).wrap());
+                cell.add(egui::Label::new(typography::review_detail(INQUIRY_GUIDANCE,tone)).wrap());
+            }else if text(issue,"resolution")=="PENDING_CUSTOMER" {
+                cell.add(egui::Label::new(typography::review_detail(
+                    "거래처 확인 필요",tone
                 )).wrap());
             }
             if kind=="QUANTITY_MISSING"
@@ -571,6 +586,10 @@ fn issue_card(
             if let Some(cancel)=show_validation_approval_action(cell,issue,enabled){
                 *selected=Some(Action::ValidationApproval{recipient_id:rid.to_owned(),
                     request:validation_approval_request(issue),cancel});
+            }
+            if let Some(cancel)=show_inquiry_action(cell,issue,enabled){
+                *selected=Some(Action::CustomerInquiry{recipient_id:rid.to_owned(),
+                    request:inquiry_request(issue),cancel});
             }
             // Keep the immediate action ahead of the secondary reference
             // guidance so a narrow panel does not hide the input button.
