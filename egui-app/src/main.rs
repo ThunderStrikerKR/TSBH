@@ -9604,16 +9604,17 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 ui.label(typography::caption(
                                     "배송 건 ID, 완료 이력, 입금 배분은 보존됩니다. 같은 최초 발주서와 거래처의 배송 건만 다시 묶을 수 있으며, 단계나 계좌가 다르거나 엑셀 이관된 배송 건은 합칠 수 없습니다."
                                 ));
-                                if !writable{
-                                    ui.label(typography::caption("현재 주문은 조회만 가능합니다."));
-                                }
-                                if applying{
-                                    ui.label(typography::caption("배송 묶음 변경 내용을 저장하는 중입니다."));
-                                }else if let Some(error)=self.workflow_error.as_deref(){
-                                    crate::status_notice::reception_review_error(
-                                        ui,"reception.workflow",error
-                                    );
-                                }
+                                // Errors are already published by the native workflow
+                                // completion handler using the original action anchor.
+                                // Pending/read-only feedback must not grow this dialog.
+                                let feedback=if applying{
+                                    Some("배송 묶음 변경 내용을 저장하는 중입니다.")
+                                }else if !writable{
+                                    Some("현재 주문은 조회만 가능합니다.")
+                                }else{None};
+                                floating_notice::section(ctx,"reception.workflow.manage",ui.min_rect());
+                                floating_notice::sync(ctx,"workflow.manage.feedback","reception.workflow.manage",
+                                    floating_notice::Tone::Info,feedback);
                             });
                         });
                     });
