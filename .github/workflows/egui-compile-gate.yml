@@ -48,19 +48,63 @@ jobs:
           key: egui-compile
       - name: Compile current Windows egui source
         run: cargo check --manifest-path egui-app/Cargo.toml
-      - name: Mandatory UI notice no-reflow and editor footer contracts
+      - name: Mandatory popup geometry and editor placement contracts
         shell: pwsh
         run: |
           $names = @(
             'ui_regressions::notice_no_reflow_contract_tests::guard_detects_direct_feedback_and_multiline_input_hint',
             'ui_regressions::notice_no_reflow_contract_tests::production_screens_reject_direct_inline_transient_notices',
             'brand_manager::modal_lifecycle_tests::actual_brand_popup_feedback_never_moves_controls',
-            'popup::regression_tests::shared_editor_footer_keeps_delete_left_and_save_right'
+            'popup::regression_tests::shared_editor_footer_keeps_delete_left_and_save_right',
+            'popup::regression_tests::actual_common_popup_families_keep_geometry_during_feedback_and_permissions',
+            'alias_manager::modal_lifecycle_tests::actual_alias_popup_feedback_and_permissions_keep_rects',
+            'category_manager::modal_layout_contract_tests::actual_category_editor_keeps_rects_during_permission_and_busy_changes',
+            'model_group_manager::responsiveness_tests::actual_model_group_editor_keeps_rects_during_permission_and_feedback_changes',
+            'client_manager::client_inline_form_tests::actual_client_editor_keeps_rects_during_permission_changes',
+            'product_manager::tests::actual_product_detail_keeps_rects_during_dirty_state_changes',
+            'product_manager::tests::rendered_product_detail_measures_real_card_order_and_master_gaps',
+            'product_manager::tests::rendered_detail_price_fields_match_half_width_sale_status',
+            'item_editor::tests::actual_item_detail_keeps_rects_during_error_and_busy_changes',
+            'notification_center::shared_notification_center_screen_geometry_tests::actual_notification_popup_keeps_rects_during_read_and_error_changes',
+            'ui_regressions::general_screen_geometry_tests::actual_product_chooser_uses_modal_body_not_management_page_anchor',
+            'popup::regression_tests::modal_editor_workspace_geometry_tests::actual_flow_modal_keeps_chrome_and_action_rects_when_permission_changes',
+            'popup::regression_tests::round87_modal_flow_contract_tests::flow_regions_measure_master_vertical_gaps_at_normal_and_compact_widths',
+            'popup::regression_tests::round87_phase5_modal_contract_tests::production_screens_do_not_bypass_shared_modal_chrome_or_decision_entry',
+            'floating_notice::shared_floating_notice_rendered_geometry_tests::actual_notice_paint_stays_within_screen_without_moving_underlying_controls'
           )
           foreach ($name in $names) {
             $listed = cargo test --manifest-path egui-app/Cargo.toml $name -- --exact --list
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             if (-not ($listed | Where-Object { $_ -eq "${name}: test" })) { throw "Missing mandatory UI regression: $name" }
             cargo test --manifest-path egui-app/Cargo.toml $name -- --exact --nocapture
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Mandatory shared design ownership and rendered control contracts
+        shell: pwsh
+        run: |
+          $groups = @(
+            'ui_regressions::shared_general_screen_audit_tests::',
+            'ui_regressions::inline_labeled_form_contract_tests::',
+            'ui_regressions::structural_divider_contract_tests::',
+            'ui_regressions::fixed_layout_slot_contract_tests::',
+            'ui_regressions::shared_selection_interaction_tests::',
+            'ui_regressions::shared_tag_chip_contract_tests::',
+            'ui_regressions::common_action_tooltip_tests::',
+            'table::regression_tests::shared_table_rendered_geometry_tests::',
+            'card::regression_tests::shared_card_rendered_geometry_tests::',
+            'scrollbar::regression_tests::shared_scrollbar_rendered_geometry_tests::',
+            'button::regression_tests::shared_button_rendered_geometry_tests::',
+            'input::regression_tests::shared_input_rendering_tests::',
+            'input::regression_tests::shared_input_width_rendered_geometry_tests::',
+            'dropdown::regression_tests::shared_dropdown_rendered_geometry_tests::',
+            'typography::management_table_type_roles_tests::'
+          )
+          foreach ($group in $groups) {
+            $listed = cargo test --manifest-path egui-app/Cargo.toml $group -- --list
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $matching = @($listed | Where-Object { $_ -like "$group*" -and $_ -like "*: test" })
+            if ($matching.Count -eq 0) { throw "Missing mandatory design contract group: $group" }
+            cargo test --manifest-path egui-app/Cargo.toml $group -- --nocapture
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
