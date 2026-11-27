@@ -991,7 +991,17 @@ mod shared_tag_chip_contract_tests {
         let source=include_str!("client_manager.rs");
         let editor=source.split("fn search_tag_editor(").nth(1).unwrap()
             .split("fn editor_fields(").next().unwrap();
-        assert!(editor.contains("crate::popup::removable_tag_chip("));
+        assert!(editor.contains("crate::input::tag_block_editor("));
+        assert!(!editor.contains("take_delimited("));
+        let brand=include_str!("brand_manager.rs");
+        assert!(brand.contains("crate::input::tag_block_editor("));
+        assert!(!brand.contains("쉼표 구분"));
+        let input=include_str!("input/mod.rs");
+        let shared=input.split("fn tag_block_editor(").nth(1).unwrap()
+            .split("fn form_field_width(").next().unwrap();
+        assert!(shared.contains("crate::popup::removable_tag_chip("));
+        assert!(shared.contains("crate::button::action(entry,\"추가\""));
+        assert!(!shared.contains("split("));
         assert!(!editor.contains("egui::Frame::new()"));
         assert!(!editor.contains("egui::Button::new("));
     }

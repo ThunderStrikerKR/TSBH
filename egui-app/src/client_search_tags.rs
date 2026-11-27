@@ -67,15 +67,13 @@ pub fn remove(client:&mut Value,selected:&str)->bool{
     }
     changed
 }
-/// Consume only completed tokens while typing or pasting a comma-separated
-/// series; the incomplete final token stays in the input until Enter/추가.
-pub fn take_delimited(input:&mut String)->Option<String>{
-    let index=input.char_indices().rev()
-        .find(|(_,ch)|matches!(ch,','|';'|'|'|'\n'))?.0;
-    let prefix=input[..index].to_owned();
-    let rest=input[index+1..].to_owned();
-    *input=rest;
-    Some(prefix)
+/// Explicit single-block add. The legacy persisted strings use these
+/// delimiters, so reject them rather than silently creating multiple chips.
+pub fn add_one(client:&mut Value,text:&str)->Result<(usize,usize),&'static str>{
+    if text.chars().any(|ch|matches!(ch,','|';'|'|'|'\n'|'\r')){
+        return Err("검색 태그는 한 번에 하나씩 추가하세요.");
+    }
+    Ok(add(client,text))
 }
 
 #[cfg(test)]
@@ -120,14 +118,13 @@ mod tests{
         assert!(!remove(&mut client,"없는값"));
     }
     #[test]
-    fn comma_input_keeps_incomplete_tail(){
-        let mut text="가, 나, 다".to_owned();
-        assert_eq!(take_delimited(&mut text),Some("가, 나".into()));
-        assert_eq!(text," 다");
-        assert_eq!(take_delimited(&mut text),None);
-        text.push(',');
-        assert_eq!(take_delimited(&mut text),Some(" 다".into()));
-        assert!(text.is_empty());
+    fn explicit_single_add_does_not_split_delimiters(){
+        let mut client=json!({"name":"거래처","shortNames":"기존"});
+        let before=client.clone();
+        assert!(add_one(&mut client,"가, 나").is_err());
+        assert_eq!(client,before);
+        assert_eq!(add_one(&mut client,"새 태그"),Ok((1,0)));
+        assert_eq!(labels(&client),vec!["기존","새 태그"]);
     }
 
     #[test]

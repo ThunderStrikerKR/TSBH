@@ -628,64 +628,35 @@ impl ClientManager {
         });
         });
     }
-    fn accept_tag_text(&mut self,draft:&mut Value,text:&str){
-        let (_,duplicates)=client_search_tags::add(draft,text);
-        self.tag_notice=if duplicates>0 {
-            Some("중복된 검색 태그는 추가하지 않았습니다.".to_owned())
-        }else{None};
+    fn accept_tag_text(&mut self,draft:&mut Value){
+        match client_search_tags::add_one(draft,&self.tag_input){
+            Ok((_,duplicates))=>{
+                self.tag_input.clear();
+                self.tag_notice=if duplicates>0{
+                    Some("중복된 검색 태그는 추가하지 않았습니다.".to_owned())
+                }else{None};
+            }
+            Err(message)=>self.tag_notice=Some(message.into()),
+        }
     }
     fn search_tag_editor(&mut self,ui:&mut Ui,draft:&mut Value){
         ui.vertical(|panel|{
             crate::ui_layout::apply_spacing_role(panel,crate::ui_layout::SpacingRole::WorkflowDetail);
             panel.label(typography::field_label("검색 태그"));
             let tags=client_search_tags::labels(draft);
-            if !tags.is_empty(){
-                let mut removed=None;
-                panel.horizontal_wrapped(|chips|{
-                    crate::ui_layout::apply_spacing_role(chips,crate::ui_layout::SpacingRole::TagChips);
-                    for tag in &tags{
-                        if crate::popup::removable_tag_chip(chips,tag).clicked(){
-                            removed=Some(tag.to_owned());
-                        }
-                    }
-                });
-                if let Some(tag)=removed{
-                    client_search_tags::remove(draft,&tag);
-                    self.tag_notice=None;
-                }
-            }
-            let (changed,submit)=panel.horizontal(|entry|{
-                crate::ui_layout::apply_spacing_role(entry,crate::ui_layout::SpacingRole::Toolbar);
-                let button_slot=theme::INPUT_HEIGHT*2.5;
-                let width=(entry.available_width()-button_slot
-                    -theme::SPACE_8).max(60.0);
-                let response=crate::input::flexible_text_field(
-                    entry,&mut self.tag_input,width,"검색 태그 입력"
-                );
-                let submit_by_enter=response.has_focus() &&
-                    entry.input(|input|input.key_pressed(egui::Key::Enter));
-                let submit_by_button=crate::button::action(
-                    entry,"추가",ButtonRole::Standard,
-                    !self.tag_input.trim().is_empty()
-                ).clicked();
-                (response.changed(),submit_by_enter||submit_by_button)
-            }).inner;
-            if changed {
+            let interaction=crate::input::tag_block_editor(panel,&tags,&mut self.tag_input,"검색 태그 입력");
+            if interaction.changed{self.tag_notice=None;}
+            if let Some(tag)=interaction.remove{
+                client_search_tags::remove(draft,&tag);
                 self.tag_notice=None;
-                if let Some(completed)=client_search_tags::take_delimited(
-                    &mut self.tag_input
-                ){
-                    self.accept_tag_text(draft,&completed);
-                }
             }
-            if submit {
-                let entered=std::mem::take(&mut self.tag_input);
-                self.accept_tag_text(draft,&entered);
-            }
+            if interaction.add{self.accept_tag_text(draft);}
             let status_width=panel.available_width();
+            let notice=self.tag_notice.as_deref().or_else(||
+                (!self.tag_input.trim().is_empty()).then_some("입력한 태그는 추가 버튼으로 등록하세요."));
             crate::ui_layout::fixed_status_slot(
                 panel,status_width,typography::METADATA_LINE_HEIGHT,
-                self.tag_notice.as_deref(),self.tag_notice.as_deref(),theme::MUTED
+                notice,notice,theme::MUTED
             );
         });
     }
@@ -910,7 +881,7 @@ impl ClientManager {
                                 .is_some_and(|old|*old!=draft)
                                 || !self.tag_input.trim().is_empty();
                             if crate::button::action(right,label,ButtonRole::Primary,
-                                editable && !busy && (!exists || dirty)).clicked(){
+                                editable && !busy && self.tag_input.trim().is_empty() && (!exists || dirty)).clicked(){
                                 save=true;
                             }
                         }
@@ -924,12 +895,6 @@ impl ClientManager {
             } else {
                 close=true;
             }
-        }
-        // Saving with an unfinished tag must never silently drop the input.
-        // Resolve it into the same canonical shortNames draft before CAS.
-        if save && !self.tag_input.trim().is_empty(){
-            let pending=std::mem::take(&mut self.tag_input);
-            self.accept_tag_text(&mut draft,&pending);
         }
         self.draft=Some(draft);
         if save && self.dirty(){

@@ -60,7 +60,14 @@ fn upsert_brand(state:&Value,payload:&Value)->Result<Value,String>{
     // order of the first occurrence for repeated normalized aliases.
     let mut aliases=Vec::<String>::new();
     let mut positions=HashMap::<String,usize>::new();
-    for alias in field(payload,"aliases").split(','){
+    // Native block editors send an array; preserve commas inside a block.
+    // Legacy callers still send their comma-separated string.
+    let raw_aliases:Vec<&str>=match payload.get("aliases"){
+        Some(Value::Array(values))=>values.iter().map(|value|value.as_str()
+            .ok_or("검색 별칭은 텍스트여야 합니다.")).collect::<Result<Vec<_>,_>>()?,
+        _=>field(payload,"aliases").split(',').collect(),
+    };
+    for alias in raw_aliases{
         let alias=alias.trim();
         if alias.is_empty(){continue}
         let key=registry_key(alias);
@@ -98,6 +105,15 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn block_aliases_preserve_literal_commas_and_normalized_duplicates(){
+        let state=json!({"brands":[]});
+        let result=upsert_brand(&state,&json!({
+            "id":"b","name":"BANDO","aliases":["A, B","a, b","C"],
+            "evidence":"https://example.com/brand"
+        })).unwrap();
+        assert_eq!(result["state"]["brands"][0]["aliases"],json!(["a, b","C"]));
+    }
     #[test]
     fn brand_aliases_are_deduplicated_and_other_product_references_survive(){
         let state=json!({"brands":[],"products":[{"id":"p1","brandId":"b1"}],

@@ -2,7 +2,7 @@
 //! Only the four explicit brand edit fields live here; normalize/validate
 //! and mutate catalog brands with original Rust catalog_clients::upsert_brand.
 use crate::{theme,typography};
-use eframe::egui::{Align,Context,Layout,Rect,Ui};
+use eframe::egui::{Align,Context,Layout,Rect,Sense,Ui};
 use serde_json::{json,Value};
 
 fn field<'a>(row:&'a Value,key:&str)->&'a str{
@@ -15,7 +15,7 @@ fn rows(value:&Value)->&[Value]{
 struct BrandForm{
     name:String,
     korean:String,
-    aliases:String,
+    aliases:Vec<String>,
     evidence:String,
     editing:Option<String>,
 }
@@ -29,6 +29,8 @@ pub struct BrandManager{
     expected_entity:Value,
     editor_open:bool,
     list_query:String,
+    alias_input:String,
+    alias_notice:Option<String>,
     pending:Option<Exit>,
     after_save:Option<Exit>,
     next_tab:Option<usize>,
@@ -37,7 +39,7 @@ pub struct BrandManager{
     notice:Option<String>,
 }
 impl BrandManager {
-    fn dirty(&self)->bool{self.form!=self.original}
+    fn dirty(&self)->bool{self.form!=self.original||!self.alias_input.trim().is_empty()}
     pub fn has_overlay(&self)->bool{self.editor_open||self.pending.is_some()}
     pub fn global_leave_in_progress(&self)->bool{
         self.pending==Some(Exit::Global)||self.after_save==Some(Exit::Global)
@@ -49,6 +51,7 @@ impl BrandManager {
     pub fn reset_navigation(&mut self){
         self.editor_open=false;self.list_query.clear();
         self.form=BrandForm::default();
+        self.alias_input.clear();self.alias_notice=None;
         self.original=self.form.clone();
         self.pending=None;
         self.after_save=None;
@@ -74,11 +77,12 @@ impl BrandManager {
                         name:field(row,"name").into(),
                         korean:field(row,"korean").into(),
                         aliases:rows(&row["aliases"]).iter()
-                            .filter_map(Value::as_str).collect::<Vec<_>>().join(","),
+                            .filter_map(Value::as_str).map(str::to_owned).collect(),
                         evidence:field(row,"evidenceUrl").into(),
                         editing:Some(id),
                     };
                     self.editor_open=true;
+                    self.alias_input.clear();self.alias_notice=None;
                     self.original=self.form.clone();
                     self.expected_entity=row.clone();
                     self.error=None;
@@ -97,6 +101,19 @@ impl BrandManager {
     }
     fn close_editor(&mut self){
         self.editor_open=false;self.form=BrandForm::default();self.original=self.form.clone();self.error=None;
+        self.alias_input.clear();self.alias_notice=None;
+    }
+    fn add_alias(&mut self){
+        let value=self.alias_input.trim();
+        if value.is_empty(){return;}
+        let key=|text:&str|text.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+        if self.form.aliases.iter().any(|alias|key(alias)==key(value)){
+            self.alias_notice=Some("중복된 검색 별칭은 추가하지 않았습니다.".into());
+        }else{
+            self.form.aliases.push(value.to_owned());
+            self.alias_notice=None;
+        }
+        self.alias_input.clear();
     }
     fn request(&self)->Value{
         json!({
@@ -146,22 +163,25 @@ impl BrandManager {
             }).collect::<Vec<_>>();
             let height=(card.available_height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
             let rect=crate::table::registry_table(card,"brand-registry-list",
-                ["공식 브랜드명","한글 표기","검색 별칭","관리"],
-                [180.0,180.0,220.0,108.0],height,brands.len(),
+                ["브랜드명","한글 표기","검색 별칭"],
+                crate::table::RegistryColumns::from([180.0,180.0,220.0+108.0+theme::SPACE_8])
+                    .redistribute_to([1.0/3.0,1.0,1.0],2),height,brands.len(),
                 |i|self.form.editing.as_deref()==Some(field(&brands[i],"id")),
                 |row,cells,i,rect|{
                     let brand=&brands[i];
                     let id=field(brand,"id");
+                    let enabled=!busy&&!self.editor_open;
+                    let selected=self.form.editing.as_deref()==Some(id);
+                    let hit=row.interact(rect,row.make_persistent_id(id),if enabled{Sense::click()}else{Sense::hover()});
+                    if hit.hovered()&&!selected&&enabled{
+                        crate::table::paint_management_interactive_row_background(row.painter(),rect,i,true);
+                    }
                     let aliases=rows(&brand["aliases"]).iter().filter_map(Value::as_str)
                         .collect::<Vec<_>>().join(", ");
                     crate::table::registry_cell(row,cells[0],field(brand,"name"),Role::Text,false,(id,0));
                     crate::table::registry_cell(row,cells[1],field(brand,"korean"),Role::Text,false,(id,1));
                     crate::table::registry_cell(row,cells[2],&aliases,Role::Description,false,(id,2));
-                    crate::table::registry_actions(row,cells[3],|actions|{
-                        if crate::button::action(actions,"정정",theme::ButtonRole::Standard,!busy&&!self.editor_open).clicked(){
-                            select=Some(id.to_owned());
-                        }
-                    });
+                    if hit.clicked()&&enabled{select=Some(id.to_owned());}
                     #[cfg(test)]
                     crate::ui_test_support::record("catalog data row",rect);
                     let _=rect;
@@ -176,7 +196,7 @@ impl BrandManager {
     }
     fn show_editor(&mut self,ctx:&Context,work_area:Rect,editable:bool,busy:bool)->Option<Value>{
         if !self.editor_open{return None;}
-        let title=if self.form.editing.is_some(){"브랜드 정정"}else{"브랜드 추가"};
+        let title=if self.form.editing.is_some(){"브랜드 편집"}else{"브랜드 추가"};
         let mut close=false;let mut save=false;
         let nested=self.pending.is_some();
         crate::popup::modal_backdrop(ctx,"brand-editor-dim",false);
@@ -188,20 +208,35 @@ impl BrandManager {
                     workspace.scroll_region("brand-editor-body",crate::popup::modal_editor_body_max_height(work_area.height()),|body|{
                         body.add_enabled_ui(editable&&!busy&&!nested,|body|{
                             for (label,value,hint) in [
-                                ("공식 브랜드명",&mut self.form.name,"공식 브랜드명"),
-                                ("한글 표기",&mut self.form.korean,"확인된 한글 표기"),
-                                ("검색 별칭",&mut self.form.aliases,"별칭 (쉼표 구분)"),
-                                ("확인 근거 URL",&mut self.form.evidence,"확인 근거 URL")]{
+                                ("브랜드명",&mut self.form.name,"브랜드명"),
+                                ("한글 표기",&mut self.form.korean,"확인된 한글 표기")]{
                                 body.label(typography::field_label(label));
                                 let width=body.available_width();
                                 crate::input::flexible_text_field(body,value,width,hint);
                             }
+                            body.label(typography::field_label("검색 별칭"));
+                            let interaction=crate::input::tag_block_editor(body,&self.form.aliases,
+                                &mut self.alias_input,"검색 별칭 입력");
+                            if interaction.changed{self.alias_notice=None;}
+                            if let Some(tag)=interaction.remove{
+                                self.form.aliases.retain(|alias|alias!=&tag);
+                                self.alias_notice=None;
+                            }
+                            if interaction.add{self.add_alias();}
+                            if let Some(notice)=self.alias_notice.as_deref(){
+                                body.label(typography::caption(notice));
+                            }else if !self.alias_input.trim().is_empty(){
+                                body.label(typography::caption("입력한 별칭은 추가 버튼으로 등록하세요."));
+                            }
+                            body.label(typography::field_label("확인 근거 URL"));
+                            let width=body.available_width();
+                            crate::input::flexible_text_field(body,&mut self.form.evidence,width,"확인 근거 URL");
                         });
                         if let Some(error)=self.error.as_deref(){body.label(typography::caption(error));}
                     });
                     workspace.footer_single(|actions|{
                         save=crate::button::action(actions,"브랜드 저장",theme::ButtonRole::Primary,
-                            editable&&!busy&&!nested&&self.dirty()).clicked();
+                            editable&&!busy&&!nested&&self.alias_input.trim().is_empty()&&self.dirty()).clicked();
                     });
                 });
             });
@@ -215,7 +250,7 @@ impl BrandManager {
         crate::popup::modal_backdrop(ctx,"brand-unsaved-dim",true);
         let decision=crate::popup::show_save_confirmation(
             ctx,work_area,"brand-unsaved-confirm","브랜드",
-            "브랜드 변경사항을 저장할까요?","저장",!busy,editable&&!busy
+            "브랜드 변경사항을 저장할까요?","저장",!busy,editable&&!busy&&self.alias_input.trim().is_empty()
         );
         let cancel=decision==crate::popup::ChangeDecision::Cancel;
         let discard=decision==crate::popup::ChangeDecision::Discard;
@@ -239,6 +274,21 @@ impl BrandManager {
 #[cfg(test)]
 mod modal_lifecycle_tests{
     use super::*;
+    #[test]
+    fn alias_blocks_save_as_array_without_splitting(){
+        let catalog=json!({"brands":[{"id":"b","name":"BANDO","aliases":["기존"]}]});
+        let mut manager=BrandManager::default();
+        manager.choose("b".into(),&catalog);
+        manager.alias_input="A, B".into();
+        assert!(manager.dirty());
+        assert_eq!(manager.request()["aliases"],json!(["기존"]));
+        manager.add_alias();
+        assert_eq!(manager.request()["aliases"],json!(["기존","A, B"]));
+        manager.alias_input="a, b".into();
+        manager.add_alias();
+        assert_eq!(manager.form.aliases.len(),2);
+        assert!(manager.alias_input.is_empty());
+    }
     #[test]
     fn correction_and_close_preserve_catalog_and_clear_editor(){
         let catalog=json!({"brands":[{"id":"b","name":"BANDO","korean":"반도","aliases":["반도스탠드"],"evidenceUrl":"https://example.com"}]});

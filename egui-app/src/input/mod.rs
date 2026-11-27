@@ -62,6 +62,35 @@ pub(crate) fn allocate_singleline_field(
     response
 }
 
+/// A shared tag editor: text stays in the input until the explicit Add action.
+pub(crate) struct TagBlockEdit{
+    pub changed:bool,
+    pub add:bool,
+    pub remove:Option<String>,
+}
+pub(crate) fn tag_block_editor(ui:&mut Ui,tags:&[String],input:&mut String,hint:&str)->TagBlockEdit{
+    let mut remove=None;
+    if !tags.is_empty(){
+        ui.horizontal_wrapped(|chips|{
+            crate::ui_layout::apply_spacing_role(chips,crate::ui_layout::SpacingRole::TagChips);
+            for tag in tags{
+                if crate::popup::removable_tag_chip(chips,tag).clicked(){
+                    remove=Some(tag.clone());
+                }
+            }
+        });
+    }
+    let (changed,add)=ui.horizontal(|entry|{
+        crate::ui_layout::apply_spacing_role(entry,crate::ui_layout::SpacingRole::Toolbar);
+        let width=(entry.available_width()-theme::INPUT_HEIGHT*2.5-theme::SPACE_8).max(60.0);
+        let response=flexible_text_field(entry,input,width,hint);
+        let add=crate::button::action(entry,"추가",theme::ButtonRole::Standard,
+            !input.trim().is_empty()).clicked();
+        (response.changed(),add)
+    }).inner;
+    TagBlockEdit{changed,add,remove}
+}
+
 /// Standard form width policy; compact rate fields retain their 1pt floor.
 fn form_field_width(ui:&Ui,preferred:f32)->f32{
     preferred.min(ui.available_width().max(60.0))
