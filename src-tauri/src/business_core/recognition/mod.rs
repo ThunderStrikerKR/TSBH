@@ -755,6 +755,103 @@ fn common_quantity_candidate(mut local:impl Iterator<Item=usize>,each:bool,expli
         (None,_)=>if each&&explicit.len()==1{Some(explicit[0])}else{None},
     }
 }
+// Project native pre-assignment evidence and already captured rejection
+// stages into one original-span inventory. Reuse extraction results; do
+// not run a second recognizer or equate a skipped branch with a candidate.
+fn raw_candidate_inventory(raw:&str,events:&[Evidence],hits:&[ProductHit],lines:&[Line<'_>],
+    gates:&[Value],stages:&[Value],trace_truncated:bool)->Value{
+    use std::collections::BTreeMap;
+    const LIMIT:usize=4096;
+    let units=raw.encode_utf16().collect::<Vec<_>>();
+    if events.len()>LIMIT||lines.len()>LIMIT{
+        return json!({"version":1,"coverage":"partial","status":"candidate_budget_exceeded",
+            "records":[],"truncated":true,"complete":false});
+    }
+    let mut records=BTreeMap::<(usize,usize,String,String),Value>::new();
+    let mut truncated=trace_truncated;
+    let mut invalid=0usize;
+    let mut add=|start:usize,end:usize,kind:&str,id:&str,origin:Value,
+        truncated:&mut bool,invalid:&mut usize|{
+        if start>=end||end>units.len(){*invalid+=1;return;}
+        let Ok(text)=String::from_utf16(&units[start..end])else{*invalid+=1;return;};
+        let key=(start,end,kind.to_owned(),id.to_owned());
+        if !records.contains_key(&key)&&records.len()>=LIMIT{*truncated=true;return;}
+        let record=records.entry(key).or_insert_with(||json!({"source":{"start":start,"end":end,"text":text},
+            "kind":kind,"candidateId":if id.is_empty(){None}else{Some(id)},"origins":[]}));
+        let origins=record["origins"].as_array_mut().unwrap();
+        if origins.len()<32{origins.push(origin);}else{*truncated=true;}
+    };
+    let common=hits.iter().filter(|h|h.common).map(|h|h.evidence).collect::<HashSet<_>>();
+    for (i,e) in events.iter().enumerate(){
+        add(utf16(raw,e.start),utf16(raw,e.end),e.kind,"",json!({
+            "stage":"native_extraction","status":"retained","line":e.line,"paragraph":e.paragraph,
+            "section":if common.contains(&i){"common_product"}else{"recipient_or_document"}}),&mut truncated,&mut invalid);
+    }
+    let mut section_records=Vec::new();
+    for (i,g) in gates.iter().enumerate(){
+        let Some((start,end))=observations::position(&units,&g["source"])else{continue;};
+        let kind=g["kind"].as_str().unwrap_or("");
+        let reason=g["reasonCode"].as_str().unwrap_or("");
+        if kind=="line"{
+            section_records.push(json!({"source":{"start":start,"end":end},"reasonCode":reason,"gateIndex":i}));
+            continue;
+        }
+        let exact=matches!((kind,reason),
+            ("name","product_signal"|"product_signal_before_delivery"|"quantity_signal"|
+                "insufficient_recipient_context"|"suffix_without_recipient_context"|"suffix_other_field"|"table_other_field")|
+            ("contact","overlaps_name"|"embedded_digit_run")|
+            ("quantity","overlaps_recipient_field"));
+        if exact{
+            add(start,end,kind,"",json!({"stage":"type_gate","status":"rejected",
+                "reasonCode":reason,"gateIndex":i}),&mut truncated,&mut invalid);
+        }
+    }
+    for (i,decision) in stages.iter().enumerate(){
+        let Some((start,end))=observations::position(&units,&decision["source"])else{continue;};
+        let Ok(slice)=String::from_utf16(&units[start..end])else{continue;};
+        for (j,stage) in decision["productStages"].as_array().into_iter().flatten().enumerate(){
+            if stage["truncated"]==true{truncated=true;}
+            for candidate in stage["candidates"].as_array().into_iter().flatten(){
+                let Some((a,b))=candidate["byteStart"].as_u64().zip(candidate["byteEnd"].as_u64())else{continue;};
+                let (a,b)=(a as usize,b as usize);
+                let Some(prefix)=slice.get(..a)else{invalid+=1;continue;};
+                let Some(value)=slice.get(a..b)else{invalid+=1;continue;};
+                let from=start+prefix.encode_utf16().count();
+                let to=from+value.encode_utf16().count();
+                add(from,to,"product",candidate["productId"].as_str().unwrap_or(""),json!({
+                    "stage":stage["stage"],"status":"observed_candidate","decisionIndex":i,"stageIndex":j}),&mut truncated,&mut invalid);
+            }
+        }
+        let quantities=&decision["quantityExtraction"];
+        if quantities["truncated"]==true||decision["quantityTruncated"]==true{truncated=true;}
+        for (j,q) in quantities["records"].as_array().into_iter().flatten().enumerate(){
+            let Some((a,b))=q["start"].as_u64().zip(q["end"].as_u64())else{continue;};
+            let (a,b)=(a as usize,b as usize);
+            if a>=b||b>end-start{invalid+=1;continue;}
+            add(start+a,start+b,"quantity","",json!({"stage":"quantity_extraction",
+                "status":"observed_candidate","reasonCode":q["reasonCode"],"decisionIndex":i,"quantityIndex":j}),&mut truncated,&mut invalid);
+        }
+    }
+    drop(add);
+    // Report wholly uncovered analysis segments, separately from actual
+    // candidates. A heading or instruction is not automatically a new role.
+    let mut occupied=events.iter().map(|e|(e.start,e.end)).collect::<Vec<_>>();
+    occupied.sort_unstable();
+    let mut cursor=0usize;let mut max_end=0usize;let mut uncovered=Vec::new();
+    for line in lines{
+        let end=line.start+line.text.len();
+        while cursor<occupied.len()&&occupied[cursor].0<end{
+            max_end=max_end.max(occupied[cursor].1);cursor+=1;
+        }
+        if max_end<=line.start{
+            uncovered.push(json!({"start":utf16(raw,line.start),"end":utf16(raw,end),
+                "line":line.number,"paragraph":line.paragraph}));
+        }
+    }
+    json!({"version":1,"status":"provisional_inventory","coverage":"partial","complete":false,
+        "records":records.into_values().collect::<Vec<_>>(),"sectionRecords":section_records,
+        "uncoveredSegments":uncovered,"invalidSourceCount":invalid,"truncated":truncated})
+}
 fn owner_index(anchors: &[usize], events: &[Evidence], offset: usize) -> usize {
     anchors.iter().enumerate().rev().find(|(_, i)| events[**i].start <= offset)
         .map(|(idx,_)|idx).unwrap_or(0)
@@ -1854,6 +1951,9 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
         }
     }
 
+    // Snapshot before ownership assignment and later display-span narrowing.
+    let inventory=collect_candidate_trace.then(||raw_candidate_inventory(raw,&events,&product_hits,&lines,
+        &type_trace,&candidate_trace,type_trace_truncated||candidate_trace_truncated));
     let mut anchors: Vec<usize> = events.iter().enumerate()
         .filter_map(|(i,e)| (e.kind == "name").then_some(i)).collect();
     anchors.sort_by_key(|i| events[*i].start);
@@ -2314,6 +2414,7 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
         }
         result["classificationCandidateTrace"]=json!({"schemaVersion":1,
             "coverage":"product_stages_variant_selection_and_quantity_post_extraction",
+            "rawCandidateInventory":inventory,
             "truncated":candidate_trace_truncated,"decisions":candidate_trace,
             "itemDecisions":item_candidate_trace,
             "quantityLinkComparison":quantity_link,
@@ -2485,6 +2586,26 @@ mod tests {
             {"id":"pgt","code":"GT-1","name":"GT-1 / 기타 스탠드","category":"기타",
              "origin":"FACTORY","active":true,"variants":[{"id":"vgt","color":"Black"}]}
         ],"aliases":[],"clients":[]})
+    }
+    #[test]
+    fn raw_candidate_inventory_preserves_pre_assignment_and_rejected_source_spans(){
+        let raw="😀 P 2개";
+        let line=Line{text:raw,start:0,number:0,paragraph:0};
+        let events=vec![Evidence{kind:"product",value:"P".into(),start:5,end:6,line:0,paragraph:0,
+            reason:"synthetic",recipient:None,item_id:None}];
+        let gates=vec![json!({"kind":"name","reasonCode":"product_signal","source":{"start":3,"end":4}}),
+            json!({"kind":"name","reasonCode":"no_accepted_name_span","source":{"start":0,"end":7}})];
+        let stages=vec![json!({"source":{"start":3,"end":7},
+            "productStages":[{"stage":"literal_evidence","candidates":[{"productId":"p","byteStart":0,"byteEnd":1}]}],
+            "quantityExtraction":{"records":[{"start":2,"end":4,"reasonCode":"accepted_explicit"}]}})];
+        let inv=raw_candidate_inventory(raw,&events,&[],&[line],&gates,&stages,false);
+        let records=inv["records"].as_array().unwrap();
+        assert!(records.iter().any(|r|r["kind"]=="name"&&r["source"]["text"]=="P"));
+        assert!(records.iter().any(|r|r["candidateId"]=="p"&&r["source"]["start"]==3));
+        assert!(records.iter().any(|r|r["kind"]=="quantity"&&r["source"]["text"]=="2개"));
+        assert_eq!(records.len(),4);
+        assert_eq!(inv["complete"],false);
+        assert_eq!(inv["invalidSourceCount"],0);
     }
     #[test]
     fn explicit_same_line_records_preserve_physical_coordinates(){
