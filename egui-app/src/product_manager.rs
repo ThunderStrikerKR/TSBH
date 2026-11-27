@@ -1,6 +1,7 @@
 //! React ProductManager 상품 목록: Rust-owned catalog selection and a
 //! read-only price/detail projection. Product and price writes must not target
 //! the isolated egui preview DB or bypass Tauri's operational save boundary.
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use crate::{
     category_manager::{CategoryManager,ROOTS},
@@ -230,7 +231,7 @@ fn product_table_text(ui:&mut Ui,rect:Rect,text:&str,
 }
 fn product_price_text(ui:&mut Ui,rect:Rect,value:&Value) {
     let text=price(value);
-    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).text(
+    ui.painter().with_shared_clip(rect.intersect(ui.clip_rect())).text(
         egui::pos2(rect.right()-theme::SPACE_8,rect.center().y),
         egui::Align2::RIGHT_CENTER,text,
         typography::management_table_money_font(),
