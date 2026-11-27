@@ -211,6 +211,7 @@ pub fn analyze_raw(
     gateway: &dyn BandoGateway, raw: &str,
     windows: Value, active_chat_handle: Option<String>,
     manual_client_id: Option<String>,
+    collect_initial_trace:bool,
 ) -> Result<ReceptionAnalysis, String> {
     if raw.trim().is_empty() {
         return Err("발주원문을 먼저 입력하세요.".to_owned());
@@ -257,7 +258,7 @@ pub fn analyze_raw(
     }));
     let mut analysis = gateway.execute(ReadOperation::AnalyzeOrder, json!({
         "raw": raw, "state": &state, "client": recognition_client,
-        "collectOwnerTrace":true,"collectCandidateTrace":true,
+        "collectOwnerTrace":collect_initial_trace,"collectCandidateTrace":collect_initial_trace,
     }))?;
     // Record the inputs used by THIS analysis. A later pricing/catalog
     // revision cannot be substituted for a missing historical revision.

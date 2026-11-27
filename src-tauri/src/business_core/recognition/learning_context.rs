@@ -54,11 +54,13 @@ fn key(level:&str,features:&Value,client:Option<&str>)->Value{
     json!({"featureVersion":FEATURE_VERSION,"level":level,"key":encoded})
 }
 pub(super) fn contexts(units:&[u16],first:&Value)->BTreeMap<Span,Vec<Value>>{
+    let events=event_index(units,first);
+    owner_contexts_from_events(units,first,&events,document_lead(&events))
+}
+fn owner_contexts_from_events(units:&[u16],first:&Value,events:&[Event],lead:&str)->BTreeMap<Span,Vec<Value>>{
     let mut out=BTreeMap::new();
     let trace=&first["recipientOwnerTrace"];
     if trace["schemaVersion"]!=1{return out;}
-    let events=event_index(units,first);
-    let lead=document_lead(&events);
     let manual_client=first["recognitionContext"]["clientId"].as_str()
         .filter(|id|!id.trim().is_empty()&&first["recognitionContext"]["clientBasis"]=="MANUAL");
     let mut seen=BTreeSet::new();
@@ -133,7 +135,9 @@ fn field_key(task:&str,level:&str,features:&Value,client:Option<&str>)->Value{
 type FieldContexts=BTreeMap<(Span,&'static str),Vec<Value>>;
 fn field_contexts(units:&[u16],first:&Value)->FieldContexts{
     let events=event_index(units,first);
-    let lead=document_lead(&events);
+    field_contexts_from_events(units,first,&events,document_lead(&events))
+}
+fn field_contexts_from_events(units:&[u16],first:&Value,events:&[Event],lead:&str)->FieldContexts{
     let client=first["recognitionContext"]["clientId"].as_str()
         .filter(|id|!id.trim().is_empty()&&first["recognitionContext"]["clientBasis"]=="MANUAL");
     let mut items=BTreeMap::<Span,Vec<(&Value,&str)>>::new();
@@ -145,7 +149,7 @@ fn field_contexts(units:&[u16],first:&Value)->FieldContexts{
         }
     }
     let mut line_roles=BTreeMap::<u64,Vec<&str>>::new();
-    for e in &events{
+    for e in events{
         let line=line_roles.entry(e.line).or_default();
         if line.len()<17{line.push(e.role);}
     }
@@ -195,20 +199,55 @@ fn field_contexts(units:&[u16],first:&Value)->FieldContexts{
 
 // Only candidates already present in the original analysis. A selected
 // value alone is not evidence that the full competing set was retained.
-fn field_shadow_projection(units:&[u16],first:&Value,s:Span,task:&str)->Value{
-    let mut candidates=BTreeSet::new();
-    let mut links=Vec::new();
-    for row in rows(&first["recipients"]){
-        for source in rows(&row["sources"]){
-            if span(units,source)==Some(s){links.push((row,source));}
-        }
-        for item in rows(&row["items"]){
-            for source in rows(&item["sources"]){
-                if span(units,source)==Some(s){links.push((item,source));}
+struct ShadowIndex<'a>{
+    links:BTreeMap<Span,Vec<(&'a Value,&'a Value)>>,
+    items:BTreeMap<&'a str,Vec<(usize,&'a Value)>>,
+    products:BTreeMap<(u64,u64),Vec<(usize,&'a Value,Span)>>,
+    gates:BTreeMap<Span,Vec<(usize,&'a Value)>>,
+    traced:bool,
+}
+impl<'a> ShadowIndex<'a>{
+    fn new(units:&[u16],first:&'a Value)->Self{
+        let trace=&first["classificationCandidateTrace"];
+        let mut out=Self{links:BTreeMap::new(),items:BTreeMap::new(),products:BTreeMap::new(),
+            gates:BTreeMap::new(),traced:trace["schemaVersion"]==1};
+        for row in rows(&first["recipients"]){
+            for source in rows(&row["sources"]){
+                if let Some(s)=span(units,source){out.links.entry(s).or_default().push((row,source));}
+            }
+            for item in rows(&row["items"]){
+                for source in rows(&item["sources"]){
+                    if let Some(s)=span(units,source){out.links.entry(s).or_default().push((item,source));}
+                }
             }
         }
+        if out.traced{
+            for (i,d) in rows(&trace["itemDecisions"]).enumerate(){
+                if let Some(id)=d["itemId"].as_str().filter(|id|!id.is_empty()){
+                    out.items.entry(id).or_default().push((i,d));
+                }
+            }
+            for (i,d) in rows(&trace["decisions"]).enumerate(){
+                if let (Some(line),Some(start),Some(s))=(d["line"].as_u64(),d["source"]["start"].as_u64(),position(units,&d["source"])){
+                    if d["productStages"].is_array(){out.products.entry((line,start)).or_default().push((i,d,s));}
+                }
+            }
+            for (i,g) in rows(&trace["typeGateRecords"]).enumerate(){
+                if let Some(s)=position(units,&g["source"]){out.gates.entry(s).or_default().push((i,g));}
+            }
+        }
+        out
     }
-    if links.len()!=1{return json!({"candidates":[],"coverage":"ambiguous_source","traceReferences":[]});}
+}
+#[cfg(test)]
+fn field_shadow_projection(units:&[u16],first:&Value,s:Span,task:&str)->Value{
+    field_shadow_from_index(units,&ShadowIndex::new(units,first),s,task)
+}
+fn field_shadow_from_index(units:&[u16],index:&ShadowIndex<'_>,s:Span,task:&str)->Value{
+    let mut candidates=BTreeSet::new();
+    let Some(links)=index.links.get(&s).filter(|l|l.len()==1)else{
+        return json!({"candidates":[],"coverage":"ambiguous_source","traceReferences":[]});
+    };
     let (item,source)=links[0];
     let field=source["field"].as_str().unwrap_or("");
     fn add(candidates:&mut BTreeSet<String>,id:Option<&str>){
@@ -228,26 +267,21 @@ fn field_shadow_projection(units:&[u16],first:&Value,s:Span,task:&str)->Value{
         _=>{}
     }
     // A trace is an observation of the old engine, not a learned label.
-    let trace=&first["classificationCandidateTrace"];
     let mut references=Vec::new();
     let mut expanded=false;
-    if trace["schemaVersion"]==1 {
+    if index.traced {
         let item_id=item["id"].as_str().filter(|id|!id.is_empty());
-        let mut item_matches=rows(&trace["itemDecisions"]).enumerate().filter(|(_,d)|
-            item_id.is_some() && d["itemId"].as_str()==item_id &&
-            d["productId"]==item["productId"]);
+        let mut item_matches=item_id.and_then(|id|index.items.get(id)).into_iter().flatten().copied()
+            .filter(|(_,d)|d["productId"]==item["productId"]);
         if let Some((ii,d))=item_matches.next(){
             if item_matches.next().is_none(){
                 match task{
                     "product" if field=="product"=>{
                         let start=d["productTraceStart"].as_u64();
                         let line=d["productTraceLine"].as_u64();
-                        let mut matches=rows(&trace["decisions"]).enumerate().filter(|(_,r)|
-                            start.is_some()&&line.is_some()&&r["line"].as_u64()==line&&
-                            r["source"]["start"].as_u64()==start&&
-                            position(units,&r["source"]).is_some_and(|(a,b)|a<=s.0&&s.1<=b)&&
-                            r["productStages"].is_array());
-                        if let Some((di,decision))=matches.next(){
+                        let mut matches=line.zip(start).and_then(|key|index.products.get(&key))
+                            .into_iter().flatten().copied().filter(|(_,_,(a,b))|*a<=s.0&&s.1<=*b);
+                        if let Some((di,decision,_))=matches.next(){
                             if matches.next().is_none(){
                                 for (si,stage) in rows(&decision["productStages"]).enumerate(){
                                     for candidate in rows(&stage["candidates"]){
@@ -285,8 +319,7 @@ fn field_shadow_projection(units:&[u16],first:&Value,s:Span,task:&str)->Value{
             }
         }
         if task=="type"{
-            for (gi,g) in rows(&trace["typeGateRecords"]).enumerate(){
-                if position(units,&g["source"])!=Some(s){continue;}
+            for (gi,g) in index.gates.get(&s).into_iter().flatten().copied(){
                 // Only specific actual candidate rejection, never a
                 // line-wide skipped branch or an invented alternate type.
                 let alternate=match (g["kind"].as_str(),g["reasonCode"].as_str()){
@@ -321,11 +354,14 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
     let raw=payload["raw"].as_str().ok_or("문맥 조회 원문이 없습니다.")?;
     let first=&payload["initialAnalysis"];
     let units=raw.encode_utf16().collect::<Vec<_>>();
-    let entries=contexts(&units,first).into_iter().map(|(s,keys)|
+    let events=event_index(&units,first);
+    let lead=document_lead(&events);
+    let index=ShadowIndex::new(&units,first);
+    let entries=owner_contexts_from_events(&units,first,&events,lead).into_iter().map(|(s,keys)|
         json!({"source":{"start":s.0,"end":s.1},"contexts":keys})
     ).collect::<Vec<_>>();
-    let field_entries=field_contexts(&units,first).into_iter().map(|((s,task),keys)|{
-        let shadow=field_shadow_projection(&units,first,s,task);
+    let field_entries=field_contexts_from_events(&units,first,&events,lead).into_iter().map(|((s,task),keys)|{
+        let shadow=field_shadow_from_index(&units,&index,s,task);
         json!({"source":{"start":s.0,"end":s.1},"task":task,"contexts":keys,
             "shadowCandidates":shadow["candidates"],"candidateCoverage":shadow["coverage"],
             "traceReferences":shadow["traceReferences"],"traceIsTrainingEvidence":false})

@@ -4567,6 +4567,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let first_target=association.filter(|draft|draft.raw==source &&
             (draft.analysis_raw.as_deref()!=Some(source.as_str())||draft.analysis_evidence.is_none()))
             .map(|draft|draft.id.clone());
+        // If an exact first baseline is already saved, this analysis will
+        // not replace it. Trace collection would only be discarded.
+        let collect_initial_trace=association.is_none_or(|draft|
+            draft.raw!=source||draft.analysis_raw.as_deref()!=Some(source.as_str())||draft.analysis_evidence.is_none());
         let (sender, receiver) = mpsc::channel();
         self.analysis_receiver = Some(receiver);
         std::thread::spawn(move || {
@@ -4576,7 +4580,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let result=(|| -> Result<reception_service::ReceptionAnalysis,String> {
                 let started=chrono::Utc::now();
                 let mut analysis=reception_service::analyze_raw(
-                    gateway.as_ref(), &source, windows, active_chat_handle, manual_client_id
+                    gateway.as_ref(), &source, windows, active_chat_handle, manual_client_id,collect_initial_trace
                 )?;
                 let completed=chrono::Utc::now();
                 if record_timing{

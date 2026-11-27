@@ -141,11 +141,14 @@ impl<'a> OwnerIndex<'a>{
     }
 }
 fn owner_observations(units:&[u16],first:&Value,final_rows:&Value)->Vec<Value>{
+    let before=OwnerIndex::new(units,&first["recipients"]);
+    let after=OwnerIndex::new(units,final_rows);
+    owner_observations_indexed(units,first,&before,&after)
+}
+fn owner_observations_indexed(units:&[u16],first:&Value,before:&OwnerIndex<'_>,after:&OwnerIndex<'_>)->Vec<Value>{
     let trace=&first["recipientOwnerTrace"];
     if trace["schemaVersion"]!=1{return Vec::new();}
     let contexts=super::learning_context::contexts(units,first);
-    let before=OwnerIndex::new(units,&first["recipients"]);
-    let after=OwnerIndex::new(units,final_rows);
     let mut originals=BTreeMap::<Span,Vec<&Value>>::new();
     for candidate in rows(&first["candidates"]){
         if let Some(s)=span(units,candidate){
@@ -1451,9 +1454,12 @@ struct BlendSample{
 // A source transfer must be lossless. Never overwrite another recipient's
 // delivery field, move a fragment of a combined value, or detach explicit
 // same-line identity. This check uses only the first analysis, no final label.
+#[cfg(test)]
 fn owner_transfer_block(units:&[u16],first:&Value,d:&Value,s:Span,old:&str)->Option<&'static str>{
+    owner_transfer_indexed(units,first,&OwnerIndex::new(units,&first["recipients"]),d,s,old)
+}
+fn owner_transfer_indexed(units:&[u16],first:&Value,index:&OwnerIndex<'_>,d:&Value,s:Span,old:&str)->Option<&'static str>{
     let fail=||->Option<Option<&'static str>>{
-        let index=OwnerIndex::new(units,&first["recipients"]);
         let links=index.links.get(&s)?;
         if links.len()!=1{return Some(Some("ambiguous_source_link"));}
         let link=&links[0];
@@ -1653,6 +1659,7 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
         let raw=snap["raw"].as_str().ok_or("결합 원문 누락")?;
         let units=raw.encode_utf16().collect::<Vec<_>>();
         let projection=super::learning_context::lookup(&json!({"raw":raw,"initialAnalysis":first}))?;
+        let owner_index=OwnerIndex::new(&units,&first["recipients"]);
         let mut local=BTreeMap::<BlendGroup,Vec<BlendSample>>::new();
         let mut used=BTreeSet::new();let mut eligible=0usize;
         for obs in rows(&compared["observations"]).filter(|o|o["task"]=="recipient_ownership"){
@@ -1711,7 +1718,7 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
                 Some(((kind.to_owned(),route.to_owned(),level.to_owned()),BlendSample{
                     legacy:vec![p,1.0-p,0.0],shadow:shadow_transform(&sample.distribution,t,smoothing),
                     actual:sample.actual,label,legacy_choice:usize::from(old=="previous"),
-                    transfer_block:owner_transfer_block(&units,first,d,s,old)}))
+                    transfer_block:owner_transfer_indexed(&units,first,&owner_index,d,s,old)}))
             })();
             if let Some((key,sample))=candidate{local.entry(key).or_default().push(sample);}
             else{unavailable+=1;}
@@ -1797,8 +1804,8 @@ pub(super) fn run_blend_shadow(payload:&Value)->Result<Value,String>{
         return Err("그림자 모델 버전 또는 시각 불일치".into());
     }
     let units=raw.encode_utf16().collect::<Vec<_>>();
-    let projection=super::learning_context::lookup(&json!({"raw":raw,"initialAnalysis":first}))?;
-    let observations=owner_observations(&units,first,&first["recipients"]);
+    let owner_index=OwnerIndex::new(&units,&first["recipients"]);
+    let observations=owner_observations_indexed(&units,first,&owner_index,&owner_index);
     if observations.len()>64{return Err("결합 그림자 관측 한도 초과".into());}
     let mut decisions=Vec::new();let mut seen=BTreeSet::new();
     for obs in observations{
@@ -1824,9 +1831,7 @@ pub(super) fn run_blend_shadow(payload:&Value)->Result<Value,String>{
             let mut selections=rows(&shadow["contextSelection"]).filter(|r|r["task"]=="recipient_ownership"&&position(&units,r)==Some(s));
             let sel=selections.next()?;if selections.next().is_some()||sel["status"]!="diagnostic_context_selected"||sel["contextConflict"]!=false{return None;}
             let key=sel["selectedContextKey"].as_str()?;
-            let mut entries=rows(&projection["entries"]).filter(|r|position(&units,&r["source"])==Some(s));
-            let entry=entries.next()?;if entries.next().is_some(){return None;}
-            let mut contexts=rows(&entry["contexts"]).filter(|c|c["key"].as_str()==Some(key));
+            let mut contexts=rows(&obs["contexts"]).filter(|c|c["key"].as_str()==Some(key));
             let context=contexts.next()?;if contexts.next().is_some(){return None;}
             let level=context["level"].as_str()?;
             let mut locs=rows(&shadow["locations"]).filter(|r|r["task"]=="recipient_ownership"&&position(&units,r)==Some(s));
@@ -1852,7 +1857,7 @@ pub(super) fn run_blend_shadow(payload:&Value)->Result<Value,String>{
             if !w.is_finite()||!(0.0..=1.0).contains(&w)||(w*10.0-(w*10.0).round()).abs()>1e-8{return None;}
             let blend=BlendSample{legacy:vec![p,1.0-p,0.0],shadow:shadow_transform(&sample.distribution,t,smoothing),
                 actual:sample.actual,label:"runtime_unlabeled",legacy_choice:usize::from(old=="previous"),
-                transfer_block:owner_transfer_block(&units,first,d,s,old)};
+                transfer_block:owner_transfer_indexed(&units,first,&owner_index,d,s,old)};
             let (reason,target)=screen_blend_change(&blend,Some(w));
             Some(json!({"start":s.0,"end":s.1,"legacyCandidate":old,"contextLevel":level,
                 "sourceKind":kind,"legacyRoute":route,"learningWeight":w,
