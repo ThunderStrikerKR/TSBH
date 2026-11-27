@@ -86,14 +86,24 @@ impl ItemEditor{
     /// The draft may choose a product before quantity confirmation. It still
     /// uses the same independent-variant validation as ordinary reception.
     pub fn for_manual_draft(mut self)->Self{self.manual_draft=true;self}
+    fn direct_manual_search(&self)->bool{
+        self.manual_draft &&
+            (field(&self.initial,"productId").is_empty() || field(&self.initial,"variantId").is_empty())
+    }
     pub fn top_window_id(&self)->&'static str{
-        if self.search.is_some(){"native-manual-product-search"}
+        if !self.delete_only && (self.direct_manual_search() || self.search.is_some()){
+            "native-manual-product-search"
+        }
         else if self.confirm_delete || self.delete_only{"reception-item-delete-confirm"}
         else if self.confirm_discard{"reception-item-discard-confirm"}
         else{"reception-item-detail"}
     }
     pub fn escape(&mut self,busy:bool)->Option<Event>{
         if busy{return None;}
+        if !self.delete_only && self.direct_manual_search(){
+            self.search=None;
+            return Some(Event::Closed);
+        }
         if self.search.take().is_some(){return None;}
         if self.confirm_delete{self.confirm_delete=false;return self.delete_only.then_some(Event::Closed);}
         if self.confirm_discard{self.confirm_discard=false;return None;}
@@ -218,6 +228,34 @@ impl ItemEditor{
         if self.delete_only {
             let (cancel,remove)=self.show_delete_confirmation(ctx,work_area,busy);
             return if cancel{Some(Event::Closed)}else if remove{Some(Event::Remove)}else{None};
+        }
+        // An unresolved draft has no confirmed catalog detail to inspect.
+        // Reuse the common picker and return the same Apply event directly;
+        // retain it until the native action succeeds (or the user cancels).
+        if self.direct_manual_search(){
+            if self.search.is_none(){self.open_search(Arc::clone(&gateway),ctx);}
+            let (cancelled,product)={
+                let search=self.search.as_mut().expect("manual product picker");
+                let (cancelled,chosen)=search.show_selection_modal(
+                    ctx,work_area,"native-manual-product-search"
+                );
+                (cancelled,chosen.and_then(|selection|search.selection_product(&selection)))
+            };
+            if busy{return None;}
+            if cancelled{
+                self.search=None;
+                return Some(Event::Closed);
+            }
+            if let Some(product)=product{
+                self.replacement=Some(product);
+                if self.can_apply(){
+                    self.error=None;
+                    return self.replacement.clone().map(Event::Apply);
+                }
+                self.replacement=None;
+                self.error=Some("선택한 상품 정보를 확인할 수 없습니다.".into());
+            }
+            return None;
         }
         self.poll_catalog_photo(Arc::clone(&gateway),ctx);
         let mut result=None;
@@ -497,6 +535,21 @@ mod tests{
         assert!(editor.can_apply());
         editor.replacement=Some(json!({"id":"p2","requiresOption":true,"variants":[{"id":"v2"}]}));
         assert!(!editor.can_apply());
+    }
+    #[test]
+    fn unresolved_manual_product_enters_search_without_detail_and_escape_closes(){
+        let mut editor=dialog().for_manual_draft();
+        assert!(!editor.direct_manual_search());
+        assert_eq!(editor.top_window_id(),"reception-item-detail");
+        editor.initial["variantId"]=Value::Null;
+        assert!(editor.direct_manual_search());
+        assert_eq!(editor.top_window_id(),"native-manual-product-search");
+        assert!(editor.escape(true).is_none());
+        assert!(matches!(editor.escape(false),Some(Event::Closed)));
+        editor.initial["productId"]=Value::Null;
+        assert!(editor.direct_manual_search());
+        editor.open_delete_only();
+        assert_eq!(editor.top_window_id(),"reception-item-delete-confirm");
     }
     #[test]
     fn dialog_target_is_scoped_to_order_source_recipient_and_item(){
