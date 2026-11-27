@@ -40,7 +40,8 @@ jobs:
             'audit_batch_reads_complete_selected_pages_and_rejects_oversized_history',
             'blend_registry_stores_immutable_revisions_and_separate_selection',
             'governance_never_promotes_on_missing_coverage_or_normal_case_regression',
-            'learning_lifecycle_excludes_cancelled_deleted_and_partial_orders'
+            'learning_lifecycle_excludes_cancelled_deleted_and_partial_orders',
+            'document_pattern_candidate_preserves_order_and_ignores_item_count'
           )
           foreach ($test in $expected) {
             $pattern = '(^|::)' + [regex]::Escape($test) + ': test$'
