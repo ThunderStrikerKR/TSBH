@@ -1,6 +1,7 @@
 //! One reusable drill-down category selector for egui management screens.
 //! Presentation-only: selection writes an existing category ID, never a new
 //! category, product edit, or implicit business transaction.
+use crate::ui_layout::AlignedUiBuilderExt as _;
 use std::collections::{HashMap,HashSet};
 use crate::ui_primitives::UiWidthPolicyExt;
 use eframe::egui::{self,Context,Id,Response,Ui,Vec2};
@@ -237,7 +238,7 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
     let back_width=theme::CATEGORY_EXPLORER_BACK_WIDTH.min(nav_rect.width());
     let back_rect=egui::Rect::from_min_size(nav_rect.min,Vec2::new(back_width,height));
     let mut back=ui.new_child(egui::UiBuilder::new().id_salt("category-back")
-        .max_rect(back_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        .aligned_max_rect(back_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
     back.set_clip_rect(back_rect.intersect(ui.clip_rect()));
     if category_back_button(&mut back,enabled&&!path.is_empty()).clicked(){
         next=Some(path[..path.len().saturating_sub(1)].to_vec());
@@ -245,7 +246,7 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
     let rail=(back_width+theme::SPACE_8).min((nav_rect.width()-1.0).max(0.0));
     let rect=egui::Rect::from_min_max(nav_rect.min+egui::vec2(rail,0.0),nav_rect.max);
     let width=rect.width().max(1.0);
-    let mut bar=ui.new_child(egui::UiBuilder::new().max_rect(rect.translate(egui::vec2(slide,0.0)))
+    let mut bar=ui.new_child(egui::UiBuilder::new().aligned_max_rect(rect.translate(egui::vec2(slide,0.0)))
         .layout(egui::Layout::left_to_right(egui::Align::Center)));
     bar.set_clip_rect(rect.intersect(ui.clip_rect()));
     // Preserve an enclosing manager-mode fade when no path motion is active.
@@ -442,7 +443,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                 let rect=egui::Rect::from_min_size(clip.min+egui::vec2(x,y),
                     Vec2::new((clip.width()-x).max(1.0),row_h));
                 let mut ghost=tree_ui.new_child(egui::UiBuilder::new().id_salt("moving-category")
-                    .max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
+                    .aligned_max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
                 ghost.set_clip_rect(clip);
                 ghost.set_opacity(if m.reverse&&final_phase{1.0-alpha}else{1.0});
                 category_option_row(&mut ghost,&m.ghost_name,0,true,true,!m.reverse&&final_phase,true);
@@ -709,7 +710,7 @@ mod tests{
                 for enabled in [true,false]{
                     let (slot,_)=ui.allocate_exact_size(Vec2::new(theme::CATEGORY_EXPLORER_BACK_WIDTH,
                         theme::CATEGORY_EXPLORER_CRUMB_HEIGHT),egui::Sense::hover());
-                    let mut row=ui.new_child(egui::UiBuilder::new().id_salt(enabled).max_rect(slot)
+                    let mut row=ui.new_child(egui::UiBuilder::new().id_salt(enabled).aligned_max_rect(slot)
                         .layout(egui::Layout::left_to_right(egui::Align::Center)));
                     let response=category_back_button(&mut row,enabled);
                     measurements.push((slot,response.rect));
