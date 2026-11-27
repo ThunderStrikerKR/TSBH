@@ -2452,6 +2452,34 @@ impl ProductManager {
 mod tests {
     use super::*;
     #[test]
+    fn category_product_drop_changes_only_category_and_checks_source_and_target(){
+        let catalog=json!({"categories":[
+            {"id":"from","name":"이전"},
+            {"id":"to","name":"이동 대상"},
+            {"id":"inactive","name":"비활성","active":false}
+        ],"products":[
+            {"id":"p1","name":"동명 상품","categories":["from"],"category":"이전",
+                "variants":[{"id":"v1","wholesale":10000}]},
+            {"id":"p2","name":"동명 상품","categories":["from"]},
+            {"id":"p3","categories":["from"],"deletedAt":"2026-01-01"}
+        ]});
+        let change=|id:&str,source:&str,target:&str|
+            ProductManager::category_move_candidate(&catalog,&crate::category_tree::ProductMove{
+                id:id.into(),source:source.into(),target:target.into()
+            });
+        let (original,candidate)=change("p1","from","to").unwrap();
+        let mut expected=original.clone();
+        expected["categories"]=json!(["to"]);
+        expected["category"]=json!("이동 대상");
+        assert_eq!(candidate,expected);
+        assert_eq!(original,catalog["products"][0]);
+        assert!(change("p1","from","from").is_none());
+        assert!(change("p1","missing","to").is_none());
+        assert!(change("p1","from","missing").is_none());
+        assert!(change("p1","from","inactive").is_none());
+        assert!(change("p3","from","to").is_none());
+    }
+    #[test]
     fn price_history_uses_korean_tier_and_won_without_internal_id(){
         let entry=json!({"at":"2026-11-26T01:00:00+09:00","field":"v1.semi",
             "before":null,"after":15000});
