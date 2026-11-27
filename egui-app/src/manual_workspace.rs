@@ -5,6 +5,7 @@
 //! quantity validation and applying an unconfirmed preview. The chooser never
 //! edits a confirmed order or directly writes the Tauri business database.
 
+use crate::ui_layout::SharedAllocationExt as _;
 use std::{sync::{Arc,mpsc::{self,Receiver}},thread,time::{SystemTime,UNIX_EPOCH},sync::atomic::{AtomicU64,Ordering}};
 use crate::ui_primitives::UiWidthPolicyExt;
 use eframe::egui::{self,Context};
@@ -2239,7 +2240,7 @@ impl ManualWorkspace {
                                             crate::ui_layout::apply_spacing_role(body,crate::ui_layout::SpacingRole::DocumentBody);
                                             let available=crate::card::docked_section_body_height(height)
                                                 .min(body.available_height().max(0.0));
-                                            let (rect,_)=body.allocate_exact_size(
+                                            let (rect,_)=body.shared_allocate_exact_size(
                                                 egui::vec2(body.available_width(),available),egui::Sense::hover()
                                             );
                                             let _=crate::card::reception_document_viewport(
@@ -2582,7 +2583,7 @@ impl ManualWorkspace {
                                                             // Click selection and dragging expose the same compatible destination.
                                                             let target=ManualCellTarget{row:index,item:None,field:"newProduct".into()};
                                                             if can_mutate && drag_recommendations.contains(&target){
-                                                                let response=items_ui.add_sized(
+                                                                let response=items_ui.shared_add_sized(
                                                                     [items_ui.available_width(),theme::RECEPTION_ITEMS_ROW_HEIGHT],
                                                                     egui::Label::new(typography::body("신규 품목으로 분류"))
                                                                         .sense(egui::Sense::click())
