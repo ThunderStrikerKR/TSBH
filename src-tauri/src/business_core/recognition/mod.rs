@@ -894,60 +894,57 @@ impl OwnerChoice {
             "reason":self.reason,"scores":self.scores,"margin":OWNER_WEIGHTS.margin})
     }
 }
+// Historical delivery preference is evidence/policy, not candidate
+// validity. Keep its existing thresholds here until stage 05 validates
+// replacing them. A preference never marks a competing field excluded.
+fn legacy_delivery_preference(candidate:&Evidence,preceding:&Evidence,following:&Evidence,
+    geometry:&SourceGeometry,delivery:&DeliveryGeometry)->(bool,&'static str){
+    if candidate.paragraph==preceding.paragraph||candidate.paragraph!=following.paragraph{
+        return (false,"paragraph_protection");
+    }
+    if !delivery.between(preceding.paragraph,preceding.start,candidate.start){
+        return (false,"prior_delivery_incomplete");
+    }
+    if geometry.between(candidate.line,following.line).blank_lines>0{
+        return (false,"blank_line_boundary");
+    }
+    if following.line.saturating_sub(candidate.line)>3{
+        return (false,"next_recipient_too_far");
+    }
+    if matches!(candidate.kind,"phone"|"mobile")&&
+        !delivery.nearby_address(candidate.paragraph,candidate.line,4){
+        return (false,"contact_without_address");
+    }
+    (true,"legacy_handoff_retained")
+}
 fn recipient_owner_index(
-    anchors: &[usize], events: &[Evidence], evidence_index: usize, geometry: &SourceGeometry,
+    anchors:&[usize],events:&[Evidence],evidence_index:usize,geometry:&SourceGeometry,
     delivery:&DeliveryGeometry,features:&DocumentFeatures,candidates:&CommonCandidates
-) -> OwnerChoice {
+)->OwnerChoice{
     let candidate=&events[evidence_index];
     let previous=owner_index(anchors,events,candidate.start);
-    if anchors.len()<2 || !matches!(candidate.kind,"address"|"phone"|"mobile") {
+    if anchors.len()<2||!matches!(candidate.kind,"address"|"phone"|"mobile"){
         return OwnerChoice::retained(previous,"field_or_single_recipient");
     }
-    let Some(&next_anchor_index)=anchors.get(previous+1) else {return OwnerChoice::retained(previous,"no_next_recipient")};
+    let next=previous+1;
+    let Some(&next_anchor_index)=anchors.get(next)else{return OwnerChoice::retained(previous,"no_next_recipient");};
     let preceding=&events[anchors[previous]];
     let following=&events[next_anchor_index];
-    if candidate.start<=preceding.start || candidate.start>=following.start {
+    if candidate.start<=preceding.start||candidate.start>=following.start{
         return OwnerChoice::retained(previous,"outside_candidate_interval");
     }
-    // Keep existing ownership inside the preceding named person's paragraph.
-    // This protects multiple phone numbers for the same recipient.
-    let (_,_,previous_paragraph)=features.relation(events,anchors[previous],evidence_index);
-    let (next_line,_,next_paragraph)=features.relation(events,evidence_index,next_anchor_index);
-    if previous_paragraph || !next_paragraph {
-        return OwnerChoice::retained(previous,"paragraph_protection");
-    }
-    // The prior named recipient must already have independent delivery
-    // evidence before its blank-line boundary. Otherwise an address after
-    // that blank line may still be the FIRST recipient's own address, not
-    // an address preceding the next recipient's name. Prefer preserving
-    // ownership over an unsupported automatic handoff.
-    let previous_has_delivery=delivery.between(preceding.paragraph,preceding.start,candidate.start);
-    if !previous_has_delivery {return OwnerChoice::retained(previous,"prior_delivery_incomplete");}
-    // A separating line containing only spaces/tabs counts as a block
-    // boundary too. This is a conservative overlay on the existing gates.
-    let following_gap=geometry.between(candidate.line,following.line);
-    if following_gap.blank_lines>0 {return OwnerChoice::retained(previous,"blank_line_boundary");}
-    let next_distance=next_line.max(0) as usize;
-    if next_distance>3 {return OwnerChoice::retained(previous,"next_recipient_too_far");}
-    let has_nearby_address=delivery.nearby_address(candidate.paragraph,candidate.line,4);
-    // A phone just before the next name is not sufficient on its own.
-    // A nearby Korean delivery address is independent corroboration.
-    if matches!(candidate.kind,"phone"|"mobile") && !has_nearby_address {
-        return OwnerChoice::retained(previous,"contact_without_address");
-    }
-    // Incomplete candidate data retains the pre-weight handoff rule.
+    let (handoff,reason)=legacy_delivery_preference(candidate,preceding,following,geometry,delivery);
+    let incumbent=if handoff{next}else{previous};
     if !candidates.admits(candidate,evidence_index)||!features.positions_valid{
-        return OwnerChoice::retained(previous+1,"incomplete_candidates_legacy");
+        return OwnerChoice::retained(incumbent,"incomplete_candidates_legacy");
     }
-    // All the preceding handoff gates have passed: the pre-weight engine
-    // chose the following recipient. Its support and the margin fallback
-    // must refer to that same incumbent, not the preceding recipient.
     let w=OWNER_WEIGHTS;
-    let a=ownership_score(events,features,evidence_index,anchors[previous],false,w).total;
-    let b=ownership_score(events,features,evidence_index,next_anchor_index,true,w).total;
-    let wins=exceeds_margin(a,b,w.margin);
-    OwnerChoice::compared(if wins{previous}else{previous+1},
-        if wins{"weighted_previous"}else{"legacy_handoff_retained"},(previous,a),(previous+1,b))
+    let a=ownership_score(events,features,evidence_index,anchors[previous],!handoff,w);
+    let b=ownership_score(events,features,evidence_index,next_anchor_index,handoff,w);
+    // Preserve the existing delivery protection pending calibration.
+    // Unlike a hard exclusion, this policy exposes both valid candidates
+    // and their actual scores even when retaining the legacy preference.
+    choose_ownership(previous,next,incumbent,a,b,handoff,false,reason,w.margin)
 }
 // Shared provisional ownership weights, not calibrated probabilities.
 // Stage 05 validates the profile independently of the hard field gates.
@@ -997,6 +994,17 @@ fn ownership_score(events:&[Evidence],features:&DocumentFeatures,
 }
 fn exceeds_margin(challenger:i64,incumbent:i64,margin:i64)->bool{
     challenger-incumbent>=margin
+}
+// Shared final selection: only a challenger can change the incumbent.
+// The two policy flags restrict automatic changes, not candidate validity.
+fn choose_ownership(previous:usize,next:usize,incumbent:usize,a:OwnershipScore,b:OwnershipScore,
+    allow_previous:bool,allow_next:bool,retained_reason:&'static str,margin:i64)->OwnerChoice{
+    let (owner,reason)=if incumbent==next&&allow_previous&&exceeds_margin(a.total,b.total,margin){
+        (previous,"weighted_previous")
+    }else if incumbent==previous&&allow_next&&exceeds_margin(b.total,a.total,margin){
+        (next,"weighted_next")
+    }else{(incumbent,retained_reason)};
+    OwnerChoice::compared(owner,reason,(previous,a.total),(next,b.total))
 }
 // Detached quantities use the common distance features, with an explicit
 // provisional direction bonus for a repeated product-then-quantity layout.
@@ -1071,17 +1079,13 @@ fn product_owner_index(anchors:&[usize],events:&[Evidence],features:&DocumentFea
     let w=OWNER_WEIGHTS;
     let a_score=ownership_score(events,features,hit.evidence,a,legacy==previous,w);
     let b_score=ownership_score(events,features,hit.evidence,b,legacy==next,w);
-    let (same_a,same_b)=(a_score.same_paragraph,b_score.same_paragraph);
-    let (structure_a,structure_b)=(a_score.structural,b_score.structural);
-    // In a shared paragraph, proximity alone cannot flip ownership.
-    // A complete, independently repeated structure must distinguish the
-    // candidates. Never cross a paragraph in favor of a structural guess.
-    if same_a==same_b&&(!same_a||structure_a==structure_b){return OwnerChoice::retained(legacy,"no_distinguishing_structure");}
-    let (score_a,score_b)=(a_score.total,b_score.total);
-    let (owner,reason)=if exceeds_margin(score_a,score_b,w.margin)&&same_a&&(same_a!=same_b||structure_a>structure_b){(previous,"weighted_previous")}
-    else if exceeds_margin(score_b,score_a,w.margin)&&same_b&&(same_a!=same_b||structure_b>structure_a){(next,"weighted_next")}
-    else{(legacy,"margin_or_structure_protection")};
-    OwnerChoice::compared(owner,reason,(previous,score_a),(next,score_b))
+    // The former early return for equal paragraph/structure evidence
+    // is implied by these two permissions. Keep the existing selection
+    // policy, while retaining both real scores for the diagnostic path.
+    let allow_previous=a_score.same_paragraph&&(!b_score.same_paragraph||a_score.structural>b_score.structural);
+    let allow_next=b_score.same_paragraph&&(!a_score.same_paragraph||b_score.structural>a_score.structural);
+    choose_ownership(previous,next,legacy,a_score,b_score,allow_previous,allow_next,
+        "margin_or_structure_protection",w.margin)
 }
 /// Original TypeScript resolvePrice for the recognition Item shape.
 /// The separate pricing migration remains authoritative for business rules.
@@ -2763,6 +2767,17 @@ mod tests {
         assert!(exceeds_margin(50,40,OWNER_WEIGHTS.margin));
         assert!(!exceeds_margin(49,40,OWNER_WEIGHTS.margin));
         assert!(!exceeds_margin(40,50,OWNER_WEIGHTS.margin));
+    }
+    #[test]
+    fn common_owner_selection_distinguishes_soft_policy_from_candidate_scores(){
+        let score=|total|OwnershipScore{total,structural:0,same_paragraph:true,line:1,rank:1};
+        let retained=choose_ownership(0,1,0,score(20),score(80),false,false,"legacy_preference",10);
+        assert_eq!(retained.owner,0);
+        assert_eq!(retained.scores,Some([(0,20),(1,80)]));
+        let changed=choose_ownership(0,1,0,score(20),score(80),false,true,"legacy_preference",10);
+        assert_eq!(changed.owner,1);
+        let close=choose_ownership(0,1,1,score(29),score(20),true,false,"legacy_preference",10);
+        assert_eq!(close.owner,1);
     }
     #[test]
     fn recipient_handoff_scores_and_margin_use_the_same_legacy_incumbent(){
