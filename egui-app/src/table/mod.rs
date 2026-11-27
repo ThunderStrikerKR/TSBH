@@ -98,6 +98,8 @@ impl TableGeometry{
         paint_frame(ui,self.frame);
         #[cfg(test)]
         crate::ui_test_support::record("table perimeter",self.frame);
+        #[cfg(test)]
+        crate::ui_test_support::record_component_geometry("table",self.frame,ui.clip_rect(),None);
     }
 }
 
