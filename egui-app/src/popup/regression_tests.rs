@@ -1410,15 +1410,70 @@ fn shared_editor_footer_keeps_delete_left_and_save_right(){
             }else{baseline=Some((footer,save));}
         }
     }
-    // The three editor consumers must not revert to the right-only footer.
-    for source in [include_str!("../brand_manager.rs"),include_str!("../alias_manager.rs"),
-        include_str!("../model_group_manager.rs")]{
-        let editor=source.split("fn show_editor(").nth(1).unwrap().split("pub fn show_dialogs(").next().unwrap();
-        assert!(editor.contains("workspace.footer("));
-        assert!(!editor.contains("workspace.footer_single("));
-        if let Some(delete)=editor.find("theme::ButtonRole::Danger"){
-            assert!(delete>editor.find("workspace.footer(").unwrap(),
-                "entity delete action must live in the footer");
+    // Every current record editor delegates to the same split footer.
+    // Verify the delete action is actually inside the leading callback,
+    // rather than merely checking whether the screen mentions a footer.
+    let consumers=[
+        ("brand_manager.rs",include_str!("../brand_manager.rs"),None),
+        ("alias_manager.rs",include_str!("../alias_manager.rs"),Some("별칭 삭제")),
+        ("model_group_manager.rs",include_str!("../model_group_manager.rs"),Some("그룹 삭제")),
+        ("client_manager.rs",include_str!("../client_manager.rs"),Some("거래처 삭제")),
+        ("category_manager.rs",include_str!("../category_manager.rs"),Some("분류 삭제")),
+        ("product_manager.rs",include_str!("../product_manager.rs"),Some("상품 삭제")),
+        ("item_editor.rs",include_str!("../item_editor.rs"),Some("삭제")),
+    ];
+    let direct_delete=regex::Regex::new(
+        r#"crate\s*::\s*button\s*::\s*action(?:_with_min_width|_full_width)?\s*\(\s*(\w+)\s*,\s*"([^"]*삭제[^"]*)"\s*,\s*(?:theme\s*::\s*)?ButtonRole\s*::\s*Danger\b"#
+    ).unwrap();
+    let footer_start=regex::Regex::new(r"workspace\s*\.\s*footer\s*\(\s*\|\s*left\s*\|\s*\{").unwrap();
+    let right_start=regex::Regex::new(r"\|\s*right\s*\|\s*\{").unwrap();
+    for (file,source,delete_label) in consumers{
+        let production=crate::ui_test_support::production_source_for_contract(source);
+        if let Some(label)=delete_label{
+            let matches=direct_delete.captures_iter(&production)
+                .filter(|c|&c[2]==label).collect::<Vec<_>>();
+            assert_eq!(matches.len(),1,"{file}: entity delete must have one owner");
+            let action=&matches[0];
+            assert_eq!(&action[1],"left","{file}: delete is not in leading slot");
+            let position=action.get(0).unwrap().start();
+            let leading=footer_start.find_iter(&production[..position]).last()
+                .unwrap_or_else(||panic!("{file}: missing common leading footer"));
+            assert!(right_start.find(&production[leading.end()..position]).is_none(),
+                "{file}: delete was moved outside the leading footer callback");
+            assert!(right_start.find(&production[position..]).is_some(),
+                "{file}: missing trailing save/apply slot");
+        }else{
+            assert!(production.contains("workspace.footer("),"{file}: common footer missing");
+            assert!(direct_delete.captures_iter(&production).next().is_none(),
+                "{file}: unsupported entity delete must not be invented");
         }
     }
+    // A future screen must not introduce a direct red record-delete button
+    // outside the shared leading callback. Account rows are an explicit
+    // collection-item exception, not a detail editor.
+    fn scan(root:&std::path::Path,path:&std::path::Path,action:&regex::Regex,
+        leading:&regex::Regex,trailing:&regex::Regex){
+        for entry in std::fs::read_dir(path).expect("read egui source"){
+            let p=entry.expect("source entry").path();
+            if p.is_dir(){scan(root,&p,action,leading,trailing);continue;}
+            if p.extension().and_then(|v|v.to_str())!=Some("rs"){continue;}
+            let name=p.strip_prefix(root).unwrap().to_string_lossy().replace('\\',"/");
+            if name.ends_with("regression_tests.rs")||name=="ui_regressions.rs"||name=="ui_test_support.rs"{continue;}
+            let source=std::fs::read_to_string(&p).expect("read Rust source");
+            if source.starts_with("#![cfg(test)]"){continue;}
+            let production=crate::ui_test_support::production_source_for_contract(&source);
+            for hit in action.captures_iter(&production){
+                if name=="settings_view.rs"&&&hit[2]=="계좌 삭제"{continue;}
+                let position=hit.get(0).unwrap().start();
+                let prefix=&production[..position];
+                let slot=leading.find_iter(prefix).last()
+                    .unwrap_or_else(||panic!("{name}: delete action must be in common footer: {}",&hit[2]));
+                assert_eq!(&hit[1],"left","{name}: delete action must use left slot");
+                assert!(trailing.find(&prefix[slot.end()..]).is_none(),
+                    "{name}: delete action is outside leading footer");
+            }
+        }
+    }
+    let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    scan(&root,&root,&direct_delete,&footer_start,&right_start);
 }
