@@ -2096,12 +2096,6 @@ impl ManualWorkspace {
                         // The status/count toolbar is part of the shared modal
                         // header. The body begins directly at the card workspace.
                         crate::ui_layout::apply_spacing_role(ui,crate::ui_layout::SpacingRole::DocumentBody);
-                        if self.selected_field=="product" && self.selected_item.is_some(){
-                            ui.add(egui::Label::new(typography::caption(
-                                crate::review_panel::MODEL_RESOLUTION_GUIDANCE
-                            )).wrap());
-                            ui.add_space(theme::SPACE_8);
-                        }
                         // The source column matches Reception's live pane width.
                         // The right worksheet takes the remaining width; on narrow windows keep
                         // both minimum widths and scroll the workspace horizontally
@@ -2378,6 +2372,11 @@ impl ManualWorkspace {
                                                                         self.selected_item.as_deref()==Some(item_id) &&
                                                                         self.selected_field==field;
                                                                     let cell_rect=response.rect;
+                                                                    if selected&&field=="product"{
+                                                                        crate::floating_notice::section(ctx,"reception.manual.product-guidance",cell_rect);
+                                                                        crate::floating_notice::sync(ctx,"manual_product_guidance","reception.manual.product-guidance",
+                                                                            crate::floating_notice::Tone::Info,Some(crate::review_panel::MODEL_RESOLUTION_GUIDANCE));
+                                                                    }
                                                                     let interaction=if selected && field!="product" && self.cell_editor_open(){
                                                                         let (editing,navigation,finished)=
                                                                             self.selected_cell_editor_on_rect(
@@ -3017,6 +3016,10 @@ impl ManualWorkspace {
                 .map(|error|format!("도서/산간 판정 실패 · {}",
                     crate::user_error::display("reception.remote",error)))
         });
+        if self.selected_field!="product" || self.selected_item.is_none(){
+            crate::floating_notice::sync(ctx,"manual_product_guidance","reception.manual.product-guidance",
+                crate::floating_notice::Tone::Info,None);
+        }
         let quote_error=(self.model.is_some() && self.client_id.is_some()
             && self.view_quote.is_none() && !self.busy())
             .then_some("상품 금액과 운임을 확인할 수 없습니다.");
