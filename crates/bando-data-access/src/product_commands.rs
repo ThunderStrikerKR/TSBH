@@ -217,6 +217,19 @@ fn check_catalog_write_scope(before:&Value,action:&str,data:&Value,
     Ok(())
 }
 
+// A product editor opened before a brand was deleted must not re-create
+// a dangling link. Unchanged legacy references are left untouched.
+fn validate_product_brand_selection(before:&Value,product:&Value)->Result<(),String>{
+    let Some(id)=product["brandId"].as_str().filter(|id|!id.is_empty())else{return Ok(());};
+    let prior=before["products"].as_array().into_iter().flatten()
+        .find(|p|p["id"]==product["id"]);
+    if prior.is_some_and(|p|p["brandId"].as_str()==Some(id)){return Ok(());}
+    if !before["brands"].as_array().into_iter().flatten().any(|b|b["id"].as_str()==Some(id)){
+        return Err("선택한 브랜드가 삭제되었거나 등록되어 있지 않습니다. 다시 조회한 후 선택하세요.".into());
+    }
+    Ok(())
+}
+
 pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,String>{
     let expected=request.get("expectedRevision").and_then(Value::as_u64)
         .ok_or("상품 변경 비교 리비전이 없습니다.")?;
@@ -278,6 +291,7 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
         "upsert_product"=>{
             let mut product=data.get("product").filter(|value|value.is_object())
                 .cloned().ok_or("상품 상세 입력이 없습니다.")?;
+            validate_product_brand_selection(before,&product)?;
             let at=chrono::Utc::now().to_rfc3339();
             if product["id"].as_str().unwrap_or("").is_empty(){
                 product["id"]=json!(unique_id("product")?);
@@ -456,6 +470,13 @@ mod management_scope_cas_tests{
         assert!(check_catalog_write_scope(&state,"delete_alias",&json!({"aliasId":"a"}),2,2).is_err());
         let changed=json!({"aliases":[{"id":"a","text":"other","productId":"p"}]});
         assert!(check_catalog_write_scope(&changed,"delete_alias",&request,2,2).is_err());
+    }
+    #[test]
+    fn brand_delete_rejects_stale_product_editor_relink(){
+        let state=json!({"brands":[{"id":"current"}],"products":[{"id":"p","brandId":null}]});
+        assert!(validate_product_brand_selection(&state,&json!({"id":"p","brandId":"deleted"})).is_err());
+        assert!(validate_product_brand_selection(&state,&json!({"id":"p","brandId":"current"})).is_ok());
+        assert!(validate_product_brand_selection(&state,&json!({"id":"p","brandId":null})).is_ok());
     }
     #[test]
     fn brand_delete_requires_original_entity_and_rejects_stale_edits(){
