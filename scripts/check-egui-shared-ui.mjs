@@ -1437,12 +1437,14 @@ const highlightContracts = {
   "ui_primitives.rs":{
     "paint_selection_outline":{"highlight :: paint_outline (":1},
     "paint_action_hover_corners":{"highlight :: action_hover (":1},
-    "paint_action_hover_surface":{"highlight :: action_hover (":1}},
+    "paint_action_hover_surface":{"highlight :: action_hover (":1},
+    "date_navigation_segmented_surface_with_state":{"highlight :: prioritized_stroke (":1,"highlight :: paint_parts (":1}},
   "button/mod.rs":{
     "action_with_palette":{"highlight :: action_widget (":1},
     "workflow_fixed_action":{"highlight :: fixed_action_surface (":1},
     "date_navigation_button_surface":{"highlight :: action_widget (":1},
-    "dispatch_origin":{"highlight :: action_widget (":1}},
+    "dispatch_origin":{"highlight :: action_widget (":1},
+    "calendar_day":{"highlight :: calendar_widget (":1}},
   "table/mod.rs":{
     "management_master_header_sort_hover":{"highlight :: paint (":1},
     "paint_management_interactive_row_background":{"highlight :: paint_fill (":1},
@@ -1451,7 +1453,8 @@ const highlightContracts = {
     "paint_manual_assignment_recommendation":{"highlight :: paint (":1},
     "paint_manual_source_drag_preview":{"highlight :: paint_parts (":2}},
   "category_tree/mod.rs":{"category_tree_row":{"highlight :: paint (":1}},
-  "composite_client.rs":{"management_chooser_row":{"highlight :: paint (":1}},
+  "composite_client.rs":{"management_chooser_row":{"highlight :: paint (":1},
+    "management_row_with_tags":{"highlight :: paint_fill (":1,"highlight :: paint_outline (":1}},
   "checkbox/mod.rs":{"checkbox":{"highlight :: checked_checkbox (":1}},
   "dropdown/mod.rs":{"management_dropdown_option_palette":{"highlight :: dropdown_options (":1},
     "management_dropdown_trigger_inner":{"highlight :: action_widget (":1}},
@@ -1470,7 +1473,7 @@ const highlightContracts = {
     "background":{"highlight :: paint_fill (":1},
     "outline":{"highlight :: paint_outline (":1},
     "mark":{"highlight :: paint (":1}},
-  "card/mod.rs":{"workflow_group_card":{"highlight :: paint_stripe (":1}},
+  "card/mod.rs":{"workflow_group_card":{"highlight :: paint_stripe (":1,"highlight :: card_stripe_rect (":1}},
 };
 // Explicit interaction tokens used by paint/style methods, not ordinary
 // status glyphs, static frames, text coloring, or hit-test geometry.
@@ -1515,7 +1518,7 @@ export function auditHighlight(source,file,requireCalls=false){
     }
     // Single-frame button renderers must not regain a post-widget overlay,
     // even via an existing shared wrapper or locally aliased paint color.
-    const singleFrame=(file==="button/mod.rs"&&["action_with_palette","workflow_fixed_action","date_navigation_button_surface","dispatch_origin"].includes(fn))||
+    const singleFrame=(file==="button/mod.rs"&&["action_with_palette","workflow_fixed_action","date_navigation_button_surface","dispatch_origin","calendar_day"].includes(fn))||
       (file==="dropdown/mod.rs"&&fn==="management_dropdown_trigger_inner");
     if(singleFrame&&v[i+1]==="("&&
        ["paint_button_hover","paint_button_hover_corners","paint_action_hover_corners","paint_action_hover_surface","action_hover","rect_filled","rect_stroke"].includes(v[i])){

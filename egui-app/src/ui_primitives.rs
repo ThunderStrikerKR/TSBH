@@ -177,6 +177,15 @@ pub(crate) fn date_navigation_segmented_surface<R>(
     ui:&mut Ui,id_salt:impl std::hash::Hash,size:Vec2,
     add_segments:impl FnOnce(&mut Ui,Rect)->R
 )->(Rect,R){
+    date_navigation_segmented_surface_with_state(ui,id_salt,size,add_segments,|_|crate::highlight::States::default())
+}
+/// A single outer outline chosen after the segment interaction is known.
+/// The child never draws a second focus outline around the same surface.
+pub(crate) fn date_navigation_segmented_surface_with_state<R>(
+    ui:&mut Ui,id_salt:impl std::hash::Hash,size:Vec2,
+    add_segments:impl FnOnce(&mut Ui,Rect)->R,
+    state:impl FnOnce(&R)->crate::highlight::States
+)->(Rect,R){
     let (outer,_)=ui.allocate_exact_size(size,Sense::hover());
     let inner=outer.shrink(theme::FRAME_STROKE_WIDTH);
     ui.painter().rect_filled(
@@ -191,11 +200,10 @@ pub(crate) fn date_navigation_segmented_surface<R>(
     segments.set_height(inner.height());
     segments.spacing_mut().item_spacing=Vec2::ZERO;
     let content=add_segments(&mut segments,inner);
-    ui.painter().rect_stroke(
-        outer.shrink(0.5),theme::CONTROL_RADIUS as f32,
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER),
-        egui::StrokeKind::Inside
-    );
+    let stroke=crate::highlight::prioritized_stroke(
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER),state(&content));
+    crate::highlight::paint_parts(ui.painter(),outer.shrink(0.5),
+        crate::highlight::CONTROL_RADIUS,None,Some(stroke));
     (outer,content)
 }
 

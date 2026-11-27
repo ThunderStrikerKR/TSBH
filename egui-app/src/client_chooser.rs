@@ -285,13 +285,8 @@ impl ClientChooser {
                                                             (shown_phone,data.secondary_mobile()),
                                                             (crate::composite_client::client_tier_label(&data.tier),
                                                                 &data.conditions),
-                                                        ],&data.tier,index
+                                                        ],&data.tier,(index,selected)
                                                     );
-                                                    if selected {
-                                                        crate::ui_primitives::paint_selection_outline(
-                                                            &row_ui.painter().with_clip_rect(clip),response.rect.shrink(1.0),0.0
-                                                        );
-                                                    }
                                                     if !selected&&response.clicked(){
                                                         floating_notice::action_rect(row_ui.ctx(),"reception.client_change",response.rect.intersect(clip));
                                                         chosen=Some(client_id.to_owned());

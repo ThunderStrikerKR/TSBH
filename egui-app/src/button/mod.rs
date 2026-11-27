@@ -554,19 +554,12 @@ pub(crate) fn date_navigation_button_surface(
 
 /// Calendar cells use the shared action hover policy without changing grid geometry.
 pub(crate) fn calendar_day(grid:&mut Ui,day:&str,width:f32,selected:bool,today:bool)->Response{
-    let mut button=egui::Button::new(typography::body(day)).corner_radius(theme::CONTROL_RADIUS);
-    if selected{
-        button=button.fill(theme::WORKFLOW_SELECTED_BG)
-            .stroke(Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::SELECTION));
-    }else if today{
-        button=button.stroke(Stroke::new(theme::FRAME_STROKE_WIDTH,theme::BORDER));
-    }
-    let response=grid.add_sized(
-        egui::vec2(width,width),button
-    );
-    crate::button::paint_button_hover(
-        grid,&response,theme::CONTROL_RADIUS as f32
-    );
+    let response=grid.scope(|ui|{
+        crate::highlight::calendar_widget(ui,selected,today);
+        ui.add_sized(egui::vec2(width,width),
+            egui::Button::new(typography::body(day)).corner_radius(crate::highlight::CONTROL_RADIUS))
+    }).inner;
+    if grid.is_enabled(){crate::floating_notice::remember_response(grid.ctx(),&response);}
     response
 }
 

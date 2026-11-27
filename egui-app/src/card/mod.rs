@@ -580,15 +580,10 @@ pub(crate) fn workflow_group_card<R>(
         crate::card::apply_width_policy(card,crate::card::CardWidthPolicy::FillAvailable,width);
         body(card)
     });
-    if selected || preview{
-        let r=response.response.rect;
+    let state=crate::highlight::States{selected,linked:preview,..Default::default()};
+    if let Some(role)=state.resolve(){
         crate::highlight::paint_stripe(ui.painter(),
-            Rect::from_min_max(
-                egui::Pos2::new(r.left(),r.top()+theme::SOFT_DIVIDER_WIDTH),
-                egui::Pos2::new(r.left()+theme::WORKFLOW_SELECTED_STRIPE,
-                    r.bottom()-theme::SOFT_DIVIDER_WIDTH),
-            ),if preview{crate::highlight::Role::LinkedPreview}else{crate::highlight::Role::Selected}
-        );
+            crate::highlight::card_stripe_rect(response.response.rect),role);
     }
     response.inner
 }

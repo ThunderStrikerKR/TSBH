@@ -9,8 +9,13 @@
     "egui-app/src/source_highlight.rs",
     "egui-app/src/dropdown/mod.rs",
     "egui-app/src/table/mod.rs",
-    "egui-app/src/composite_workflow.rs"
+    "egui-app/src/composite_workflow.rs",
+    "egui-app/src/ui_primitives.rs",
+    "egui-app/src/input/mod.rs",
+    "egui-app/src/card/mod.rs",
+    "egui-app/src/composite_client.rs",
+    "egui-app/src/client_chooser.rs"
   ],
   "visualStatus": "NOT_VERIFIED",
-  "reason": "Windows 1920×1080 및 작은 작업공간, hover/focus/pressed, 클리핑과 테두리 단일 렌더링의 실화면 증거 미확보."
+  "reason": "Windows 실화면 및 상태별 단일 외곽선, 선택/호버 동시 상태, 수량 증감 포커스, 카드 stripe 검증 증거 미확보."
 }

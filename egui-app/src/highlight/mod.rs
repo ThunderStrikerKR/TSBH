@@ -8,6 +8,58 @@ pub(crate) enum Role{
     Hover,LightHover,LinkedPreview,Selected,RequiredReview,RequiredInput,Focus,DropTarget,
     DropHovered,ReviewTint,RowHover,ChooserSelected,
 }
+/// Persistent semantic state takes priority over transient pointer feedback.
+#[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
+pub(crate) struct States{
+    pub required:bool,pub selected:bool,pub linked:bool,pub review:bool,
+    pub focused:bool,pub hovered:bool,
+}
+impl States{
+    pub(crate) fn resolve(self)->Option<Role>{
+        if self.required{Some(Role::RequiredInput)}
+        else if self.selected{Some(Role::Selected)}
+        else if self.linked{Some(Role::LinkedPreview)}
+        else if self.review{Some(Role::RequiredReview)}
+        else if self.focused{Some(Role::Focus)}
+        else if self.hovered{Some(Role::Hover)}
+        else{None}
+    }
+}
+/// An existing selection retains its established surface palette. A hover
+/// never adds a second border or hides a persistent state.
+pub(crate) fn prioritized_stroke(rest:Stroke,states:States)->Stroke{
+    states.resolve().and_then(|role|palette(role).stroke).unwrap_or(rest)
+}
+pub(crate) fn card_stripe_rect(rect:Rect)->Rect{
+    // Inset from the structural frame and its rounded corners.
+    let inset=theme::SOFT_DIVIDER_WIDTH;
+    let ends=f32::from(theme::WORKFLOW_CARD_RADIUS);
+    Rect::from_min_max(
+        egui::pos2(rect.left()+inset,rect.top()+ends),
+        egui::pos2(rect.left()+inset+theme::WORKFLOW_SELECTED_STRIPE,rect.bottom()-ends)
+    )
+}
+pub(crate) fn calendar_widget(ui:&mut Ui,selected:bool,today:bool){
+    let widgets=&mut ui.visuals_mut().widgets;
+    let chosen_stroke=Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::SELECTION);
+    let today_stroke=Stroke::new(theme::FRAME_STROKE_WIDTH,theme::BORDER);
+    for (visual,hovered,focused) in [
+        (&mut widgets.inactive,false,false),
+        (&mut widgets.hovered,true,false),
+        (&mut widgets.active,false,true),
+        (&mut widgets.open,false,true),
+    ]{
+        let fill=if selected{theme::WORKFLOW_SELECTED_BG}else{visual.weak_bg_fill};
+        let stroke=if selected{chosen_stroke}
+            else if today{today_stroke}else{visual.bg_stroke};
+        let (fill,stroke)=if selected{(fill,stroke)}
+            else{action_surface(fill,stroke,false,hovered,focused)};
+        visual.bg_fill=fill;
+        visual.weak_bg_fill=fill;
+        visual.bg_stroke=stroke;
+        visual.expansion=0.0;
+    }
+}
 #[derive(Clone,Copy)]
 pub(crate) struct Palette{
     pub fill:Option<Color32>,pub stroke:Option<Stroke>,pub ink:Option<Color32>,
@@ -183,6 +235,17 @@ mod tests{
         assert_eq!(action_surface(rest,border,true,true,false),(theme::BUTTON_HOVER_LIGHT_BG,palette(Role::LightHover).stroke.unwrap()));
         assert_eq!(action_surface(rest,border,true,false,true),(rest,palette(Role::LightHover).stroke.unwrap()));
         assert_eq!(value_rect(Rect::from_min_max(egui::pos2(5.0,5.0),egui::pos2(10.0,10.0)),Rect::from_min_max(egui::pos2(3.0,3.0),egui::pos2(12.0,12.0))),Rect::from_min_max(egui::pos2(3.0,3.0),egui::pos2(12.0,12.0)));
+    }
+    #[test]
+    fn priority_preserves_required_and_persistent_states(){
+        let all=States{required:true,selected:true,linked:true,review:true,focused:true,hovered:true};
+        assert_eq!(all.resolve(),Some(Role::RequiredInput));
+        assert_eq!(States{required:false,..all}.resolve(),Some(Role::Selected));
+        assert_eq!(States{required:false,selected:false,..all}.resolve(),Some(Role::LinkedPreview));
+        assert_eq!(States{required:false,selected:false,linked:false,..all}.resolve(),Some(Role::RequiredReview));
+        assert_eq!(States{focused:true,hovered:true,..States::default()}.resolve(),Some(Role::Focus));
+        assert_eq!(States::default().resolve(),None);
+        assert_eq!(prioritized_stroke(Stroke::NONE,all).color,theme::ERROR_BORDER);
     }
     #[test]
     fn common_painter_preserves_parent_clip(){

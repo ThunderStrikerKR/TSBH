@@ -254,25 +254,35 @@ pub fn reception_client_summary_card_editable(
 /// Four client data columns. The visible index determines the alternating
 /// background; the dedicated management_client_header owns header rendering.
 pub fn management_row(
-    ui:&mut Ui,row_id:&str,columns:[(&str,&str);4],tier:&str,visible_index:usize
+    ui:&mut Ui,row_id:&str,columns:[(&str,&str);4],tier:&str,visible_index:impl Into<ClientRowState>
 ) -> Response {
     management_row_with_tags(ui,row_id,columns,tier,visible_index,None)
 }
+pub(crate) struct ClientRowState{index:usize,selected:bool}
+impl From<usize> for ClientRowState{
+    fn from(index:usize)->Self{Self{index,selected:false}}
+}
+impl From<(usize,bool)> for ClientRowState{
+    fn from((index,selected):(usize,bool))->Self{Self{index,selected}}
+}
 pub fn management_row_with_tags(
-    ui:&mut Ui,row_id:&str,columns:[(&str,&str);4],tier:&str,visible_index:usize,
+    ui:&mut Ui,row_id:&str,columns:[(&str,&str);4],tier:&str,visible_index:impl Into<ClientRowState>,
     tags:Option<&[String]>
 ) -> Response {
+    let ClientRowState{index:visible_index,selected}=visible_index.into();
     let tag_width=if tags.is_some(){theme::MANAGEMENT_CLIENT_TAG_COLUMN_WIDTH}else{0.0};
     let width=ui.available_width().max(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH+tag_width);
     let base_width=width-tag_width;
     let (rect,response)=ui.allocate_exact_size(
         Vec2::new(width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT),Sense::click()
     );
-    paint_management_interactive_row_background(ui.painter(),rect,visible_index,response.hovered());
-    // Paint the 1pt row rule inside its allocated rect. A centered
-    // line_segment on bottom() was half-clipped and looked inconsistent
-    // against the master's crisp 2pt header band at fractional DPI.
-    paint_management_table_row_rule(ui.painter(),rect);
+    let state=crate::highlight::States{selected,focused:response.has_focus(),hovered:response.hovered(),..Default::default()};
+    let role=state.resolve();
+    if selected{
+        crate::highlight::paint_fill(ui.painter(),rect,0.0,crate::highlight::Role::Selected);
+    }else{
+        paint_management_interactive_row_background(ui.painter(),rect,visible_index,response.hovered());
+    }
 
     let mut x=rect.left();
     let column_widths=management_client_column_widths(base_width);
@@ -337,7 +347,12 @@ pub fn management_row_with_tags(
         edges.push(rect.left()+base_width);
     }
     management_master_column_rules(ui,rect,edges);
-    crate::button::paint_button_hover(ui,&response,0.0);
+    if let Some(role)=role{
+        crate::highlight::paint_outline(ui.painter(),rect,0.0,role);
+    }else{
+        paint_management_table_row_rule(ui.painter(),rect);
+    }
+    crate::floating_notice::remember_response(ui.ctx(),&response);
     response
 }
 

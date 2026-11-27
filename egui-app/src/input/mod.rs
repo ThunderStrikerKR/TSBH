@@ -2,7 +2,7 @@
 use eframe::egui::{self,Align,Layout,Rect,Response,Stroke,Ui,Vec2};
 use crate::{source_highlight,theme,typography};
 use crate::button::{date_navigation_segment_button,DateNavigationSegmentGlyph};
-use crate::ui_primitives::{navigation_segment_child,date_navigation_segmented_surface};
+use crate::ui_primitives::{navigation_segment_child,date_navigation_segmented_surface_with_state};
 #[cfg(test)]
 use crate::ui_test_support::test_context;
 
@@ -680,7 +680,7 @@ fn reception_quantity_editor(
     let decrease=reception_quantity_step(value,-1);
     let increase=reception_quantity_step(value,1)
         .filter(|next|next.parse::<i64>().is_ok_and(|n|n<=maximum));
-    let (_, (input,step_interaction))=date_navigation_segmented_surface(
+    let (_, (input,step_interaction))=date_navigation_segmented_surface_with_state(
         &mut placed,"quantity-stepper",rect.size(),|segments,inner|{
             // Left arrow pair; right-aligned value and permanent unit.
             let arrow_width=16.0;
@@ -753,11 +753,9 @@ fn reception_quantity_editor(
             );
             if clicked || pressing{input.request_focus();}
             (input,clicked||pressing)
-        }
+        },
+        |(input,step)|crate::highlight::States{focused:input.has_focus()||*step,..Default::default()}
     );
-    if input.has_focus() || step_interaction{
-        crate::highlight::paint_outline(placed.painter(),rect,theme::CONTROL_RADIUS,crate::highlight::Role::Focus);
-    }
     ReceptionQuantityEditorResponse{input,step_interaction}
 }
 
