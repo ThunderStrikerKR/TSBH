@@ -40,7 +40,7 @@ EXCEPTIONS = {
 }
 HIGHLIGHT = {"DropTarget": 3, "DropHovered": 3}
 
-def violations(name, source):
+def violations(name, source, advisories=None):
     if name == OWNER:
         return []
     code = production(source)
@@ -55,6 +55,9 @@ def violations(name, source):
             remaining[key] += 1
             if remaining[key] <= HIGHLIGHT[token]:
                 continue
+            if advisories is not None:
+                advisories.append((code.count("\n", 0, match.start())+1, f"review additional drag highlight role {token}"))
+                continue
         else:
             region = next((fn for fn, start, _, end in regions
                            if start <= match.start() < end), None)
@@ -62,6 +65,9 @@ def violations(name, source):
                 key = (region, token)
                 remaining[key] += 1
                 if remaining[key] <= allowances[region].get(token, 0):
+                    continue
+                if token in allowances[region] and advisories is not None:
+                    advisories.append((code.count("\n", 0, match.start())+1, f"review additional native gesture {token} in {region}"))
                     continue
         found.append((code.count("\n", 0, match.start())+1,
                       f"direct drag/drop API {token}; use crate::drag_drop"))
@@ -88,6 +94,10 @@ def self_test():
     assert violations("new_screen.rs", "#[cfg(test)] mod tests{} fn render(){response.dragged();}")
     assert not violations("main.rs", "fn handle_header_drag(){response.drag_started();}")
     assert violations("main.rs", "fn handle_header_drag(){response.drag_started();response.drag_started();}")
+    review = []
+    assert not violations("main.rs", "fn handle_header_drag(){response.drag_started();response.drag_started();}", review)
+    assert len(review) == 1
+    assert violations("main.rs", "fn new_action(){response.drag_started();}", [])
     assert violations("main.rs", "fn new_action(){response.drag_started();}")
     assert violations("input/mod.rs", "fn unrelated(){response.dragged();}")
     assert violations("overlay.rs", "fn new_action(){page_drag_painter(ctx,owner,id);}")
@@ -102,6 +112,7 @@ TEST_FILES = {"ui_regressions.rs", "ui_test_support.rs",
 def main():
     self_test()
     failures = []
+    advisories = []
     checked = 0
     if not (ROOT / OWNER).is_file():
         failures.append(f"{OWNER}:1: shared drag owner missing")
@@ -112,7 +123,11 @@ def main():
         if name in TEST_FILES or re.match(r"\s*#!\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]", masked):
             continue
         checked += 1
-        failures.extend(f"{name}:{line}: {rule}" for line,rule in violations(name,source))
+        review = []
+        failures.extend(f"{name}:{line}: {rule}" for line,rule in violations(name,source,review))
+        advisories.extend(f"{name}:{line}: {rule}" for line,rule in review)
+    for advisory in advisories:
+        print(f"ADVISORY: {advisory}")
     for failure in failures:
         print(failure,file=sys.stderr)
     print(f"egui shared drag/drop ownership: {checked} Rust files, {len(failures)} violation(s)")

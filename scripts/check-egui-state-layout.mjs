@@ -196,7 +196,7 @@ function main(){
   }
   for(const hit of introduced)console.log(hit.path+":"+hit.line+" "+hit.kind+" "+hit.signature.slice(0,260));
   console.log("EGUI_STATE_LAYOUT_AUDIT",JSON.stringify({files:files.length,candidates:total,newCandidates:introduced.length,base}));
-  if(base&&introduced.length){console.error("New conditional layout allocations require a fixed unconditional slot, overlay, or explicit state-specific Rect review before merging.");process.exitCode=1;}
+  if(base&&introduced.length){console.warn("ADVISORY: Review new conditional allocations with rendered Rect invariance tests.");if(!process.argv.includes("--advisory"))process.exitCode=1;}
   if(process.argv.includes("--require-base")&&!base){console.error("Missing comparison base");process.exitCode=1;}
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))main();

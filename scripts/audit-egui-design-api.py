@@ -74,8 +74,14 @@ def test_path(path):
 
 def audit():
     inventory = GUARD["load_design_api"]()
-    for owner in GUARD["API_CONTRACT"]:
-        inventory[owner] = surface((RUST_ROOT / owner).read_text(encoding="utf-8-sig"))
+    baseline = dict(inventory)
+    inventory = {owner: surface((RUST_ROOT / owner).read_text(encoding="utf-8-sig"))
+                 for owner in sorted(set(baseline) | set(GUARD["API_CONTRACT"]))
+                 if (RUST_ROOT / owner).is_file()}
+    drift = {owner: {"added": sorted((Counter(inventory.get(owner, []))-Counter(rows)).elements()),
+                     "removed": sorted((Counter(rows)-Counter(inventory.get(owner, []))).elements())}
+             for owner, rows in baseline.items()}
+    drift = {owner: changes for owner, changes in drift.items() if changes["added"] or changes["removed"]}
     entries = []
     wanted = set()
     for owner, rows in sorted(inventory.items()):
@@ -128,6 +134,7 @@ def audit():
         "method": "conservative lexical name matches; not resolved call sites; code includes some individually cfg(test)-gated items",
         "source_files": len(paths), "modules": len(inventory),
         "declarations": len(report), "summary": dict(Counter(row["classification"] for row in report)),
+        "baseline_drift": drift,
         "entries": report,
     }
 
