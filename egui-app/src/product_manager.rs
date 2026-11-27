@@ -2369,27 +2369,15 @@ impl ProductManager {
                 );
             }
         }else if self.confirm_discard {
-            let mut keep=false;
-            let mut discard=false;
             crate::popup::modal_backdrop(ctx,"egui-product-discard-nested",true);
-            crate::popup::show_decision_window(ctx,"저장하지 않은 상품","egui-product-discard-confirm",work_area,|dialog|{
-                crate::popup::decision_workspace(dialog,|decision|{
-                    keep=decision.header("저장하지 않은 상품","취소",!busy
-                    );
-                    decision.body(|dialog|{
-                        dialog.label(typography::body(
-                            "상품 수정사항을 저장하지 않고 닫을까요?"
-                        ));
-                    });
-                    decision.actions(|actions|{
-                            if crate::button::action(actions,"저장 안 함",
-                                theme::ButtonRole::Danger,!busy).clicked(){discard=true;}
-                        }
-                    );
-                });
-            });
-            if keep {self.confirm_discard=false;}
-            else if discard{self.close_detail();}
+            match crate::popup::show_discard_confirmation(
+                ctx,work_area,"egui-product-discard-confirm","저장하지 않은 상품",
+                "상품 수정사항을 저장하지 않고 닫을까요?","취소","저장 안 함",!busy
+            ){
+                crate::popup::ChangeDecision::Cancel=>self.confirm_discard=false,
+                crate::popup::ChangeDecision::Discard=>self.close_detail(),
+                _=>{}
+            }
         }
     }
 }
