@@ -13,6 +13,21 @@ use crate::dropdown::reception_cod_dropdown;
 use crate::display_format::display_money_number;
 use crate::text_fit::{cached_reception_product,reception_compact_quantity,reception_pending_money_marker};
 
+/// Intake groups share the semantic subsection role and the same gap
+/// before the first description or action. The returned heading anchors
+/// any existing section-specific notification.
+pub(crate) fn intake_heading(ui:&mut Ui,title:&str)->Response{
+    let heading=ui.label(typography::subsection_heading(title));
+    ui.add_space(theme::SPACE_8);
+    heading
+}
+
+/// Regular metadata, not the emphasized status role. Native wrapping
+/// allows narrow reception panes to grow within their own scroll area.
+pub(crate) fn intake_description(ui:&mut Ui,message:&str)->Response{
+    ui.add(egui::Label::new(typography::caption(message)).wrap())
+}
+
 /// Four distinct panes replace the word "Win". This is a static glyph
 /// inside an explanatory keyboard illustration, not a clickable icon.
 fn paint_windows_key_glyph(painter:&egui::Painter,face:Rect){
@@ -37,7 +52,7 @@ fn paint_windows_key_glyph(painter:&egui::Painter,face:Rect){
 /// the viewer. Distinct top face, tapered side, rim and lip highlight make
 /// it three-dimensional without click, hover or pressed button styling.
 fn reception_keycap(ui:&mut Ui,key:&str){
-    let font=egui::FontId::proportional(typography::FONT_FIELD_LABEL);
+    let font=egui::FontId::proportional(typography::FONT_METADATA);
     let galley=ui.painter().layout_no_wrap(
         if key=="Win"{String::new()}else{key.to_owned()},
         font,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
@@ -110,6 +125,7 @@ fn reception_keycap(ui:&mut Ui,key:&str){
 /// prose, each shortcut key has its own bordered background and hit-free box.
 pub fn reception_capture_shortcut_hint(ui:&mut Ui){
     ui.horizontal_wrapped(|line|{
+        line.set_min_height(theme::RECEPTION_SHORTCUT_ROW_HEIGHT);
         line.spacing_mut().item_spacing=egui::vec2(
             theme::SPACE_4,theme::SPACE_4
         );

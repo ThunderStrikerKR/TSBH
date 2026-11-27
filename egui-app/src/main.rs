@@ -7038,42 +7038,17 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 // intake instructions, never the source/message divider.
                 let intake_height = crate::card::docked_section_body_height(height)
                     .min(ui.available_height().max(0.0));
-                // The two inter-group dividers use the fixed shared geometry.
-                // Distribute remaining space above and below the three groups.
-                // Existing internal 8pt rhythms and local scrolling remain.
-                let clipboard_group_height = typography::SUBSECTION_LINE_HEIGHT
-                    + typography::METADATA_LINE_HEIGHT
-                    + theme::RECEPTION_SHORTCUT_ROW_HEIGHT
-                    + theme::ACTION_EMPHASIZED_HEIGHT
-                    + 3.0 * theme::SPACE_8;
-                let manual_group_height = typography::SUBSECTION_LINE_HEIGHT
-                    + theme::ACTION_EMPHASIZED_HEIGHT + theme::SPACE_8;
-                // The configured folder shows a short usage sentence
-                // followed by the two standard actions. The saved path
-                // remains internal to those actions and is never displayed.
-                // Keep the folder group's body footprint identical
-                // while the saved path loads, exists or is not configured.
-                let folder_body_height=typography::METADATA_LINE_HEIGHT
-                    +theme::SPACE_8+theme::ACTION_STANDARD_HEIGHT;
-                let folder_group_height = typography::SUBSECTION_LINE_HEIGHT
-                    + folder_body_height + theme::SPACE_8
-;
-                let dividers_height = 2.0 * theme::SECTION_DIVIDER_HEIGHT;
-                let balanced_gap = ((intake_height - clipboard_group_height
-                    - manual_group_height - folder_group_height - dividers_height)
-                    / 2.0).max(theme::SPACE_8);
                 crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                     .id_salt("source-intake-instructions")
                     .max_height(intake_height)
                     .auto_shrink([false, false])
                     .show(ui, |intake| {
                         crate::ui_layout::apply_spacing_role(intake,crate::ui_layout::SpacingRole::DocumentBody);
-                        intake.add_space(balanced_gap);
-                        intake.label(typography::subsection_heading("클립보드 접수"));
                         intake.add_space(theme::SPACE_8);
-                        intake.label(typography::caption(
-                            "복사한 텍스트와 이미지를 자동으로 구분해 인식합니다."
-                        ));
+                        crate::composite_reception::intake_heading(intake,"클립보드 접수");
+                        crate::composite_reception::intake_description(
+                            intake,"복사한 텍스트와 이미지를 자동으로 구분해 인식합니다."
+                        );
                         intake.add_space(theme::SPACE_8);
                         let (agency, dealer) = crate::button::paired_actions(
                             intake,
@@ -7088,8 +7063,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         intake.add_space(theme::SPACE_8);
                         crate::composite_reception::reception_capture_shortcut_hint(intake);
                         crate::ui_primitives::section_divider(intake);
-                        intake.label(typography::subsection_heading("다른 방법으로 접수"));
-                        intake.add_space(theme::SPACE_8);
+                        crate::composite_reception::intake_heading(intake,"다른 방법으로 접수");
                         let (direct,capture) = crate::button::paired_actions(
                             intake,
                             ("직접 입력", ButtonRole::Emphasized, true),
@@ -7105,8 +7079,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             start_region_capture=true;
                         }
                         crate::ui_primitives::section_divider(intake);
-                        let folder_heading=intake.label(
-                            typography::subsection_heading("폴더 자동 인식")
+                        let folder_heading=crate::composite_reception::intake_heading(
+                            intake,"폴더 자동 인식"
                         );
                         // C-type automatic failure: only surface it while the
                         // corresponding feature is visible in Reception. The
@@ -7127,30 +7101,26 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         }else{
                             Some("설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요.")
                         };
-                        let folder_status_width=intake.available_width();
-                        crate::ui_layout::fixed_status_slot(
-                            intake,folder_status_width,typography::METADATA_LINE_HEIGHT,
-                            folder_message,folder_message,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)
+                        // Plain guidance is not an emphasized status message.
+                        // Keep the message readable at narrow widths and preserve
+                        // the action footprint while the folder is not configured.
+                        crate::composite_reception::intake_description(
+                            intake,folder_message.unwrap_or(" ")
                         );
                         intake.add_space(theme::SPACE_8);
-                        let folder_actions_width=intake.available_width();
-                        let _=crate::ui_layout::fixed_row(
-                            intake,Vec2::new(folder_actions_width,theme::ACTION_STANDARD_HEIGHT),
-                            Layout::left_to_right(Align::Center),|buttons|{
-                                if let Some(path)=inbox_path.as_deref(){
-                                    crate::ui_layout::apply_spacing_role(buttons,crate::ui_layout::SpacingRole::Toolbar);
-                                    if crate::button::action(buttons,"경로 복사",
-                                        ButtonRole::Standard,true).clicked(){
-                                        inbox_copy_request=Some(path.to_owned());
-                                    }
-                                    if crate::button::action(buttons,"폴더 열기",
-                                        ButtonRole::Standard,true).clicked(){
-                                        inbox_open_request=Some(path.to_owned());
-                                    }
-                                }
-                            }
-                        );
-                        intake.add_space(balanced_gap);
+                        let configured=inbox_path.is_some();
+                        let (copy,open)=intake.add_visible_ui(configured,|buttons|{
+                            crate::button::paired_actions(
+                                buttons,
+                                ("경로 복사",ButtonRole::Standard,configured),
+                                ("폴더 열기",ButtonRole::Standard,configured),
+                            )
+                        }).inner;
+                        if let Some(path)=inbox_path.as_deref(){
+                            if copy.clicked(){inbox_copy_request=Some(path.to_owned());}
+                            if open.clicked(){inbox_open_request=Some(path.to_owned());}
+                        }
+                        intake.add_space(theme::SPACE_8);
                     });
             }
         });
