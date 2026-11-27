@@ -686,3 +686,71 @@ mod tests {
         assert!(with_state(&ctx,|state|state.active.is_none()));
     }
 }
+
+
+#[cfg(test)]
+mod shared_floating_notice_rendered_geometry_tests{
+    use super::*;
+    use crate::ui_test_support::{test_context,painted_text_rects,assert_rect_geometry,
+        assert_rect_inside,assert_geometry_value};
+
+    #[test]
+    fn actual_notice_paint_stays_within_screen_without_moving_underlying_controls(){
+        for width in [480.0,800.0]{
+            let ctx=test_context();
+            let screen=Rect::from_min_size(Pos2::ZERO,Vec2::new(width,500.0));
+            let mut baseline=None;
+            for message in [None,Some("저장 완료"),Some("배송 정보 확인이 필요합니다. 변경된 정보를 확인해 주세요."),None]{
+                let mut geometry=None;
+                let mut last=None;
+                for _ in 0..4{
+                    last=Some(ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+                        egui::CentralPanel::default().show(ctx,|ui|{
+                            let action=crate::button::action(ui,"검증",theme::ButtonRole::Standard,true);
+                            let next=ui.allocate_exact_size(Vec2::new(80.0,20.0),Sense::hover()).0;
+                            geometry=Some((action.rect,next));
+                            if let Some(text)=message{
+                                action_rect(ctx,"geometry.notice",action.rect);
+                                publish(ctx,"geometry.notice",Tone::Info,text);
+                            }else{
+                                with_state(ctx,|s|s.active=None);
+                            }
+                        });
+                        show(ctx);
+                    }));
+                }
+                let (action,next)=geometry.expect("underlying controls");
+                if let Some((old,old_next))=baseline{
+                    assert_rect_geometry("notice anchor",action,old,0.5);
+                    assert_rect_geometry("notice following control",next,old_next,0.5);
+                }else{baseline=Some((action,next));}
+                let output=last.expect("notice paint");
+                if let Some(text)=message{
+                    let (ink,clip)=painted_text_rects(&output,text).into_iter().next().expect("notice caption paint");
+                    let mut bubbles=Vec::new();
+                    fn collect(shape:&egui::Shape,out:&mut Vec<Rect>){
+                        match shape{
+                            egui::Shape::Rect(r) if r.fill==theme::FLOATING_NOTICE_BG=>out.push(r.rect),
+                            egui::Shape::Vec(shapes)=>for shape in shapes{collect(shape,out);},
+                            _=>{}
+                        }
+                    }
+                    for shape in &output.shapes{collect(&shape.shape,&mut bubbles);}
+                    let bubble=bubbles.into_iter().find(|r|r.contains(ink.center()))
+                        .expect("painted notice background");
+                    assert_rect_inside("notice bubble",bubble,screen.shrink(SCREEN_MARGIN),1.0);
+                    assert_rect_inside("notice caption",ink,bubble,1.0);
+                    assert_rect_inside("notice caption clip",ink,clip,1.0);
+                    assert!(bubble.width()<=MAX_WIDTH+1.0);
+                    let active=with_state(&ctx,|s|s.active.clone()).expect("active notice");
+                    let (size,_,_)=measured_notice(&ctx,text,Tone::Info,screen);
+                    let (pos,_)=placement_element(active.at,active.below,size,screen,active.kind);
+                    assert_geometry_value("notice","anchor x",bubble.left(),pos.x,1.0);
+                    assert_geometry_value("notice","anchor y",bubble.top(),pos.y,1.0);
+                }else{
+                    assert!(painted_text_rects(&output,"저장 완료").is_empty());
+                }
+            }
+        }
+    }
+}
