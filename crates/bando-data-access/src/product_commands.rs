@@ -558,6 +558,105 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
 
 
 #[cfg(test)]
+mod drag_write_replay_tests{
+    use super::*;
+
+    fn fixture()->Connection{
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE core_schema(key TEXT,version INTEGER);
+            INSERT INTO core_schema VALUES ('business-core',2);
+            CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);
+            CREATE TABLE core_products(id TEXT PRIMARY KEY,position INTEGER,code TEXT,name TEXT,payload TEXT);
+            CREATE TABLE core_product_prices(product_id TEXT PRIMARY KEY,price_record_id TEXT,color TEXT,wholesale INTEGER,semi INTEGER,retail INTEGER,payload TEXT);
+            CREATE TABLE core_clients(id TEXT PRIMARY KEY,position INTEGER,payload TEXT);
+            CREATE TABLE core_orders(id TEXT PRIMARY KEY,position INTEGER,payload TEXT);
+            CREATE TABLE core_recipients(id TEXT PRIMARY KEY,order_id TEXT,position INTEGER,payload TEXT);
+            CREATE TABLE core_items(id TEXT PRIMARY KEY,recipient_id TEXT,position INTEGER,payload TEXT);
+            CREATE TABLE product_index(id TEXT PRIMARY KEY,code TEXT,name TEXT,payload TEXT);").unwrap();
+        let root=json!({"revision":7,"settings":{"accounts":[]},"aliases":[],"queue":[],"exports":[],
+            "categories":[{"id":"a","name":"이전","parentId":"catalog-root:BANDOSTAND"},
+                {"id":"b","name":"대상","parentId":"catalog-root:BANDOSTAND"},
+                {"id":"c","name":"폴더","parentId":"catalog-root:BANDOSTAND"}]});
+        conn.execute("INSERT INTO app_state VALUES (1,?1)",[root.to_string()]).unwrap();
+        for (position,id) in ["p1","p2"].into_iter().enumerate(){
+            let product=json!({"id":id,"code":id,"name":id,"createdAt":"2026-01-01",
+                "updatedAt":"2026-01-01","active":true,"origin":"FACTORY","catalog":"BANDOSTAND",
+                "defaultColor":"Black","categories":["a"],"category":"이전"});
+            let price=json!({"id":format!("{id}-v"),"color":"Black","source":"MANUAL","url":"",
+                "wholesale":1000,"semi":1500,"retail":2000});
+            conn.execute("INSERT INTO core_products VALUES (?1,?2,?1,?1,?3)",
+                rusqlite::params![id,position as i64,product.to_string()]).unwrap();
+            conn.execute("INSERT INTO core_product_prices VALUES (?1,?2,'Black',1000,1500,2000,?3)",
+                rusqlite::params![id,price["id"].as_str().unwrap(),price.to_string()]).unwrap();
+        }
+        conn
+    }
+    fn count(conn:&Connection)->i64{
+        conn.query_row("SELECT total_changes()",[],|row|row.get(0)).unwrap()
+    }
+    fn request(before:&Value)->Value{
+        json!({"expectedRevision":before["revision"],"action":"move_products_to_category","data":{
+            "expectedScope":management_scope_token(before,"categories"),
+            "changes":before["products"].as_array().unwrap().iter().map(|p|
+                json!({"expectedEntity":p,"source":"a","target":"b"})).collect::<Vec<_>>()
+        }})
+    }
+    #[test]
+    fn product_drag_batch_replay_and_duplicate_member_do_not_write_twice(){
+        let mut conn=fixture();
+        let before=crate::read_v2_snapshot(&conn).unwrap();
+        let initial=count(&conn);
+        let good=request(&before);
+        let mut duplicate=good.clone();
+        duplicate["data"]["changes"][1]=duplicate["data"]["changes"][0].clone();
+        assert!(patch_product_v2(&mut conn,&duplicate).is_err());
+        assert_eq!(count(&conn),initial);
+        assert_eq!(crate::read_v2_snapshot(&conn).unwrap(),before);
+        let mut invalid=good.clone();
+        invalid["data"]["changes"][1]["target"]=json!("missing");
+        assert!(patch_product_v2(&mut conn,&invalid).is_err());
+        assert_eq!(count(&conn),initial);
+        let saved=patch_product_v2(&mut conn,&good).unwrap();
+        assert_eq!(saved["revision"],8);
+        for (index,product) in saved["products"].as_array().unwrap().iter().enumerate(){
+            assert_eq!(product["categories"],json!(["b"]));
+            assert_eq!(product["variants"],before["products"][index]["variants"]);
+        }
+        let committed=count(&conn);
+        assert!(committed>initial);
+        for replay in [good.clone(),{
+            let mut refreshed=good.clone();
+            refreshed["expectedRevision"]=saved["revision"].clone();
+            refreshed["data"]["expectedScope"]=json!(management_scope_token(&saved,"categories"));
+            refreshed
+        }]{
+            assert!(patch_product_v2(&mut conn,&replay).is_err());
+            assert_eq!(count(&conn),committed);
+            assert_eq!(crate::read_v2_snapshot(&conn).unwrap(),saved);
+        }
+    }
+    #[test]
+    fn folder_drag_confirmation_replay_does_not_create_second_child(){
+        let mut conn=fixture();
+        let before=crate::read_v2_snapshot(&conn).unwrap();
+        let move_request=json!({"expectedRevision":7,"action":"change_category","data":{
+            "categoryId":"c","name":"폴더","parentId":"a","transfer":false,
+            "guardCatalogMove":true,"newProductCategoryName":"기존 상품",
+            "expectedScope":management_scope_token(&before,"categories")
+        }});
+        let saved=patch_product_v2(&mut conn,&move_request).unwrap();
+        assert_eq!(saved["revision"],8);
+        let categories=saved["categories"].as_array().unwrap();
+        assert_eq!(categories.iter().filter(|c|c["parentId"]=="a"&&c["name"]=="기존 상품").count(),1);
+        assert_eq!(categories.iter().filter(|c|c["id"]=="c"&&c["parentId"]=="a").count(),1);
+        let committed=count(&conn);
+        assert!(patch_product_v2(&mut conn,&move_request).is_err());
+        assert_eq!(count(&conn),committed);
+        assert_eq!(crate::read_v2_snapshot(&conn).unwrap(),saved);
+    }
+}
+
+#[cfg(test)]
 mod management_scope_cas_tests{
     use super::*;
     #[test]
