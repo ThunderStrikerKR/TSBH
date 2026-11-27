@@ -2787,7 +2787,6 @@ mod tests {
         })
     }
     impl BandoGateway for PriceTestGateway{
-        fn label(&self)->&'static str{"synthetic-price-test"}
         fn load_catalog(&self)->Result<Value,String>{
             Ok(price_test_catalog(1,None,Some(19000)))
         }

@@ -482,7 +482,6 @@ mod source_delta_tests{
         fail_next:std::sync::atomic::AtomicBool,
     }
     impl BandoGateway for MockAutosaveGateway{
-        fn label(&self)->&'static str{"source-autosave-test"}
         fn load_catalog(&self)->Result<Value,String>{
             Err("not needed for source-only autosave".into())
         }

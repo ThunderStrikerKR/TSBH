@@ -10985,7 +10985,6 @@ mod client_chooser_async_handoff_tests {
         fail:bool,
     }
     impl gateway::BandoGateway for GatedGateway {
-        fn label(&self)->&'static str{"gated-client-choice"}
         fn isolated_client_identity_link(&self)->bool{true}
         fn load_catalog(&self)->Result<Value,String>{
             let (lock,ready)=&*self.gate;
@@ -11309,7 +11308,6 @@ mod reception_workflow_admission_integration_tests {
     }
     struct DeleteGateway{fail:bool}
     impl gateway::BandoGateway for DeleteGateway{
-        fn label(&self)->&'static str{"draft-delete-test"}
         fn load_catalog(&self)->Result<serde_json::Value,String>{Err("fixture".into())}
         fn load_working_source(&self)->Result<WorkingSource,String>{Err("fixture".into())}
         fn save_working_source(&self,source:&WorkingSource)->Result<u64,String>{
@@ -11860,7 +11858,6 @@ mod reception_workflow_admission_integration_tests {
     // No filesystem, SQLite or operational gateway access in this fixture.
     struct PricingBasisReadFixture;
     impl gateway::BandoGateway for PricingBasisReadFixture{
-        fn label(&self)->&'static str{"pricing-basis-navigation-test"}
         fn load_catalog(&self)->Result<serde_json::Value,String>{Err("fixture".into())}
         fn load_working_source(&self)->Result<WorkingSource,String>{Err("fixture".into())}
         fn save_working_source(&self,_source:&WorkingSource)->Result<u64,String>{Err("fixture".into())}

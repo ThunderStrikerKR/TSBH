@@ -66,9 +66,6 @@ impl HttpGateway {
 }
 
 impl BandoGateway for HttpGateway {
-    fn label(&self) -> &'static str {
-        "HTTPS 서버"
-    }
 
     fn load_catalog(&self) -> Result<Value, String> {
         let response = self.client.get(self.endpoint("catalog"))

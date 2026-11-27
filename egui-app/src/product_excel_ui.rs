@@ -418,7 +418,6 @@ mod tests {
         }
     }
     impl BandoGateway for ArchiveGateway{
-        fn label(&self)->&'static str{"synthetic workbook test"}
         fn load_catalog(&self)->Result<Value,String>{Err("catalog access forbidden".into())}
         fn load_working_source(&self)->Result<crate::preview_store::WorkingSource,String>{
             Err("source access forbidden".into())

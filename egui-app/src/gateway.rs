@@ -124,7 +124,6 @@ fn inbox_path(settings:&Value)->Option<String>{
 }
 
 pub trait BandoGateway: Send + Sync {
-    fn label(&self) -> &'static str;
     /// A minimal catalog snapshot (products, aliases, brands), plus an
     /// explicitly configured name-only client index. No operational database,
     /// confirmed orders, customer contacts or workflow state.
@@ -322,9 +321,6 @@ fn read_reception_metadata(conn:&rusqlite::Connection,known:Option<u64>)
 pub struct LocalGateway;
 
 impl BandoGateway for LocalGateway {
-    fn label(&self) -> &'static str {
-        "로컬 Rust"
-    }
 
     fn reception_metadata(&self,known:Option<u64>)
         ->Result<(Option<u64>,Option<ReceptionMetadata>),String>{

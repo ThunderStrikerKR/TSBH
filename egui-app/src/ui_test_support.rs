@@ -280,7 +280,6 @@ pub(crate) struct PopupGeometryGateway{
     pub writable:bool,
 }
 impl crate::gateway::BandoGateway for PopupGeometryGateway{
-    fn label(&self)->&'static str{"synthetic popup geometry"}
     fn load_catalog(&self)->Result<serde_json::Value,String>{
         Err("isolated popup fixture".into())
     }

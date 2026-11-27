@@ -535,7 +535,6 @@ mod manual_rebind_tests {
     // own native tests; this verifies that the adapter actually invokes them.
     struct PreviewGateway;
     impl BandoGateway for PreviewGateway {
-        fn label(&self)->&'static str{"manual-price-preview-test"}
         fn load_catalog(&self)->Result<Value,String>{Ok(json!({}))}
         fn load_working_source(&self)
             ->Result<crate::preview_store::WorkingSource,String>{

@@ -1102,7 +1102,6 @@ pub(crate) mod general_screen_geometry_tests {
     // No files, network or database are accessed by fixture read workers.
     struct GeometryGateway;
     impl BandoGateway for GeometryGateway{
-        fn label(&self)->&'static str{"synthetic UI geometry"}
         fn load_catalog(&self)->Result<Value,String>{Err("isolated fixture".into())}
         fn load_working_source(&self)->Result<WorkingSource,String>{Err("isolated fixture".into())}
         fn save_working_source(&self,_:&WorkingSource)->Result<u64,String>{Err("read only fixture".into())}

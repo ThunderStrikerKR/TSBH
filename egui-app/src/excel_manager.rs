@@ -1478,7 +1478,6 @@ mod table_state_tests {
         let ctx=egui::Context::default();
         struct NoReadGateway;
         impl BandoGateway for NoReadGateway{
-            fn label(&self)->&'static str{"synthetic-no-read"}
             fn load_catalog(&self)->Result<Value,String>{Err("no catalog".into())}
             fn load_working_source(&self)->Result<crate::preview_store::WorkingSource,String>{Err("no source".into())}
             fn save_working_source(&self,_:&crate::preview_store::WorkingSource)->Result<u64,String>{Err("no write".into())}
@@ -1507,7 +1506,6 @@ mod table_state_tests {
         let ctx=egui::Context::default();
         struct NoReadGateway;
         impl BandoGateway for NoReadGateway{
-            fn label(&self)->&'static str{"synthetic-no-read"}
             fn load_catalog(&self)->Result<Value,String>{Err("no catalog".into())}
             fn load_working_source(&self)->Result<crate::preview_store::WorkingSource,String>{Err("no source".into())}
             fn save_working_source(&self,_:&crate::preview_store::WorkingSource)->Result<u64,String>{Err("no write".into())}
