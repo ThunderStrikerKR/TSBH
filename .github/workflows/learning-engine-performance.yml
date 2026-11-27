@@ -75,6 +75,7 @@ jobs:
             'owner_pair_calibration_preserves_outside_abstention_without_third_class_fit',
             'retrain_cohort_is_invalidated_by_calibration_revision',
             'owner_replay_recomputes_source_links_without_changing_original_analysis',
+            'owner_joint_replay_rejects_duplicate_sources_and_preserves_both_transfers',
             'field_blend_task_evaluation_includes_unjoined_observations',
             'field_blend_rejects_overlapping_time_windows_and_duplicate_orders',
             'field_dependency_contract_blocks_joint_edits_and_preserves_owner_selection',
