@@ -727,6 +727,7 @@ mod tests{
     fn patterned_order(id:&str)->Value{
         let mut p=owner_fixture();
         p["id"]=json!(id);
+        p["recognitionAuditEvents"]=json!([]);
         p["confirmedAt"]=json!("2026-11-27T00:00:00Z");
         let snapshot=&mut p["confirmationSnapshot"];
         snapshot["at"]=json!("2026-11-27T00:00:00Z");
@@ -1047,6 +1048,41 @@ mod tests{
         }})).unwrap();
         assert_eq!(result["observations"],json!([]));
     }
+    #[test]
+    fn audit_manifest_missing_or_conflicting_history_cannot_produce_votes(){
+        let mut p=audited_reassignment();
+        p["confirmationSnapshot"]["recognitionBaseline"]["auditEventIds"]=json!(["audit-1"]);
+        assert_eq!(compare(&p).unwrap()["auditCoverage"],"verified_manifest");
+        assert_eq!(owner_result(&p)["outcome"],"explicit_correction_observed");
+        let mut missing=p.clone();
+        missing["recognitionAuditEvents"]=json!([]);
+        assert_eq!(compare(&missing).unwrap()["auditCoverage"],"incomplete_history");
+        assert_ne!(owner_result(&missing)["eligibleForCandidateLearning"],true);
+        let mut reverted=p.clone();
+        reverted["confirmationSnapshot"]["recipients"]=p["recognitionAuditEvents"][0]["beforeRows"].clone();
+        reverted["recognitionAuditEvents"]=json!([]);
+        assert_eq!(owner_result(&reverted)["outcome"],"changed_requires_review");
+        assert_eq!(owner_result(&reverted)["eligibleForCandidateLearning"],false);
+        let mut other=p.clone();
+        other["recognitionAuditEvents"][0]["initialAnalysis"]["changed"]=json!(true);
+        assert_eq!(compare(&other).unwrap()["auditCoverage"],"incomplete_history");
+    }
+    #[test]
+    fn equal_candidate_duplicate_links_and_unwritten_quantity_do_not_vote(){
+        let mut p=field_audit_fixture("709","709","product","product",
+            json!({"name":"BD 709","productId":"same"}),
+            json!({"name":"BD 709","productId":"same"}));
+        p["recognitionAuditEvents"]=json!([]);
+        let duplicate=p["confirmationSnapshot"]["recipients"][0]["items"][0].clone();
+        p["confirmationSnapshot"]["recipients"][0]["items"].as_array_mut().unwrap().push(duplicate);
+        assert_eq!(field_observation(&p,"product")["outcome"],"unresolved_evidence");
+        let mut q=field_audit_fixture("3개","3개","quantity","quantity",
+            json!({"quantity":2,"quantityConfirmed":true}),
+            json!({"quantity":2,"quantityConfirmed":true}));
+        q["recognitionAuditEvents"]=json!([]);
+        assert_eq!(field_observation(&q,"quantity")["outcome"],"unresolved_evidence");
+    }
+
     #[test]
     fn competing_final_sources_are_not_counted_as_success(){
         let s=json!({"start":0,"end":3,"text":"709","field":"product"});
