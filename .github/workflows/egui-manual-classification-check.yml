@@ -69,6 +69,7 @@ jobs:
         run: |
           cargo test --manifest-path egui-app/Cargo.toml dealer_selection_without_manual_edits_uses_complete_native_quote -- --nocapture
           cargo test --manifest-path egui-app/Cargo.toml recognition::observations::tests -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml owner_trace_ -- --nocapture
       - name: Verify content-fitted manual popup and Reception source-pane geometry
         run: cargo test --manifest-path egui-app/Cargo.toml manual_workspace_layout_tests -- --nocapture
       - name: Verify the unified date-selector count control geometry and single-recipient 1/1 header
