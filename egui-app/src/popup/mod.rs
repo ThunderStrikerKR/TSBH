@@ -354,6 +354,10 @@ pub(crate) fn modal_flow_workspace_measured<R>(
         modal_master_controlled_spacing(layout);
         let mut owner=ModalEditorWorkspace{ui:layout,geometry:ModalEditorGeometry::default()};
         let value=contents(&mut owner);
+        #[cfg(test)]
+        for rect in [owner.geometry.header,owner.geometry.body,owner.geometry.footer].into_iter().flatten(){
+            crate::ui_test_support::record_component_geometry("popup",rect,owner.ui.clip_rect(),None);
+        }
         (value,owner.geometry)
     }).inner
 }
@@ -380,6 +384,10 @@ pub(crate) fn modal_editor_workspace<R>(
         },
     };
     let value=contents(&mut owner);
+    #[cfg(test)]
+    for rect in [owner.geometry.header,owner.geometry.body,owner.geometry.footer].into_iter().flatten(){
+        crate::ui_test_support::record_component_geometry("popup",rect,owner.ui.clip_rect(),None);
+    }
     (close,value,owner.geometry)
 }
 
