@@ -100,7 +100,7 @@ pub struct CategoryManager {
     product_selection:category_tree::ProductSelection,
     folder_drop:Option<category_tree::FolderMove>,
     folder_confirmation:Option<FolderConfirmation>,
-    drag_hover:category_tree::ProductDragHover,
+    drag_hover:category_tree::CategoryDragHover,
     name:String,
     editor:bool,
     expected_scope:Option<String>,
@@ -640,9 +640,10 @@ impl CategoryManager {
             self.folder_drop=Some(request);
         }else if let Some(request)=category_tree::product_drop_target(ui,&response,&item.id,allow_drop){
             self.product_move=Some(request);
-        }else if self.drag_hover.observe(ui,&response,&item.id,allow_drop&&has_children&&!open){
-            // Expand on the next frame without a disabling fold animation.
-            // The native product drag must remain active across the change.
+        }else if self.drag_hover.observe(ui,&response,&item.id,allow_drop&&has_children&&!open,
+            index.active_folders.contains(&item.id),|id|ancestors.contains(id)){
+            // Expand without a disabling fold animation. Both native
+            // drag payload kinds must remain active across the change.
             self.expanded.insert(item.id.clone());
             ui.ctx().request_repaint();
         }

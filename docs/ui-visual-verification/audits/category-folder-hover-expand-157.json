@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "category-folder-hover-expand-157",
+  "screen": "상품 관리 / 카테고리 관리 / 폴더 드래그 자동 펼침",
+  "files": [
+    "egui-app/src/category_tree/mod.rs",
+    "egui-app/src/category_manager.rs",
+    "egui-app/src/category_dropdown.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "상품/폴더 공통 650ms 타이머, drag kind별 시간 구분, 기존 폴더 드롭 유효성 규칙 공유, 일반 및 집중 탐색 적용. 최종 폴더 이동 확인 및 저장 경로 변경 없음. 컴파일·CI·Windows 실화면 미검증.",
+  "defects": [],
+  "releaseDecision": "NOT_APPROVED",
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "noClipping",
+      "footerVisible",
+      "scrollReachable",
+      "inputReadable",
+      "alignment",
+      "interaction",
+      "hoverAndFocus"
+    ]
+  }
+}

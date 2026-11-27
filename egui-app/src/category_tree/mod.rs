@@ -126,6 +126,10 @@ pub(crate) fn draggable_folder_row(ui:&mut Ui,item:CategoryTreeRow<'_>,id:&str,p
 #[derive(Clone)]
 struct FolderDrag{id:String,parent:String}
 
+fn valid_folder_target(drag:&FolderDrag,target:&str,contains_source:impl Fn(&str)->bool)->bool{
+    !target.is_empty()&&drag.id!=target&&drag.parent!=target&&!contains_source(&drag.id)
+}
+
 #[derive(Clone,Debug)]
 pub(crate) struct FolderMove{
     pub(crate) id:String,
@@ -136,7 +140,7 @@ pub(crate) struct FolderMove{
 pub(crate) fn folder_drop_target(ui:&Ui,response:&Response,target:&str,enabled:bool,
     contains_source:impl Fn(&str)->bool)->Option<FolderMove>{
     if !enabled||!ui.is_enabled()||target.is_empty(){return None;}
-    let valid=|drag:&FolderDrag|drag.id!=target&&drag.parent!=target&&!contains_source(&drag.id);
+    let valid=|drag:&FolderDrag|valid_folder_target(drag,target,&contains_source);
     if !response.dnd_hover_payload::<FolderDrag>().is_some_and(|drag|valid(&drag)){return None;}
     crate::highlight::paint(ui,response.rect.intersect(ui.clip_rect()),
         crate::highlight::Geometry::Control,crate::highlight::Role::DropHovered);
@@ -172,42 +176,51 @@ impl ProductSelection {
     }
 }
 
-const PRODUCT_DRAG_OPEN_DELAY:f64=0.65;
+const CATEGORY_DRAG_OPEN_DELAY:f64=0.65;
 
-/// One continuous hover per product/source/target, scoped to a tree view.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+enum DragKind{Product,Folder}
+
+/// One continuous hover per drag kind/source/target, scoped to a tree view.
 #[derive(Clone,Debug,Default)]
-pub(crate) struct ProductDragHover {
-    pending:Option<(String,String,String,f64)>,
+pub(crate) struct CategoryDragHover {
+    pending:Option<(DragKind,String,String,String,f64)>,
     seen:bool,
 }
-impl ProductDragHover {
+impl CategoryDragHover {
     pub(crate) fn begin_frame(&mut self){self.seen=false;}
     pub(crate) fn end_frame(&mut self){
         if !self.seen{self.pending=None;}
     }
-    fn advance(&mut self,id:&str,source:&str,target:&str,now:f64)->bool{
+    fn advance(&mut self,kind:DragKind,id:&str,source:&str,target:&str,now:f64)->bool{
         self.seen=true;
-        if !self.pending.as_ref().is_some_and(|(p,s,t,_)|
-            p==id&&s==source&&t==target){
-            self.pending=Some((id.to_owned(),source.to_owned(),target.to_owned(),now));
+        if !self.pending.as_ref().is_some_and(|(k,p,s,t,_)|
+            *k==kind&&p==id&&s==source&&t==target){
+            self.pending=Some((kind,id.to_owned(),source.to_owned(),target.to_owned(),now));
         }
-        let elapsed=self.pending.as_ref().map(|(_,_,_,start)|now-*start).unwrap_or(0.0);
-        if elapsed>=PRODUCT_DRAG_OPEN_DELAY{
+        let elapsed=self.pending.as_ref().map(|(_,_,_,_,start)|now-*start).unwrap_or(0.0);
+        if elapsed>=CATEGORY_DRAG_OPEN_DELAY{
             self.pending=None;
             true
         }else{false}
     }
-    pub(crate) fn observe(&mut self,ui:&Ui,response:&Response,target:&str,enabled:bool)->bool{
+    pub(crate) fn observe(&mut self,ui:&Ui,response:&Response,target:&str,enabled:bool,
+        folder_enabled:bool,contains_source:impl Fn(&str)->bool)->bool{
         if !enabled||!ui.is_enabled()||target.is_empty()||
             !ui.input(|i|i.pointer.primary_down())||
             !response.rect.intersect(ui.clip_rect()).is_positive(){return false;}
-        let Some(drag)=response.dnd_hover_payload::<ProductDrag>()else{return false;};
-        if drag.members.iter().all(|(_,source)|source==target){return false;}
         let now=ui.input(|i|i.time);
-        if self.advance(&drag.id,&drag.source,target,now){return true;}
-        if let Some((_,_,_,start))=&self.pending{
+        let ready=if let Some(drag)=response.dnd_hover_payload::<ProductDrag>(){
+            if drag.members.iter().all(|(_,source)|source==target){return false;}
+            self.advance(DragKind::Product,&drag.id,&drag.source,target,now)
+        }else if let Some(drag)=response.dnd_hover_payload::<FolderDrag>(){
+            if !folder_enabled||!valid_folder_target(&drag,target,contains_source){return false;}
+            self.advance(DragKind::Folder,&drag.id,&drag.parent,target,now)
+        }else{return false;};
+        if ready{return true;}
+        if let Some((_,_,_,_,start))=&self.pending{
             ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(
-                (PRODUCT_DRAG_OPEN_DELAY-(now-*start)).max(0.0)));
+                (CATEGORY_DRAG_OPEN_DELAY-(now-*start)).max(0.0)));
         }
         false
     }
@@ -328,23 +341,47 @@ mod category_tree_geometry_tests{
     }
     #[test]
     fn product_drag_hover_requires_continuous_target_and_resets_after_leave(){
-        let mut hover=ProductDragHover::default();
+        let mut hover=CategoryDragHover::default();
         hover.begin_frame();
-        assert!(!hover.advance("p","source","a",0.0));
+        assert!(!hover.advance(DragKind::Product,"p","source","a",0.0));
         hover.end_frame();
         hover.begin_frame();
-        assert!(!hover.advance("p","source","a",0.64));
+        assert!(!hover.advance(DragKind::Product,"p","source","a",0.64));
         hover.end_frame();
         hover.begin_frame();
-        assert!(!hover.advance("p","source","b",0.65));
+        assert!(!hover.advance(DragKind::Product,"p","source","b",0.65));
         hover.end_frame();
         hover.begin_frame();
         hover.end_frame();
         hover.begin_frame();
-        assert!(!hover.advance("p","source","b",2.0));
+        assert!(!hover.advance(DragKind::Product,"p","source","b",2.0));
         hover.end_frame();
         hover.begin_frame();
-        assert!(hover.advance("p","source","b",2.66));
+        assert!(hover.advance(DragKind::Product,"p","source","b",2.66));
+    }
+    #[test]
+    fn folder_hover_uses_same_delay_but_does_not_inherit_product_timer(){
+        let mut hover=CategoryDragHover::default();
+        hover.begin_frame();
+        assert!(!hover.advance(DragKind::Product,"a","parent","target",0.0));
+        hover.end_frame();
+        hover.begin_frame();
+        assert!(!hover.advance(DragKind::Folder,"a","parent","target",0.64));
+        hover.end_frame();
+        hover.begin_frame();
+        assert!(!hover.advance(DragKind::Folder,"a","parent","target",1.28));
+        hover.end_frame();
+        hover.begin_frame();
+        assert!(hover.advance(DragKind::Folder,"a","parent","target",1.30));
+    }
+    #[test]
+    fn folder_hover_and_drop_share_cycle_and_parent_guards(){
+        let drag=FolderDrag{id:"a".into(),parent:"parent".into()};
+        assert!(!valid_folder_target(&drag,"a",|_|false));
+        assert!(!valid_folder_target(&drag,"parent",|_|false));
+        assert!(!valid_folder_target(&drag,"child",|id|id=="a"));
+        assert!(valid_folder_target(&drag,"other",|_|false));
+        assert!(!valid_folder_target(&drag,"",|_|false));
     }
     #[test]
     fn category_tree_slots_share_depth_and_center(){

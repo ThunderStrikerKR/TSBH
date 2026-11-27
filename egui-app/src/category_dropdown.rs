@@ -380,7 +380,7 @@ fn menu_body(
 pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&str,&CategoryNode>,
     state:&mut ExplorerState,enabled:bool,list_height:f32,search_focused:bool,
     totals:Option<&HashMap<String,usize>>,products:Option<&HashMap<String,Vec<(String,String)>>>,move_enabled:bool,
-    mut drag_hover:Option<&mut category_tree::ProductDragHover>,
+    mut drag_hover:Option<&mut category_tree::CategoryDragHover>,
     mut product_selection:Option<&mut category_tree::ProductSelection>,folder_allowed:Option<&HashSet<String>>)
     ->(Option<String>,Option<Vec<category_tree::ProductMove>>,Option<category_tree::FolderMove>){
     let mut product_request=None;
@@ -480,7 +480,8 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                         }else if let Some(request)=category_tree::product_drop_target(list,&response,target,
                             allow_drop){product_move=Some(request);}
                         else if let Some(hover)=drag_hover.as_deref_mut(){
-                            if hover.observe(list,&response,target,allow_drop&&has_children&&!open&&path!=context){
+                            if hover.observe(list,&response,target,allow_drop&&has_children&&!open&&path!=context,
+                                folder_allowed.is_some_and(|a|a.contains(target)),|id|path.iter().any(|p|p==id)){
                                 hover_path=Some(path.clone());
                             }
                         }
