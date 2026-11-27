@@ -221,6 +221,15 @@ fn manual_assignment_payload(
         !manual_source_assignment_allowed(false,None,pending.and_then(|c|c.item.as_deref()),field){
         return Err("선택한 상품의 수량을 먼저 확정하세요.");
     }
+    // A new product destination is UI-only. The native reducer receives a real
+    // item ID only after the temporary model has created the row.
+    if target.item.is_none() && target.field=="newProduct"{
+        if field!="product"{return Err("상품 원문만 신규 품목에 배정할 수 있습니다.");}
+        let row=list(model,"rows").get(target.row).ok_or("배송 건을 확인하세요.")?;
+        let rid=text(row,"id");
+        if rid.is_empty(){return Err("배송 건을 확인하세요.");}
+        return Ok(json!({"id":id,"recipientId":rid}));
+    }
     if !manual_cell_matches_source(target.item.is_some(),&target.field,field){
         return Err("원문 항목과 같은 종류의 입력 셀을 선택하세요.");
     }
@@ -389,6 +398,7 @@ fn manual_cell_targets(model:&Value)->Vec<ManualCellTarget>{
                 row:row_index,item:None,field:field.into()
             });
         }
+        cells.push(ManualCellTarget{row:row_index,item:None,field:"newProduct".into()});
         for item in list(row,"items"){
             let id=text(item,"id").to_owned();
             for field in ["product","quantity","unitPrice"]{
@@ -659,6 +669,65 @@ fn reuse_native_quote(saved:Option<&Value>,updated:&Value)->Option<Value>{
         "linePrices":saved.get("linePrices"),
         "freightLines":saved.get("freightLines")
     }))
+}
+
+/// Compose the existing native reducers on a temporary model. No intermediate
+/// blank row is published, and the original evidence stays unassigned on error.
+fn assign_new_manual_product(
+    gateway:&dyn BandoGateway,payload:&Value
+)->Result<Value,String>{
+    let rid=text(payload,"recipientId");
+    let iid=text(payload,"itemId");
+    let id=text(payload,"id");
+    let model=&payload["model"];
+    let row=list(model,"rows").iter().position(|row|text(row,"id")==rid)
+        .ok_or("배송 건을 확인하세요.")?;
+    if rid.is_empty() || iid.is_empty() ||
+        list(model,"rows").iter().any(|row|list(row,"items").iter().any(|item|text(item,"id")==iid)){
+        return Err("신규 품목을 확인하세요.".into());
+    }
+    let target=ManualCellTarget{row,item:None,field:"newProduct".into()};
+    manual_assignment_payload(model,id,&target,None)?;
+    let added=rule(gateway,json!({
+        "action":"add_manual_item","model":model,"order":payload["order"],
+        "assignmentOrder":payload["assignmentOrder"],"recipientId":rid,"itemId":iid
+    }))?;
+    let mut assign=payload.clone();
+    assign["action"]=json!("assign_manual_block");
+    assign["model"]=added.get("model").filter(|model|model.is_object())
+        .ok_or("신규 품목을 생성하지 못했습니다.")?.clone();
+    assign["cell"]=json!({"recipientId":rid,"itemId":iid,"field":"product"});
+    let result=rule(gateway,assign)?;
+    let bound=&result["model"]["assignments"][id];
+    if text(bound,"recipientId")!=rid || text(bound,"itemId")!=iid || text(bound,"field")!="product"{
+        return Err("신규 품목과 원문을 연결하지 못했습니다.".into());
+    }
+    Ok(result)
+}
+
+/// Resolve an ambiguous dropped product using the shared item editor without
+/// losing its source ownership. Both native steps are committed as one outcome.
+fn resolve_dropped_manual_product(
+    gateway:&dyn BandoGateway,payload:&Value
+)->Result<Value,String>{
+    let id=text(payload,"id");
+    let cell=&payload["cell"];
+    let bound=&payload["model"]["assignments"][id];
+    if id.is_empty() || text(bound,"recipientId")!=text(cell,"recipientId")
+        || text(bound,"itemId")!=text(cell,"itemId") || text(bound,"field")!="product"
+        || !payload["product"].is_object(){
+        return Err("상품 원문 연결을 확인하세요.".into());
+    }
+    let released=rule(gateway,json!({
+        "action":"release_manual_block","model":payload["model"],
+        "order":payload["order"],"assignmentOrder":payload["assignmentOrder"],
+        "id":id,"clear":false
+    }))?;
+    let mut assign=payload.clone();
+    assign["action"]=json!("assign_manual_block");
+    assign["model"]=released["model"].clone();
+    assign["assignmentOrder"]=released["assignmentOrder"].clone();
+    rule(gateway,assign)
 }
 
 fn add_selected_manual_product(
@@ -1202,8 +1271,13 @@ impl ManualWorkspace {
     fn busy(&self)->bool {self.receiver.is_some()}
 
     fn open_item_detail(&mut self,rid:&str,iid:&str,ctx:&Context){
+        let resolving_drop=self.last_action.as_deref()==Some("assign_new_manual_product")
+            && self.selected_item.as_deref()==Some(iid)
+            && self.model.as_ref().and_then(|model|list(model,"rows").get(self.selected_recipient))
+                .is_some_and(|row|text(row,"id")==rid);
         if self.busy() || self.nested_modal_window_id().is_some() ||
-            self.pending_quantity_cell().is_some() || self.edit_text!=self.current_value(){return;}
+            (self.pending_quantity_cell().is_some() && !resolving_drop)
+            || self.edit_text!=self.current_value(){return;}
         let Some(item)=self.model.as_ref().and_then(|model|
             list(model,"rows").iter().find(|row|text(row,"id")==rid)
         ).and_then(|row|list(row,"items").iter().find(|item|text(item,"id")==iid)).cloned()
@@ -1284,6 +1358,11 @@ impl ManualWorkspace {
                 let count=self.model.as_ref().map(|m|list(m,"rows").len()).unwrap_or(0);
                 self.row_count_text=count.to_string();
                 self.selected_recipient=self.selected_recipient.min(count.saturating_sub(1));
+                if self.last_action.as_deref()==Some("assign_new_manual_product"){
+                    // The history snapshot above retains the previous selection.
+                    self.selected_item=None;
+                    self.selected_field="name".into();
+                }
                 if self.selected_item.as_ref().is_some_and(|id|
                     !self.model.as_ref().is_some_and(|m|
                         list(m,"rows").get(self.selected_recipient).is_some_and(|r|
@@ -1311,6 +1390,15 @@ impl ManualWorkspace {
                     if valid {
                         self.select_cell(target.row,target.item,&target.field);
                         self.editor_click_at=click_at;
+                        if self.last_action.as_deref()==Some("assign_new_manual_product"){
+                            self.pending_item_detail=self.model.as_ref().and_then(|model|{
+                                let row=list(model,"rows").get(self.selected_recipient)?;
+                                let iid=self.selected_item.as_deref()?;
+                                let item=list(row,"items").iter().find(|item|text(item,"id")==iid)?;
+                                (text(item,"productId").is_empty() || text(item,"variantId").is_empty())
+                                    .then(||(text(row,"id").to_owned(),iid.to_owned()))
+                            });
+                        }
                     }
                 }else if let Some(navigation)=self.advance_after_apply.take(){
                     self.move_selection(navigation);
@@ -1469,7 +1557,7 @@ impl ManualWorkspace {
     fn pending_quantity_cell(&self)->Option<ManualCellTarget>{
         if !self.selected_quantity_pending() ||
             !matches!(self.last_action.as_deref(),
-                Some("set_manual_product"|"assign_manual_block")) {
+                Some("set_manual_product"|"assign_manual_block"|"assign_new_manual_product"|"resolve_dropped_manual_product")) {
             return None;
         }
         Some(ManualCellTarget{
@@ -1712,7 +1800,8 @@ impl ManualWorkspace {
                 }
                 // Product recognition relies on the same native catalog and
                 // customer pricing context as the main intake, not UI rules.
-                if ["assign_manual_block","release_manual_block","set_manual_product"]
+                if ["assign_manual_block","release_manual_block","set_manual_product",
+                    "assign_new_manual_product","resolve_dropped_manual_product"]
                     .contains(&action.as_str()) {
                     // A real dealer-specific manual product decision must
                     // see the complete operational price tier and overrides.
@@ -1726,7 +1815,11 @@ impl ManualWorkspace {
                     payload["state"]=state;
                     payload["candidateIds"]=json!((0..20).map(|_|unique_id()).collect::<Vec<_>>());
                 }
-                let result=if action=="add_selected_manual_product"{
+                let result=if action=="assign_new_manual_product"{
+                    assign_new_manual_product(service.as_ref(),&payload)?
+                }else if action=="resolve_dropped_manual_product"{
+                    resolve_dropped_manual_product(service.as_ref(),&payload)?
+                }else if action=="add_selected_manual_product"{
                     payload["action"]=json!("add_manual_item");
                     let recipient_id=text(&extra,"recipientId");
                     add_selected_manual_product(service.as_ref(),&order,&payload,
@@ -2286,7 +2379,7 @@ impl ManualWorkspace {
                                                     let mut header_rollback=false;
                                                     let rollback_pending=self.selected_quantity_pending()
                                                         && matches!(self.last_action.as_deref(),
-                                                            Some("set_manual_product"|"assign_manual_block"));
+                                                            Some("set_manual_product"|"assign_manual_block"|"assign_new_manual_product"|"resolve_dropped_manual_product"));
                                                     let rollback_enabled=!busy && self.edit_text==self.current_value();
                                                     crate::card::reception_section_with_header(
                                                         sheet,"품목 및 운임",theme::MANUAL_ITEMS_CARD_MIN_HEIGHT,
@@ -2442,6 +2535,20 @@ impl ManualWorkspace {
                                                                         );
                                                                     }
                                                                 }
+                                                            }
+                                                            // Only a compatible source drag exposes the new-row destination.
+                                                            let target=ManualCellTarget{row:index,item:None,field:"newProduct".into()};
+                                                            if can_mutate && drag_recommendations.contains(&target){
+                                                                let response=items_ui.add_sized(
+                                                                    [items_ui.available_width(),theme::RECEPTION_ITEMS_ROW_HEIGHT],
+                                                                    egui::Label::new(typography::body("신규 품목으로 분류"))
+                                                                );
+                                                                let hovered=manual_assignment_drop_hit(items_ui,response.rect,drag_pointer);
+                                                                if hovered{
+                                                                    drop_allowed=true;
+                                                                    drop_target=Some(target);
+                                                                }
+                                                                paint_manual_assignment_recommendation(items_ui,response.rect,hovered);
                                                             }
                                                             // Pending assignment rollback lives in the fixed header action.
                                                             });
@@ -2616,9 +2723,18 @@ impl ManualWorkspace {
                 let payload=self.model.as_ref().ok_or("수동 분류 모델이 없습니다.")
                     .and_then(|m|manual_assignment_payload(m,&id,&target,pending.as_ref()));
                 match payload{
-                    Ok(payload)=>{
-                        self.select_cell(target.row,target.item,&target.field);
-                        chosen=Some(("assign_manual_block".into(),payload));
+                    Ok(mut payload)=>{
+                        if target.item.is_none() && target.field=="newProduct"{
+                            let iid=unique_id();
+                            payload["itemId"]=json!(iid);
+                            self.pending_select_after_apply=Some(ManualCellTarget{
+                                row:target.row,item:Some(iid),field:"quantity".into()
+                            });
+                            chosen=Some(("assign_new_manual_product".into(),payload));
+                        }else{
+                            self.select_cell(target.row,target.item,&target.field);
+                            chosen=Some(("assign_manual_block".into(),payload));
+                        }
                     }
                     Err(error)=>{
                         self.error=Some(error.into());
@@ -2722,10 +2838,23 @@ impl ManualWorkspace {
                             let title=text(&product,"name").to_owned();
                             self.select_cell(index,Some(iid.clone()),"quantity");
                             self.detail_write_pending=true;
-                            self.action("set_manual_product",json!({
+                            let dropped_source=if self.last_action.as_deref()==Some("assign_new_manual_product"){
+                                self.model.as_ref().and_then(|model|model["assignments"].as_object())
+                                    .and_then(|assignments|assignments.iter().find(|(_,cell)|
+                                        text(cell,"recipientId")==rid && text(cell,"itemId")==iid
+                                            && text(cell,"field")=="product"))
+                                    .map(|(id,_)|id.clone())
+                            }else{None};
+                            let mut payload=json!({
                                 "cell":{"recipientId":rid,"itemId":iid,"field":"product"},
                                 "value":title,"product":product,"preserveExistingQuantity":preserve
-                            }),ctx);
+                            });
+                            if let Some(id)=dropped_source{
+                                payload["id"]=json!(id);
+                                self.action("resolve_dropped_manual_product",payload,ctx);
+                            }else{
+                                self.action("set_manual_product",payload,ctx);
+                            }
                         }
                         item_editor::Event::Remove=>{
                             self.detail_write_pending=true;
@@ -3082,6 +3211,27 @@ mod manual_assignment_gesture_tests{
     }
 
     #[test]
+    fn product_drop_creates_a_destination_even_when_the_item_table_is_empty(){
+        let mut model=json!({
+            "rows":[{"id":"r1","items":[]},{"id":"r2","items":[{"id":"i2"}]}],
+            "blocks":[{"id":"p","field":"product","text":"270"},
+                {"id":"q","field":"quantity","text":"2개"}],"assignments":{}
+        });
+        let target=ManualCellTarget{row:0,item:None,field:"newProduct".into()};
+        assert!(manual_assignment_recommendations(&model,"p",None).contains(&target));
+        assert_eq!(manual_assignment_payload(&model,"p",&target,None).unwrap(),
+            json!({"id":"p","recipientId":"r1"}));
+        assert!(!manual_assignment_recommendations(&model,"q",None).contains(&target));
+        assert!(manual_assignment_payload(&model,"q",&target,None).is_err());
+        let pending=ManualCellTarget{row:1,item:Some("i2".into()),field:"quantity".into()};
+        assert!(manual_assignment_payload(&model,"p",&target,Some(&pending)).is_err());
+        assert!(manual_assignment_recommendations(&model,"p",None)
+            .contains(&ManualCellTarget{row:1,item:None,field:"newProduct".into()}));
+        model["assignments"]["p"]=json!({"recipientId":"r2","itemId":"i2","field":"product"});
+        assert!(manual_assignment_payload(&model,"p",&target,None).is_err());
+    }
+
+    #[test]
     fn drag_recommends_every_compatible_cell_and_only_those_cells(){
         let model=json!({
             "rows":[
@@ -3102,8 +3252,9 @@ mod manual_assignment_gesture_tests{
         assert!(names.contains(&ManualCellTarget{row:1,item:None,field:"name".into()}));
 
         let products=manual_assignment_recommendations(&model,"product",None);
-        assert_eq!(products.len(),2);
-        assert!(products.iter().all(|cell|cell.field=="product" && cell.item.is_some()));
+        assert_eq!(products.len(),4);
+        assert_eq!(products.iter().filter(|cell|cell.field=="product" && cell.item.is_some()).count(),2);
+        assert_eq!(products.iter().filter(|cell|cell.field=="newProduct" && cell.item.is_none()).count(),2);
         let quantities=manual_assignment_recommendations(&model,"quantity",None);
         assert_eq!(quantities.len(),2);
         assert!(quantities.iter().all(|cell|cell.field=="quantity" && cell.item.is_some()));
