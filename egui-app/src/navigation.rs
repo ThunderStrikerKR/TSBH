@@ -1,4 +1,5 @@
 //! Shared date selection, segmented navigation and recipient/count traversal.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use chrono::{Datelike,Duration as Days,Months,NaiveDate};
 use crate::ui_primitives::UiWidthPolicyExt;
@@ -117,7 +118,7 @@ pub fn reception_recipient_navigator(
             ).size().x;
             let content_width=(name_width-2.0*theme::SPACE_8).max(0.0);
             let clipped=natural_width>content_width;
-            let label=segments.add_sized(
+            let label=segments.shared_add_sized(
                 Vec2::new(name_width,inner.height()),
                 truncated_label_for_explicit_tooltip(typography::body(display))
                     .halign(Align::Center)
@@ -139,7 +140,7 @@ pub fn reception_recipient_navigator(
             );
             if next.clicked(){selected=Some(current+1);}
 
-            segments.add_sized(
+            segments.shared_add_sized(
                 Vec2::new(count_width,inner.height()),
                 egui::Label::new(typography::field_label(
                     &format!("{}/{}",current+1,total)
@@ -342,7 +343,7 @@ pub fn date_calendar(
                 let title_width=theme::CALENDAR_GRID_WIDTH
                     -4.0*theme::CALENDAR_NAV_SIZE
                     -4.0*theme::CALENDAR_GRID_GAP;
-                nav.add_sized(
+                nav.shared_add_sized(
                     egui::vec2(title_width,theme::CALENDAR_NAV_SIZE),
                     egui::Label::new(typography::field_label(&format!(
                         "{}년 {}월",month.year(),month.month()
@@ -369,7 +370,7 @@ pub fn date_calendar(
                 ))
                 .show(calendar,|grid|{
                     for day in ["월","화","수","목","금","토","일"]{
-                        grid.add_sized(
+                        grid.shared_add_sized(
                             egui::vec2(width,width),
                             egui::Label::new(typography::caption(day))
                                 .halign(Align::Center),
@@ -384,7 +385,7 @@ pub fn date_calendar(
                                 grid.close();
                             }
                         }else{
-                            grid.allocate_space(egui::vec2(width,width));
+                            grid.shared_allocate_space(egui::vec2(width,width));
                         }
                         if index%7==6{grid.end_row();}
                     }
@@ -404,7 +405,7 @@ mod date_navigation_segmented_control_tests{
         for shared in [false,true]{
             let _=ctx.run(egui::RawInput::default(),|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
-                    let (rect,_)=ui.allocate_exact_size(Vec2::new(112.0,36.0),Sense::hover());
+                    let (rect,_)=ui.shared_allocate_exact_size(Vec2::new(112.0,36.0),Sense::hover());
                     let slot=rect.shrink(1.0);
                     let before=ui.available_rect_before_wrap().min;
                     let child=if shared{
@@ -584,7 +585,7 @@ pub(crate) fn apply_management_date_control_spacing(ui:&mut eframe::egui::Ui){
 /// Reserve two compact date rows with a common right edge and shared gap.
 pub(crate) fn compact_date_range_rows(ui:&mut Ui,first_width:f32,second_width:f32)->(Rect,Rect){
     let width=ui.available_width().max(1.0);
-    let (area,_)=ui.allocate_exact_size(Vec2::new(width,theme::INPUT_HEIGHT*2.0+theme::SPACE_8),Sense::hover());
+    let (area,_)=ui.shared_allocate_exact_size(Vec2::new(width,theme::INPUT_HEIGHT*2.0+theme::SPACE_8),Sense::hover());
     let row=|desired:f32,top:f32|{
         let w=desired.min(width);
         Rect::from_min_size(egui::pos2(area.right()-w,top),Vec2::new(w,theme::INPUT_HEIGHT))
@@ -592,7 +593,7 @@ pub(crate) fn compact_date_range_rows(ui:&mut Ui,first_width:f32,second_width:f3
     (row(first_width,area.top()),row(second_width,area.top()+theme::INPUT_HEIGHT+theme::SPACE_8))
 }
 pub(crate) fn date_range_separator(ui:&mut Ui){
-    let (rect,_)=ui.allocate_exact_size(Vec2::new(theme::MANAGEMENT_DATE_RANGE_SEPARATOR_WIDTH,theme::INPUT_HEIGHT),Sense::hover());
+    let (rect,_)=ui.shared_allocate_exact_size(Vec2::new(theme::MANAGEMENT_DATE_RANGE_SEPARATOR_WIDTH,theme::INPUT_HEIGHT),Sense::hover());
     ui.painter().text(rect.center(),egui::Align2::CENTER_CENTER,"~",
         typography::metadata_font(),theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal));
 }
