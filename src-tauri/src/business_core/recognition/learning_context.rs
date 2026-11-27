@@ -593,7 +593,8 @@ mod tests{
         let records=report["fieldContextStatistics"].as_array().unwrap();
         assert_eq!(records.len(),15);
         assert!(records.iter().all(|r|r["counts"]["independentOrders"]==1));
-        let selected=records.iter().find(|r|r["key"].as_str().unwrap().contains("\\\"quantity\\\"")).unwrap();
+        let selected=records.iter().find(|r|serde_json::from_str::<Value>(
+            r["key"].as_str().unwrap()).is_ok_and(|key|key[1]=="quantity")).unwrap();
         let filtered=statistics(&json!({"orders":[order.clone()],"contextKeys":[selected["key"]]})).unwrap();
         assert_eq!(filtered["fieldContextStatistics"].as_array().unwrap().len(),1);
         assert_eq!(filtered["fieldStatistics"],json!([]));
