@@ -671,7 +671,7 @@ fn native_model_group_sqlite_roundtrip_and_stale_editor_conflict() {
         &json!({"colorGuidanceGroups":from_b}),
         &json!({"colorGuidanceGroups":proposed}))
         .expect_err("stale group editor must be rejected");
-    assert!(error.contains("colorGuidanceGroups 설정이 다른 화면에서 수정됐습니다"),
+    assert_eq!(error,"다른 화면에서 colorGuidanceGroups 설정이 변경됐습니다. 다시 불러온 뒤 저장하세요.",
         "reject the stale field without overwriting editor A: {error}");
     assert_eq!(get_snapshot(&reopened).unwrap(),winner,
         "stale save cannot increment revision or mutate any rows");
