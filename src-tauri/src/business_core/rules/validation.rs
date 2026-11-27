@@ -4,6 +4,9 @@ use std::collections::{HashMap,HashSet};
 use serde_json::Value;
 use super::{checked_sum, field, find_by_id, flag, has_value, rows, safe, str_field};
 
+// Persisted audit identity, not display copy.
+const LEGACY_FREIGHT_INPUT_EVENT:&str="실제 출고 운임 입력";
+
 fn unique_id(values: &Value) -> bool {
     let mut seen = HashSet::new();
     rows(values).iter().all(|v| seen.insert(str_field(v, "id").to_string()))
@@ -248,7 +251,7 @@ pub(super) fn validate_with_prior_core(state:&Value,before:Option<&Value>,
                     let has_evidence = field(current,"actualFreight").get(origin).is_some() &&
                         rows(field(w,"events")).iter().any(|event| {
                             !array_has(field(old_w,"events"),str_field(event,"id")) &&
-                            str_field(event,"action") == "실제 출고 운임 입력" &&
+                            str_field(event,"action") == LEGACY_FREIGHT_INPUT_EVENT &&
                             rows(field(event,"shipmentIds")).iter()
                                 .any(|id|id.as_str()==Some(str_field(old,"id"))) &&
                             field(event,"before")==original_freight &&
@@ -392,7 +395,7 @@ pub(super) fn validate_factory_transition(state:&Value,before:&Value)->Result<()
         }
         events_by_shipment.entry(targets[0].as_str().unwrap_or("")).or_default().push(e);
         match str_field(e,"action"){
-            "실제 출고 운임 입력"=>{},
+            LEGACY_FREIGHT_INPUT_EVENT=>{},
             "공장 회신 반영"|"공장 송장 / 운임 정정"=>{
                 if str_field(field(e,"after"),"fileId")!=reply_id{return Err("공장 회신 이벤트 원본 연결 오류".into());}
             },
@@ -446,7 +449,7 @@ pub(super) fn validate_factory_transition(state:&Value,before:&Value)->Result<()
         let evidence=events_by_shipment.get(id).map(Vec::as_slice).unwrap_or(&[]);
         let previous_actual=actual(previous);
         if field(previous,"actualFreight").get("FACTORY")!=field(ship,"actualFreight").get("FACTORY")
-            && !evidence.iter().any(|e|str_field(e,"action")=="실제 출고 운임 입력"
+            && !evidence.iter().any(|e|str_field(e,"action")==LEGACY_FREIGHT_INPUT_EVENT
                 && field(e,"before")==&previous_actual&&str_field(field(e,"after"),"origin")=="FACTORY"
                 && field(field(e,"after"),"amount")==field(row,"actual")){
             return Err("출고 운임의 수정 근거를 확인하세요.".into());
@@ -700,7 +703,7 @@ fn factory_scope_ignores_unchanged_unrelated_faults_but_protects_reply_targets()
         {"row":2,"applied":true,"shipmentId":"s","orderId":"o","tracking":"001234567890","actual":4000}
     ]}]);
     new["workflow"]["events"]=serde_json::json!([
-        {"id":"fee","action":"실제 출고 운임 입력","shipmentIds":["s"],"before":null,
+        {"id":"fee","action":LEGACY_FREIGHT_INPUT_EVENT,"shipmentIds":["s"],"before":null,
          "after":{"origin":"FACTORY","amount":4000}},
         {"id":"reply-event","action":"공장 회신 반영","shipmentIds":["s"],
          "before":{"tracking":null,"actual":null},

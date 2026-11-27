@@ -126,7 +126,7 @@
   },
   {
     "path": "src-tauri/src/business_core/rules/validation.rs",
-    "line": "str_field(event,\"action\") == \"실제 출고 운임 입력\" &&",
+    "line": "const LEGACY_FREIGHT_INPUT_EVENT:&str=\"실제 출고 운임 입력\";",
     "reason": "persisted workflow event identity compatibility"
   },
   {

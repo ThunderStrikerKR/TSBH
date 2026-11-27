@@ -234,6 +234,8 @@ pub fn read_factory_reply(filename:&str,bytes:&[u8])->Result<Value,String>{
         if tracking_numeric&&styles.is_none(){
             row["trackingFormatUnreadable"]=json!(true);
         }
+        let aggregate_values:Vec<String>=(0..17).map(value).collect();
+        row["aggregateValues"]=json!(aggregate_values);
         rows.push(row);
     }
     Ok(json!({"id":format!("factory-reply-{:x}",Sha256::digest(bytes)),

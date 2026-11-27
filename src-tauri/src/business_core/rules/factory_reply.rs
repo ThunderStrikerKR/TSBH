@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use std::collections::{HashMap,HashSet};
 use unicode_normalization::UnicodeNormalization;
 
-/// Shared confirmation copy used by the reply rules and read-only review.
+/// Shared read-only factory correction confirmation text.
 pub(crate) fn factory_conflict_message(row:&str,name:&str,current_tracking:&str,
     current_fee:&str,reply_tracking:&str,reply_fee:&str)->String{
     format!("{row}행 / {name}\n기존: {current_tracking} / 운임 {current_fee}\n회신: {reply_tracking} / 운임 {reply_fee}\n이 한 행만 정정할까요? 기존 값과 원본 파일은 보존됩니다.")
@@ -453,6 +453,7 @@ fn parse_reply(payload:&Value)->Result<Value,String>{
         let mut row=json!({"row":n,"name":name,"address":address,
             "contacts":contacts,"goods":goods,"matchDate":field(payload,"businessDate"),
             "tracking":tracking,"actual":freight});
+        if let Some(values)=source.get("aggregateValues"){row["aggregateValues"]=values.clone();}
         if let Some((kind,detail))=issue{kind.set(&mut row,detail)}
         parsed.push(row);
     }
@@ -724,6 +725,18 @@ pub(crate) fn approve_factory_conflict_for_state(state:&Value,payload:&Value)->R
     let target=if selection{
         s(&selected_ambiguity(state,payload,&reply_row_with_date(original,source))?,"shipmentId").to_owned()
     }else{s(source,"shipmentId").to_owned()};
+    // A delayed approval must not reverse a later valid original reply.
+    let history=rows(state,"factoryReplies");
+    let original_pos=history.iter().position(|r|s(r,"id")==s(original,"id")).ok_or("원본 회신 순서 누락")?;
+    let positions:HashMap<&str,usize>=history.iter().enumerate().map(|(i,r)|(s(r,"id"),i)).collect();
+    let latest=history.iter().enumerate().filter_map(|(i,record)|{
+        let pos=positions.get(s(field(record,"resolves"),"id")).copied().unwrap_or(i);
+        rows(record,"rows").iter().find(|r|r["applied"]==true && s(r,"shipmentId")==target)
+            .map(|r|(pos,s(r,"tracking")))
+    }).max_by_key(|(pos,_)|*pos);
+    if latest.is_some_and(|(pos,tracking)|pos>original_pos&&tracking!=s(source,"tracking")){
+        return Err("더 최근 공장 회신의 운송장번호가 이미 적용되었습니다.".into());
+    }
     let mut clean=reply_row_with_date(original,source);
     for k in ["issue","issueCode","applied","shipmentId","orderId"]{
         clean.as_object_mut().ok_or("회신 행 형식 오류")?.remove(k);
@@ -1237,6 +1250,23 @@ mod ambiguity_selection_tests{
         }
         review["selectedShipmentId"]=json!("s2");
         assert!(approve_factory_conflict_for_state(&next,&review).is_err());
+        // Simulate a later valid reply for the same selected shipment while
+        // the original ambiguous row is still waiting for review.
+        let mut latest=state.clone();
+        let mut later=next["factoryReplies"][1].clone();
+        later["id"]=json!("later-valid");
+        later.as_object_mut().unwrap().remove("resolves");
+        later["rows"][0]["tracking"]=json!("000099990002");
+        latest["factoryReplies"].as_array_mut().unwrap().push(later);
+        latest["workflow"]["shipments"][1]=next["workflow"]["shipments"][1].clone();
+        latest["workflow"]["shipments"][1]["tracking"]["FACTORY"]=json!("000099990002");
+        // Both shipments must be completed, otherwise the pending-first matcher
+        // legitimately excludes the selected target before the stale-reply guard.
+        latest["workflow"]["shipments"][0]["actualFreight"]["FACTORY"]=json!(1000);
+        review["confirmedText"]=conflict_confirmation_for_state(&latest,&review).unwrap()["text"].clone();
+        let error=approve_factory_conflict_for_state(&latest,&review).unwrap_err();
+        assert!(error.contains("더 최근 공장 회신"),"{error}");
+        assert_eq!(latest["workflow"]["shipments"][1]["tracking"]["FACTORY"],"000099990002");
     }
 }
 

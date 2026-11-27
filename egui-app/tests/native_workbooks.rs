@@ -147,6 +147,11 @@ fn factory_reply_accepts_cached_formula_values_without_executing_formulas(){
     let source=read_factory_reply("formula.xlsx",&bytes).unwrap();
     assert_eq!(source["sourceRows"][0]["rawFreight"],"4000");
     assert_eq!(source["sourceRows"][0]["tracking"],"1234567890");
+    let aggregate=&source["sourceRows"][0]["aggregateValues"];
+    assert_eq!(aggregate.as_array().unwrap().len(),17);
+    assert_eq!(aggregate[0],"김수취");
+    assert_eq!(aggregate[6],"4000");
+    assert_eq!(aggregate[16],"1234567890");
     assert!(source["sourceRows"][0].get("sourceIssue").is_none());
     let result=analyze(&bytes);
     assert_eq!(result["applied"],1);

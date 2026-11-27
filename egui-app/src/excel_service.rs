@@ -11,12 +11,12 @@ use uuid::Uuid;
 
 #[path = "../../src-tauri/src/export_file.rs"]
 mod recorded_export;
-const HEADERS:[&str;16]=[
+pub(crate) const HEADERS:[&str;16]=[
     "수하인명","수하인우편번호","수하인주소","수하인전화번호","수하인핸드폰번호",
     "택배수량","택배운임","운임구분","품목명","","메시지","송하인명",
     "(송)우편","(송)주소1","(송)전화","(송)핸드폰"
 ];
-const WIDTHS:[f64;16]=[16.,14.,48.,18.,18.,12.,12.,12.,64.,3.,35.,18.,12.,48.,18.,18.];
+pub(crate) const WIDTHS:[f64;16]=[16.,14.,48.,18.,18.,12.,12.,12.,64.,3.,35.,18.,12.,48.,18.,18.];
 fn kind(origin:&str)->Result<(&'static str,&'static str,&'static str),String>{
     match origin {
         "FACTORY"=>Ok(("prepare_factory_export","공장 발송","공장")),
@@ -39,8 +39,10 @@ fn archive_root(state:&Value)->Result<PathBuf,String>{
     Ok(root)
 }
 fn archive_day(root:&Path,origin:&str)->Result<PathBuf,String>{
+    archive_day_at(root,origin,Local::now().date_naive())
+}
+fn archive_day_at(root:&Path,origin:&str,now:chrono::NaiveDate)->Result<PathBuf,String>{
     let (_,category,_)=kind(origin)?;
-    let now=Local::now();
     let dir=root.join(category).join(format!("{}년",now.year()))
         .join(format!("{:02}월",now.month())).join(format!("{:02}일",now.day()));
     fs::create_dir_all(&dir).map_err(|_|"Excel 날짜 폴더 생성 실패")?;
@@ -80,9 +82,12 @@ fn save(root:&Path,origin:&str,bytes:&[u8])->Result<PathBuf,String>{
     if bytes.len()<4||bytes.len()>25*1024*1024||!bytes.starts_with(b"PK\x03\x04"){
         return Err("정상적인 Excel XLSX 파일이 아닙니다.".into())
     }
-    let dir=archive_day(root,origin)?;
+    save_at(root,origin,bytes,Local::now().date_naive())
+}
+fn save_at(root:&Path,origin:&str,bytes:&[u8],day:chrono::NaiveDate)->Result<PathBuf,String>{
+    let dir=archive_day_at(root,origin,day)?;
     let (_,_,stem)=kind(origin)?;
-    let date=Local::now().format("%Y%m%d").to_string();
+    let date=day.format("%Y%m%d").to_string();
     for n in 1..=100_000_u32 {
         let path=dir.join(format!("{date}({stem}{n}).xlsx"));
         let mut file=match fs::OpenOptions::new().write(true).create_new(true).open(&path){
@@ -159,6 +164,8 @@ pub fn create(origin:&str,ids:&[String])->Result<Value,String>{
     let bytes=encode(&preview)?;
     let path=save(&root,origin,&bytes)?;
     let saved=path.to_string_lossy().to_string();
+    let (date,aggregate)=bando_data_access::excel_aggregate_jobs::export_target(&path,origin)?;
+    let aggregate=aggregate.to_str().ok_or("취합 경로 인코딩 오류")?;
     let outcome=||->Result<Value,String>{
         let mut db=conn()?;
         let current=bando_data_access::read_v2_snapshot(&db)?;
@@ -172,7 +179,8 @@ pub fn create(origin:&str,ids:&[String])->Result<Value,String>{
         }))?;
         let mut next=result["next"].clone();
         next["revision"]=json!(revision);
-        let commit=bando_data_access::write_v2_snapshot(&mut db,next,revision,true)?;
+        let commit=bando_data_access::write_v2_export_with_aggregate(&mut db,next,revision,&date,origin,aggregate)?;
+        crate::excel_aggregate::notify(false);
         let new_rev=commit["revision"].as_u64().ok_or("출력 이력 revision 누락")?;
         drop(db);
         let fresh=business_state::load()?;
@@ -281,6 +289,25 @@ pub fn open_daily(origin:&str)->Result<(),String>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn aggregate_filename_never_consumes_individual_sequence_and_date_is_frozen(){
+        let root=std::env::temp_dir().join(format!("bando-aggregate-sequence-{}",Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();let root=root.canonicalize().unwrap();
+        let day=chrono::NaiveDate::from_ymd_opt(2026,12,31).unwrap();
+        let next=day.succ_opt().unwrap();
+        let bytes=encode(&json!({"rows":[{"values":vec!["test";16]}]})).unwrap();
+        for (origin,stem) in [("FACTORY","공장"),("STORE","매장")]{
+            let aggregate=bando_data_access::excel_aggregate_jobs::target(&root,"2026-12-31",origin).unwrap();
+            fs::create_dir_all(aggregate.parent().unwrap()).unwrap();fs::write(&aggregate,&bytes).unwrap();
+            let p1=save_at(&root,origin,&bytes,day).unwrap();let p2=save_at(&root,origin,&bytes,day).unwrap();
+            let p3=save_at(&root,origin,&bytes,next).unwrap();
+            assert_eq!(p1.file_name().unwrap().to_str().unwrap(),format!("20261231({stem}1).xlsx"));
+            assert_eq!(p2.file_name().unwrap().to_str().unwrap(),format!("20261231({stem}2).xlsx"));
+            assert_eq!(p3.file_name().unwrap().to_str().unwrap(),format!("20270101({stem}1).xlsx"));
+            assert_eq!(fs::read(aggregate).unwrap(),bytes);assert_eq!(fs::read(p1).unwrap(),bytes);
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn product_archive_preserves_date_folder_and_never_overwrites(){
         let root=std::env::temp_dir().join(format!(

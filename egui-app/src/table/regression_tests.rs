@@ -625,10 +625,23 @@ mod shared_ui_base_113_contract_tests {
     }
     #[test]
     fn standard_text_cells_and_history_header_use_shared_painters(){
-        for source in [include_str!("../product_manager.rs"),include_str!("../excel_manager.rs"),
-            include_str!("../daily_settlement_manager.rs")]{
-            assert!(production_source_for_contract(source).contains("crate::table::paint_management_text_cell("));
+        // Normal and state-aware text cells share the same painter.
+        // Settlement must retain its semantic text state; do not replace
+        // that production call just to satisfy an obsolete string check.
+        for (name,source,required) in [
+            ("product",include_str!("../product_manager.rs"),"crate::table::paint_management_text_cell("),
+            ("excel",include_str!("../excel_manager.rs"),"crate::table::paint_management_text_cell("),
+            ("settlement",include_str!("../daily_settlement_manager.rs"),"crate::table::paint_management_text_cell_with_state("),
+        ]{
+            assert!(production_source_for_contract(source).contains(required),"{name}: missing {required}");
         }
+        let shared=include_str!("mod.rs");
+        let normal=shared.split("pub(crate) fn paint_management_text_cell(").nth(1).unwrap()
+            .split("pub(crate) fn paint_management_text_cell_with_state(").next().unwrap();
+        assert!(normal.contains("paint_management_text_cell_with_state("),"normal cell must delegate to state-aware owner");
+        let stateful=shared.split("pub(crate) fn paint_management_text_cell_with_state(").nth(1).unwrap()
+            .split("pub(crate) fn paint_management_status_cell(").next().unwrap();
+        assert!(stateful.contains("paint_management_caption("),"state-aware cell must use common caption painter");
         for source in [include_str!("../order_history_manager.rs"),include_str!("../excel_manager.rs"),
             include_str!("../daily_settlement_manager.rs")]{
             let production=production_source_for_contract(source);

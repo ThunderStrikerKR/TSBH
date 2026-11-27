@@ -201,6 +201,8 @@ fn restore_selected(conn: &mut Connection, base: &Path, filename: &str)
         // A restored older backup can contain the retired color placeholder.
         // Normalize it within this restore's verified rollback boundary.
         crate::product_colors::migrate_v2_with_verified_restore_backup(conn)?;
+        let restored_revision=get_snapshot(conn)?["revision"].as_u64().ok_or("복원 DB 리비전 오류")?;
+        crate::excel_aggregate_jobs::invalidate_after_restore(conn,restored_revision)?;
         validate_database(conn)
     })();
     if let Err(primary_error) = result {
@@ -310,6 +312,30 @@ mod operational_backup_tests {
         ].iter().map(|sql|conn.query_row(sql,[],|r|r.get::<_,String>(0)).unwrap()).collect()
     }
 
+    #[test]
+    fn aggregate_jobs_survive_real_backup_and_restore_with_new_generation(){
+        use crate::excel_aggregate_jobs as jobs;
+        let temp=Temp::new();let mut conn=fixture(&temp.0);
+        let root=temp.0.canonicalize().unwrap();
+        let p=jobs::target(&root,"2026-11-27","STORE").unwrap();
+        jobs::enqueue(&conn,"2026-11-27","STORE",p.to_str().unwrap(),7).unwrap();
+        let j=jobs::jobs(&conn,0,false).unwrap().remove(0);
+        jobs::mark_saved(&conn,&j,"old-hash").unwrap();
+        let backup=manual_backup(&conn,&temp.0).unwrap();
+        let backup_db=read_backup(Path::new(&backup)).unwrap();
+        assert_eq!(jobs::current(&backup_db,&j).unwrap().unwrap().saved,7);
+        drop(backup_db);
+        let changed=crate::update_v2_snapshot(&mut conn,7,false,|s|{
+            let mut next=s.clone();next["settings"]["operatorName"]=json!("변경 담당자");Ok(next)
+        }).unwrap();
+        assert_eq!(changed["revision"],8);
+        jobs::enqueue(&conn,"2026-11-27","STORE",p.to_str().unwrap(),8).unwrap();
+        restore_backup(&mut conn,&temp.0,&backup).unwrap();
+        let restored=jobs::current(&conn,&j).unwrap().unwrap();
+        assert_eq!((restored.desired,restored.saved,restored.hash),(9,0,None));
+        assert_eq!(get_snapshot(&conn).unwrap()["revision"],9);
+        assert_eq!(jobs::jobs(&conn,0,false).unwrap().len(),1);
+    }
     #[test]
     fn full_wal_backup_restore_preserves_core_auxiliary_and_pre_restore_snapshot(){
         let temp=Temp::new();

@@ -10,7 +10,9 @@ use crate::table::management_table_data_width;
 pub(crate) mod geometry;
 pub(crate) mod pixel_paint;
 use geometry::{aligned_rect,AlignedUiBuilderExt,SharedAllocationExt,SharedUiClipExt,
-    set_fixed_height,reserve_min_height,CardWidthPolicy,UiWidthPolicyExt};
+    set_fixed_height,CardWidthPolicy,UiWidthPolicyExt};
+#[cfg(test)]
+use geometry::reserve_min_height;
 
 #[cfg(test)]
 mod logical_alignment_tests{
@@ -233,7 +235,8 @@ pub(crate) fn fixed_row<R>(
     (rect,result)
 }
 
-/// A result list owns one bounded viewport regardless of its content.
+/// Test fixture for a bounded result viewport; no production caller remains.
+#[cfg(test)]
 pub(crate) fn fixed_result_viewport<R>(
     ui:&mut Ui,id:&str,height:f32,render:impl FnOnce(&mut Ui)->R
 )->(Rect,R){

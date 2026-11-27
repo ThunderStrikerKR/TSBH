@@ -14,6 +14,7 @@ pub(crate) fn correction_message_header(shipment_id:&str)->Vec<String>{
 pub(crate) fn correction_change_line(label:&str,before:&str,after:&str)->String{
     format!("{label}: {before} → {after}")
 }
+pub(crate) use factory_reply::factory_conflict_message;
 #[cfg(test)]
 #[test]
 fn shared_correction_copy_retains_scope_and_before_after_values(){
@@ -164,7 +165,6 @@ mod reply_rules;
 mod shipping_read;
 mod client_change;
 mod factory_reply;
-pub(crate) use factory_reply::factory_conflict_message;
 pub(crate) use factory_reply::ensure_customer_payment_unchanged;
 pub(crate) use factory_reply::{factory_reply_matches_shipment,import_automatic_factory_reply,prepare_automatic_factory_reply,apply_prepared_factory_reply,factory_correction_order_scope,approve_factory_conflict_for_state};
 mod legacy_migration;

@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'egui-app/src/excel_aggregate.rs'
       - 'egui-app/src/native_workbooks.rs'
       - 'egui-app/src/factory_reply_inbox.rs'
       - 'egui-app/src/excel_manager.rs'
@@ -19,6 +20,7 @@ on:
       - '.github/workflows/native-workbook-boundary.yml'
   pull_request:
     paths:
+      - 'egui-app/src/excel_aggregate.rs'
       - 'egui-app/src/native_workbooks.rs'
       - 'egui-app/src/factory_reply_inbox.rs'
       - 'egui-app/src/excel_manager.rs'
@@ -54,3 +56,20 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui product_excel_ui::tests -- --nocapture
       - name: Verify native factory inbox stable observations and immutable originals
         run: cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui factory_reply_inbox::tests -- --nocapture
+
+      - name: Verify durable daily Excel job and projection contracts
+        run: cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib excel_aggregate_jobs::tests -- --nocapture
+      - name: Verify daily Excel publication, leading zeros, damage recovery and Windows locking
+        run: cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui excel_aggregate::tests -- --nocapture
+
+      - name: Verify individual export sequence and date boundary
+        run: cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui aggregate_filename_never_consumes_individual_sequence_and_date_is_frozen -- --nocapture
+
+      - name: Verify daily aggregate jobs in actual SQLite backup and restore
+        run: cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib aggregate_jobs_survive_real_backup_and_restore_with_new_generation -- --nocapture
+
+
+      - name: Benchmark native Rust history projection (10k and 100k prior records)
+        run: cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib scoped_history_benchmark_10000_and_100000_historical_records -- --ignored --nocapture --test-threads=1
+      - name: Benchmark native Rust XLSX publication (10k and 100k prior records)
+        run: cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui accumulated_history_publication_benchmark_10000_and_100000 -- --ignored --nocapture --test-threads=1

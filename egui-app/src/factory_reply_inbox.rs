@@ -17,6 +17,7 @@ const INTERVAL:Duration=Duration::from_secs(1);
 fn id(bytes:&[u8])->String{format!("factory-reply-{:x}",Sha256::digest(bytes))}
 fn text<'a>(v:&'a Value,k:&str)->&'a str{v[k].as_str().unwrap_or("")}
 fn valid_name(n:&str)->bool{!n.is_empty()&&!n.starts_with("~$")&&
+    !n.strip_suffix("(취합).xlsx").is_some_and(|stem|stem.len()==8&&stem.bytes().all(|c|c.is_ascii_digit()))&&
     !n.contains('/')&&!n.contains('\\')&&!n.contains('\0')&&n.to_ascii_lowercase().ends_with(".xlsx")}
 pub(crate) fn open_db()->Result<(Connection,PathBuf),String>{
     if !excel_service::writable(){return Err(bando_data_access::terminology::FACTORY_REPLY_WRITE_DENIED.into())}
@@ -116,6 +117,16 @@ fn preflight(conn:&Connection,dir:&Path,path:&Path,file_id:&str)->Result<(u64,bo
 }
 /// Stable bytes have already been parsed by the scanner. The only hydrated
 /// before-image is the CAS transaction's authoritative state.
+fn aggregate_target(conn:&Connection,date:&str)->Result<Option<String>,String>{
+    let setting=bando_data_access::excel_aggregate_jobs::archive_directory_v2(conn)?.unwrap_or_default();
+    let raw=setting.trim();
+    if raw.is_empty(){return Ok(None)}
+    let path=PathBuf::from(raw);
+    if !path.is_absolute(){return Ok(None)}
+    let root=path.canonicalize().unwrap_or(path);
+    let target=bando_data_access::excel_aggregate_jobs::target(&root,date,"REPLY")?;
+    Ok(Some(target.to_str().ok_or("취합 경로 인코딩 오류")?.to_owned()))
+}
 fn import(conn:&mut Connection,base:&Path,dir:&Path,path:&Path,bytes:&[u8],rev:u64,mut source:Value)->Result<Value,String>{
     check_source_path(dir,path)?;
     if configured(conn)?.as_deref()!=Some(dir){
@@ -123,7 +134,9 @@ fn import(conn:&mut Connection,base:&Path,dir:&Path,path:&Path,bytes:&[u8],rev:u
     }
     let at=Utc::now().to_rfc3339();
     let n=source["sourceRows"].as_array().map(Vec::len).unwrap_or(0);
-    source["businessDate"]=json!(today());
+    let day=today();
+    source["businessDate"]=json!(day);
+    if let Some(path)=aggregate_target(conn,&day)?{source["aggregateTargetPath"]=json!(path);}
     source["at"]=json!(at);
     source["freightAt"]=json!(at);
     source["freightEventIds"]=json!(ids(n));
@@ -190,10 +203,14 @@ fn approve_with_db(conn:&mut Connection,base:&Path,review:Value)->Result<Value,S
     let correction=format!("factory-correction-{}",Uuid::new_v4());
     let at=Utc::now().to_rfc3339();
     let mut payload=review;
-    payload["correctionId"]=json!(correction);payload["businessDate"]=json!(today());
+    let day=today();
+    payload["correctionId"]=json!(correction);payload["businessDate"]=json!(day);
+    if let Some(path)=aggregate_target(conn,&day)?{payload["aggregateTargetPath"]=json!(path);}
     payload["freightAt"]=json!(at);payload["freightEventIds"]=json!(ids(1));
     payload["replyEventIds"]=json!(ids(1));
-    bando_data_access::update_v2_factory_correction_snapshot(conn,revision,&payload)
+    let result=bando_data_access::update_v2_factory_correction_snapshot(conn,revision,&payload)?;
+    crate::excel_aggregate::notify(false);
+    Ok(result)
 }
 #[derive(Clone)]
 struct Seen{stamp:(u64,SystemTime),observations:u8,done:bool}
@@ -210,7 +227,11 @@ struct Scan{seen:HashMap<PathBuf,Seen>,directory:Option<PathBuf>}
 pub struct Outcome{pub files:usize,pub applied:usize,pub held:usize,pub error:Option<String>}
 fn scan(cache:&mut Scan)->Result<Outcome,String>{
     let (mut conn,base)=open_db()?;
-    scan_with_db(cache,&mut conn,&base)
+    let outcome=scan_with_db(cache,&mut conn,&base)?;
+    // All accepted files in this detection pass have committed. Wake the
+    // aggregate worker once, not once per file and never on an empty scan.
+    if outcome.applied>0{crate::excel_aggregate::notify(false);}
+    Ok(outcome)
 }
 // The live caller retains authorization; tests supply an explicitly isolated DB.
 fn scan_with_db(cache:&mut Scan,conn:&mut Connection,base:&Path)->Result<Outcome,String>{
@@ -550,9 +571,27 @@ mod tests{
         let finalized=output("finalize_export",json!({"state":initial,"preview":preview,
             "origin":"FACTORY","savedPath":exported.to_string_lossy(),
             "now":"2026-11-13T09:00:00Z","exportId":"export-roundtrip","eventId":"export-event"})).unwrap();
-        let saved=bando_data_access::write_v2_snapshot(&mut conn,finalized["next"].clone(),7,true).unwrap();
+        let (day,target)=bando_data_access::excel_aggregate_jobs::export_target(&exported,"FACTORY").unwrap();
+        bando_data_access::excel_aggregate_jobs::initialize(&conn).unwrap();
+        conn.execute_batch("CREATE TRIGGER reject_aggregate BEFORE INSERT ON excel_aggregate_jobs
+            BEGIN SELECT RAISE(ABORT,'synthetic aggregate reservation failure'); END;").unwrap();
+        assert!(bando_data_access::write_v2_export_with_aggregate(&mut conn,finalized["next"].clone(),7,&day,"FACTORY",target.to_str().unwrap()).is_err());
+        assert_eq!(snapshot(&mut conn).unwrap(),initial);
+        assert!(bando_data_access::excel_aggregate_jobs::jobs(&conn,0,true).unwrap().is_empty());
+        assert_eq!(fs::read(&exported).unwrap(),original);
+        conn.execute_batch("DROP TRIGGER reject_aggregate").unwrap();
+        let saved=bando_data_access::write_v2_export_with_aggregate(&mut conn,finalized["next"].clone(),7,&day,"FACTORY",target.to_str().unwrap()).unwrap();
         assert_eq!(saved["workflow"]["queue"][0]["status"],"EXPORTED");
         assert_eq!(saved["revision"],8);
+        let job=bando_data_access::excel_aggregate_jobs::jobs(&conn,0,false).unwrap().remove(0);
+        crate::excel_aggregate::publish(&mut conn,&job,&base.0).unwrap();
+        let mut aggregate=Xlsx::new(std::io::Cursor::new(fs::read(&target).unwrap())).unwrap();
+        let aggregate_sheet=aggregate.worksheet_range("로젠택배").unwrap();
+        for r in 0..2_u32{for c in 0..16_u32{
+            assert_eq!(aggregate_sheet.get_value((r,c)).unwrap_or(&Data::Empty),
+                sheet.get_value((r,c)).unwrap_or(&Data::Empty));
+        }}
+        assert_eq!(fs::read(&exported).unwrap(),original);
 
         // Simulate a factory returning the actual exported row with G and Q filled.
         let mut reply=rust_xlsxwriter::Workbook::new();
@@ -578,6 +617,13 @@ mod tests{
         let mut conn=Connection::open(base.0.join("synthetic.sqlite")).unwrap();
         let stored=snapshot(&mut conn).unwrap();
         assert_eq!(stored["revision"],9);
+        let job=bando_data_access::excel_aggregate_jobs::jobs(&conn,0,false).unwrap().remove(0);
+        assert_eq!(job.origin,"REPLY");
+        crate::excel_aggregate::publish(&mut conn,&job,&base.0).unwrap();
+        let mut aggregate=Xlsx::new(std::io::Cursor::new(fs::read(&job.path).unwrap())).unwrap();
+        let aggregate_sheet=aggregate.worksheet_range("로젠택배").unwrap();
+        assert_eq!(aggregate_sheet.get_value((1,16)),Some(&Data::String("001234567890".into())));
+        assert_eq!(aggregate_sheet.get_value((1,6)),Some(&Data::String("4000".into())));
         let ship=&stored["workflow"]["shipments"][0];
         assert_eq!(ship["id"],"s1");
         assert_eq!(ship["tracking"]["FACTORY"],"001234567890");
@@ -667,6 +713,18 @@ mod tests{
         assert_eq!(result["held"],1);
         assert_eq!(result["next"]["workflow"]["shipments"][2],initial["workflow"]["shipments"][2]);
         assert_eq!(snapshot(&mut conn).unwrap(),result["next"]);
+        // Only the accepted row of the partially rejected file is eligible.
+        // This fixture has no recorded archive binding because it bypasses
+        // the inbox; recover_history binds its immutable accepted history.
+        let root=base.0.join("excel").canonicalize().unwrap();
+        bando_data_access::excel_aggregate_jobs::recover_history(&conn,Some(&root)).unwrap();
+        let j=bando_data_access::excel_aggregate_jobs::jobs(&conn,0,false).unwrap().remove(0);
+        crate::excel_aggregate::publish(&mut conn,&j,&base.0).unwrap();
+        use calamine::{Data,Reader,Xlsx};
+        let mut book=Xlsx::new(std::io::Cursor::new(fs::read(&j.path).unwrap())).unwrap();
+        let range=book.worksheet_range("로젠택배").unwrap();
+        assert_eq!(range.end().unwrap().0,1);
+        assert_eq!(range.get_value((1,16)),Some(&Data::String("009876543210".into())));
     }
 
     #[test]
@@ -721,7 +779,8 @@ mod tests{
     #[test]
     fn stale_factory_revision_retries_without_failure_notification(){
         let base=Temp::new();
-        let (mut conn,inbox)=synthetic_db(&base.0);
+        let (mut conn,_inbox)=synthetic_db(&base.0);
+        let inbox=configured(&conn).unwrap().unwrap();
         let bytes=reply_bytes("001234567890",4000);
         let path=inbox.join("reply.xlsx");
         fs::write(&path,&bytes).unwrap();
@@ -736,7 +795,8 @@ mod tests{
     #[test]
     fn busy_writer_defers_factory_reply_without_failure_notification(){
         let base=Temp::new();
-        let (mut conn,inbox)=synthetic_db(&base.0);
+        let (mut conn,_inbox)=synthetic_db(&base.0);
+        let inbox=configured(&conn).unwrap().unwrap();
         let bytes=reply_bytes("001234567890",4000);
         let path=inbox.join("reply.xlsx");
         fs::write(&path,&bytes).unwrap();
@@ -780,6 +840,87 @@ mod tests{
         assert_eq!(fs::read_dir(base.0.join("factory-replies")).unwrap().count(),1);
     }
 
+    #[test]
+    fn ten_real_replies_publish_only_latest_and_replays_do_not_change_customer_payment(){
+        use calamine::{Data,Reader,Xlsx};
+        let base=Temp::new();let (mut conn,inbox)=synthetic_db(&base.0);
+        let initial=snapshot(&mut conn).unwrap();let mut cache=Scan::default();
+        let mut originals=Vec::new();
+        for n in 1..=10{
+            let tracking=format!("{n:012}");
+            let bytes=reply_bytes(&tracking,3000+n);
+            let path=inbox.join(format!("reply-{n:02}.xlsx"));
+            fs::write(&path,&bytes).unwrap();originals.push((path,bytes));
+            let out=scan_ready(&mut cache,&mut conn,&base.0);
+            assert_eq!((out.files,out.applied,out.held),(1,1,0),"{:?}",out.error);
+            assert!(out.error.is_none());
+        }
+        let jobs=bando_data_access::excel_aggregate_jobs::jobs(&conn,0,false).unwrap();
+        assert_eq!(jobs.len(),1);assert_eq!(jobs[0].origin,"REPLY");
+        crate::excel_aggregate::publish(&mut conn,&jobs[0],&base.0).unwrap();
+        let mut book=Xlsx::new(std::io::Cursor::new(fs::read(&jobs[0].path).unwrap())).unwrap();
+        let rows=book.worksheet_range("로젠택배").unwrap();
+        assert_eq!(rows.end().unwrap().0,1);
+        assert_eq!(rows.get_value((1,16)),Some(&Data::String("000000000010".into())));
+        let current=snapshot(&mut conn).unwrap();
+        assert_eq!(current["workflow"]["shipments"][0]["tracking"]["FACTORY"],"000000000010");
+        assert_eq!(current["workflow"]["payments"],initial["workflow"]["payments"]);
+        assert_eq!(current["workflow"]["confirmations"],initial["workflow"]["confirmations"]);
+        assert_eq!(current["orders"],initial["orders"]);
+        for (path,bytes) in &originals{assert_eq!(&fs::read(path).unwrap(),bytes);}
+        fs::write(inbox.join("old-renamed.xlsx"),&originals[0].1).unwrap();
+        let out=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert_eq!(out.files,0);assert_eq!(snapshot(&mut conn).unwrap(),current);
+        assert!(bando_data_access::excel_aggregate_jobs::jobs(&conn,0,false).unwrap().is_empty());
+    }
+    #[test]
+    fn same_filename_with_new_bytes_updates_and_invalid_reply_never_enters_aggregate(){
+        use calamine::{Data,Reader,Xlsx};
+        let base=Temp::new();let (mut conn,inbox)=synthetic_db(&base.0);
+        let path=inbox.join("reply.xlsx");
+        let first=reply_bytes("001234567890",3000);
+        fs::write(&path,&first).unwrap();
+        assert_eq!(scan_ready(&mut Scan::default(),&mut conn,&base.0).applied,1);
+        let second=reply_bytes("009876543210",4000);fs::write(&path,&second).unwrap();
+        assert_eq!(scan_ready(&mut Scan::default(),&mut conn,&base.0).applied,1);
+        let mut book=rust_xlsxwriter::Workbook::new();let sheet=book.add_worksheet();
+        sheet.write_string(0,0,"수하인명").unwrap();sheet.write_string(0,16,"운송장번호").unwrap();
+        sheet.write_string(1,0,"잘못된 수하인").unwrap();sheet.write_string(1,16,"001111111111").unwrap();
+        sheet.write_number(1,6,5000.).unwrap();
+        fs::write(&path,book.save_to_buffer().unwrap()).unwrap();
+        let held=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert_eq!((held.applied,held.held),(0,1));
+        // A later blank Q cell must not replace the already accepted tracking.
+        fs::write(&path,reply_bytes("",6000)).unwrap();
+        let blank=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert_eq!(blank.applied,0);
+        let j=bando_data_access::excel_aggregate_jobs::jobs(&conn,0,false).unwrap().remove(0);
+        crate::excel_aggregate::publish(&mut conn,&j,&base.0).unwrap();
+        let mut book=Xlsx::new(std::io::Cursor::new(fs::read(&j.path).unwrap())).unwrap();
+        let rows=book.worksheet_range("로젠택배").unwrap();
+        assert_eq!(rows.end().unwrap().0,1);
+        assert_eq!(rows.get_value((1,16)),Some(&Data::String("009876543210".into())));
+        assert_eq!(snapshot(&mut conn).unwrap()["workflow"]["shipments"][0]["tracking"]["FACTORY"],"009876543210");
+    }
+    #[test]
+    fn reply_commit_is_not_reverted_when_aggregate_path_is_unavailable(){
+        let base=Temp::new();let (mut conn,inbox)=synthetic_db(&base.0);
+        let before=snapshot(&mut conn).unwrap();
+        let bytes=reply_bytes("001234567890",4000);
+        fs::write(inbox.join("reply.xlsx"),&bytes).unwrap();
+        let out=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert_eq!((out.files,out.applied),(1,1));
+        let j=bando_data_access::excel_aggregate_jobs::jobs(&conn,0,false).unwrap().remove(0);
+        let root=base.0.join("excel");let offline=base.0.join("offline");
+        fs::rename(&root,&offline).unwrap();
+        let result=crate::excel_aggregate::publish(&mut conn,&j,&base.0);
+        fs::rename(&offline,&root).unwrap();assert!(result.is_err());
+        let after=snapshot(&mut conn).unwrap();
+        assert_eq!(after["workflow"]["shipments"][0]["tracking"]["FACTORY"],"001234567890");
+        assert_eq!(after["workflow"]["payments"],before["workflow"]["payments"]);
+        crate::excel_aggregate::publish(&mut conn,&j,&base.0).unwrap();
+        assert_eq!(snapshot(&mut conn).unwrap(),after);
+    }
     #[test]
     fn automatic_factory_correction_updates_only_cost_and_preserves_paid_amounts_and_history(){
         let base=Temp::new();
