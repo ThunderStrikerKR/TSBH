@@ -445,6 +445,40 @@ mod tests{
         assert!(jobs::jobs(&f.conn,0,false).unwrap().is_empty());
     }
     #[test]
+    fn independent_connections_cannot_publish_a_stale_generation(){
+        let mut f=Fixture::new();f.update(1);publish(&mut f.conn,&f.job,&f.root).unwrap();
+        f.update(2);
+        let db=f.root.join("race.sqlite");
+        let mut a=Connection::open(&db).unwrap();
+        a.execute_batch("CREATE TABLE core_schema(key TEXT PRIMARY KEY,version INTEGER);
+            INSERT INTO core_schema VALUES('business-core',2);
+            CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);").unwrap();
+        let before:String=f.conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0)).unwrap();
+        a.execute("INSERT INTO app_state VALUES(1,?1)",[before]).unwrap();jobs::initialize(&a).unwrap();
+        a.execute("INSERT INTO excel_aggregate_jobs(business_date,origin,target_path,desired_revision,saved_revision,file_hash)
+            VALUES (?1,?2,?3,2,1,?4)",rusqlite::params![f.job.date,f.job.origin,f.job.path,f.job.hash]).unwrap();
+        f.update(3);
+        let newest:String=f.conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0)).unwrap();
+        let root=f.root.clone();let job=jobs::jobs(&a,0,false).unwrap().remove(0);
+        let mut b=Connection::open(&db).unwrap();
+        let mut swapped=false;
+        publish_with(&mut a,&job,&root,|stage|{
+            if stage=="before_commit_lock"&&!swapped{
+                let tx=b.transaction().unwrap();
+                tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",[&newest]).unwrap();
+                tx.execute("UPDATE excel_aggregate_jobs SET desired_revision=3",[]).unwrap();tx.commit().unwrap();
+                let pending=jobs::jobs(&b,0,false).unwrap().remove(0);
+                publish(&mut b,&pending,&root).unwrap();swapped=true;
+            }
+            Ok(())
+        }).unwrap();
+        assert!(swapped);
+        let j=jobs::current(&a,&job).unwrap().unwrap();
+        assert_eq!((j.saved,j.desired),(3,3));
+        let mut book=Xlsx::new(Cursor::new(fs::read(&j.path).unwrap())).unwrap();
+        assert_eq!(book.worksheet_range("로젠택배").unwrap().end().unwrap().0,3);
+    }
+    #[test]
     fn large_daily_workbook_roundtrip_without_individual_files(){
         let mut f=Fixture::new();f.update(5000);
         let start=Instant::now();publish(&mut f.conn,&f.job,&f.root).unwrap();

@@ -515,9 +515,27 @@ mod tests{
         let finalized=output("finalize_export",json!({"state":initial,"preview":preview,
             "origin":"FACTORY","savedPath":exported.to_string_lossy(),
             "now":"2026-11-13T09:00:00Z","exportId":"export-roundtrip","eventId":"export-event"})).unwrap();
-        let saved=bando_data_access::write_v2_snapshot(&mut conn,finalized["next"].clone(),7,true).unwrap();
+        let (day,target)=bando_data_access::excel_aggregate_jobs::export_target(&exported,"FACTORY").unwrap();
+        bando_data_access::excel_aggregate_jobs::initialize(&conn).unwrap();
+        conn.execute_batch("CREATE TRIGGER reject_aggregate BEFORE INSERT ON excel_aggregate_jobs
+            BEGIN SELECT RAISE(ABORT,'synthetic aggregate reservation failure'); END;").unwrap();
+        assert!(bando_data_access::write_v2_export_with_aggregate(&mut conn,finalized["next"].clone(),7,&day,"FACTORY",target.to_str().unwrap()).is_err());
+        assert_eq!(snapshot(&mut conn).unwrap(),initial);
+        assert!(bando_data_access::excel_aggregate_jobs::jobs(&conn,0,true).unwrap().is_empty());
+        assert_eq!(fs::read(&exported).unwrap(),original);
+        conn.execute_batch("DROP TRIGGER reject_aggregate").unwrap();
+        let saved=bando_data_access::write_v2_export_with_aggregate(&mut conn,finalized["next"].clone(),7,&day,"FACTORY",target.to_str().unwrap()).unwrap();
         assert_eq!(saved["workflow"]["queue"][0]["status"],"EXPORTED");
         assert_eq!(saved["revision"],8);
+        let job=bando_data_access::excel_aggregate_jobs::jobs(&conn,0,false).unwrap().remove(0);
+        crate::excel_aggregate::publish(&mut conn,&job,&base.0).unwrap();
+        let mut aggregate=Xlsx::new(std::io::Cursor::new(fs::read(&target).unwrap())).unwrap();
+        let aggregate_sheet=aggregate.worksheet_range("로젠택배").unwrap();
+        for r in 0..2_u32{for c in 0..16_u32{
+            assert_eq!(aggregate_sheet.get_value((r,c)).unwrap_or(&Data::Empty),
+                sheet.get_value((r,c)).unwrap_or(&Data::Empty));
+        }}
+        assert_eq!(fs::read(&exported).unwrap(),original);
 
         // Simulate a factory returning the actual exported row with G and Q filled.
         let mut reply=rust_xlsxwriter::Workbook::new();
@@ -543,6 +561,13 @@ mod tests{
         let mut conn=Connection::open(base.0.join("synthetic.sqlite")).unwrap();
         let stored=snapshot(&mut conn).unwrap();
         assert_eq!(stored["revision"],9);
+        let job=bando_data_access::excel_aggregate_jobs::jobs(&conn,0,false).unwrap().remove(0);
+        assert_eq!(job.origin,"REPLY");
+        crate::excel_aggregate::publish(&mut conn,&job,&base.0).unwrap();
+        let mut aggregate=Xlsx::new(std::io::Cursor::new(fs::read(&job.path).unwrap())).unwrap();
+        let aggregate_sheet=aggregate.worksheet_range("로젠택배").unwrap();
+        assert_eq!(aggregate_sheet.get_value((1,16)),Some(&Data::String("001234567890".into())));
+        assert_eq!(aggregate_sheet.get_value((1,6)),Some(&Data::String("4000".into())));
         let ship=&stored["workflow"]["shipments"][0];
         assert_eq!(ship["id"],"s1");
         assert_eq!(ship["tracking"]["FACTORY"],"001234567890");
