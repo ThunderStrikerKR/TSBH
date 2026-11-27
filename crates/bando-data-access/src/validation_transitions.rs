@@ -64,6 +64,15 @@ pub(super) fn price_history(before:&Value,next:&Value)->CheckResult{
             continue;
         };
         if old==p{continue;}
+        // A normal product edit must retain the persisted sale-unit identity.
+        // Migration is a separate boundary, not an ordinary price edit.
+        if old["variants"]!=p["variants"]{
+            changed_ids(&old["variants"],&p["variants"])?;
+            let ids=|v:&Value|list(v).iter().map(|r|text(r,"id").to_owned()).collect::<BTreeSet<_>>();
+            if ids(&old["variants"])!=ids(&p["variants"]){
+                return Err("기존 상품의 가격 기록 ID는 변경하거나 제거할 수 없습니다.".into());
+            }
+        }
         let added=append_only(&old["priceHistory"],&p["priceHistory"])?;
         let mut expected=BTreeMap::new();
         for v in list(&p["variants"]){
@@ -108,10 +117,10 @@ pub(super) fn alias(before:&Value,next:&Value)->CheckResult{
     if before["aliases"]==next["aliases"]&&before["products"]==next["products"]&&before["clients"]==next["clients"]{return Ok(());}
     for row in list(&next["aliases"]){
         let prior=find(&before["aliases"],text(row,"id"));
-        let old=prior.map(|r|catalog::alias_diagnostics(before,r)).unwrap_or_default();
-        for problem in catalog::alias_diagnostics(next,row){
-            if prior!=Some(row)||!old.contains(&problem){return Err(problem);}
-        }
+        let old=prior.map(|r|catalog::alias_findings(before,r)).unwrap_or_default();
+        let new=catalog::alias_findings(next,row);
+        let compared=crate::validation_policy::compare(old,new);
+        if let Some(problem)=compared.blocking.into_iter().next(){return Err(problem);}
         let cid=text(row,"clientId");
         if !cid.is_empty()&&find(&next["clients"],cid).is_none()&&
             (prior.is_none_or(|p|text(p,"clientId")!=cid)||find(&before["clients"],cid).is_some()){
@@ -173,10 +182,15 @@ pub(super) fn shipping(before:&Value,next:&Value)->CheckResult{
 }
 fn rate_history(old:&Value,new:&Value,history_old:&Value,history_new:&Value)->CheckResult{
     let added=append_only(history_old,history_new)?;
-    if old!=new&&!old.is_null(){
-        if added.first()!=Some(old)||text(old,"version")==text(new,"version"){
+    if old==new{
+        if !added.is_empty(){return Err("운임 기준 변경 없이 이력을 추가할 수 없습니다.".into());}
+    }else if !old.is_null(){
+        if added.len()!=1||added.first()!=Some(old)||new.is_null()||text(old,"version")==text(new,"version"){
             return Err("변경 전 운임 또는 신규 버전이 누락되었습니다.".into());
         }
+    }else if !added.is_empty()&&(added.len()!=1||!added[0].is_null()||new.is_null()){
+        // The native initial reset may append one null previous rule.
+        return Err("최초 운임 등록의 이전 기준 이력이 올바르지 않습니다.".into());
     }
     Ok(())
 }
@@ -191,8 +205,24 @@ pub(super) fn shipping_history(before:&Value,next:&Value)->CheckResult{
             rate_history(old,&b["productRules"][id],&a["productHistory"][id],&b["productHistory"][id])?;
         }
     }
-    if let Some(histories)=a["productHistory"].as_object(){
-        for (id,history) in histories{append_only(history,&b["productHistory"][id])?;}
+    if let Some(groups)=b["groups"].as_array(){
+        for group in groups{
+            if find(&a["groups"],text(group,"id")).is_none()&&!group["history"].is_null()&&
+                group["history"].as_array().is_none_or(|h|!h.is_empty()){
+                return Err("신규 배송 그룹에 과거 운임을 임의로 추가할 수 없습니다.".into());
+            }
+        }
+    }
+    // Check the union of history/rule keys, including new history keys
+    // without a corresponding current tariff.
+    let mut ids=BTreeSet::new();
+    for map in [&a["productHistory"],&b["productHistory"],&b["productRules"]]{
+        if let Some(map)=map.as_object(){ids.extend(map.keys().cloned());}
+    }
+    for id in ids{
+        if !a["productRules"][&id].is_null(){continue;} // checked above
+        rate_history(&a["productRules"][&id],&b["productRules"][&id],
+            &a["productHistory"][&id],&b["productHistory"][&id])?;
     }
     for record in list(&a["combinations"]){
         let new=find(&b["combinations"],text(record,"id")).ok_or("기존 운임 조합 이력 삭제")?;
@@ -237,6 +267,24 @@ pub(super) fn factory_reply(before:&Value,next:&Value)->CheckResult{
     Ok(())
 }
 pub(super) fn registration(before:&Value,next:&Value)->CheckResult{
+    // Reuse the exact native registration/archive key; no new identity
+    // normalization or fuzzy matching policy is introduced here.
+    for product in list(&next["products"]){
+        let prior=find(&before["products"],text(product,"id"));
+        if prior.is_none()||prior.is_some_and(|p|archived(p)&&!archived(product)){
+            let key=catalog::product_key(product);
+            if !archived(product)&&[&before["deletedProductKeys"],&next["deletedProductKeys"]].iter()
+                .any(|keys|list(keys).iter().any(|v|v.as_str()==Some(key.as_str()))){
+                return Err("삭제된 상품은 재등록하지 않습니다.".into());
+            }
+        }
+        if prior.is_some_and(|p|text(p,"deletedAt").is_empty())&&!text(product,"deletedAt").is_empty(){
+            let key=catalog::product_key(prior.unwrap());
+            if !list(&next["deletedProductKeys"]).iter().any(|v|v.as_str()==Some(key.as_str())){
+                return Err("상품 삭제 기록이 누락되었습니다.".into());
+            }
+        }
+    }
     let a=&before["registrationBatches"];let b=&next["registrationBatches"];
     if a!=b{
         changed_ids(a,b)?;
@@ -288,7 +336,9 @@ pub(super) fn mapping(before:&Value,next:&Value)->CheckResult{
         }
         // The existing migration appends mappings, never removes them.
         if let Some(old)=a.as_object(){
-            if old.keys().any(|k|!map.contains_key(k)){return Err("기존 상품 매핑 제거".into());}
+            if old.iter().any(|(k,v)|map.get(k)!=Some(v)){
+                return Err("기존 상품 매핑을 변경하거나 제거할 수 없습니다.".into());
+            }
         }
     }
     Ok(())
@@ -298,6 +348,31 @@ pub(super) fn mapping(before:&Value,next:&Value)->CheckResult{
 mod tests{
     use super::*;
     use serde_json::json;
+    #[test] fn immutable_variant_id_cannot_hide_price_change(){
+        let a=json!({"products":[{"id":"p","variants":[{"id":"v","retail":10}]}]});
+        let mut b=a.clone();b["products"][0]["variants"][0]=json!({"id":"other","retail":20});
+        assert!(price_history(&a,&b).is_err());
+    }
+    #[test] fn new_conflict_same_message_is_not_legacy(){
+        let a=json!({"products":[{"id":"p","name":"A"},{"id":"q","name":"X"},{"id":"r","name":"Y"}],"aliases":[{"id":"a","text":"X","productId":"p"}]});
+        let mut b=a.clone();b["products"][1]["name"]=json!("Q");b["products"][2]["name"]=json!("X");
+        assert!(alias(&a,&b).is_err());
+        let mut b=a.clone();b["products"][0]["updatedAt"]=json!("new");assert!(alias(&a,&b).is_ok());
+    }
+    #[test] fn existing_mapping_cannot_be_repointed_to_another_valid_sale_unit(){
+        let a=json!({"products":[{"id":"a","sourceProductId":"old","variants":[{"id":"v"}]},{"id":"b","sourceProductId":"old","variants":[{"id":"v"}]}],"productMappings":{"old|v":"a"}});
+        let mut b=a.clone();b["productMappings"]["old|v"]=json!("b");assert!(mapping(&a,&b).is_err());
+    }
+    #[test] fn history_cannot_be_fabricated_without_rate_change(){
+        let a=json!({"shipping":{"groups":[],"productRules":{"p":{"version":"a"}},"productHistory":{"p":[]},"combinations":[]}});
+        let mut b=a.clone();b["shipping"]["productHistory"]["p"]=json!([{"version":"a"}]);assert!(shipping_history(&a,&b).is_err());
+        let mut b=a.clone();b["shipping"]["productHistory"]["other"]=json!([{"version":"x"}]);assert!(shipping_history(&a,&b).is_err());
+    }
+    #[test] fn registration_checks_tombstone_even_without_batch(){
+        let a=json!({"products":[],"deletedProductKeys":["BANDOSTAND|P|sale:v"]});
+        let mut b=a.clone();b["products"]=json!([{"id":"p","catalog":"BANDOSTAND","code":"P","saleUnit":true,"variants":[{"id":"v"}]}]);
+        assert!(registration(&a,&b).is_err());
+    }
     #[test] fn product_and_price_reject_bad_candidate(){
         let a=json!({"products":[]});
         let b=json!({"products":[{"id":"p","variants":[{"id":"v","retail":-1}]}]});

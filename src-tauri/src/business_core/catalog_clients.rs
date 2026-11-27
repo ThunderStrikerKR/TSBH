@@ -206,8 +206,8 @@ fn apply_product_workbook(state: &Value, preview: &Value) -> Result<Value, Strin
     }))
 }
 
-pub(crate) fn alias_diagnostics(state:&Value,record:&Value)->Vec<String>{
-    aliases::alias_problem(record,items(state,"aliases"),items(state,"products"))
+pub(crate) fn alias_findings(state:&Value,record:&Value)->Vec<(Vec<String>,Value,String)>{
+    aliases::alias_findings(record,items(state,"aliases"),items(state,"products"))
 }
 fn archive_client(state: &Value, id: &str, at: &str) -> Result<Value, String> {
     client_mutation::archive_client(state,id,at)
