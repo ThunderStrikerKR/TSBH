@@ -705,6 +705,40 @@ pub(super) fn statistics(payload:&Value)->Result<Value,String>{
 mod tests{
     use super::*;
     #[test]
+    fn shadow_trace_expansion_uses_only_bound_item_and_exact_source(){
+        let units="709 3개".encode_utf16().collect::<Vec<_>>();
+        let first=json!({"recipients":[{"items":[{
+            "id":"i","productId":"p","variantId":"v","quantity":3,"quantityConfirmed":true,
+            "sources":[{"start":0,"end":3,"text":"709","field":"product"},
+                {"start":4,"end":6,"text":"3개","field":"quantity"}]}]}],
+            "classificationCandidateTrace":{"schemaVersion":1,"fullCandidateCoverage":false,
+                "decisions":[{"line":0,"source":{"start":0,"end":6},"productStages":[
+                    {"stage":"literal_evidence","candidates":[{"productId":"p"},{"productId":"rejected"}]},
+                    {"stage":"final_available","candidates":[{"productId":"p"}]}]},
+                    {"line":1,"source":{"start":0,"end":6},"productStages":[
+                        {"candidates":[{"productId":"other"}]}]}],
+                "itemDecisions":[{"itemId":"i","productId":"p","productTraceLine":0,"productTraceStart":0,
+                    "variants":[{"variantId":"v"},{"variantId":"v2","reasonCode":"color_mismatch"}],
+                    "quantityCandidates":[{"start":4,"end":6,"value":"3"},
+                        {"start":0,"end":3,"value":"709"}]}],
+                "typeGateRecords":[{"kind":"name","reasonCode":"product_signal","source":{"start":0,"end":3}},
+                    {"kind":"product","reasonCode":"name_field_priority","source":{"start":0,"end":6}}]}});
+        let product=field_shadow_projection(&units,&first,(0,3),"product");
+        assert_eq!(product["candidates"],json!(["p","rejected"]));
+        assert_eq!(product["coverage"],"traced_partial");
+        assert_eq!(product["traceIsTrainingEvidence"],false);
+        assert_eq!(product["traceReferences"].as_array().unwrap().len(),2);
+        assert_eq!(field_shadow_candidates(&units,&first,(0,3),"variant"),vec!["v","v2"]);
+        assert_eq!(field_shadow_candidates(&units,&first,(4,6),"quantity"),vec!["3"]);
+        assert_eq!(field_shadow_candidates(&units,&first,(0,3),"type"),vec!["name","product"]);
+        let mut bad=first.clone();
+        bad["classificationCandidateTrace"]["itemDecisions"][0]["productTraceStart"]=json!(1);
+        assert_eq!(field_shadow_candidates(&units,&bad,(0,3),"product"),vec!["p"]);
+        let duplicate=bad["classificationCandidateTrace"]["itemDecisions"][0].clone();
+        bad["classificationCandidateTrace"]["itemDecisions"].as_array_mut().unwrap().push(duplicate);
+        assert_eq!(field_shadow_candidates(&units,&bad,(0,3),"variant"),vec!["v"]);
+    }
+    #[test]
     fn field_shadow_candidates_are_original_span_bound_and_never_final_labels(){
         let units="709 3개".encode_utf16().collect::<Vec<_>>();
         let first=json!({"recipients":[{"items":[{
