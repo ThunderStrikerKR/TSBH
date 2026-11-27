@@ -1244,8 +1244,8 @@ function selfTest(){
 // orchestration or the business database. Same-layer references are allowed
 // only when acyclic. Presentation-only adapters are explicit graph members.
 const dependencyLayers=[
-  ["ui_tokens","launch_profile","display_format","user_error","overlay","cell_navigation"],
-  ["theme","view_state","window_state"],
+  ["ui_tokens","launch_profile","display_format","user_error","overlay","cell_navigation","highlight_native"],
+  ["theme","view_state","window_state","highlight"],
   ["typography","scrollbar","layout"],
   ["ui_primitives","source_highlight","text_fit"],
   ["floating_notice"],
@@ -1323,7 +1323,9 @@ export function designTokenViolations(source,file){
     "theme.rs":[
       "TABLE_SORT_HOVER_TINT : Color32 = INTERACTION_BLUE_TINT",
       "MANUAL_ASSIGNMENT_TINT : Color32 = INTERACTION_BLUE_TINT",
-      "BUTTON_HOVER_TINT : Color32 = INTERACTION_BLUE_TINT",
+      "BUTTON_HOVER_TINT : Color32 = Color32 :: from_rgba_unmultiplied_const ( 112 , 180 , 255 , 66 )",
+      "BUTTON_HOVER_LIGHT_BG : Color32 = Color32 :: from_rgb ( 143 , 197 , 255 )",
+      "BUTTON_HOVER_BORDER_WIDTH : f32 = 2.0",
       "RECIPIENT_PHONE_COLUMN_GAP : f32 = SPACE_8",
       "ACTION_EMPHASIZED_HEIGHT : f32 = ACTION_STANDARD_HEIGHT",
       "FREIGHT_SUMMARY_PADDING_Y : f32 = SPACE_12",
@@ -1337,13 +1339,13 @@ export function designTokenViolations(source,file){
       "MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y : i8 = INPUT_TEXT_OPTICAL_SHIFT_Y"
     ],
     "button/mod.rs":["ButtonRole :: Danger => ( ACTION_STANDARD_HEIGHT"],
-    "input/mod.rs":["Stroke :: new ( theme :: INPUT_FOCUS_STROKE_WIDTH , theme :: SELECTION","Stroke :: new ( theme :: REQUIRED_INPUT_STROKE_WIDTH , theme :: REQUIRED_INPUT_BORDER"],
+    "input/mod.rs":["highlight :: Role :: Focus","highlight :: Role :: RequiredInput"],
     "layout.rs":["SPLITTER : f32 = crate :: ui_tokens :: WORKSPACE_SPLITTER_WIDTH"],
     "ui_tokens.rs":["WORKSPACE_SPLITTER_WIDTH : f32 = SPACE_6"],
     "freight_manager.rs":["rect . shrink2 ( egui :: vec2 ( theme :: MANAGEMENT_TABLE_TEXT_LEADING_INSET","cells [ 3 ] . shrink2 ( egui :: vec2 ( theme :: MANAGEMENT_TABLE_ACTION_INSET"],
     "order_history_manager.rs":["rect . left ( ) + theme :: MANAGEMENT_TABLE_TEXT_LEADING_INSET"],
     "order_history_detail.rs":["theme :: paint_bordered_surface ( ui . painter ( ) , rect , theme :: CONTROL_RADIUS"],
-    "manual_workspace.rs":["theme :: MANUAL_ASSIGNMENT_HOVER_STROKE_WIDTH","theme :: MANUAL_ASSIGNMENT_STROKE_WIDTH"]
+    "manual_workspace.rs":["highlight :: Role :: DropHovered","highlight :: Role :: DropTarget"]
   };
   const hits=(required[file]||[]).filter(pattern=>!code.includes(pattern)).map(pattern=>"missing common token: "+pattern);
   if(file!=="typography.rs"&&code.includes("const WORKFLOW_VAT_FONT_SIZE"))hits.push("workflow VAT font belongs to typography");
@@ -1425,7 +1427,148 @@ function managedLayoutSelfTest(){
   assert.equal(audit("fn show(){crate::scrollbar::apply_management_scroll_role(ui,role);}").length,0);
 }
 
+
+ // Interaction highlighting is a paint policy, not a screen-local palette.
+ // Exact owner contracts prevent replacing a shared call with a local painter
+ // even when the wrapper or the call elsewhere in the file remains intact.
+const highlightContracts = {
+  "main.rs":{"<root>":{"mod highlight ;":1,"mod highlight_native ;":1}},
+  "theme.rs":{"install":{"highlight_native :: native_widgets (":1}},
+  "ui_primitives.rs":{
+    "paint_selection_outline":{"highlight :: paint_outline (":1},
+    "paint_action_hover_corners":{"highlight :: action_hover (":1},
+    "paint_action_hover_surface":{"highlight :: action_hover (":1}},
+  "button/mod.rs":{
+    "action_with_palette":{"highlight :: light_button (":1,"ui_primitives :: paint_action_hover_surface (":1},
+    "workflow_fixed_action":{"highlight :: palette (":1,"ui_primitives :: paint_action_hover_surface (":1}},
+  "table/mod.rs":{
+    "management_master_header_sort_hover":{"highlight :: paint (":1},
+    "paint_management_interactive_row_background":{"highlight :: paint_fill (":1},
+    "fixed_row":{"highlight :: paint_fill (":2,"highlight :: paint_outline (":1}},
+  "manual_workspace.rs":{
+    "paint_manual_assignment_recommendation":{"highlight :: paint (":1},
+    "paint_manual_source_drag_preview":{"highlight :: paint_parts (":2}},
+  "category_tree/mod.rs":{"category_tree_row":{"highlight :: paint (":1}},
+  "composite_client.rs":{"management_chooser_row":{"highlight :: paint (":1}},
+  "checkbox/mod.rs":{"checkbox":{"highlight :: checked_checkbox (":1}},
+  "dropdown/mod.rs":{"management_dropdown_option_palette":{"highlight :: dropdown_options (":1}},
+  "input/mod.rs":{
+    "paint_required_input":{"highlight :: paint (":1}},
+  "source_highlight.rs":{
+    "paint_active_background":{"highlight :: paint_fill (":1},
+    "paint_active_outline":{"highlight :: paint_outline (":1},
+    "block_shapes_with_states":{"highlight :: fill_shape (":1,"highlight :: outline_shape (":2}},
+  "one_touch.rs":{
+    "background_shape":{"highlight :: fill_shape (":1},
+    "outline_shape":{"highlight :: outline_shape (":1},
+    "background":{"highlight :: paint_fill (":1},
+    "outline":{"highlight :: paint_outline (":1},
+    "mark":{"highlight :: paint (":1}},
+  "card/mod.rs":{"workflow_group_card":{"highlight :: paint_stripe (":1}},
+};
+// Explicit interaction tokens used by paint/style methods, not ordinary
+// status glyphs, static frames, text coloring, or hit-test geometry.
+const interactionInk=/^(?:BUTTON_HOVER(?:_.*)?|TABLE_SORT_HOVER_TINT|MANUAL_ASSIGNMENT(?:_.*)?|LINKED_PREVIEW_(?:BG|BORDER|BORDER_WIDTH)|ONE_TOUCH_(?:BG|BORDER|BORDER_WIDTH|TINT)|REQUIRED_INPUT_(?:TINT|BORDER|STROKE_WIDTH)|ACTIVE_(?:FILL|BORDER|BORDER_WIDTH)|CATALOG_TREE_SELECTED_(?:BG|BORDER)|MANAGEMENT_DROPDOWN_(?:HOVER_BG|SELECTED_BG)|CHECKBOX_CHECKED_BG|SELECTION|SELECTED_ORDER|ORANGE_EMPHASIS_BG)$/;
+const highlightPaintMethods=new Set(["rect_filled","rect_stroke","rect","paint_bordered_surface","paint_surface_outline"]);
+const nativeStateFields=new Set(["bg_fill","weak_bg_fill","bg_stroke","fg_stroke","expansion"]);
+// Native calendar selection is still constructed by the owning button;
+// it is not a second pointer-hover renderer. Static theme installation
+// owns the two noninteractive/idle widget states.
+const directPaintExceptions=new Map([
+  // No broad file exemptions: exact call + count for reviewed non-hover art.
+]);
+export function auditHighlight(source,file,requireCalls=false){
+  if(file==="highlight/mod.rs"||file==="highlight/native.rs")return [];
+  if(/(?:^|\/)(?:regression_tests|tests)\.rs$/.test(file)||file==="ui_regressions.rs")return [];
+  const tokens=productionTokens(source),v=tokens.map(t=>t.v),hits=[],counts=new Map(),used=new Map();
+  const code=v.join(" ");
+  const rules=highlightContracts[file]||{};
+  let fn="<root>";
+  const flag=(i,rule)=>hits.push({line:tokens[i]?.line??1,rule:fn+": "+rule});
+  const matchAt=(i,p)=>v.slice(i,i+p.split(" ").length).join(" ")===p;
+  const endCall=open=>{
+    let depth=0;
+    for(let j=open;j<v.length;j++){
+      if(v[j]==="(")depth++;
+      else if(v[j]===")"&&--depth===0)return j;
+    }
+    return v.length-1;
+  };
+  for(let i=0;i<v.length;i++){
+    if(v[i]==="fn"&&/^[A-Za-z_]\w*$/.test(v[i+1]??""))fn=v[i+1];
+    for(const pattern of Object.keys(rules[fn]||{})){
+      if(matchAt(i,pattern)){
+        const key=fn+":"+pattern;
+        counts.set(key,(counts.get(key)||0)+1);
+      }
+    }
+    if(nativeStateFields.has(v[i])&&v[i+1]==="="&&v[i-1]==="."){
+      const context=v.slice(Math.max(0,i-12),i).join(" ");
+      if(/\b(?:hovered|active|open|selection)\b/.test(context))
+        flag(i,"local native highlight style; use highlight module");
+    }
+    if(!highlightPaintMethods.has(v[i])||v[i+1]!=="("||![".","::"].includes(v[i-1]))continue;
+    const end=endCall(i+1),args=v.slice(i+2,end);
+    const explicit=args.some(t=>interactionInk.test(t));
+    // For a migrated wrapper, disallow raw repainting even when the local
+    // color is aliased. Chooser's ordinary idle panel is the only normal
+    // background retained in those wrappers.
+    const migrated=Boolean(rules[fn])&&[
+      "management_master_header_sort_hover","paint_management_interactive_row_background",
+      "paint_manual_assignment_recommendation","paint_manual_source_drag_preview",
+      "paint_active_background","paint_active_outline","block_shapes_with_states",
+      "background_shape","outline_shape","background","outline","mark",
+      "paint_required_input","paint_selection_outline","paint_action_hover_corners",
+      "paint_action_hover_surface","category_tree_row","management_chooser_row",
+      "workflow_group_card"
+    ].includes(fn);
+    // Adjacent hover conditions also catch common local-color aliases.
+    const preceding=v.slice(Math.max(0,i-18),i).join(" ");
+    const localHover=/\b(?:hovered|hovering|is_hovered|pointer_hovered)\b/.test(preceding)&&
+      /\b(?:if|else|match)\b/.test(preceding);
+    if(!explicit&&!migrated&&!localHover)continue;
+    const fingerprint=v.slice(i,end+1).join(" ");
+    if(file==="composite_client.rs"&&fn==="management_chooser_row"&&
+       fingerprint==="rect_filled ( rect , theme :: CONTROL_RADIUS , theme :: PANEL )"){
+      const key=file+":"+fn+":"+fingerprint;
+      const n=(used.get(key)||0)+1;used.set(key,n);
+      if(n===1)continue;
+    }
+    const key=file+":"+fn+":"+fingerprint;
+    const n=(used.get(key)||0)+1;used.set(key,n);
+    if(n<=(directPaintExceptions.get(key)||0))continue;
+    flag(i,"raw highlight paint "+v[i]+"; use highlight::paint/paint_parts");
+  }
+  if(requireCalls){
+    for(const [scope,patterns] of Object.entries(rules)){
+      for(const [pattern,wanted] of Object.entries(patterns)){
+        // Module declarations are top-level, before production functions.
+        const found=counts.get(scope+":"+pattern)||0;
+        if(found!==wanted)hits.push({line:1,rule:scope+": expected "+wanted+" shared highlight call(s) "+pattern+", found "+found});
+      }
+    }
+  }
+  return hits;
+}
+function highlightSelfTest(){
+  const audit=(s,f="screen.rs",required=false)=>auditHighlight(s,f,required);
+  assert.equal(audit("fn show(){painter.rect_filled(r,0.0,theme::BUTTON_HOVER_TINT);}").length,1);
+  assert.equal(audit("fn show(){painter.rect_stroke(r,0.0,Stroke::new(2.0,theme::SELECTION),StrokeKind::Inside);}").length,1);
+  assert.equal(audit("fn show(){if hovered{painter.rect_filled(r,0.0,local_color);}}").length,1);
+  assert.equal(audit("fn show(){ui.visuals_mut().widgets.hovered.bg_fill=local;}").length,1);
+  assert.equal(audit("fn show(){painter.rect_filled(r,0.0,theme::PANEL);}").length,0);
+  assert.equal(audit("fn show(){crate::highlight::paint(ui,r,0.0,Role::Hover);}").length,0);
+  assert.equal(audit("/* painter.rect_filled(r,0.0,theme::BUTTON_HOVER_TINT); */ fn show(){}").length,0);
+  assert.equal(audit("#[cfg(test)] mod tests {fn x(){painter.rect_filled(r,0.0,theme::BUTTON_HOVER_TINT);}}").length,0);
+  assert.equal(audit("fn management_master_header_sort_hover(){painter.rect_filled(r,0.0,local);}","table/mod.rs").length,1);
+  assert.equal(audit("fn management_dropdown_option_palette(){crate::highlight::dropdown_options(ui);}","dropdown/mod.rs",true).length,0);
+  assert.equal(audit("fn management_dropdown_option_palette(){} fn other(){crate::highlight::dropdown_options(ui);}","dropdown/mod.rs",true).length,1);
+  assert.equal(audit("fn management_dropdown_option_palette(){crate::highlight::dropdown_options(ui);crate::highlight::dropdown_options(ui);}","dropdown/mod.rs",true).length,1);
+  console.log("EGUI_HIGHLIGHT_SELFTEST_PASS",12);
+}
+
 function main(){
+  highlightSelfTest();
   managedLayoutSelfTest();
   dependencyBoundarySelfTest();
   selfTest();
@@ -1455,7 +1598,7 @@ function main(){
       graph.set(owner,deps);
     }
     for(const rule of designTokenViolations(source,file)){failures++;console.error(file+": "+rule);}
-    for(const hit of [...audit(source,file,true),...auditComposite(source,file,true),...auditContextLocks(source,file),...auditCardHeights(source,file),...auditIndirectCardHeights(source,file),...auditCardWidths(source,file),...auditManagedLayout(source,file)]){
+    for(const hit of [...audit(source,file,true),...auditComposite(source,file,true),...auditContextLocks(source,file),...auditCardHeights(source,file),...auditIndirectCardHeights(source,file),...auditCardWidths(source,file),...auditManagedLayout(source,file),...auditHighlight(source,file,true)]){
       failures++;console.error(file+":"+hit.line+" "+hit.rule);
     }
   }
