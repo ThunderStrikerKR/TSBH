@@ -123,6 +123,39 @@ mod logical_alignment_tests{
     }
 
     #[test]
+    fn shared_clip_preserves_parent_bounds_and_layout(){
+        let ctx=crate::ui_test_support::test_context();
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(640.0,480.0));
+        let _=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+            egui::CentralPanel::default().show(ctx,|root|{
+                let parent=Rect::from_min_max(egui::pos2(40.013,50.019),egui::pos2(230.17,210.23));
+                let requested=Rect::from_min_max(egui::pos2(10.01,80.03),egui::pos2(180.19,270.04));
+                let bounds=Rect::from_min_max(egui::pos2(20.0,20.0),egui::pos2(300.0,300.0));
+                let mut child=root.new_child(UiBuilder::new().id_salt("shared clip test")
+                    .aligned_max_rect(bounds).layout(Layout::top_down(Align::Min)));
+                child.use_owner_pane_clip(parent);
+                let cursor=child.cursor();
+                let min=child.min_rect();
+                let max=child.max_rect();
+                let expected=parent.intersect(requested);
+                let painter=child.painter().with_shared_clip(requested);
+                assert_eq!(painter.clip_rect(),expected);
+                assert_eq!(child.clip_rect(),parent);
+                child.restrict_shared_clip(requested);
+                assert_eq!(child.clip_rect(),expected);
+                child.restrict_shared_clip(bounds);
+                assert_eq!(child.clip_rect(),expected,"child cannot widen inherited clip");
+                let outside=Rect::from_min_max(egui::pos2(310.0,310.0),egui::pos2(340.0,340.0));
+                child.restrict_shared_clip(outside);
+                assert!(!child.clip_rect().is_positive(),"disjoint clipping must not expose any content");
+                assert_eq!(child.cursor(),cursor);
+                assert_eq!(child.min_rect(),min);
+                assert_eq!(child.max_rect(),max);
+            });
+        });
+    }
+
+    #[test]
     fn adjacent_fractional_rects_share_rounded_edges_without_drift(){
         for scale in [1.0_f32,1.25,1.5,1.75,2.0]{
             let origin=egui::pos2(7.13/scale,11.17/scale);
