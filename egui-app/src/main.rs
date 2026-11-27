@@ -216,12 +216,6 @@ struct VerticalSplitDrag {
     available_height: f32,
 }
 
-#[derive(Clone, Copy)]
-struct DetailSplitDrag {
-    index: usize,
-    initial_heights: [f32; 3],
-}
-
 struct PendingClientChange {
     order_id: String,
     client_id: String,
@@ -995,7 +989,6 @@ struct BandoEgui {
     window_state: window_state::Tracker,
     dragging_split: Option<HorizontalSplitDrag>,
     dragging_vertical: Option<VerticalSplitDrag>,
-    dragging_detail: Option<DetailSplitDrag>,
     raw_source: String,
     drafts: Vec<WorkingReception>,
     active_id: Option<String>,
@@ -1141,7 +1134,6 @@ impl BandoEgui {
             window_state: window_state::Tracker::default(),
             dragging_split: None,
             dragging_vertical: None,
-            dragging_detail: None,
             raw_source: String::new(),
             drafts: Vec::new(),
             active_id: None,
@@ -7342,9 +7334,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     fn details_and_freight(&mut self, ui: &mut Ui) {
         let visible_index=self.visible_recipient_index();
         let full_height = ui.available_height();
-        // The review, recipient and items sections own two independent
-        // draggable boundaries; adjacent columns no longer dictate their sizes.
-        let [review_height, recipient_height, _items_height] =
+        // Fixed recipient and total; review and items share the free height.
+        // Middle-column gutters are visual only, never draggable.
+        let [review_height, recipient_height, _bottom_height] =
             self.layout.detail_heights(full_height);
         let full_width = ui.available_width();
         let (_, bounds) = ui.allocate_space(Vec2::new(full_width, full_height));
@@ -7380,42 +7372,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             Vec2::new(full_width,summary_height)
         );
 
-        // Register both middle-column splitters in the parent UI so they are
-        // draggable in both working-order and empty/new-order states.
-        let initial_heights = [review_height, recipient_height, bottom_area.height()];
-        for (index, splitter_rect) in [(0, first_sep), (1, second_sep)] {
-            let id = ui.make_persistent_id(("detail-splitter", index));
-            let response = ui.interact(splitter_rect, id, Sense::click_and_drag());
-            if response.hovered() || response.dragged() {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
-            }
-            crate::ui_layout::paint_dock_splitter(
-                ui, splitter_rect, false, response.hovered() || response.dragged(),
-            );
-            if response.drag_started() {
-                self.dragging_detail = Some(DetailSplitDrag {
-                    index,
-                    initial_heights,
-                });
-            }
-            if response.dragged() {
-                if let Some(drag) = self.dragging_detail {
-                    if drag.index == index {
-                        let delta = response.total_drag_delta().unwrap_or_default().y;
-                        self.layout.resize_detail_pair(drag.initial_heights, index, delta);
-                    }
-                }
-            }
-            if response.drag_stopped()
-                && self.dragging_detail.is_some_and(|drag| drag.index == index)
-            {
-                self.dragging_detail = None;
-                let _ = self.layout.save();
-            }
-            if response.double_clicked() {
-                self.layout.reset_detail_pair(index, full_height);
-                let _ = self.layout.save();
-            }
+        // Keep the established gutter appearance without resize hit targets.
+        for gutter in [first_sep,second_sep] {
+            crate::ui_layout::paint_dock_splitter(ui,gutter,false,false);
         }
 
         if let Some((board,group_index,ship_index))=self.visible_workflow_group(){
@@ -7459,7 +7418,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     pane.apply_shared_width(crate::card::CardWidthPolicy::Fixed,review_rect.width());
                     pane.set_height(review_rect.height());
                     Self::section(pane,"확인할 내용",review_height,|ui|{
-                        crate::ui_layout::reception_review_scroll(ui,review_height,
+                        crate::ui_layout::reception_section_scroll(ui,review_height,
                             ("native-workflow-issues",group.id.as_str()),|issues|{
                                 for issue in &group.issues{
                                     let Some(label)=workflow_board::workflow_issue_label(issue)else{continue};
@@ -7517,11 +7476,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 header,name,index,count,confirmed_cell_idle
                             );
                         },|ui|{
-                        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                            .max_height(crate::card::docked_section_body_height(recipient_height))
-                            .auto_shrink([false,false])
-                            .id_salt(("native-workflow-recipient-readonly",ship.id.as_str()))
-                            .show(ui,|contents|{
+                        crate::ui_layout::reception_section_scroll(ui,recipient_height,
+                            ("native-workflow-recipient-readonly",ship.id.as_str()),|contents|{
                                 let mut name = reception_service::text(&ship.recipient,"name").to_owned();
                                 let mut address = reception_service::text(&ship.recipient,"address").to_owned();
                                 let mut mobile = reception_service::text(&ship.recipient,"mobile").to_owned();
@@ -7942,7 +7898,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     pane.apply_shared_width(crate::card::CardWidthPolicy::Fixed,review_rect.width());
                     pane.set_height(review_rect.height());
                     Self::section(pane,"확인할 내용",review_height,|ui|{
-                        crate::ui_layout::reception_review_scroll(ui,review_height,
+                        crate::ui_layout::reception_section_scroll(ui,review_height,
                             ("pending-hover-review-issues",draft.id.as_str()),|issues|{
                                 if let Some(rows)=recognition.get("issues")
                                     .and_then(serde_json::Value::as_array){
@@ -7981,11 +7937,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             }
                         },|ui|{
                             if let Some(row)=recipient{
-                                crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                                    .max_height(crate::card::docked_section_body_height(recipient_height))
-                                    .id_salt(("pending-hover-recipient",draft.id.as_str()))
-                                    .auto_shrink([false,false])
-                                    .show(ui,|contents|{
+                                crate::ui_layout::reception_section_scroll(ui,recipient_height,
+                                    ("pending-hover-recipient",draft.id.as_str()),|contents|{
                                         let mut name=reception_service::text(row,"name").to_owned();
                                         let mut address=reception_service::text(row,"address").to_owned();
                                         let mut mobile=reception_service::text(row,"mobile").to_owned();
@@ -8172,7 +8125,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         }
                     }
                 }, |ui| {
-                    crate::ui_layout::reception_review_scroll(ui,review_height,
+                    crate::ui_layout::reception_section_scroll(ui,review_height,
                         ("reception-review-content-scroll",self.active_id.as_deref()), |ui| {
                     if let Some(analysis)=&self.analysis {
                         let other_ready=self.inline_editor.is_none()
@@ -8270,12 +8223,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             let recipient_id = reception_service::text(recipient, "id");
                             // Match the React contact grid and allow only its
                             // content to scroll when the user narrows this pane.
-                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                                .id_salt(("recognized-recipient-fields",self.active_id.as_deref(),recipient_id))
-                                .max_height(crate::card::docked_section_body_height(recipient_height)
-                                    .min(ui.available_height().max(0.0)))
-                                .auto_shrink([false, false])
-                                .show(ui, |fields| {
+                            crate::ui_layout::reception_section_scroll(ui,recipient_height,
+                                ("recognized-recipient-fields",self.active_id.as_deref(),recipient_id), |fields| {
                                     let board_preview=self.workflow_ui.pending_preview()
                                         .is_some_and(|target|
                                             self.active_id.as_deref()

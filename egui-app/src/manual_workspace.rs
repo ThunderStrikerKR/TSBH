@@ -1021,7 +1021,7 @@ pub struct ManualWorkspace {
 /// Keeping this arithmetic beside the renderer prevents the modal from
 /// reserving a full-screen body after the visible cards have ended.
 fn manual_recipient_card_height()->f32{
-    theme::RECEPTION_SECTION_CHROME_HEIGHT+theme::RECEPTION_RECIPIENT_BODY_HEIGHT
+    theme::RECEPTION_RECIPIENT_SECTION_HEIGHT
 }
 
 fn manual_workspace_header_height()->f32{

@@ -1813,8 +1813,15 @@ pub(crate) mod general_screen_geometry_tests {
             if screen.x >= 1500.0 && screen.y >= 900.0 {
                 let recipient_card=first(&first_recipient,"recipient card");
                 let note=first(&first_recipient,"recipient note");
-                assert!(note.bottom() + theme::RECEPTION_PANE_PADDING_Y <= recipient_card.bottom() + 0.5,
-                    "recipient note is clipped: {note:?} in {recipient_card:?}");
+                assert!((recipient_card.height()-theme::RECEPTION_RECIPIENT_SECTION_HEIGHT).abs()<=0.5,
+                    "recipient card height drifted: {recipient_card:?}");
+                assert!((recipient_card.bottom()-note.bottom()-theme::RECEPTION_PANE_PADDING_Y).abs()<=0.5,
+                    "recipient note has excess gap or is clipped: {note:?} in {recipient_card:?}");
+                let review=first(&first_recipient,"review card");
+                let items=first(&first_recipient,"items card");
+                assert!((review.height()-items.height()).abs()<=0.5,
+                    "variable card height mismatch: review={review:?}, items={items:?}");
+                assert!((total_card.height()-theme::RECEPTION_ORDER_TOTAL_SECTION_HEIGHT).abs()<=0.5);
             }
             app.selected_recipient=1;
             let second_recipient=draw(&mut app);

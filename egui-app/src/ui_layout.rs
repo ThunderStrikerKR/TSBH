@@ -137,9 +137,9 @@ pub fn reception_goods_viewport(
     content(&mut child);
 }
 
-/// Review cards scroll within the reserved body, never enlarging the outer
-/// section frame beyond its splitter. The actual remaining height wins.
-pub fn reception_review_scroll(
+/// Review and recipient content scroll within the reserved body without
+/// enlarging their fixed section frames. The actual remaining height wins.
+pub fn reception_section_scroll(
     ui:&mut Ui,section_height:f32,id_salt:impl std::hash::Hash,
     content:impl FnOnce(&mut Ui),
 ){
@@ -149,7 +149,7 @@ pub fn reception_review_scroll(
         Vec2::new(ui.available_width().max(0.0),height),Sense::hover()
     );
     if !rect.is_positive(){return;}
-    let mut child=ui.new_child(UiBuilder::new().id_salt("reception-review-viewport")
+    let mut child=ui.new_child(UiBuilder::new().id_salt("reception-section-viewport")
         .max_rect(rect).layout(Layout::top_down(Align::Min)));
     child.set_clip_rect(rect.intersect(ui.clip_rect()));
     child.apply_shared_width(crate::card::CardWidthPolicy::Fixed,rect.width());
