@@ -1378,6 +1378,8 @@ pub(crate) mod general_screen_geometry_tests {
                 time:Some(time),predicted_dt:0.05,
                 ..Default::default()
             },|ctx|{
+                // Keep only the final pass if egui requests a sizing rerun.
+                crate::ui_test_support::begin_component_geometry();
                 egui::CentralPanel::default().show(ctx,|root|{
                     let mut host=root.new_child(egui::UiBuilder::new()
                         .id_salt("actual-management-page")
@@ -1390,6 +1392,9 @@ pub(crate) mod general_screen_geometry_tests {
             });
             let next=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
             let components=crate::ui_test_support::finish_component_geometry(Rect::from_min_size(egui::Pos2::ZERO,screen));
+            crate::ui_test_support::assert_independent_control_hits(&components,
+                Rect::from_min_size(egui::Pos2::ZERO,screen),
+                &format!("{} {screen:?} frame {frame}",std::thread::current().name().unwrap_or("management page")));
             crate::ui_test_support::assert_no_unaligned(&output,&format!("{} {screen:?} frame {frame}",std::thread::current().name().unwrap_or("management page")));
             if frame==11&&next.iter().any(|(role,_)|*role=="top content"){
                 assert!(!components.is_empty(),"actual management page did not reach a shared component renderer");
@@ -1682,6 +1687,8 @@ pub(crate) mod general_screen_geometry_tests {
                         ..Default::default()
                     },|ctx|app.reception(ctx));
                     let components=crate::ui_test_support::finish_component_geometry(Rect::from_min_size(egui::Pos2::ZERO,screen));
+                    crate::ui_test_support::assert_independent_control_hits(&components,
+                        Rect::from_min_size(egui::Pos2::ZERO,screen),"actual reception");
                     crate::ui_test_support::assert_component_roles(&components,&["card"]);
                     last=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
                 }
@@ -2187,6 +2194,8 @@ pub(crate) mod general_screen_geometry_tests {
                     let _=ctx.run(egui::RawInput{screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,screen)),
                         ..Default::default()},|ctx|app.reception(ctx));
                     let components=crate::ui_test_support::finish_component_geometry(Rect::from_min_size(egui::Pos2::ZERO,screen));
+                    crate::ui_test_support::assert_independent_control_hits(&components,
+                        Rect::from_min_size(egui::Pos2::ZERO,screen),"actual reception");
                     crate::ui_test_support::assert_component_roles(&components,&["card"]);
                     measured=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
                 }

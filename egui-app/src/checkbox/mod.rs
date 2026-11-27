@@ -67,7 +67,7 @@ pub(crate) fn checkbox(
     ui.set_style(original_style);
     if response.changed(){ui.ctx().request_repaint();}
     #[cfg(test)]
-    crate::ui_test_support::record_component_geometry("checkbox",response.rect,ui.clip_rect(),None);
+    crate::ui_test_support::record_control_response("checkbox",&response,ui.clip_rect(),None);
     crate::floating_notice::remember_response(ui.ctx(),&response);
     response
 }

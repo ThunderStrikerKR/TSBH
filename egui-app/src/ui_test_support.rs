@@ -424,6 +424,15 @@ pub(crate) struct ComponentGeometry{
     pub rect:Rect,
     pub clip:Rect,
     pub minimum_height:Option<f32>,
+    hit:Option<ControlHit>,
+}
+#[derive(Clone,Copy,Debug)]
+struct ControlHit{
+    id:egui::Id,
+    layer:egui::LayerId,
+    rect:Rect,
+    enabled:bool,
+    clicked:bool,
 }
 thread_local!{
     static COMPONENT_TRACE:RefCell<Option<Vec<ComponentGeometry>>>=RefCell::new(None);
@@ -434,14 +443,50 @@ pub(crate) fn begin_component_geometry(){
 pub(crate) fn record_component_geometry(role:&'static str,rect:Rect,clip:Rect,minimum_height:Option<f32>){
     COMPONENT_TRACE.with(|trace|{
         if let Some(samples)=trace.borrow_mut().as_mut(){
-            samples.push(ComponentGeometry{role,rect,clip,minimum_height});
+            samples.push(ComponentGeometry{role,rect,clip,minimum_height,hit:None});
         }
     });
+}
+/// Record the native response, not an estimate derived from the painted slot.
+pub(crate) fn record_control_response(role:&'static str,response:&egui::Response,clip:Rect,minimum_height:Option<f32>){
+    COMPONENT_TRACE.with(|trace|{
+        if let Some(samples)=trace.borrow_mut().as_mut(){
+            samples.push(ComponentGeometry{role,rect:response.rect,clip,minimum_height,
+                hit:Some(ControlHit{id:response.id,layer:response.layer_id,
+                    rect:response.interact_rect,enabled:response.enabled(),clicked:response.clicked()})});
+        }
+    });
+}
+/// Only independently interactive controls on the SAME layer may conflict.
+/// Container geometry is not a hit target; cross-layer popup overlap is
+/// intentional and checked separately by modal input-routing regressions.
+pub(crate) fn assert_independent_control_hits(samples:&[ComponentGeometry],screen:Rect,case:&str){
+    let controls=samples.iter().filter_map(|sample|{
+        let hit=sample.hit?;
+        let visible=hit.rect.intersect(screen);
+        if !hit.enabled||!visible.is_positive(){return None;}
+        Some((sample,hit,visible))
+    }).collect::<Vec<_>>();
+    for (index,(a,ah,ar)) in controls.iter().enumerate(){
+        for (b,bh,br) in &controls[index+1..]{
+            if ah.layer!=bh.layer{continue;}
+            if ah.id==bh.id{
+                assert!(edges_near(*ar,*br),
+                    "{case}: reused control ID {:?} at different positions: {} {:?}, {} {:?}",ah.id,a.role,ar,b.role,br);
+                continue;
+            }
+            let overlap=ar.intersect(*br);
+            assert!(overlap.width()<=1.0||overlap.height()<=1.0,
+                "{case}: independent hit collision {} {:?} with {} {:?}; overlap={overlap:?}",a.role,ar,b.role,br);
+            assert!(!(ah.clicked&&bh.clicked),
+                "{case}: two independent controls activated on the same frame: {} {:?}, {} {:?}",a.role,ar,b.role,br);
+        }
+    }
 }
 pub(crate) fn finish_component_geometry(screen:Rect)->Vec<ComponentGeometry>{
     let samples=COMPONENT_TRACE.with(|trace|trace.borrow_mut().take().expect("component trace not started"));
     for sample in &samples{
-        let ComponentGeometry{role,rect,clip,minimum_height}=*sample;
+        let ComponentGeometry{role,rect,clip,minimum_height,..}=*sample;
         assert!([rect.left(),rect.right(),rect.top(),rect.bottom()].iter().all(|v|v.is_finite()),
             "{role}: non-finite actual component geometry {rect:?}");
         // Overscan and nested scroll contents are allowed outside the viewport.
@@ -466,6 +511,38 @@ pub(crate) fn assert_component_roles(samples:&[ComponentGeometry],required:&[&st
 #[cfg(test)]
 mod shared_component_screen_trace_tests{
     use super::*;
+    fn hit_sample(role:&'static str,id:&str,rect:Rect,layer:egui::Order,enabled:bool,clicked:bool)->ComponentGeometry{
+        ComponentGeometry{role,rect,clip:rect,minimum_height:None,
+            hit:Some(ControlHit{id:egui::Id::new(id),layer:egui::LayerId::new(layer,egui::Id::new("hit-layer")),
+                rect,enabled,clicked})}
+    }
+    #[test]
+    fn hit_detector_distinguishes_intentional_layer_overlap_disabled_and_adjacent_controls(){
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(400.0,300.0));
+        let a=Rect::from_min_size(egui::pos2(20.0,20.0),egui::vec2(100.0,40.0));
+        let b=a.translate(egui::vec2(100.0,0.0));
+        let samples=[
+            hit_sample("button","a",a,egui::Order::Middle,true,true),
+            hit_sample("input","b",b,egui::Order::Middle,true,false),
+            hit_sample("dropdown option","c",a,egui::Order::Foreground,true,false),
+            hit_sample("checkbox","d",a,egui::Order::Middle,false,false),
+        ];
+        assert_independent_control_hits(&samples,screen,"intentional overlaps");
+    }
+    #[test]
+    fn hit_detector_rejects_overlap_duplicate_id_and_duplicate_activation(){
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(400.0,300.0));
+        let a=Rect::from_min_size(egui::pos2(20.0,20.0),egui::vec2(100.0,40.0));
+        let first=hit_sample("button","a",a,egui::Order::Middle,true,true);
+        for second in [
+            hit_sample("input","b",a.translate(egui::vec2(50.0,0.0)),egui::Order::Middle,true,false),
+            hit_sample("input","a",a.translate(egui::vec2(120.0,0.0)),egui::Order::Middle,true,false),
+            hit_sample("checkbox","b",a.translate(egui::vec2(120.0,0.0)),egui::Order::Middle,true,true),
+        ]{
+            assert!(std::panic::catch_unwind(||
+                assert_independent_control_hits(&[first,second],screen,"malformed hits")).is_err());
+        }
+    }
     fn paint_case(mode:&str)->(egui::FullOutput,Rect){
         let ctx=test_context();
         let screen=Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(500.0,300.0));

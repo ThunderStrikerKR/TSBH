@@ -73,7 +73,7 @@ pub(crate) fn allocate_singleline_field(
         None=>place(ui),
     };
     #[cfg(test)]
-    crate::ui_test_support::record_component_geometry("input",response.rect,ui.clip_rect(),Some(size.y));
+    crate::ui_test_support::record_control_response("input",&response,ui.clip_rect(),Some(size.y));
     response
 }
 

@@ -154,7 +154,7 @@ fn action_with_palette(
         ui.add_enabled(enabled, button)
     }).inner;
     #[cfg(test)]
-    crate::ui_test_support::record_component_geometry("button",response.rect,ui.clip_rect(),Some(height));
+    crate::ui_test_support::record_control_response("button",&response,ui.clip_rect(),Some(height));
     if effective_enabled {
         crate::floating_notice::remember_response(ui.ctx(),&response);
     }
