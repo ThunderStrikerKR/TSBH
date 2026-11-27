@@ -892,9 +892,9 @@ pub(crate) const fn surface_palette(role:SurfaceRole,state:VisualState)->Surface
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub(crate) enum BorderRole{Standard,Divider,Focus}
+pub(crate) enum BorderRole{Standard,Divider,Focus,TableHeader,Error}
 pub(crate) const fn border_ink(role:BorderRole)->Color32{
-    match role{BorderRole::Standard=>BORDER,BorderRole::Divider=>DIVIDER,BorderRole::Focus=>SELECTION}
+    match role{BorderRole::Standard=>BORDER,BorderRole::Divider=>DIVIDER,BorderRole::Focus=>SELECTION,BorderRole::TableHeader=>TABLE_HEADER_OUTLINE,BorderRole::Error=>ERROR_BORDER}
 }
 
 /// Opaque white is the identity tint, not a UI foreground color.
@@ -1506,5 +1506,73 @@ mod action_role_color_tests {
         assert_eq!(action.tint,Color32::from_rgba_unmultiplied_const(245,158,11,18));
         assert_eq!(management_option_fill(ManagementOptionState::Selected),Color32::from_rgb(59,43,27));
         assert_eq!(management_option_fill(ManagementOptionState::Hovered),Color32::from_rgb(57,91,118));
+    }
+}
+
+
+// Shared interaction colors. The highlight owner retains stroke widths,
+// geometry and precedence; the theme owns only the approved color values.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) struct HoverPalette {
+    pub overlay:Color32,
+    pub row_fill:Color32,
+    pub light_fill:Color32,
+    pub light_border:Color32,
+}
+
+pub(crate) const fn hover_palette()->HoverPalette {
+    HoverPalette{overlay:BUTTON_HOVER_TINT,row_fill:BUTTON_HOVER_BG,
+        light_fill:BUTTON_HOVER_LIGHT_BG,light_border:BUTTON_HOVER_LIGHT_BORDER}
+}
+
+pub(crate) const fn selected_palette()->TextSurfacePalette {
+    TextSurfacePalette{fill:ORANGE_EMPHASIS_BG,text:ORANGE_EMPHASIS_TEXT,border:SELECTED_ORDER}
+}
+
+pub(crate) const fn required_input_palette()->SurfacePalette {
+    SurfacePalette{fill:REQUIRED_INPUT_TINT,border:REQUIRED_INPUT_BORDER}
+}
+
+pub(crate) const fn drop_target_tint()->Color32 { MANUAL_ASSIGNMENT_TINT }
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum MessageInkRole { Success, Danger, Error }
+
+pub(crate) const fn message_ink(role:MessageInkRole)->Color32 {
+    match role {
+        MessageInkRole::Success=>SUCCESS,
+        MessageInkRole::Danger=>DANGER,
+        MessageInkRole::Error=>ERROR_TEXT,
+    }
+}
+
+/// The primary light action's surface and foreground. This is not image tint.
+pub(crate) const fn primary_action_colors()->(Color32,Color32) {
+    (PRIMARY_ACTION_FILL,BRIGHT_TEXT)
+}
+
+#[cfg(test)]
+mod final_color_role_tests {
+    use super::*;
+    #[test]
+    fn interaction_and_message_roles_preserve_the_existing_palette() {
+        let hover=hover_palette();
+        assert_eq!(hover.row_fill,Color32::from_rgb(47,62,74));
+        assert_eq!(hover.overlay,Color32::from_rgba_unmultiplied_const(112,180,255,66));
+        assert_eq!(hover.light_fill,Color32::from_rgb(143,197,255));
+        assert_eq!(hover.light_border,Color32::from_rgb(35,103,174));
+        let selected=selected_palette();
+        assert_eq!((selected.fill,selected.text,selected.border),(Color32::from_rgb(59,43,27),
+            Color32::from_rgb(255,228,188),Color32::from_rgb(245,158,11)));
+        let required=required_input_palette();
+        assert_eq!(required.fill,Color32::from_rgba_unmultiplied_const(199,107,107,18));
+        assert_eq!(required.border,Color32::from_rgb(199,107,107));
+        assert_eq!(drop_target_tint(),Color32::from_rgba_unmultiplied_const(112,180,255,20));
+        assert_eq!(message_ink(MessageInkRole::Success),Color32::from_rgb(169,218,181));
+        assert_eq!(message_ink(MessageInkRole::Danger),Color32::from_rgb(255,180,180));
+        assert_eq!(message_ink(MessageInkRole::Error),Color32::from_rgb(240,160,160));
+        assert_eq!(primary_action_colors(),(Color32::WHITE,Color32::from_gray(23)));
+        assert_eq!(border_ink(BorderRole::TableHeader),Color32::from_gray(106));
+        assert_eq!(border_ink(BorderRole::Error),Color32::from_rgb(199,107,107));
     }
 }

@@ -62,7 +62,7 @@ pub(crate) fn header_finish(ui:&Ui,header:Rect){
     ui.painter().with_shared_clip(header).rect_filled(
         Rect::from_min_max(egui::pos2(header.left(),
             header.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT),
-            header.right_bottom()),0.0,theme::TABLE_HEADER_OUTLINE);
+            header.right_bottom()),0.0,theme::border_ink(theme::BorderRole::TableHeader));
 }
 
 fn outline_bounds(header:Rect,body:Rect)->Rect{

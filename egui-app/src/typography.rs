@@ -9,7 +9,7 @@
 use eframe::egui::{
     self, Color32, FontData, FontDefinitions, FontFamily, FontId, RichText, TextStyle,
 };
-use crate::theme::{MUTED, SECONDARY, TEXT, text_ink, TextRole, TextState};
+use crate::theme::{text_ink, TextRole, TextState};
 // Canonical font metrics are shared with theme geometry; no reverse import.
 pub use crate::ui_tokens::{FONT_FIELD_LABEL,FONT_FREIGHT_SUMMARY_NUMBER,FONT_FREIGHT_SUMMARY_LABEL,FONT_PAGE_HEADING};
 
@@ -200,7 +200,7 @@ pub fn data_value_text_with_state(
 /// Keep this shared: date-basis, product-filter and freight-group selectors
 /// must not acquire separate screen-local Y corrections.
 pub const MANAGEMENT_DROPDOWN_TEXT_OPTICAL_Y: f32 = 2.0;
-/// Optical adjustment for the TEXT INSIDE compact dropdown popup options.
+/// Optical adjustment for the text_ink(TextRole::Value,TextState::Normal) INSIDE compact dropdown popup options.
 /// The option's 28pt background, hitbox, hover and selected outline stay put.
 const MANAGEMENT_DROPDOWN_OPTION_TEXT_OPTICAL_Y: f32 = -1.0;
 pub fn management_dropdown_option_text_y(row_height:f32,text_height:f32)->f32 {
@@ -494,7 +494,7 @@ pub fn client_table_metadata_galley(
 pub fn management_table_header_galley(
     ui: &egui::Ui, text: &str
 ) -> std::sync::Arc<egui::Galley> {
-    client_table_galley(ui,text,Role::Body,true,SECONDARY)
+    client_table_galley(ui,text,Role::Body,true,text_ink(TextRole::Label,TextState::Normal))
 }
 
 /// Semantic contrast for cells of *repeating management-table rows*.
@@ -602,9 +602,9 @@ pub fn category_tree_name_galley(
     ui:&egui::Ui,text:&str,root:bool
 )->std::sync::Arc<egui::Galley>{
     if root {
-        client_table_galley(ui,text,Role::Subsection,true,TEXT)
+        client_table_galley(ui,text,Role::Subsection,true,text_ink(TextRole::Value,TextState::Normal))
     }else{
-        client_table_galley(ui,text,Role::Body,false,TEXT)
+        client_table_galley(ui,text,Role::Body,false,text_ink(TextRole::Value,TextState::Normal))
     }
 }
 
@@ -632,10 +632,10 @@ fn category_path_text_width(ui:&egui::Ui,text:&str,font:CategoryPathFont)->f32{
         ).size().x;
     }
     let (role,emphasized,color)=match font{
-        CategoryPathFont::Body=>(Role::Body,false,TEXT),
-        CategoryPathFont::Metadata=>(Role::Metadata,false,MUTED),
+        CategoryPathFont::Body=>(Role::Body,false,text_ink(TextRole::Value,TextState::Normal)),
+        CategoryPathFont::Metadata=>(Role::Metadata,false,text_ink(TextRole::Metadata,TextState::Normal)),
         CategoryPathFont::FreightTableCell=>unreachable!(),
-        CategoryPathFont::Subsection=>(Role::Subsection,true,TEXT),
+        CategoryPathFont::Subsection=>(Role::Subsection,true,text_ink(TextRole::Value,TextState::Normal)),
     };
     client_table_galley(ui,text,role,emphasized,color).size().x
 }
@@ -707,7 +707,7 @@ pub fn freight_summary_small_label_galley(
 ) -> std::sync::Arc<egui::Galley> {
     let format = egui::TextFormat {
         font_id: FontId::proportional(FONT_FREIGHT_SUMMARY_LABEL),
-        color: SECONDARY,
+        color: text_ink(TextRole::Label,TextState::Normal),
         line_height: Some(crate::ui_tokens::FREIGHT_SUMMARY_LABEL_LINE_HEIGHT),
         ..Default::default()
     };
@@ -734,11 +734,11 @@ pub fn ocr_zoom_label(zoom:f32)->RichText{
 }
 
 pub fn ocr_validation_hint(text:&str)->RichText{
-    RichText::new(text).color(crate::theme::DANGER)
+    RichText::new(text).color(crate::theme::message_ink(theme::MessageInkRole::Danger))
 }
 
 pub fn ocr_progress_title(text:&str)->RichText{
-    RichText::new(text).size(FONT_OCR_PROGRESS_TITLE).strong().color(TEXT)
+    RichText::new(text).size(FONT_OCR_PROGRESS_TITLE).strong().color(text_ink(TextRole::Value,TextState::Normal))
 }
 
 /// Measurement and rendering share the same notice size and font family.
@@ -747,7 +747,7 @@ pub fn floating_notice_font()->FontId{
 }
 
 pub fn floating_notice_text(text:&str)->RichText{
-    RichText::new(text).size(FONT_FIELD_LABEL).color(TEXT)
+    RichText::new(text).size(FONT_FIELD_LABEL).color(text_ink(TextRole::Value,TextState::Normal))
 }
 
 pub fn review_title(text:&str,tone:crate::theme::ReviewTone)->RichText{
@@ -772,7 +772,7 @@ mod extracted_text_role_tests{
 }
 
 pub fn status(text: &str, color: Color32) -> RichText {
-    let display=if color==crate::theme::DANGER{
+    let display=if color==crate::theme::message_ink(theme::MessageInkRole::Danger){
         crate::user_error::display("status",text)
     }else{std::borrow::Cow::Borrowed(text)};
     render(display.as_ref(), Role::Status).color(color)
@@ -1090,7 +1090,7 @@ mod management_table_type_roles_tests {
             assert!(!role.emphasized(),"{role:?} must remain Regular");
         }
         assert!(!ManagementTableCellRole::RowTotal.emphasized());
-        assert_eq!(management_table_cell_color(ManagementTableCellRole::RowTotal),TEXT);
+        assert_eq!(management_table_cell_color(ManagementTableCellRole::RowTotal),text_ink(TextRole::Value,TextState::Normal));
         assert_eq!(spec(Role::Body).size,FONT_BODY);
         assert_eq!(spec(Role::Body).weight as u8, Weight::Regular as u8);
     }
@@ -1128,10 +1128,10 @@ mod management_table_type_roles_tests {
 
     #[test]
     fn money_quantity_and_row_total_have_shared_contrast(){
-        assert_eq!(management_table_cell_color(ManagementTableCellRole::Money),TEXT);
-        assert_eq!(management_table_cell_color(ManagementTableCellRole::Quantity),TEXT);
-        assert_eq!(management_table_cell_color(ManagementTableCellRole::RowTotal),TEXT);
-        assert_eq!(management_table_cell_color(ManagementTableCellRole::Category),SECONDARY);
+        assert_eq!(management_table_cell_color(ManagementTableCellRole::Money),text_ink(TextRole::Value,TextState::Normal));
+        assert_eq!(management_table_cell_color(ManagementTableCellRole::Quantity),text_ink(TextRole::Value,TextState::Normal));
+        assert_eq!(management_table_cell_color(ManagementTableCellRole::RowTotal),text_ink(TextRole::Value,TextState::Normal));
+        assert_eq!(management_table_cell_color(ManagementTableCellRole::Category),text_ink(TextRole::Label,TextState::Normal));
         assert_eq!(management_table_money_font(),data_value_font(DataValueKind::Money,DataValueContext::Form));
     }
 }
@@ -1179,9 +1179,9 @@ mod shared_text_hierarchy_contract_tests{
         assert_eq!(TextState::query(false),TextState::Pending);
         let missing=inline_quantity_amount("Order ",2," / ",None,"unknown",false);
         let known=inline_quantity_amount("Order ",2," / ",Some(0),"unknown",false);
-        assert!(missing.sections.iter().any(|s|s.byte_range.start>="Order 2 / ".len()&&s.format.color==MUTED));
-        assert!(known.sections.iter().all(|s|s.format.color==TEXT));
-        assert_eq!(management_table_cell_color(ManagementTableCellRole::Quantity),TEXT);
+        assert!(missing.sections.iter().any(|s|s.byte_range.start>="Order 2 / ".len()&&s.format.color==text_ink(TextRole::Metadata,TextState::Normal)));
+        assert!(known.sections.iter().all(|s|s.format.color==text_ink(TextRole::Value,TextState::Normal)));
+        assert_eq!(management_table_cell_color(ManagementTableCellRole::Quantity),text_ink(TextRole::Value,TextState::Normal));
         assert_ne!(crate::theme::ReviewTone::Action.text_color(),crate::theme::ReviewTone::Action.detail_color());
     }
 
@@ -1198,8 +1198,8 @@ mod shared_text_hierarchy_contract_tests{
                         assert_eq!(normal.format.font_id,missing.format.font_id);
                         assert_eq!(normal.format.line_height,missing.format.line_height);
                         assert_eq!(normal.format.extra_letter_spacing,missing.format.extra_letter_spacing);
-                        assert_eq!(normal.format.color,TEXT);
-                        assert_eq!(missing.format.color,MUTED);
+                        assert_eq!(normal.format.color,text_ink(TextRole::Value,TextState::Normal));
+                        assert_eq!(missing.format.color,text_ink(TextRole::Metadata,TextState::Normal));
                     }
                 };
                 check(management_table_cell_galley(ui,"0",ManagementTableCellRole::Money),
