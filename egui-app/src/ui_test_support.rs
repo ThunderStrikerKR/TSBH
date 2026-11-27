@@ -166,8 +166,67 @@ enum CaptionPaint {
     Text{rect:Rect,clip:Rect,elided:bool},
     OpaqueRect(Rect),
 }
-fn caption_paint(output:&egui::FullOutput,label:&str)->Vec<CaptionPaint>{
-    fn visit(shape:&egui::Shape,clip:Rect,label:&str,out:&mut Vec<CaptionPaint>){
+// Approximate convex opaque fills from the inside, never from their bounding
+// box. Every emitted rectangle lies in the actual fill. This is a conservative
+// paint-command check, not pixel rasterization.
+fn convex_fill_strips(bounds:Rect,clip:Rect,
+    span:impl Fn(f32)->Option<(f32,f32)>,out:&mut Vec<CaptionPaint>
+){
+    let visible=bounds.intersect(clip);
+    if !visible.is_positive(){return;}
+    let bands=(visible.height()/4.0).ceil().clamp(1.0,128.0) as usize;
+    for band in 0..bands{
+        let top=visible.top()+visible.height()*band as f32/bands as f32;
+        let bottom=visible.top()+visible.height()*(band+1) as f32/bands as f32;
+        let (Some((l0,r0)),Some((l1,r1)))=(span(top),span(bottom)) else{continue};
+        // Convexity guarantees that the four corners and interior are filled.
+        let solid=Rect::from_min_max(egui::pos2(l0.max(l1),top),
+            egui::pos2(r0.min(r1),bottom)).intersect(clip);
+        if solid.is_positive(){out.push(CaptionPaint::OpaqueRect(solid));}
+    }
+}
+fn ellipse_fill_strips(center:egui::Pos2,radius:egui::Vec2,clip:Rect,out:&mut Vec<CaptionPaint>){
+    if radius.x<=0.0||radius.y<=0.0{return;}
+    convex_fill_strips(Rect::from_center_size(center,radius*2.0),clip,|y|{
+        let dy=(y-center.y)/radius.y;
+        let dx=radius.x*(1.0-dy*dy).max(0.0).sqrt();
+        Some((center.x-dx,center.x+dx))
+    },out);
+}
+fn convex_path_fill_strips(points:&[egui::Pos2],clip:Rect,out:&mut Vec<CaptionPaint>){
+    if points.len()<3{return;}
+    // egui only supports convex filled paths. Reject malformed/non-convex
+    // fixtures rather than treating an enclosing region as fully opaque.
+    let mut winding=0.0_f32;
+    for i in 0..points.len(){
+        let a=points[i];
+        let b=points[(i+1)%points.len()];
+        for p in points{
+            let cross=(b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x);
+            if cross.abs()<=0.001{continue;}
+            if winding!=0.0&&cross.signum()!=winding{return;}
+            winding=cross.signum();
+        }
+    }
+    if winding==0.0{return;}
+    convex_fill_strips(Rect::from_points(points),clip,|y|{
+        let (mut left,mut right)=(f32::INFINITY,f32::NEG_INFINITY);
+        for i in 0..points.len(){
+            let a=points[i];
+            let b=points[(i+1)%points.len()];
+            if y<a.y.min(b.y)||y>a.y.max(b.y){continue;}
+            if a.y==b.y{
+                left=left.min(a.x.min(b.x));right=right.max(a.x.max(b.x));
+            }else{
+                let x=a.x+(b.x-a.x)*(y-a.y)/(b.y-a.y);
+                left=left.min(x);right=right.max(x);
+            }
+        }
+        (left<=right).then_some((left,right))
+    },out);
+}
+fn caption_paint(output:&egui::FullOutput,label:&str,widget:Rect)->Vec<CaptionPaint>{
+    fn visit(shape:&egui::Shape,clip:Rect,widget:Rect,label:&str,out:&mut Vec<CaptionPaint>){
         match shape{
             egui::Shape::Text(text) if text.galley.text()==label=>{
                 out.push(CaptionPaint::Text{
@@ -187,12 +246,18 @@ fn caption_paint(output:&egui::FullOutput,label:&str)->Vec<CaptionPaint>{
                     if visible.is_positive(){out.push(CaptionPaint::OpaqueRect(visible));}
                 }
             }
-            egui::Shape::Vec(shapes)=>for shape in shapes{visit(shape,clip,label,out);},
+            egui::Shape::Circle(shape) if shape.fill.a()==255=>
+                ellipse_fill_strips(shape.center,egui::Vec2::splat(shape.radius),clip.intersect(widget),out),
+            egui::Shape::Ellipse(shape) if shape.fill.a()==255=>
+                ellipse_fill_strips(shape.center,shape.radius,clip.intersect(widget),out),
+            egui::Shape::Path(shape) if shape.closed&&shape.fill.a()==255=>
+                convex_path_fill_strips(&shape.points,clip.intersect(widget),out),
+            egui::Shape::Vec(shapes)=>for shape in shapes{visit(shape,clip,widget,label,out);},
             _=>{}
         }
     }
     let mut out=Vec::new();
-    for shape in &output.shapes{visit(&shape.shape,shape.clip_rect,label,&mut out);}
+    for shape in &output.shapes{visit(&shape.shape,shape.clip_rect,widget,label,&mut out);}
     out
 }
 /// Check a named caption within a known visible slot. Horizontal clipping is
@@ -201,7 +266,7 @@ fn caption_paint(output:&egui::FullOutput,label:&str)->Vec<CaptionPaint>{
 /// offscreen scroll rows and editable text have distinct visibility policies.
 pub(crate) fn assert_caption_visibility(output:&egui::FullOutput,label:&str,widget:Rect,
     allow_horizontal_overflow:bool)->Rect{
-    let paint=caption_paint(output,label);
+    let paint=caption_paint(output,label,widget);
     let mut failure="missing painted caption";
     for (index,entry) in paint.iter().enumerate(){
         let CaptionPaint::Text{rect,clip,elided}=*entry else{continue};
@@ -325,6 +390,28 @@ mod shared_component_screen_trace_tests{
                 painter.with_clip_rect(clip).galley(pos,galley,egui::Color32::WHITE);
                 if mode=="covered"{painter.rect_filled(widget,0.0,egui::Color32::BLACK);}
                 if mode=="rounded"{painter.rect_filled(widget,8.0,egui::Color32::BLACK);}
+                if mode=="circle-partial"||mode=="circle-translucent"||mode=="circle-clipped"{
+                    let center=ink.center();
+                    let color=if mode=="circle-translucent"{egui::Color32::from_black_alpha(80)}
+                        else{egui::Color32::BLACK};
+                    if mode=="circle-clipped"{
+                        let outside=Rect::from_min_max(widget.min,egui::pos2(ink.left()-2.0,widget.bottom()));
+                        painter.with_clip_rect(outside).circle_filled(center,10.0,color);
+                    }else{painter.circle_filled(center,10.0,color);}
+                }
+                if mode=="circle-bounds-only"{
+                    painter.circle_filled(ink.min-egui::vec2(12.0,12.0),15.0,egui::Color32::BLACK);
+                }
+                if mode=="ellipse-partial"{
+                    painter.add(egui::epaint::EllipseShape::filled(ink.center(),egui::vec2(12.0,8.0),egui::Color32::BLACK));
+                }
+                if mode=="polygon-partial"||mode=="polygon-outline"{
+                    let p=ink.center();
+                    let points=vec![p+egui::vec2(-12.0,-10.0),p+egui::vec2(12.0,-10.0),
+                        p+egui::vec2(0.0,10.0)];
+                    let color=if mode=="polygon-outline"{egui::Color32::TRANSPARENT}else{egui::Color32::BLACK};
+                    painter.add(egui::Shape::convex_polygon(points,color,egui::Stroke::NONE));
+                }
                 if mode=="clipped-cover"{
                     let outside=Rect::from_min_max(widget.min,egui::pos2(ink.left()-2.0,widget.bottom()));
                     painter.with_clip_rect(outside).rect_filled(widget,0.0,egui::Color32::BLACK);
@@ -347,7 +434,8 @@ mod shared_component_screen_trace_tests{
     }
     #[test]
     fn caption_detector_accepts_visible_background_and_explicit_horizontal_overflow(){
-        for mode in ["normal","background","translucent","horizontal","clipped-cover","edge-cover"]{
+        for mode in ["normal","background","translucent","horizontal","clipped-cover","edge-cover",
+            "circle-bounds-only","circle-translucent","circle-clipped","polygon-outline"]{
             let (output,widget)=paint_case(mode);
             assert_caption_visibility(&output,"검증 라벨",widget,mode=="horizontal");
         }
@@ -362,6 +450,9 @@ mod shared_component_screen_trace_tests{
             ("covered-split",true,"fully occluded"),
             ("partial-cover",true,"partially occluded"),
             ("rounded",true,"fully occluded"),
+            ("circle-partial",true,"partially occluded"),
+            ("ellipse-partial",true,"partially occluded"),
+            ("polygon-partial",true,"partially occluded"),
         ]{
             let (output,widget)=paint_case(mode);
             let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
