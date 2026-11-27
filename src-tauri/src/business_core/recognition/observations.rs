@@ -1567,35 +1567,78 @@ pub(super) fn checked_owner_replay(raw:&str,first:&Value,decision:&Value)
     })();
     check.ok_or("귀속 재계산 근거 또는 변경 대상 불일치".into())
 }
-pub(super) fn verify_owner_replay(raw:&str,first:&Value,replay:&Value,source:Span,target:Span,
-    old_row:usize,new_row:usize,field:&str)->Result<(),String>{
+pub(super) type OwnerReplayTransfer=(Span,Span,usize,usize,String);
+pub(super) fn checked_owner_replays(raw:&str,first:&Value,decisions:&[Value])->Result<Vec<OwnerReplayTransfer>,String>{
+    if decisions.is_empty()||decisions.len()>64{return Err("귀속 재계산 추천 범위 오류".into());}
+    let mut sources=BTreeSet::new();
+    let mut slots=BTreeSet::new();
+    let mut transfers=Vec::new();
+    for d in decisions{
+        let t=checked_owner_replay(raw,first,d)?;
+        let (source,_,old,new,field)=&t;
+        let slot=if contact(field){"contact"}else{"address"};
+        // Any shared source or delivery slot is a joint conflict. Do
+        // not rely on the sequence of recommendations to resolve it.
+        if !sources.insert(*source)||!slots.insert((*old,slot))||!slots.insert((*new,slot)){
+            return Err("귀속 재계산 추천 충돌".into());
+        }
+        transfers.push(t);
+    }
+    Ok(transfers)
+}
+pub(super) fn verify_owner_replays(raw:&str,first:&Value,replay:&Value,transfers:&[OwnerReplayTransfer])->Result<(),String>{
     let units=raw.encode_utf16().collect::<Vec<_>>();
     let before=first["recipients"].as_array().ok_or("최초 수취인 누락")?;
     let after=replay["recipients"].as_array().ok_or("재계산 수취인 누락")?;
-    let old=before.get(old_row).ok_or("이전 수취인 누락")?;
-    let destination=after.get(new_row).ok_or("변경 수취인 누락")?;
-    let value=old[field].as_str().filter(|v|!v.is_empty()).ok_or("이전 배송 정보 누락")?;
-    if before.len()!=after.len()||destination[field].as_str()!=Some(value)||
-        after[old_row][field].as_str()!=Some("")||
-        OwnerIndex::new(&units,&replay["recipients"]).owner(source,field,value)!=Some(target){
-        return Err("귀속 재계산 결과 불일치".into());
+    if before.len()!=after.len()||transfers.is_empty(){return Err("귀속 재계산 수취인 불일치".into());}
+    let after_index=OwnerIndex::new(&units,&replay["recipients"]);
+    let mut changed=BTreeMap::<usize,Vec<(Span,&str)>>::new();
+    let mut owners=BTreeMap::<Span,&Value>::new();
+    for (source,target,old_row,new_row,field) in transfers{
+        let old=before.get(*old_row).ok_or("이전 수취인 누락")?;
+        let destination=after.get(*new_row).ok_or("변경 수취인 누락")?;
+        let value=old[field].as_str().filter(|v|!v.is_empty()).ok_or("이전 배송 정보 누락")?;
+        if destination[field].as_str()!=Some(value)||after[*old_row][field].as_str()!=Some("")||
+            after_index.owner(*source,field,value)!=Some(*target){
+            return Err("귀속 재계산 결과 불일치".into());
+        }
+        changed.entry(*old_row).or_default().push((*source,field));
+        changed.entry(*new_row).or_default().push((*source,field));
+        if owners.insert(*source,&destination["id"]).is_some(){return Err("귀속 원문 중복".into());}
     }
     // All other recipient fields and item assignments must survive intact.
     for (i,(a,b)) in before.iter().zip(after).enumerate(){
         let mut a=a.clone();let mut b=b.clone();
-        if i==old_row||i==new_row{
+        if let Some(fields)=changed.get(&i){
             for v in [&mut a,&mut b]{
                 let object=v.as_object_mut().ok_or("수취인 형식 오류")?;
-                object.remove(field);
-                if field=="address"{for k in ["postcode","addressKind","addressStatus","addressParts"]{object.remove(k);}}
+                for (_,field) in fields{
+                    object.remove(*field);
+                    if *field=="address"{for k in ["postcode","addressKind","addressStatus","addressParts"]{object.remove(k);}}
+                }
                 for k in ["sources","candidates"]{
                     if let Some(xs)=object.get_mut(k).and_then(Value::as_array_mut){
-                        xs.retain(|v|position(&units,v)!=Some(source));
+                        xs.retain(|v|!fields.iter().any(|(s,_)|position(&units,v)==Some(*s)));
                     }
                 }
             }
         }
         if a!=b{return Err("귀속 재계산 중 다른 정보 변경".into());}
+    }
+    // The document-wide source index must also point to the new recipient,
+    // while preserving each original source and all unassigned evidence.
+    let mut expected=first["candidates"].clone();
+    let mut seen=BTreeSet::new();
+    for candidate in expected.as_array_mut().ok_or("최초 원문 후보 누락")?{
+        if let Some(s)=position(&units,candidate){
+            if let Some(id)=owners.get(&s){
+                if !seen.insert(s){return Err("문서 원문 후보 중복".into());}
+                candidate["recipientId"]=(*id).clone();
+            }
+        }
+    }
+    if seen.len()!=owners.len()||expected!=replay["candidates"]||first["unassigned"]!=replay["unassigned"]{
+        return Err("귀속 재계산 문서 원문 불일치".into());
     }
     Ok(())
 }
