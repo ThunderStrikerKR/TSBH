@@ -534,6 +534,124 @@ mod recognition_learning_store_tests{
         synchronize(&tx,"db",&ids,&orders,|_|Ok(report(1))).unwrap();
         assert_eq!(integrity(&tx,"db").unwrap()["internallyConsistent"],true);tx.commit().unwrap();
     }
+    // Real disposable SQLite files, never the configured business or audit DB.
+    struct RecoveryFixture(std::path::PathBuf);
+    impl RecoveryFixture{
+        fn new()->Self{
+            let path=std::env::temp_dir().join(format!("bando-learning-recovery-{}",uuid::Uuid::new_v4()));
+            std::fs::create_dir(&path).unwrap();Self(path)
+        }
+        fn path(&self)->std::path::PathBuf{self.0.join("fixture.sqlite3")}
+    }
+    impl Drop for RecoveryFixture{
+        fn drop(&mut self){let _=std::fs::remove_dir_all(&self.0);}
+    }
+    fn disk(path:&std::path::Path)->Connection{
+        let c=Connection::open(path).unwrap();
+        c.execute_batch("PRAGMA foreign_keys=ON;PRAGMA journal_mode=WAL;PRAGMA synchronous=FULL;PRAGMA busy_timeout=2000;").unwrap();
+        prepare(&c).unwrap();c
+    }
+    fn seed_disk(c:&mut Connection){
+        let tx=c.transaction().unwrap();
+        synchronize(&tx,"fixture",&["a".into()],&[json!({"id":"a"})],|_|Ok(report(3))).unwrap();
+        tx.commit().unwrap();
+    }
+
+    // Run in a separate test-harness process. Wait with a bounded deadline
+    // so a missing readiness signal never hangs CI. The parent terminates
+    // this process while the real write transaction is still open.
+    #[test]
+    fn recovery_child_uncommitted_writer(){
+        let Some(root)=std::env::var_os("BANDO_LEARNING_CRASH_TEST_FIXTURE")else{return;};
+        let root=std::path::PathBuf::from(root);
+        assert!(root.file_name().and_then(|v|v.to_str()).is_some_and(|v|v.starts_with("bando-learning-recovery-")));
+        assert_eq!(root.parent(),Some(std::env::temp_dir().as_path()));
+        assert_eq!(std::fs::read_to_string(root.join("test-only")).unwrap(),"isolated-recovery-test");
+        let mut c=disk(&root.join("fixture.sqlite3"));
+        let tx=c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).unwrap();
+        synchronize(&tx,"fixture",&["a".into(),"b".into()],
+            &[json!({"id":"a","revision":2}),json!({"id":"b"})],|_|Ok(report(9))).unwrap();
+        mark_pending(&tx,"fixture","a").unwrap();
+        assert_eq!(total(&tx,"fixture","weakUnchangedCount"),18);
+        std::fs::write(root.join("ready"),b"transaction-open").unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(30));
+        // An unexpectedly surviving child fails; never commit the test write.
+        panic!("parent did not terminate uncommitted writer");
+    }
+    #[test]
+    fn killed_writer_recovers_committed_facts_totals_and_cache(){
+        use std::time::{Duration,Instant};
+        let fixture=RecoveryFixture::new();
+        std::fs::write(fixture.0.join("test-only"),b"isolated-recovery-test").unwrap();
+        {let mut c=disk(&fixture.path());seed_disk(&mut c);}
+        let mut child=std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["recovery_child_uncommitted_writer","--nocapture","--test-threads=1"])
+            .env("BANDO_LEARNING_CRASH_TEST_FIXTURE",&fixture.0)
+            .spawn().unwrap();
+        let deadline=Instant::now()+Duration::from_secs(20);
+        let ready=loop{
+            if fixture.0.join("ready").is_file(){break true;}
+            if child.try_wait().unwrap().is_some()||Instant::now()>=deadline{break false;}
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        let killed=child.kill();let status=child.wait().unwrap();
+        assert!(ready,"child never reached uncommitted write");killed.unwrap();assert!(!status.success());
+        let mut c=disk(&fixture.path());
+        assert_eq!(total(&c,"fixture","weakUnchangedCount"),3);
+        assert_eq!(total(&c,"fixture","independentOrders"),1);
+        assert_eq!(order_page(&c,"fixture","",16).unwrap(),vec!["a".to_owned()]);
+        let tx=c.transaction().unwrap();
+        assert_eq!(integrity(&tx,"fixture").unwrap()["internallyConsistent"],true);
+        let result=synchronize(&tx,"fixture",&["a".into()],&[json!({"id":"a"})],|_|panic!("committed cache should survive")).unwrap();
+        assert_eq!(result["reusedOrders"],1);tx.commit().unwrap();
+    }
+    #[test]
+    fn committed_pending_marker_survives_restart_and_replay(){
+        let fixture=RecoveryFixture::new();
+        {
+            let mut c=disk(&fixture.path());seed_disk(&mut c);
+            let tx=c.transaction().unwrap();mark_pending(&tx,"fixture","a").unwrap();tx.commit().unwrap();
+            // Simulate restart between the two quarantine transactions.
+        }
+        {
+            let mut c=disk(&fixture.path());
+            let tx=c.transaction().unwrap();
+            assert_eq!(integrity(&tx,"fixture").unwrap()["pendingOrders"],1);
+            revoke_pending(&tx,"fixture","a").unwrap();tx.commit().unwrap();
+        }
+        let mut c=disk(&fixture.path());
+        assert_eq!(total(&c,"fixture","independentOrders"),0);
+        assert_eq!(order_page(&c,"fixture","",16).unwrap(),vec!["a".to_owned()]);
+        let tx=c.transaction().unwrap();
+        synchronize(&tx,"fixture",&["a".into()],&[json!({"id":"a","revision":2})],|_|Ok(report(4))).unwrap();
+        assert_eq!(integrity(&tx,"fixture").unwrap()["internallyConsistent"],true);tx.commit().unwrap();
+        assert_eq!(total(&c,"fixture","weakUnchangedCount"),4);
+    }
+    #[test]
+    fn disk_replay_recovers_lost_notifications_and_replaced_source_set(){
+        let fixture=RecoveryFixture::new();
+        {
+            let mut c=disk(&fixture.path());
+            let tx=c.transaction().unwrap();
+            synchronize(&tx,"fixture",&["a".into(),"b".into()],&[json!({"id":"a"}),json!({"id":"b"})],|_|Ok(report(3))).unwrap();
+            synchronize(&tx,"other",&["a".into()],&[json!({"id":"a"})],|_|Ok(report(7))).unwrap();
+            tx.commit().unwrap();
+        }
+        // Simulate the authoritative source set after a replacement:
+        // 'a' changed, 'b' disappeared, 'c' was added. No wakeup survived.
+        let mut c=disk(&fixture.path());
+        let authoritative=vec![json!({"id":"a","revision":2}),json!({"id":"c"})];
+        let source_ids=["a".to_owned(),"c".to_owned()];
+        let ids=order_page(&c,"fixture","",16).unwrap().into_iter().chain(source_ids)
+            .collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>();
+        let tx=c.transaction().unwrap();
+        let r=synchronize(&tx,"fixture",&ids,&authoritative,|_|Ok(report(2))).unwrap();
+        assert_eq!(r["changedOrders"],3);
+        assert_eq!(integrity(&tx,"fixture").unwrap()["internallyConsistent"],true);tx.commit().unwrap();
+        assert_eq!(total(&c,"fixture","weakUnchangedCount"),4);
+        assert_eq!(total(&c,"other","weakUnchangedCount"),7);
+        assert_eq!(order_page(&c,"fixture","",16).unwrap(),vec!["a".to_owned(),"c".to_owned()]);
+    }
     #[test]
     fn failed_batch_rolls_back_all_deltas(){
         let mut c=conn();let ids=vec!["a".into(),"b".into()];let orders=vec![json!({"id":"a"}),json!({"id":"b"})];
