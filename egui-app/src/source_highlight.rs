@@ -390,7 +390,9 @@ pub fn is_active_field(active:Option<&LinkKey>,recipient:&str,target:&str,field:
 /// Fill must be painted before the value text. For TextEdit use its
 /// background_color() instead, so the native editor paints behind glyphs.
 pub fn paint_active_background(ui:&egui::Ui,rect:egui::Rect) {
-    ui.painter().rect_filled(rect,ACTIVE_RADIUS,ACTIVE_FILL);
+    if let Some(painter)=crate::ui_primitives::highlight_painter(ui,rect){
+        painter.rect_filled(rect,ACTIVE_RADIUS,ACTIVE_FILL);
+    }
 }
 
 /// Draw the same 2pt outline whenever the shared visible projection
@@ -398,11 +400,10 @@ pub fn paint_active_background(ui:&egui::Ui,rect:egui::Rect) {
 /// hover MUST produce exactly the same border, even when no LinkKey has
 /// completed its 50ms entrance timer yet.
 pub(crate) fn paint_active_outline(ui:&egui::Ui,rect:egui::Rect,radius:impl Into<egui::CornerRadius>){
-    ui.painter().rect_stroke(
-        rect.shrink(0.5),radius,
-        egui::Stroke::new(ACTIVE_BORDER_WIDTH,ACTIVE_BORDER),
-        egui::StrokeKind::Inside,
-    );
+    if let Some(painter)=crate::ui_primitives::highlight_painter(ui,rect){
+        painter.rect_stroke(rect,radius,
+            egui::Stroke::new(ACTIVE_BORDER_WIDTH,ACTIVE_BORDER),egui::StrokeKind::Inside);
+    }
 }
 pub fn paint_active_if(ui:&egui::Ui, response:&egui::Response, highlighted:bool) {
     if highlighted {
