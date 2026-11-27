@@ -560,6 +560,8 @@ pub fn show(ctx: &Context) {
                 );
                 #[cfg(test)]
                 crate::ui_test_support::record_highlight_target("notice close",response.rect,ui.clip_rect());
+                #[cfg(test)]
+                crate::ui_test_support::record_control_response("notice close",&response,ui.clip_rect(),None);
                 remember_response(ui.ctx(),&response);
                 crate::highlight::action_hover(ui,&response,crate::highlight::Geometry::Compact,false);
                 paint_close(&painter,center);

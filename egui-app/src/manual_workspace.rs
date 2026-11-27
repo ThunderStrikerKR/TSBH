@@ -2516,6 +2516,8 @@ impl ManualWorkspace {
                                                                     egui::Label::new(typography::body("신규 품목으로 분류"))
                                                                         .sense(egui::Sense::click())
                                                                 ).on_hover_cursor(egui::CursorIcon::PointingHand);
+                                                                #[cfg(test)]
+                                                                crate::ui_test_support::record_control_response("manual new item target",&response,items_ui.clip_rect(),None);
                                                                 let dragging=self.assignment_gesture.dragging.is_some();
                                                                 let hovered=if dragging{
                                                                     manual_assignment_drop_hit(items_ui,response.rect,drag_pointer)

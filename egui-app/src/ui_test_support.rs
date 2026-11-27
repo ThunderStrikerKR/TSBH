@@ -845,9 +845,12 @@ pub(crate) fn highlight_frame(ctx:&egui::Context,screen:Rect,pointer:Option<egui
         HIGHLIGHT_TARGETS.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
         draw(ctx);
     });
+    let components=finish_component_geometry(screen);
+    assert_independent_control_hits(&components,screen,
+        std::thread::current().name().unwrap_or("actual highlight frame"));
     HighlightSnapshot{
         slots:TRACE.with(|trace|trace.borrow_mut().take().unwrap()),
-        components:finish_component_geometry(screen),
+        components,
         targets:HIGHLIGHT_TARGETS.with(|trace|trace.borrow_mut().take().unwrap()),
         labels:painted_labels(&output,screen),
         icon_segments:painted_icon_segments(&output,screen),
