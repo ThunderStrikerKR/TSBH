@@ -198,11 +198,21 @@ fn document_pattern(events:&[Event],first:&Value)->Value{
     let runs=local_recipient_runs(&normalized,events,&ranges);
     let near=near_recipient_blocks(&normalized,events,&ranges);
     let partial=partial_role_order(&normalized);
+    // Preserve item role order, multiplicity and source boundaries outside
+    // the provisional normalized identity. This is not an ownership link.
+    let item_sections=normalized.iter().enumerate().filter(|(_,role)|**role=="product_section")
+        .map(|(i,_)|{let (a,b)=ranges[i];
+            json!({"segment":observed_segment(events,&ranges,i,i+1),
+                "observedRoles":events[a..b].iter().map(|e|e.role).collect::<Vec<_>>()})
+        }).collect::<Vec<_>>();
+    let optional_notes=events.iter().filter(|e|e.role=="note").map(|e|
+        json!({"start":e.position.0,"end":e.position.1,"line":e.line,"paragraph":e.paragraph})).collect::<Vec<_>>();
     json!({"patternVersion":DOCUMENT_PATTERN_VERSION,"status":"candidate_only",
         "candidateKey":candidate_key,"observedRoleSequence":observed,
         "normalizedRoleSequence":normalized,"cycle":cycle,"exactRepeatCount":repeats,
         "exactRepeatSegments":repeat_segments,"incompletePrefixRepeat":incomplete,
         "localRecipientRuns":runs,"nearRecipientBlocks":near,"partialRoleOrder":partial,
+        "itemSections":item_sections,"optionalNotes":optional_notes,
         "recipientCycleObserved":recipient_cycle,"learningEligible":false})
 }
 
@@ -266,9 +276,11 @@ fn key(level:&str,features:&Value,client:Option<&str>)->Value{
 }
 pub(super) fn contexts(units:&[u16],first:&Value)->BTreeMap<Span,Vec<Value>>{
     let events=event_index(units,first);
-    owner_contexts_from_events(units,first,&events,document_lead(&events))
+    owner_contexts_from_events(units,first,&events,document_lead(&events),&mut BTreeMap::new())
 }
-fn owner_contexts_from_events(units:&[u16],first:&Value,events:&[Event],lead:&str)->BTreeMap<Span,Vec<Value>>{
+type LocalContextCache=BTreeMap<usize,Vec<Value>>;
+fn owner_contexts_from_events(units:&[u16],first:&Value,events:&[Event],lead:&str,
+    locals:&mut LocalContextCache)->BTreeMap<Span,Vec<Value>>{
     let mut out=BTreeMap::new();
     let trace=&first["recipientOwnerTrace"];
     if trace["schemaVersion"]!=1{return out;}
@@ -298,7 +310,7 @@ fn owner_contexts_from_events(units:&[u16],first:&Value,events:&[Event],lead:&st
         let mut projections=vec![key("base",&base,None)];
         // A bounded local sequence and between-anchor sequence describe
         // the observed order of fields without guessing their final owners.
-        let local=local_context(events,i);
+        let local=locals.entry(i).or_insert_with(||local_context(events,i));
         let begin=events.partition_point(|e|e.position.0<a.0);
         let end=events.partition_point(|e|e.position.0<=b.0);
         let regional=if end-begin<=16 {
@@ -343,9 +355,10 @@ fn field_key(task:&str,level:&str,features:&Value,client:Option<&str>)->Value{
 type FieldContexts=BTreeMap<(Span,&'static str),Vec<Value>>;
 fn field_contexts(units:&[u16],first:&Value)->FieldContexts{
     let events=event_index(units,first);
-    field_contexts_from_events(units,first,&events,document_lead(&events))
+    field_contexts_from_events(units,first,&events,document_lead(&events),&mut BTreeMap::new())
 }
-fn field_contexts_from_events(units:&[u16],first:&Value,events:&[Event],lead:&str)->FieldContexts{
+fn field_contexts_from_events(units:&[u16],first:&Value,events:&[Event],lead:&str,
+    locals:&mut LocalContextCache)->FieldContexts{
     let client=first["recognitionContext"]["clientId"].as_str()
         .filter(|id|!id.trim().is_empty()&&first["recognitionContext"]["clientBasis"]=="MANUAL");
     let mut items=BTreeMap::<Span,Vec<(&Value,&str)>>::new();
@@ -366,7 +379,7 @@ fn field_contexts_from_events(units:&[u16],first:&Value,events:&[Event],lead:&st
         let s=e.position;
         if i>0&&events[i-1].position==s || i+1<events.len()&&events[i+1].position==s{continue;}
         let Some(shape)=source_shape(units,s)else{continue;};
-        let local=local_context(events,i);
+        let local=locals.entry(i).or_insert_with(||local_context(events,i));
         let line_order=line_roles.get(&e.line).filter(|v|v.len()<=16);
         let mut tasks=vec![("type",json!([e.role,shape]))];
         if let Some(links)=items.get(&s).filter(|v|v.len()==1){
@@ -578,10 +591,11 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
     let events=event_index(&units,first);
     let lead=document_lead(&events);
     let index=ShadowIndex::new(&units,first);
-    let entries=owner_contexts_from_events(&units,first,&events,lead).into_iter().map(|(s,keys)|
+    let mut locals=LocalContextCache::new();
+    let entries=owner_contexts_from_events(&units,first,&events,lead,&mut locals).into_iter().map(|(s,keys)|
         json!({"source":{"start":s.0,"end":s.1},"contexts":keys})
     ).collect::<Vec<_>>();
-    let field_entries=field_contexts_from_events(&units,first,&events,lead).into_iter().map(|((s,task),keys)|{
+    let field_entries=field_contexts_from_events(&units,first,&events,lead,&mut locals).into_iter().map(|((s,task),keys)|{
         let shadow=field_shadow_from_index(&units,&index,s,task);
         let mut entry=json!({"source":{"start":s.0,"end":s.1},"task":task,"contexts":keys,
             "shadowCandidates":shadow["candidates"],"candidateCoverage":shadow["coverage"],
@@ -995,6 +1009,10 @@ mod tests{
         let b=project(&["product","quantity","product","quantity","name","mobile","phone","address"],3);
         assert_eq!(a["candidateKey"],b["candidateKey"]);
         assert_ne!(a["observedRoleSequence"],b["observedRoleSequence"]);
+        assert_eq!(b["itemSections"][0]["observedRoles"],json!(["product","quantity","product","quantity"]));
+        let noted=project(&["product","quantity","name","phone","address","note"],1);
+        assert_eq!(a["candidateKey"],noted["candidateKey"]);
+        assert_eq!(noted["optionalNotes"].as_array().unwrap().len(),1);
         let twice=project(&["product","quantity","name","phone","address",
             "product","quantity","name","phone","address"],1);
         assert_eq!(a["candidateKey"],twice["candidateKey"]);
