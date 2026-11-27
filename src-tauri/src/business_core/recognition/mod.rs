@@ -576,6 +576,7 @@ fn source_json(raw: &str, e: &Evidence, recipient_id: &str, target_id: &str) -> 
         "recipientId":recipient_id, "text": &raw[e.start..e.end],
     })
 }
+// Syntax completeness is not proof of a deliverable or registered address.
 fn address_info(value: &str) -> (String, String, Value) {
     let road = Regex::new(r"[로길]\s*\d+(?:-\d+)?").expect("road").is_match(value);
     let lot = Regex::new(r"[동리읍면]\s+(?:산\s*)?\d+(?:-\d+)?").expect("lot").is_match(value);
@@ -634,6 +635,18 @@ fn blank_recipient(id: &str, name: &str, anchor: Option<&Evidence>, raw: &str) -
             "start":utf16(raw,a.start),"end":utf16(raw,a.end)});
     }
     value
+}
+// A candidate set is not a unique connection just because it has a first entry.
+fn unique_candidate<T>(mut candidates:impl Iterator<Item=T>)->Option<T>{
+    let first=candidates.next()?;
+    if candidates.next().is_none(){Some(first)}else{None}
+}
+fn common_quantity_candidate(mut local:impl Iterator<Item=usize>,each:bool,explicit:&[usize])->Option<usize>{
+    match (local.next(),local.next()){
+        (Some(q),None)=>Some(q),
+        (Some(_),Some(_))=>None,
+        (None,_)=>if each&&explicit.len()==1{Some(explicit[0])}else{None},
+    }
 }
 fn owner_index(anchors: &[usize], events: &[Evidence], offset: usize) -> usize {
     anchors.iter().enumerate().rev().find(|(_, i)| events[**i].start <= offset)
@@ -1226,7 +1239,14 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
         // create a product even when its digits match a generic model regex.
         let trim_phones: Vec<(usize,usize)> = phone.find_iter(trimmed)
             .map(|m|(m.start(),m.end())).collect();
-        let decision = model::decision_json(&model::decide(trimmed,state,client_id));
+        let skip_until = ts_semantics::table_product_prefix(trimmed);
+        let capture=collect_candidate_trace && candidate_trace.len()<64;
+        let mut stages=Vec::new();
+        // When the matching input is identical, use the same product
+        // decision for the type gate and the product hit (including tracing).
+        let decision=if skip_until==trimmed{
+            model::decision_json(&model::decide_with_trace(trimmed,state,client_id,capture.then_some(&mut stages)))
+        }else{model::decision_json(&model::decide(trimmed,state,client_id))};
         // parser.ts::parseLegacy: a full contact may share the same physical
         // line with a valid product and quantity; filter contact-only rows,
         // not valid joint records such as "709 민판 한개 이가상 010-...".
@@ -1242,14 +1262,12 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
         if trimmed.contains("발주일") || trimmed.contains("발송일") {
             record_type(line.number,line.start,line.start+line.text.len(),"product","document_date");continue;
         }
-        let skip_until = ts_semantics::table_product_prefix(trimmed);
         // Never synthesize a new string and then treat its indexes as offsets
         // into raw: UTF-8/UTF-16 source-evidence contract must be lossless.
-        let capture=collect_candidate_trace && candidate_trace.len()<64;
         if collect_candidate_trace && !capture{candidate_trace_truncated=true;}
-        let mut stages=Vec::new();
-        let matched = model::decision_json(&model::decide_with_trace(skip_until,state,client_id,
-            capture.then_some(&mut stages)));
+        let matched=if skip_until==trimmed{decision}else{
+            model::decision_json(&model::decide_with_trace(skip_until,state,client_id,capture.then_some(&mut stages)))
+        };
         let mut extraction_trace=quantity::QuantityTrace::default();
         let mut quantity_values = if trimmed.contains('|') {
             let model_end=matched.get("evidence").and_then(Value::as_object)
@@ -1300,6 +1318,13 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
                 "saleUnitFilterRemoved":before.len()>quantity_values.len()}));
         }
         for q in quantity_values {
+            let start=line.start+offset+q.start;
+            let end=line.start+offset+q.end;
+            // Apply the same source exclusion as the detached quantity path.
+            if events.iter().any(|e|matches!(e.kind,"address"|"name"|"phone"|"mobile"|"note")
+                &&e.start<end&&start<e.end){
+                record_type(line.number,start,end,"quantity","overlaps_recipient_field");continue;
+            }
             quantity_indexes.push(add_match(&mut events, line, offset+q.start,offset+q.end,
                 "quantity",q.value.to_string(),"상품 행에 명시된 수량"));
         }
@@ -1515,19 +1540,19 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
             //   explicitly per-recipient ('각각'/'씩') source quantity
             // - a common document total must never be multiplied
             let selected_qty = if hit.common {
-                events.iter().enumerate().find_map(|(qi,e)|
+                common_quantity_candidate(events.iter().enumerate().filter_map(|(qi,e)|
                     (e.kind=="quantity" && e.item_id.is_none()
                         && !hit.quantities.contains(&qi)
                         && !product_hits.iter().any(|p|p.line==e.line)
-                        && owner_index(&anchors,&events,e.start)==idx).then_some(qi)
-                ).or_else(||(hit.each && hit.quantities.len()==1)
-                    .then(||hit.quantities[0]))
-            } else if hit.quantities.len()==1 {
-                Some(hit.quantities[0])
-            } else {None};
-            let unique = selected_qty.is_some();
+                        && owner_index(&anchors,&events,e.start)==idx).then_some(qi)),
+                    hit.each,&hit.quantities)
+            } else {
+                unique_candidate(hit.quantities.iter().copied())
+            };
             let quantity_value = selected_qty
-                .and_then(|i|events[i].value.parse::<i64>().ok());
+                .and_then(|i|events[i].value.parse::<i64>().ok()).filter(|q|*q>0);
+            let unique = quantity_value.is_some();
+            let selected_qty=selected_qty.filter(|_|unique);
             let chosen = hit.decision.get("productId").and_then(Value::as_str)
                 .filter(|s| !s.is_empty());
             let decision_name=hit.decision.get("name").and_then(Value::as_str)
@@ -1713,7 +1738,7 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
             let item_idx = pending[0];
             let rid = recipients[idx]["id"].as_str().unwrap_or("").to_owned();
             let id = recipients[idx]["items"][item_idx]["id"].as_str().unwrap_or("").to_owned();
-            if let Ok(value) = events[q].value.parse::<i64>() {
+            if let Some(value) = events[q].value.parse::<i64>().ok().filter(|q|*q>0) {
                 recipients[idx]["items"][item_idx]["quantity"]=json!(value);
                 recipients[idx]["items"][item_idx]["quantityConfirmed"]=json!(true);
                 if let Some(issues) = recipients[idx]["items"][item_idx]["issues"].as_array_mut() {
@@ -1962,6 +1987,17 @@ mod tests {
             }
         }
         assert!(recognized_real,"A registered non-DEMO product must still match");
+    }
+    #[test]
+    fn common_quantity_never_selects_first_of_multiple_local_candidates(){
+        assert_eq!(common_quantity_candidate([1,2].into_iter(),false,&[]),None);
+        assert_eq!(common_quantity_candidate([1,2].into_iter(),true,&[3]),None);
+        assert_eq!(common_quantity_candidate([1].into_iter(),true,&[3]),Some(1));
+        assert_eq!(common_quantity_candidate(std::iter::empty(),true,&[3]),Some(3));
+        assert_eq!(common_quantity_candidate(std::iter::empty(),false,&[3]),None);
+        assert_eq!(common_quantity_candidate(std::iter::empty(),true,&[3,4]),None);
+        assert_eq!(unique_candidate([1,2].into_iter()),None);
+        assert_eq!(unique_candidate([1].into_iter()),Some(1));
     }
     #[test]
     fn no_quantity_is_approved_without_evidence() {
