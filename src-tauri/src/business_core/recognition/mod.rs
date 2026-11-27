@@ -1187,6 +1187,38 @@ impl DocumentFeatures{
             "partialOrder":partial,"ambiguous":self.ambiguous,"trainingKey":null})
     }
 }
+fn retain_unclassified_fragments(raw:&str,lines:&[Line<'_>],non_delivery:&HashSet<usize>,
+    mut spans:Vec<(usize,usize)>,deferred:&mut DeferredCandidates){
+    spans.retain(|&(a,b)|a<b&&raw.get(a..b).is_some());
+    spans.sort_unstable();
+    let (mut cursor,mut covered_end)=(0usize,0usize);
+    for line in lines{
+        let end=line.start+line.text.len();
+        let mut covered=covered_end.max(line.start).min(end);
+        let keep=!non_delivery.contains(&line.start);
+        let mut gap=|a:usize,b:usize|{
+            if !keep||a>=b{return;}
+            let Some(t)=raw.get(a..b)else{return;};
+            let trim=t.trim();
+            // A label alone does not constitute an unclassified value.
+            let label=trim.trim_end_matches([':', '：']).trim();
+            if !trim.chars().any(char::is_alphanumeric)||matches!(label,
+                "수취인"|"수취인명"|"수하인"|"수령자"|"받는 분"|"받는분"|"이름"|"성함"|
+                "주소"|"배송지"|"배송지 주소"|"연락처"|"전화번호"|"휴대전화"|"상품명"|"품목"|
+                "수량"|"메모"|"요청사항"|"배송메모"|"recipient"|"consignee"|"TEL"){return;}
+            let start=a+t.len()-t.trim_start().len();
+            deferred.record(raw,"segment",start,start+trim.len(),CandidateDisposition::UnclassifiedSegment);
+        };
+        while cursor<spans.len()&&spans[cursor].0<end{
+            let (a,b)=spans[cursor];
+            gap(covered,a.min(end));
+            covered_end=covered_end.max(b);
+            covered=covered_end.max(line.start).min(end);
+            cursor+=1;
+        }
+        gap(covered,end);
+    }
+}
 // Extraction is separated from assignment at the real production boundary.
 // This is the existing evidence/hit set, not a claim that earlier type
 // gates already retain every competing candidate.
@@ -1557,22 +1589,18 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         }
     }
 
-    // Preserve wholly unclassified logical records, not every whitespace
-    // gap or field label. Sweep the existing spans once; no second parse.
+    // Preserve meaningful uncovered source fragments even when the same
+    // logical record already contains a recognized field. Union all known
+    // candidate spans in source order, without a second recognition pass.
     let mut spans=events.iter().map(|e|(e.start,e.end)).collect::<Vec<_>>();
-    spans.sort_unstable();
-    let (mut cursor,mut covered_end)=(0usize,0usize);
-    for line in &lines{
-        let end=line.start+line.text.len();
-        while cursor<spans.len()&&spans[cursor].0<end{
-            covered_end=covered_end.max(spans[cursor].1);cursor+=1;
-        }
-        if covered_end<=line.start&&!non_delivery_segments.contains(&line.start){
-            if let Some((a,b))=trim_span(line.text,0,line.text.len()){
-                exclusions.record(raw,"segment",line.start+a,line.start+b,CandidateDisposition::UnclassifiedSegment);
-            }
-        }
+    spans.extend(exclusions.entries.keys().map(|&(_,a,b)|(a,b)));
+    for hit in &product_hits{
+        spans.extend(hit.source_candidates.iter().filter_map(|c|{
+            let (a,b)=c.span;
+            (a<b&&b<=hit.source_len).then_some((hit.source_start+a,hit.source_start+b))
+        }));
     }
+    retain_unclassified_fragments(raw,&lines,&non_delivery_segments,spans,&mut exclusions);
     let delivery=DeliveryGeometry::new(&events);
     let features=DocumentFeatures::new(raw,&events,&exclusions);
     ExtractedDocument{raw,lines,events,product_hits,geometry,delivery,exclusions,features}
@@ -2458,6 +2486,19 @@ mod tests {
         assert_eq!(e["relations"][0]["utf16Gap"],1);
         assert_eq!(e["relations"][0]["signedLine"],1);
         assert_eq!(e["observed"][0]["utf16Start"],2);
+    }
+    #[test]
+    fn partial_unclassified_fragments_preserve_only_uncovered_source(){
+        let raw="수취인: 김가상 XYZ";
+        let lines=physical_lines(raw);
+        let name=raw.find("김가상").unwrap();
+        let mut deferred=DeferredCandidates::default();
+        retain_unclassified_fragments(raw,&lines,&HashSet::new(),
+            vec![(name,name+"김가상".len())],&mut deferred);
+        let start=raw.find("XYZ").unwrap();
+        assert_eq!(deferred.entries.len(),1);
+        assert_eq!(deferred.entries.get(&("segment",start,raw.len())),
+            Some(&CandidateDisposition::UnclassifiedSegment));
     }
     #[test]
     fn unclassified_records_are_not_promoted_to_fields(){
