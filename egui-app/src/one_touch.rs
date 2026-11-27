@@ -70,7 +70,7 @@ pub fn reveal_target(ui:&Ui,expected:Stage,rect:Rect){
 /// Shared read-only value emphasis: pad the measured text bounds on all
 /// sides, with the allocated control slot (not the text clip) as the limit.
 pub fn value_rect(ink:Rect,slot:Rect)->Rect{
-    ink.expand(theme::SPACE_4).intersect(slot)
+    crate::highlight::value_rect(ink,slot)
 }
 fn background_shape(rect:Rect)->egui::Shape{
     crate::highlight::fill_shape(rect,theme::CONTROL_RADIUS,

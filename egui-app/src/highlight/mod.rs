@@ -73,6 +73,59 @@ pub(crate) fn action_hover(ui:&Ui,response:&Response,radius:CornerRadius,light:b
         else{button_hover_palette(response.hovered(),response.has_focus())};
     paint_parts(ui.painter(),response.rect,radius,fill,stroke);
 }
+/// Common highlight geometry preserves each approved surface hierarchy.
+/// A surface uses its own corners, never a second independent outline radius.
+pub(crate) const VALUE_PADDING:f32=theme::SPACE_4;
+pub(crate) const CONTROL_RADIUS:u8=theme::CONTROL_RADIUS;
+pub(crate) const NAVIGATION_RADIUS:u8=5;
+pub(crate) const COMPACT_RADIUS:u8=4;
+pub(crate) const SOURCE_RADIUS:f32=theme::SOURCE_BLOCK_RADIUS;
+pub(crate) fn value_rect(ink:Rect,slot:Rect)->Rect{
+    ink.expand(VALUE_PADDING).intersect(slot)
+}
+pub(crate) fn source_block_rect(text_left:f32,text_right:f32,row_top:f32,row_height:f32)->Option<Rect>{
+    if !text_left.is_finite() || !text_right.is_finite()
+        || !row_top.is_finite() || !row_height.is_finite()
+        || text_right<=text_left || row_height<=2.0*theme::SOURCE_BLOCK_ROW_INSET {
+        return None;
+    }
+    let horizontal=theme::SOURCE_BLOCK_HORIZONTAL_PADDING+theme::SOURCE_RECOGNIZED_BORDER_WIDTH;
+    Some(Rect::from_min_max(
+        egui::pos2(text_left-horizontal,row_top+theme::SOURCE_BLOCK_ROW_INSET),
+        egui::pos2(text_right+horizontal,row_top+row_height-theme::SOURCE_BLOCK_ROW_INSET)
+    ))
+}
+/// Resolve a single fill/stroke pair. Focus and hover replace the resting
+/// outline; they are never painted over it. Text is rendered afterwards.
+pub(crate) fn action_surface(rest:Color32,rest_stroke:Stroke,light:bool,hovered:bool,focused:bool)->(Color32,Stroke){
+    let role=if light{Role::LightHover}else{Role::Hover};
+    let p=palette(role);
+    let fill=if hovered{
+        if light{p.fill.unwrap_or(rest)}else{p.fill.map(|t|{let [r,g,b,a]=t.to_array(); let inv=255-u16::from(a); let mix=|src:u8,dst:u8| (u16::from(src)+(u16::from(dst)*inv+127)/255).min(255) as u8; Color32::from_rgb(mix(r,rest.r()),mix(g,rest.g()),mix(b,rest.b()))}).unwrap_or(rest)}
+    }else{rest};
+    let stroke=if hovered||focused{p.stroke.unwrap_or(rest_stroke)}else{rest_stroke};
+    (fill,stroke)
+}
+/// The native Button owns its single frame; no custom highlight overlay.
+pub(crate) fn action_widget(ui:&mut Ui,rest:Color32,stroke:Stroke,light:bool){
+    let widgets=&mut ui.visuals_mut().widgets;
+    for (visual,hovered,focused) in [
+        (&mut widgets.inactive,false,false),
+        (&mut widgets.hovered,true,false),
+        (&mut widgets.active,false,true),
+        (&mut widgets.open,false,true),
+    ]{
+        let (fill,border)=action_surface(rest,stroke,light,hovered,focused);
+        visual.bg_fill=fill;
+        visual.weak_bg_fill=fill;
+        visual.bg_stroke=border;
+        visual.expansion=0.0;
+    }
+}
+pub(crate) fn fixed_action_surface(ui:&Ui,response:&Response,radius:impl Into<CornerRadius>,rest:Color32,stroke:Stroke,light:bool,interactive:bool){
+    let (fill,border)=action_surface(rest,stroke,light,interactive&&response.hovered(),interactive&&response.has_focus());
+    paint_parts(ui.painter(),response.rect,radius,Some(fill),Some(border));
+}
 /// Native widgets retain hit testing, layout and text; only their scoped
 /// visual state is configured here. Light button fill is behind dark text.
 pub(crate) fn light_button(ui:&mut Ui,rest:Color32){
@@ -121,6 +174,15 @@ mod tests{
         assert_eq!(palette(Role::Selected).fill,Some(theme::ORANGE_EMPHASIS_BG));
         assert_eq!(palette(Role::RequiredInput).stroke.unwrap().color,theme::ERROR_BORDER);
         assert_ne!(palette(Role::LinkedPreview).fill,palette(Role::RequiredReview).fill);
+    }
+    #[test]
+    fn action_surface_replaces_instead_of_stacking_borders(){
+        let rest=theme::BRIGHT;
+        let border=Stroke::new(1.0,theme::DIVIDER);
+        assert_eq!(action_surface(rest,border,true,false,false),(rest,border));
+        assert_eq!(action_surface(rest,border,true,true,false),(theme::BUTTON_HOVER_LIGHT_BG,palette(Role::LightHover).stroke.unwrap()));
+        assert_eq!(action_surface(rest,border,true,false,true),(rest,palette(Role::LightHover).stroke.unwrap()));
+        assert_eq!(value_rect(Rect::from_min_max(egui::pos2(5.0,5.0),egui::pos2(10.0,10.0)),Rect::from_min_max(egui::pos2(3.0,3.0),egui::pos2(12.0,12.0))),Rect::from_min_max(egui::pos2(3.0,3.0),egui::pos2(12.0,12.0)));
     }
     #[test]
     fn common_painter_preserves_parent_clip(){

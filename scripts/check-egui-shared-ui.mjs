@@ -1439,8 +1439,8 @@ const highlightContracts = {
     "paint_action_hover_corners":{"highlight :: action_hover (":1},
     "paint_action_hover_surface":{"highlight :: action_hover (":1}},
   "button/mod.rs":{
-    "action_with_palette":{"highlight :: light_button (":1,"ui_primitives :: paint_action_hover_surface (":1},
-    "workflow_fixed_action":{"highlight :: palette (":1,"ui_primitives :: paint_action_hover_surface (":1}},
+    "action_with_palette":{"highlight :: action_widget (":1},
+    "workflow_fixed_action":{"highlight :: fixed_action_surface (":1}},
   "table/mod.rs":{
     "management_master_header_sort_hover":{"highlight :: paint (":1},
     "paint_management_interactive_row_background":{"highlight :: paint_fill (":1},
@@ -1457,8 +1457,10 @@ const highlightContracts = {
   "source_highlight.rs":{
     "paint_active_background":{"highlight :: paint_fill (":1},
     "paint_active_outline":{"highlight :: paint_outline (":1},
-    "block_shapes_with_states":{"highlight :: fill_shape (":1,"highlight :: outline_shape (":2}},
+    "block_shapes_with_states":{"highlight :: fill_shape (":1,"highlight :: outline_shape (":2},
+    "compact_block_rect":{"highlight :: source_block_rect (":1}},
   "one_touch.rs":{
+    "value_rect":{"highlight :: value_rect (":1},
     "background_shape":{"highlight :: fill_shape (":1},
     "outline_shape":{"highlight :: outline_shape (":1},
     "background":{"highlight :: paint_fill (":1},
@@ -1506,6 +1508,12 @@ export function auditHighlight(source,file,requireCalls=false){
       const context=v.slice(Math.max(0,i-12),i).join(" ");
       if(/\b(?:hovered|active|open|selection)\b/.test(context))
         flag(i,"local native highlight style; use highlight module");
+    }
+    // Single-frame button renderers must not regain a post-widget overlay,
+    // even via an existing shared wrapper or locally aliased paint color.
+    if(file==="button/mod.rs"&&["action_with_palette","workflow_fixed_action"].includes(fn)&&v[i+1]==="("&&
+       ["paint_button_hover","paint_button_hover_corners","paint_action_hover_corners","paint_action_hover_surface","action_hover","rect_filled","rect_stroke"].includes(v[i])){
+      flag(i,"duplicate button frame; use single shared action surface");continue;
     }
     if(!highlightPaintMethods.has(v[i])||v[i+1]!=="("||![".","::"].includes(v[i-1]))continue;
     const end=endCall(i+1),args=v.slice(i+2,end);
@@ -1564,7 +1572,9 @@ function highlightSelfTest(){
   assert.equal(audit("fn management_dropdown_option_palette(){crate::highlight::dropdown_options(ui);}","dropdown/mod.rs",true).length,0);
   assert.equal(audit("fn management_dropdown_option_palette(){} fn other(){crate::highlight::dropdown_options(ui);}","dropdown/mod.rs",true).length,1);
   assert.equal(audit("fn management_dropdown_option_palette(){crate::highlight::dropdown_options(ui);crate::highlight::dropdown_options(ui);}","dropdown/mod.rs",true).length,1);
-  console.log("EGUI_HIGHLIGHT_SELFTEST_PASS",12);
+  assert.equal(audit("fn action_with_palette(){crate::highlight::action_widget(ui,fill,stroke,false);paint_button_hover(ui,r,6.0);}","button/mod.rs").length,1);
+  assert.equal(audit("fn workflow_fixed_action(){crate::highlight::fixed_action_surface(ui,r,6,fill,stroke,false,true);painter.rect_stroke(r,6,local,kind);}","button/mod.rs").length,1);
+  console.log("EGUI_HIGHLIGHT_SELFTEST_PASS",14);
 }
 
 function main(){

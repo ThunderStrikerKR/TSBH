@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "highlight-150",
+  "screen": "공통 하이라이트 / 일반 버튼 / 처리 중 주문 / 원문 및 원터치 강조",
+  "files": [
+    "egui-app/src/highlight/mod.rs",
+    "egui-app/src/button/mod.rs",
+    "egui-app/src/one_touch.rs",
+    "egui-app/src/source_highlight.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "Windows 1920×1080 및 작은 작업공간, hover/focus/pressed, 클리핑과 테두리 단일 렌더링의 실화면 증거 미확보."
+}

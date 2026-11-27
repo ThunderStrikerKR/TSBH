@@ -126,9 +126,9 @@ fn action_with_palette(
     };
     let radius = match role {
         ButtonRole::Navigation | ButtonRole::ActiveNavigation |
-        ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => 5,
-        ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl => 4,
-        _ => CONTROL_RADIUS,
+        ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => crate::highlight::NAVIGATION_RADIUS,
+        ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl => crate::highlight::COMPACT_RADIUS,
+        _ => crate::highlight::CONTROL_RADIUS,
     };
     // All light-filled actions (Primary and Emphasized) use regular-weight
     // captions app-wide. Selected tabs and destructive actions retain their
@@ -148,23 +148,17 @@ fn action_with_palette(
         let mut button = egui::Button::new(
             typography::action_label(label, font_size, important, color)
         )
-            .stroke(stroke)
             .corner_radius(CornerRadius::same(radius))
             .min_size(Vec2::new(min_width, height));
-        if light_surface{
-            // Native button fill is painted before its dark label. Explicit
-            // .fill() overrides hover visuals, so use the scoped widget style.
-            crate::highlight::light_button(ui,fill);
-        }else{button=button.fill(fill);}
+        if effective_enabled{
+            crate::highlight::action_widget(ui,fill,stroke,light_surface);
+        }else{button=button.fill(fill).stroke(stroke);}
         ui.add_enabled(enabled, button)
     }).inner;
     #[cfg(test)]
     crate::ui_test_support::record_component_geometry("button",response.rect,ui.clip_rect(),Some(height));
     if effective_enabled {
-        if light_surface{
-            crate::floating_notice::remember_response(ui.ctx(),&response);
-            crate::ui_primitives::paint_action_hover_surface(ui,&response,CornerRadius::same(radius),true);
-        }else{paint_button_hover(ui,&response,radius as f32);}
+        crate::floating_notice::remember_response(ui.ctx(),&response);
     }
     response
 }
@@ -362,15 +356,10 @@ pub(crate) fn workflow_fixed_action(
     let role=if stage{theme::ButtonRole::Emphasized}else{theme::ButtonRole::Standard};
     let (_,fill,ink,stroke)=crate::button::action_style(role,enabled,false);
     let light_surface=enabled&&fill==theme::BRIGHT;
-    let fill=if light_surface&&response.hovered(){
-        crate::highlight::palette(crate::highlight::Role::LightHover).fill.unwrap_or(fill)
-    }else{fill};
-    let radius=5.0;
+    let radius=crate::highlight::NAVIGATION_RADIUS;
+    let rest_stroke=if !stage || !enabled{stroke}else{Stroke::NONE};
+    crate::highlight::fixed_action_surface(ui,&response,radius,fill,rest_stroke,light_surface,enabled||stage);
     let painter=ui.painter();
-    painter.rect_filled(rect,radius,fill);
-    if !stage || !enabled{
-        painter.rect_stroke(rect,radius,stroke,egui::StrokeKind::Inside);
-    }
     match action{
         WorkflowFixedAction::Auxiliary(action)=>
             paint_workflow_auxiliary_content(painter,rect.center(),action,ink),
@@ -387,10 +376,7 @@ pub(crate) fn workflow_fixed_action(
         }
     }
     if enabled || stage{
-        if light_surface{
-            crate::floating_notice::remember_response(ui.ctx(),&response);
-            crate::ui_primitives::paint_action_hover_surface(ui,&response,CornerRadius::same(5),true);
-        }else{crate::button::paint_button_hover(ui,&response,radius);}
+        crate::floating_notice::remember_response(ui.ctx(),&response);
     }
     response
 }

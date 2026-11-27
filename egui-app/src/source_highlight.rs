@@ -373,7 +373,7 @@ pub fn key(recipient:&str,target:&str,field:&str)->LinkKey {
 pub const ACTIVE_FILL:Color32=theme::LINKED_PREVIEW_BG;
 pub const ACTIVE_TEXT:Color32=theme::LINKED_PREVIEW_TEXT;
 pub const ACTIVE_BORDER:Color32=theme::LINKED_PREVIEW_BORDER;
-pub const ACTIVE_RADIUS:f32=theme::SOURCE_BLOCK_RADIUS;
+pub const ACTIVE_RADIUS:f32=crate::highlight::SOURCE_RADIUS;
 pub const ACTIVE_BORDER_WIDTH:f32=theme::LINKED_PREVIEW_BORDER_WIDTH;
 
 pub fn is_active(active:Option<&LinkKey>, key:&LinkKey)->bool {
@@ -708,18 +708,7 @@ fn layout_with_states(
 fn compact_block_rect(
     text_left:f32,text_right:f32,row_top:f32,row_height:f32
 )->Option<egui::Rect> {
-    if !text_left.is_finite() || !text_right.is_finite()
-        || !row_top.is_finite() || !row_height.is_finite()
-        || text_right<=text_left || row_height<=2.0*theme::SOURCE_BLOCK_ROW_INSET {
-        return None;
-    }
-    let horizontal=theme::SOURCE_BLOCK_HORIZONTAL_PADDING
-        +theme::SOURCE_RECOGNIZED_BORDER_WIDTH;
-    let top=row_top+theme::SOURCE_BLOCK_ROW_INSET;
-    let bottom=row_top+row_height-theme::SOURCE_BLOCK_ROW_INSET;
-    Some(egui::Rect::from_min_max(
-        egui::pos2(text_left-horizontal,top),egui::pos2(text_right+horizontal,bottom)
-    ))
+    crate::highlight::source_block_rect(text_left,text_right,row_top,row_height)
 }
 
 /// At boundaries between adjacent classified ranges, trim only their shared
