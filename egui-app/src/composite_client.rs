@@ -1,4 +1,5 @@
 //! Shared client summaries, tier badges and client rows.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Ui,Vec2};
 use crate::{theme,typography};
@@ -16,7 +17,7 @@ pub fn management_chooser_row(
     ui:&mut Ui,title:&str,status:&str,selected:bool
 )->Response{
     let width=ui.available_width().max(1.0);
-    let (rect,response)=ui.allocate_exact_size(
+    let (rect,response)=ui.shared_allocate_exact_size(
         Vec2::new(width,theme::MANAGEMENT_CHOOSER_ROW_HEIGHT),Sense::click()
     );
     #[cfg(test)]
@@ -276,7 +277,7 @@ pub fn management_row_with_tags(
     let tag_width=if tags.is_some(){theme::MANAGEMENT_CLIENT_TAG_COLUMN_WIDTH}else{0.0};
     let width=ui.available_width().max(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH+tag_width);
     let base_width=width-tag_width;
-    let (rect,response)=ui.allocate_exact_size(
+    let (rect,response)=ui.shared_allocate_exact_size(
         Vec2::new(width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT),Sense::click()
     );
     #[cfg(test)]
