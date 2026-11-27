@@ -1,6 +1,7 @@
 //! Native CategoryManager: tree presentation is owned by category_tree::category_tree_row.
 //! Category selection, search, expansion and operations remain in this manager.
 //! All add/rename/move/delete decisions are delegated to catalog_clients.
+use crate::ui_layout::AlignedUiBuilderExt as _;
 use crate::{category_dropdown,category_tree,theme,typography};
 use eframe::egui::{self,Align,Context,Layout,Rect,Sense,Ui,Vec2};
 use serde_json::{json,Value};
@@ -572,7 +573,7 @@ impl CategoryManager {
                 let full=self.visible_descendants(cats,index,&item.id,&mut HashSet::new()) as f32*theme::CATALOG_TREE_ROW_HEIGHT;
                 let (slot,_)=ui.allocate_exact_size(Vec2::new(ui.available_width(),full*fraction),Sense::hover());
                 let mut child=ui.new_child(egui::UiBuilder::new().id_salt(("animated-category",item.id.as_str()))
-                    .max_rect(crate::ui_layout::aligned_rect(Rect::from_min_size(slot.min,Vec2::new(slot.width(),full))))
+                    .aligned_max_rect(crate::ui_layout::aligned_rect(Rect::from_min_size(slot.min,Vec2::new(slot.width(),full))))
                     .layout(Layout::top_down(Align::Min)).disabled());
                 child.set_clip_rect(slot.intersect(ui.clip_rect()));
                 child.set_opacity(fraction);
