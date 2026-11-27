@@ -484,7 +484,7 @@ mod selection_snapshot_tests{
         let products=include_str!("product_manager.rs");
         let alias=include_str!("alias_manager.rs");
         let family=include_str!("model_group_manager.rs");
-        let page=products.split("pub fn show_page(").nth(1).unwrap();
+        let page=products.split(concat!("pub fn ","show_page(")).nth(1).unwrap();
         assert!(page.contains("if !selecting{crate::card::align_management_primary_card(ui,page_origin_y);}"));
         for source in [alias,family]{
             assert!(source.contains("ProductManager::new_reference_selection("));
