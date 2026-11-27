@@ -1111,7 +1111,9 @@ mod shared_general_screen_audit_tests {
         assert_eq!(theme::RECEPTION_PANE_PADDING_Y,8.0);
         assert_eq!(theme::RECEPTION_SECTION_HEADER_TOP,theme::RECEPTION_PANE_PADDING_Y);
         assert_eq!(theme::SECTION_PADDING,12.0);
-        assert_eq!(theme::SOURCE_DOCUMENT_TEXT_MARGIN,0);
+        assert_eq!(theme::SOURCE_DOCUMENT_TEXT_MARGIN,4);
+        assert!(theme::SOURCE_DOCUMENT_TEXT_MARGIN as f32 >=
+            theme::SOURCE_BLOCK_HORIZONTAL_PADDING+theme::LINKED_PREVIEW_BORDER_WIDTH);
     }
 }
 
