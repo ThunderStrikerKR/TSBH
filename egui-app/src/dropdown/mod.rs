@@ -26,19 +26,7 @@ use crate::ui_primitives::{management_body_state_inline,text_exceeds_rect,overfl
 /// Configure the shared SINGLE-SELECT popup only. Never recolor
 /// unrelated checkboxes, tables, global widget hover, or order selection.
 fn management_dropdown_option_palette(ui:&mut Ui){
-    let visuals=ui.visuals_mut();
-    // egui::selectable_value uses selection.bg_fill for the current value.
-    // Persistent selection is orange, pointer feedback is blue.
-    visuals.selection.bg_fill=theme::MANAGEMENT_DROPDOWN_SELECTED_BG;
-    visuals.selection.stroke=Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::ORANGE_EMPHASIS_TEXT);
-    visuals.widgets.hovered.bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
-    visuals.widgets.hovered.weak_bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
-    visuals.widgets.hovered.bg_stroke=Stroke::new(
-        theme::SOFT_DIVIDER_WIDTH,theme::SELECTION.linear_multiply(0.8)
-    );
-    visuals.widgets.hovered.fg_stroke=Stroke::new(1.5_f32,theme::TEXT);
-    visuals.widgets.active.bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
-    visuals.widgets.active.weak_bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
+    crate::highlight::dropdown_options(ui);
 }
 
 /// Reference "접수일 기준" dropdown: 34pt dark trigger, separated
