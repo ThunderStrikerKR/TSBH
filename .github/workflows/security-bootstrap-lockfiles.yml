@@ -4,6 +4,9 @@ on:
     branches: [security/v0.8.0-pre-release]
     paths:
       - '.github/workflows/security-bootstrap-lockfiles.yml'
+      - 'egui-app/Cargo.toml'
+      - 'crates/bando-data-access/Cargo.toml'
+      - 'src-tauri/Cargo.toml'
   pull_request:
     branches: [main]
     paths:
@@ -49,6 +52,16 @@ jobs:
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
               cargo update --manifest-path $manifest -p libsqlite3-sys --precise 0.39.1
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+            if ($manifest -eq 'egui-app/Cargo.toml') {
+              cargo update --manifest-path $manifest -p rust_xlsxwriter --precise 0.104.0
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              # Both XLSX readers and writers now resolve to the existing patched ZIP 9 series.
+              $zipLocks = [regex]::Matches((Get-Content -LiteralPath $lock -Raw), '(?m)^name = "zip"\r?\nversion = "([^"]+)"')
+              if ($zipLocks.Count -eq 0) { throw "ZIP dependency missing" }
+              foreach ($entry in $zipLocks) {
+                if ([version]$entry.Groups[1].Value -lt [version]'9.0.5') { throw "Vulnerable ZIP dependency remains" }
+              }
             }
             cargo metadata --locked --format-version 1 --no-deps --manifest-path $manifest | Out-Null
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -121,7 +134,7 @@ jobs:
           if git diff --cached --quiet; then exit 0; fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git -c core.hooksPath=/dev/null commit -m 'security: commit Cargo-resolved SQLite patched lockfiles'
+          git -c core.hooksPath=/dev/null commit -m 'security: commit Cargo-resolved SQLite and XLSX patched lockfiles'
           git push origin HEAD:refs/heads/security/v0.8.0-pre-release
  -or $lockText -notmatch '(?m)^name = "libsqlite3-sys"\r?\nversion = "0\.39\.1"
           # Recheck the full graph and registry resolution against the generated locks.
@@ -279,3 +292,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo check --locked --manifest-path egui-app/Cargo.toml --all-targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($filter in @('native_workbooks::','product_excel::','factory_reply_inbox::','excel_service::','excel_aggregate::')) {
+            cargo test --locked --manifest-path egui-app/Cargo.toml $filter
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
