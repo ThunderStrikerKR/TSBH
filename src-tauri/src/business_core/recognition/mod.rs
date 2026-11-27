@@ -65,7 +65,10 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
                         .is_some_and(|variants|variants.iter().any(|variant|
                             variant.get("source").and_then(Value::as_str)==Some("DEMO")))
                 });
-            if payload["collectOwnerTrace"]==true || payload["collectCandidateTrace"]==true {
+            if payload["compareOwnerPolicy"]==true{
+                analyze_with_owner_overrides(raw,&reception,payload.get("client"),true,
+                    payload["collectCandidateTrace"]==true,&std::collections::BTreeMap::new(),true)
+            }else if payload["collectOwnerTrace"]==true || payload["collectCandidateTrace"]==true {
                 analyze_with_owner_trace(raw,&reception,payload.get("client"),
                     payload["collectOwnerTrace"]==true,payload["collectCandidateTrace"]==true)
             }else{
@@ -134,7 +137,7 @@ fn replay_owner_recommendation(payload:&Value)->Result<Value,String>{
     };
     let transfers=observations::checked_owner_replays(raw,&first,&decisions)?;
     let overrides=transfers.iter().map(|(source,target,_,_,_)|(*source,*target)).collect();
-    let replay=analyze_with_owner_overrides(raw,&reception,client,false,false,&overrides)?;
+    let replay=analyze_with_owner_overrides(raw,&reception,client,false,false,&overrides,false)?;
     observations::verify_owner_replays(raw,&first,&replay,&transfers)?;
     Ok(json!({"status":"validated_counterfactual","recognition":replay,
         "decisionChanged":false,"eligibleForAutomaticDecision":false}))
@@ -666,11 +669,62 @@ fn legacy_owner_gate(paragraph_blocked:bool,previous_has_delivery:bool,
     else{None}
 }
 
+// Provisional comparison policy. No production decision or v1 calibration
+// changes until independent baseline/holdout validation of these weights.
+const OWNER_COMPARISON_POLICY:&str="owner-symmetric-candidate-v2";
+const OWNER_COMPARISON_MARGIN:i32=8;
+fn owner_candidate_components(relation:&SourceRelation,gap:&InterveningLines,
+    directional_votes:usize,opposing_votes:usize,repeated_shapes:usize)->[i32;4]{
+    let paragraph=if relation.same_paragraph{24}else{0};
+    let distance=(24/(1+relation.distance().min(24))) as i32;
+    let boundary=-(gap.blank_lines.min(3) as i32)*8;
+    // Direction and repeated structure are derived from the same paragraphs:
+    // cap their combined contribution, do not count both independently.
+    let order=if directional_votes>=2&&opposing_votes==0{
+        if repeated_shapes>=2{16}else{12}
+    }else{0};
+    [paragraph,distance,boundary,order]
+}
+fn owner_comparison_choice(previous:i32,next:i32)->Option<&'static str>{
+    if next-previous>=OWNER_COMPARISON_MARGIN{Some("next")}
+    else if previous-next>=OWNER_COMPARISON_MARGIN{Some("previous")}
+    else{None}
+}
+fn compare_owner_candidates(candidate:&Evidence,preceding:&Evidence,following:&Evidence,
+    previous_relation:&SourceRelation,following_relation:&SourceRelation,
+    previous_gap:&InterveningLines,following_gap:&InterveningLines,
+    order:&learning_context::OwnerOrderEvidence)->Value{
+    // Source validity is a constraint, unlike any proximity heuristic.
+    if preceding.kind!="name"||following.kind!="name"||
+        !(preceding.start<preceding.end&&preceding.end<=candidate.start&&
+            candidate.start<candidate.end&&candidate.end<=following.start&&following.start<following.end){
+        return json!({"policyVersion":OWNER_COMPARISON_POLICY,"status":"invalid_or_ambiguous_source",
+            "decisionChanged":false,"eligibleForAutomaticDecision":false});
+    }
+    let excluded=[candidate.paragraph as u64,preceding.paragraph as u64,following.paragraph as u64];
+    let [before,after]=order.votes(candidate.kind,excluded);
+    let previous_repeat=order.repeated_shape_count(preceding.paragraph as u64,excluded);
+    let next_repeat=order.repeated_shape_count(following.paragraph as u64,excluded);
+    let prev=owner_candidate_components(previous_relation,previous_gap,after,before,previous_repeat);
+    let next=owner_candidate_components(following_relation,following_gap,before,after,next_repeat);
+    let prev_score=prev.iter().sum::<i32>();let next_score=next.iter().sum::<i32>();
+    let choice=owner_comparison_choice(prev_score,next_score);
+    let components=|v:[i32;4]|json!({"sameParagraph":v[0],"distance":v[1],"blankBoundary":v[2],"orderAndRepeat":v[3]});
+    json!({"policyVersion":OWNER_COMPARISON_POLICY,"status":"provisional_comparison",
+        "requiredMargin":OWNER_COMPARISON_MARGIN,"preferredRelation":choice,
+        "beforeNameParagraphVotes":before,"afterNameParagraphVotes":after,
+        "previousRepeatedShapes":previous_repeat,"nextRepeatedShapes":next_repeat,
+        "candidates":[{"relation":"previous","score":prev_score,"components":components(prev)},
+            {"relation":"next","score":next_score,"components":components(next)}],
+        "decisionChanged":false,"eligibleForAutomaticDecision":false})
+}
+
 // Existing ownership is the baseline policy, not the learned decision.
 // Record only the two adjacent anchors; no full-document candidate search.
 fn recipient_owner_index(
     anchors: &[usize], events: &[Evidence], evidence_index: usize, raw: &str,
     geometry:&SourceGeometry,trace: Option<&mut Vec<Value>>,
+    comparison_order:Option<&learning_context::OwnerOrderEvidence>,
 ) -> usize {
     let candidate=&events[evidence_index];
     let previous=owner_index(anchors,events,candidate.start);
@@ -740,7 +794,7 @@ fn recipient_owner_index(
             "nearbyAddress":scores.address,"previousBlankLines":scores.blank,
             "contentPenalty":scores.content_penalty
         }));
-        trace.push(json!({
+        let mut record=json!({
             "source":location(candidate),
             "selectedAnchor":location(&events[anchors[selected]]),
             "legacyFirstBlockingReason":blocked,
@@ -759,7 +813,12 @@ fn recipient_owner_index(
                  "legacyScore":blocked.is_none().then_some(scores.next),
                  "legacyComponents":following_components}
             ]
-        }));
+        });
+        if let Some(order)=comparison_order{
+            record["candidatePolicyComparison"]=compare_owner_candidates(candidate,preceding,following,
+                &previous_relation,&following_relation,&previous_gap,&following_gap,order);
+        }
+        trace.push(record);
     }
     selected
 }
@@ -959,13 +1018,13 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
 
 fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
     collect_owner_trace:bool,collect_candidate_trace:bool)->Result<Value,String>{
-    analyze_with_owner_overrides(raw,state,client,collect_owner_trace,collect_candidate_trace,&std::collections::BTreeMap::new())
+    analyze_with_owner_overrides(raw,state,client,collect_owner_trace,collect_candidate_trace,&std::collections::BTreeMap::new(),false)
 }
 // Internal counterfactual replay only. The normal analyzer has no caller
 // override parameter. Reuse the existing parser to rebuild all derived fields.
 fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
     collect_owner_trace:bool,collect_candidate_trace:bool,
-    overrides:&std::collections::BTreeMap<(usize,usize),(usize,usize)>)->Result<Value,String>{
+    overrides:&std::collections::BTreeMap<(usize,usize),(usize,usize)>,compare_owner_policy:bool)->Result<Value,String>{
     let client_id = client_id(client);
     let lines = physical_lines(raw);
     let geometry=SourceGeometry::new(raw);
@@ -1336,11 +1395,13 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
         recipients.push(blank_recipient("recognition:recipient:0","",None,raw));
     }
     let mut owner_trace=collect_owner_trace.then(Vec::new);
+    let comparison_order=compare_owner_policy.then(||
+        learning_context::OwnerOrderEvidence::new(events.iter().map(|e|(e.kind,e.paragraph as u64,e.start,e.end))));
     let mut postcodes=vec![HashSet::<String>::new();recipients.len()];
     let mut applied=0usize;
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
-        let mut row_index = recipient_owner_index(&anchors,&events,index,raw,&geometry,owner_trace.as_mut());
+        let mut row_index = recipient_owner_index(&anchors,&events,index,raw,&geometry,owner_trace.as_mut(),comparison_order.as_ref());
         if !overrides.is_empty(){
             let e=&events[index];
             let source=(utf16(raw,e.start),utf16(raw,e.end));
@@ -2178,6 +2239,30 @@ mod tests {
         assert_eq!(recipients.len(),1);
         assert_eq!(recipients[0]["mobile"],"010-1234-5678");
         assert_eq!(recipients[0]["phone"],"010-3456-7890");
+    }
+    #[test]
+    fn symmetric_owner_comparison_can_choose_either_candidate_or_abstain(){
+        let gap=InterveningLines::default();
+        let near=SourceRelation::between(0,0,1,0);
+        let far=SourceRelation::between(0,0,5,1);
+        let score=|r:&SourceRelation|owner_candidate_components(r,&gap,0,0,0).iter().sum::<i32>();
+        assert_eq!(owner_comparison_choice(score(&near),score(&far)),Some("previous"));
+        assert_eq!(owner_comparison_choice(score(&far),score(&near)),Some("next"));
+        assert_eq!(owner_comparison_choice(score(&near),score(&near)),None);
+        assert_eq!(owner_candidate_components(&near,&gap,2,0,2)[3],16);
+        assert_eq!(owner_candidate_components(&near,&gap,2,1,2)[3],0);
+        let raw="김가상\n서울특별시 마포구 월드컵로 20\n010-1234-5678\n\n경기도 성남시 분당구 불정로 6\n010-2345-6789\n박가상";
+        let baseline=execute("analyze_order",json!({"raw":raw,"state":state(),"collectOwnerTrace":true})).unwrap();
+        let mut compared=execute("analyze_order",json!({"raw":raw,"state":state(),"compareOwnerPolicy":true})).unwrap();
+        let records=compared["recipientOwnerTrace"]["decisions"].as_array_mut().unwrap();
+        assert!(!records.is_empty());
+        for r in records{
+            let comparison=r.as_object_mut().unwrap().remove("candidatePolicyComparison").unwrap();
+            assert_eq!(comparison["policyVersion"],OWNER_COMPARISON_POLICY);
+            assert_eq!(comparison["eligibleForAutomaticDecision"],false);
+            assert_eq!(comparison["decisionChanged"],false);
+        }
+        assert_eq!(baseline,compared);
     }
     #[test]
     fn legacy_owner_margin_is_redundant_after_gates(){
