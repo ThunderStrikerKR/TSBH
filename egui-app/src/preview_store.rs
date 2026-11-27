@@ -2540,6 +2540,35 @@ mod reception_edit_audit_tests {
         }
         assert_eq!(replay(summarize)["storedContributingOrders"],1);
         assert_eq!(replay(|_|panic!("unchanged order must not decode"))["decodedOrders"],0);
+        // A concurrent audit writer may commit while projection is running,
+        // but its changed source must invalidate the prepared result.
+        {
+            let business=Connection::open_with_flags(&business_path,OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+            business.execute_batch("PRAGMA query_only=ON;BEGIN").unwrap();
+            let mut audit=Connection::open(&audit_path).unwrap();
+            audit.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+            let ids=vec!["a".to_owned()];
+            let tx=audit.transaction().unwrap();
+            let (frozen,orders,digests)=crate::business_state::learning_inputs_from_snapshot(&business,&ids,|sources|{
+                Ok((ids.clone(),learning_source_digests(&tx,sources)?))
+            }).unwrap();
+            let orders=attach_learning_audit(&tx,&frozen,orders).unwrap();
+            business.execute_batch("COMMIT").unwrap();tx.commit().unwrap();
+            let summaries=prepare_learning_summaries(&orders,|order|{
+                let writer=Connection::open(&audit_path).unwrap();
+                writer.execute("UPDATE reception_edit_audit SET recorded_at='changed' WHERE id='e'",[])
+                    .map_err(|e|e.to_string())?;
+                summarize(order)
+            }).unwrap();
+            assert_eq!(summaries.len(),1);
+            let tx=audit.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).unwrap();
+            business.execute_batch("BEGIN").unwrap();
+            let current=crate::business_state::learning_sources(&business,&ids).unwrap();
+            assert!(verify_learning_sync_sources(&tx,&frozen,&digests,&current).is_err());
+            business.execute_batch("COMMIT").unwrap();tx.rollback().unwrap();
+            audit.execute("UPDATE reception_edit_audit SET recorded_at='t' WHERE id='e'",[]).unwrap();
+        }
+        assert_eq!(replay(|_|panic!("unchanged order must not decode"))["decodedOrders"],0);
         let audit=Connection::open(&audit_path).unwrap();
         audit.execute("DELETE FROM reception_edit_audit WHERE id='e'",[]).unwrap();drop(audit);
         let revoked=replay(summarize);assert_eq!(revoked["decodedOrders"],1);
