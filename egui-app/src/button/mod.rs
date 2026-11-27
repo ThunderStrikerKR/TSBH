@@ -670,7 +670,7 @@ mod shared_action_style_tests{
         assert_eq!(style.visuals.widgets.hovered.bg_fill,BUTTON_HOVER_BG);
         assert_eq!(style.visuals.widgets.hovered.weak_bg_fill,BUTTON_HOVER_BG);
         assert_eq!(style.visuals.widgets.hovered.bg_stroke,
-            Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.72)));
+            Stroke::new(BUTTON_HOVER_BORDER_WIDTH,SELECTION));
         assert_eq!(style.visuals.widgets.hovered.expansion,0.0);
     }
 
