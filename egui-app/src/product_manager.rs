@@ -600,6 +600,12 @@ impl ProductManager {
     pub fn show_selection_modal(
         &mut self,ctx:&Context,work_area:Rect,window_id:&'static str
     )->(bool,Option<Value>){
+        self.show_selection_modal_with_state(ctx,work_area,window_id,false,None)
+    }
+    pub(crate) fn show_selection_modal_with_state(
+        &mut self,ctx:&Context,work_area:Rect,window_id:&'static str,
+        busy:bool,feedback:Option<&str>
+    )->(bool,Option<Value>){
         let mut cancelled=false;
         let width=(work_area.width()-2.0*(theme::MODAL_PANEL_PADDING_X+theme::FRAME_STROKE_WIDTH)).clamp(1.0,1120.0);
         let height=crate::popup::modal_body_height_budget(work_area.height(),false).min(650.0);
@@ -608,7 +614,8 @@ impl ProductManager {
 
                 ui.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,width);
                 crate::popup::modal_flow_workspace(ui,|workspace|{
-                    cancelled=workspace.header("상품 선택","취소",true);
+                    cancelled=workspace.header("상품 선택","취소",!busy);
+                    if busy{workspace.disable();}
                     workspace.body_region(|ui|{
                         ui.allocate_ui_with_layout(
                             egui::vec2(ui.available_width(),height),Layout::top_down(Align::Min),
@@ -616,16 +623,17 @@ impl ProductManager {
                                 #[cfg(test)]
                                 crate::ui_test_support::record("product picker body",
                                     Rect::from_min_size(body.cursor().left_top(),Vec2::new(body.available_width(),height)));
-                                self.show_catalog_surface(body,Some(height))
+                                self.show_catalog_surface(body,Some(height),feedback)
                             }
                         );
                     });
                 });
             });
         crate::popup::modal_foreground_for_window(ctx,window_id);
-        let cancelled=cancelled || crate::overlay::take_modal_escape(ctx);
+        let escaped=crate::overlay::take_modal_escape(ctx);
+        let cancelled=!busy && (cancelled || escaped);
         let chosen=self.take_selection();
-        (cancelled,if cancelled{None}else{chosen})
+        (cancelled,if cancelled || busy{None}else{chosen})
     }
     pub fn take_selection(&mut self)->Option<Value>{
         self.selection_result.take()
@@ -1065,12 +1073,12 @@ impl ProductManager {
     }
 
     pub fn show_page(&mut self,ui:&mut Ui){
-        self.show_catalog_surface(ui,None);
+        self.show_catalog_surface(ui,None,None);
     }
 
     // The caller supplies the bounded popup body height. Main tabs alone
     // use the management page's title, KPI anchor and remaining-page budget.
-    fn show_catalog_surface(&mut self,ui:&mut Ui,modal_body_height:Option<f32>){
+    fn show_catalog_surface(&mut self,ui:&mut Ui,modal_body_height:Option<f32>,feedback:Option<&str>){
         let page_origin_y=ui.cursor().top();
         self.poll(ui.ctx());
         // A pointer action supersedes any deferred keyboard focus target.
@@ -1087,7 +1095,7 @@ impl ProductManager {
         crate::floating_notice::sync(
             ui.ctx(),"products.error",
             if self.price_mode&&self.tab==0{"products.price"}else{"products.action"},
-            crate::floating_notice::Tone::Error,self.error.as_deref()
+            crate::floating_notice::Tone::Error,self.error.as_deref().or(feedback)
         );
         let selecting=modal_body_height.is_some();
         if !selecting{
