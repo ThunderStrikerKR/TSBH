@@ -150,7 +150,6 @@ fn import(conn:&mut Connection,base:&Path,dir:&Path,path:&Path,bytes:&[u8],rev:u
         if read_bounded(path)?!=bytes{return Err("회신 파일이 변경됐습니다.".into())}
         Ok(preserve(base,bytes)?.to_string_lossy().into_owned())
     })?;
-    if result["applied"].as_u64().unwrap_or(0)>0{crate::excel_aggregate::notify(false);}
     let warning=excel_service::archive_reply_workbook(&result["next"],bytes).err();
     Ok(json!({"duplicate":false,"applied":result["applied"],"held":result["held"],"archiveWarning":warning}))
 }
@@ -194,7 +193,11 @@ struct Scan{seen:HashMap<PathBuf,Seen>,directory:Option<PathBuf>}
 pub struct Outcome{pub files:usize,pub applied:usize,pub held:usize,pub error:Option<String>}
 fn scan(cache:&mut Scan)->Result<Outcome,String>{
     let (mut conn,base)=open_db()?;
-    scan_with_db(cache,&mut conn,&base)
+    let outcome=scan_with_db(cache,&mut conn,&base)?;
+    // All accepted files in this detection pass have committed. Wake the
+    // aggregate worker once, not once per file and never on an empty scan.
+    if outcome.applied>0{crate::excel_aggregate::notify(false);}
+    Ok(outcome)
 }
 // The live caller retains authorization; tests supply an explicitly isolated DB.
 fn scan_with_db(cache:&mut Scan,conn:&mut Connection,base:&Path)->Result<Outcome,String>{

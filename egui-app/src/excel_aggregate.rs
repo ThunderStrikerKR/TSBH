@@ -9,9 +9,8 @@ use std::{collections::HashMap,fs,io::{Cursor,Read,Write},path::{Path,PathBuf},s
 use uuid::Uuid;
 
 fn err(e:impl std::fmt::Display)->String{e.to_string()}
-// Routine publication is event-driven. This slower safety sweep also
-// recovers missed notifications, external DB changes and damaged files.
-const RECONCILE:Duration=Duration::from_secs(15*60);
+// No idle reconciliation timer. Reconcile once at startup, or after
+// an explicit archive configuration change / successful database restore.
 const WORKER_ERROR_RETRY:Duration=Duration::from_secs(60);
 static WORKER:OnceLock<Option<SyncSender<()>>>=OnceLock::new();
 static RECONCILE_REQUESTED:AtomicBool=AtomicBool::new(false);
@@ -254,33 +253,33 @@ pub(crate) fn notify(reconcile:bool){
     if let Some(Some(tx))=WORKER.get(){let _=tx.try_send(());}
 }
 fn worker_loop(rx:Receiver<()>){
-    worker_loop_with(rx,&RECONCILE_REQUESTED,RECONCILE,WORKER_ERROR_RETRY,run);
+    worker_loop_with(rx,&RECONCILE_REQUESTED,WORKER_ERROR_RETRY,run);
 }
-fn worker_loop_with<F>(rx:Receiver<()>,requested_flag:&AtomicBool,reconcile_interval:Duration,error_retry:Duration,mut run_work:F)
+fn worker_loop_with<F>(rx:Receiver<()>,requested_flag:&AtomicBool,error_retry:Duration,mut run_work:F)
 where F:FnMut(bool)->Result<Option<Duration>,String>{
-    let mut reconcile_due=Instant::now();
-    let mut retry_reconcile=false;
+    let mut retry_reconcile=true; // one startup recovery
     loop{
         let requested=requested_flag.swap(false,Ordering::AcqRel);
-        let reconcile=retry_reconcile||Instant::now()>=reconcile_due||requested;
+        let reconcile=retry_reconcile||requested;
         let retry=match run_work(reconcile){
             Ok(next)=>{
                 retry_reconcile=false;
-                if reconcile{reconcile_due=Instant::now()+reconcile_interval;}
                 next
             },
             Err(e)=>{
                 eprintln!("Excel aggregate: {e}");
                 retry_reconcile=reconcile;
-                if reconcile{reconcile_due=Instant::now()+error_retry;}
                 Some(error_retry)
             }
         };
-        let until_reconcile=reconcile_due.saturating_duration_since(Instant::now());
-        let timeout=retry.map_or(until_reconcile,|d|d.min(until_reconcile));
-        match rx.recv_timeout(timeout){
-            Ok(())|Err(RecvTimeoutError::Timeout)=>{},
-            Err(RecvTimeoutError::Disconnected)=>break,
+        // An empty durable queue has no deadline at all. Do not wake to
+        // inspect the database or archive when no work was scheduled.
+        match retry{
+            Some(delay)=>match rx.recv_timeout(delay){
+                Ok(())|Err(RecvTimeoutError::Timeout)=>{},
+                Err(RecvTimeoutError::Disconnected)=>break,
+            },
+            None=>if rx.recv().is_err(){break},
         }
     }
 }
@@ -301,7 +300,7 @@ mod tests{
         let flag=requested.clone();
         let handle=std::thread::spawn(move||{
             let mut count=0;
-            worker_loop_with(wake_rx,&flag,Duration::from_secs(900),Duration::from_secs(60),|reconcile|{
+            worker_loop_with(wake_rx,&flag,Duration::from_secs(60),|reconcile|{
                 count+=1;observed_tx.send((count,reconcile)).unwrap();
                 Ok(if count==2{Some(Duration::from_millis(30))}else{None})
             });
@@ -315,6 +314,7 @@ mod tests{
         assert!(matches!(observed_rx.recv_timeout(Duration::from_millis(100)),Err(RecvTimeoutError::Timeout)));
         requested.store(true,Ordering::Release);wake_tx.send(()).unwrap();
         assert_eq!(observed_rx.recv_timeout(bound).unwrap(),(4,true));
+        assert!(matches!(observed_rx.recv_timeout(Duration::from_millis(100)),Err(RecvTimeoutError::Timeout)));
         drop(wake_tx);handle.join().unwrap();
     }
     #[test]
