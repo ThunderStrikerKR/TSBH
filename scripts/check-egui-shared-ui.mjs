@@ -60,7 +60,6 @@ const paintExceptions = [
     "line_segment([egui::pos2(x,row_rect.top()),egui::pos2(x,center)],stroke)"],
   ["order_history_manager.rs","range_date_picker_rtl",1,
     "line_segment([egui::pos2(x,inner.top()+4.0),egui::pos2(x,inner.bottom()-4.0)],Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::border_ink(theme::BorderRole::Divider)))"],
-  // Chooser selection outline now delegates to ui_primitives::paint_selection_outline.
 ];
 const normalized = source=>tokenizeRust(source).map(t=>t.kind==="literal"?"<literal>":t.v).join(" ");
 const paintAllowance = new Map(paintExceptions.map(([file,fn,count,call])=>
@@ -1451,7 +1450,6 @@ const highlightContracts = {
   "main.rs":{"<root>":{"mod highlight ;":1,"mod highlight_native ;":1}},
   "theme.rs":{"install":{"highlight_native :: native_widgets (":1}},
   "ui_primitives.rs":{
-    "paint_selection_outline":{"highlight :: paint_outline (":1},
     "paint_action_hover_corners":{"highlight :: action_hover (":1},
     "paint_action_hover_surface":{"highlight :: action_hover (":1},
     "date_navigation_segmented_surface_with_state":{"highlight :: prioritized_stroke (":1,"highlight :: paint_parts (":1,"highlight :: segment_outline_rect (":1}},
@@ -1585,7 +1583,7 @@ export function auditHighlight(source,file,requireCalls=false){
       "paint_manual_assignment_recommendation","paint_manual_source_drag_preview",
       "paint_active_background","paint_active_outline","block_shapes_with_states",
       "background_shape","outline_shape","background","outline","mark",
-      "paint_required_input","paint_selection_outline","paint_action_hover_corners",
+      "paint_required_input","paint_action_hover_corners",
       "paint_action_hover_surface","category_tree_row","management_chooser_row",
       "workflow_group_card"
     ].includes(fn);
@@ -1686,7 +1684,45 @@ function colorOwnershipSelfTest(){
   console.log("EGUI_COLOR_OWNERSHIP_SELFTEST_PASS",13);
 }
 
+// Lock reviewed private implementation boundaries, independently of caller counts.
+// A test-only declaration disappears from productionTokens by design.
+const internalUiFunctions={
+  "checkbox/mod.rs":["management_table_checkbox_rect"],
+  "scrollbar/mod.rs":["management_single_list_scroll_height_geometry","management_scroll_style"],
+  "highlight/mod.rs":["action_surface"],
+  "card/mod.rs":["workflow_group_card_frame"],
+  "ui_primitives.rs":["overflow_tooltip_needed"],
+};
+const retiredProductionUiFunctions={
+  "typography.rs":["management_table_cell_color","freight_summary_large_number_galley"],
+  "ui_primitives.rs":["paint_selection_outline"],
+};
+function visibilityContractViolations(source,file){
+  const code=productionTokens(source).map(t=>t.v).join(" ");
+  const hits=[];
+  for(const name of internalUiFunctions[file]||[]){
+    const declared=new RegExp("\\bfn "+name+" \\(");
+    const exposed=new RegExp("\\bpub(?: \\( [^)]* \\))? (?:const |async |unsafe )*fn "+name+" \\(");
+    if(!declared.test(code))hits.push("missing private UI implementation: "+name);
+    if(exposed.test(code))hits.push("internal UI implementation must stay private: "+name);
+  }
+  for(const name of retiredProductionUiFunctions[file]||[]){
+    if(new RegExp("\\bfn "+name+" \\(").test(code))
+      hits.push("retired/test-only UI function exposed to production: "+name);
+  }
+  return hits;
+}
+function visibilityContractSelfTest(){
+  const source="fn management_table_checkbox_rect(){}";
+  assert.equal(visibilityContractViolations(source,"checkbox/mod.rs").length,0);
+  for(const visibility of ["pub","pub(crate)","pub(super)","pub(in crate)"])
+    assert.equal(visibilityContractViolations(visibility+" "+source,"checkbox/mod.rs").length,1);
+  assert.equal(visibilityContractViolations("","checkbox/mod.rs").length,1);
+  assert.equal(visibilityContractViolations("pub fn management_table_cell_color(){}","typography.rs").length,1);
+  assert.equal(visibilityContractViolations("#[cfg(test)] fn management_table_cell_color(){}","typography.rs").length,0);
+}
 function main(){
+  visibilityContractSelfTest();
   colorOwnershipSelfTest();
   highlightSelfTest();
   managedLayoutSelfTest();
@@ -1717,6 +1753,7 @@ function main(){
       for(const dep of sharedDependencies(source,owner,true))deps.add(dep);
       graph.set(owner,deps);
     }
+    for(const rule of visibilityContractViolations(source,file)){failures++;console.error(file+": "+rule);}
     for(const rule of designTokenViolations(source,file)){failures++;console.error(file+": "+rule);}
     for(const hit of [...audit(source,file,true),...auditComposite(source,file,true),...auditContextLocks(source,file),...auditCardHeights(source,file),...auditIndirectCardHeights(source,file),...auditCardWidths(source,file),...auditManagedLayout(source,file),...auditHighlight(source,file,true),...auditColorOwnership(source,file)]){
       failures++;console.error(file+":"+hit.line+" "+hit.rule);
