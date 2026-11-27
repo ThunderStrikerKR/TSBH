@@ -1,4 +1,5 @@
 //! Shared checkbox rendering and fixed list/table placement; callers own selection.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Layout,Rect,Response,Ui,Vec2};
 use crate::theme;
@@ -76,7 +77,7 @@ pub(crate) fn checkbox_list_row(
     ui:&mut Ui,id:impl std::hash::Hash,
     checked:&mut bool,label:&str,enabled:bool,height:f32
 )->Response{
-    ui.allocate_ui_with_layout(
+    ui.shared_allocate_ui_with_layout(
         Vec2::new(ui.available_width(),height),
         Layout::left_to_right(Align::Center),
         |row|{
