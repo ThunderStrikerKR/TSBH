@@ -457,6 +457,25 @@ impl ModelGroupManager {
 #[cfg(test)]
 mod responsiveness_tests{
     use super::*;
+    #[test]
+    fn actual_model_group_editor_keeps_rects_during_permission_and_feedback_changes(){
+        use crate::ui_test_support::{test_context,assert_popup_transition_geometry,PopupGeometryGateway};
+        let catalog=json!({"products":[],"settings":{"colorGuidanceGroups":{
+            "synthetic-group":{"name":"검증 모델군","productIds":[],"representativeProductId":""}
+        }}});
+        let ctx=test_context();
+        let work=Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1400.0,1000.0));
+        let mut manager=ModelGroupManager::default();
+        manager.sync(&catalog);manager.selected="synthetic-group".into();manager.editor_open=true;
+        assert_popup_transition_geometry(&ctx,work,4,|ctx,phase|{
+            let gateway:Arc<dyn BandoGateway>=Arc::new(PopupGeometryGateway{writable:phase!=1});
+            // The legacy representative warning is state, not a new row.
+            if phase==2{manager.draft["synthetic-group"]["representativeColor"]=json!("검증 색상");}
+            else if let Some(group)=manager.draft["synthetic-group"].as_object_mut(){group.remove("representativeColor");}
+            manager.show_editor(ctx,work,&catalog,gateway);
+        });
+    }
+
     fn finish(manager:&mut ModelGroupManager){
         let deadline=std::time::Instant::now()+Duration::from_secs(5);
         while manager.eligibility.pending(){
