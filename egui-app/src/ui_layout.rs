@@ -8,16 +8,14 @@ use crate::card::docked_section_body_height;
 use crate::table::management_table_data_width;
 
 pub(crate) mod geometry;
-// Keep the established screen-facing paths while component modules use
-// geometry directly, avoiding a dependency on screen composition.
-pub(crate) use geometry::{aligned_rect,AlignedUiBuilderExt,SharedAllocationExt,
-    SharedUiClipExt,SharedPainterClipExt,set_fixed_height,reserve_min_height,reserve_min_size};
-use geometry::{CardWidthPolicy,UiWidthPolicyExt};
+use geometry::{aligned_rect,AlignedUiBuilderExt,SharedAllocationExt,SharedUiClipExt,
+    set_fixed_height,reserve_min_height,CardWidthPolicy,UiWidthPolicyExt};
 
 #[cfg(test)]
 mod logical_alignment_tests{
     use super::*;
     use egui::emath::GuiRounding as _;
+    use super::geometry::{SharedPainterClipExt,reserve_min_size};
 
     #[test]
     fn shared_size_constraints_preserve_native_layout_semantics(){
@@ -209,7 +207,7 @@ pub(crate) fn apply_manual_workspace_spacing(ui:&mut Ui,direct_input:bool){
 /// Allocate a row with an immutable parent footprint. The child can
 /// render optional labels, validation messages or actions without changing
 /// the next sibling's Rect when its contents appear or disappear.
-pub fn fixed_row<R>(
+pub(crate) fn fixed_row<R>(
     ui:&mut Ui,size:Vec2,layout:Layout,
     add_contents:impl FnOnce(&mut Ui)->R,
 )->(Rect,R){
@@ -236,7 +234,7 @@ pub fn fixed_row<R>(
 }
 
 /// A result list owns one bounded viewport regardless of its content.
-pub fn fixed_result_viewport<R>(
+pub(crate) fn fixed_result_viewport<R>(
     ui:&mut Ui,id:&str,height:f32,render:impl FnOnce(&mut Ui)->R
 )->(Rect,R){
     let width=ui.available_width();
@@ -251,7 +249,7 @@ pub fn fixed_result_viewport<R>(
 /// One-line status slot for state-dependent text. It always reserves the
 /// same width and height; long messages are clipped visually and remain
 /// available in the hover tooltip. Use a fixed-height row for action controls.
-pub fn fixed_status_slot(
+pub(crate) fn fixed_status_slot(
     ui:&mut Ui,width:f32,height:f32,display:Option<&str>,
     tooltip:Option<&str>,color:Color32,
 )->Rect{
@@ -286,7 +284,7 @@ pub fn fixed_status_slot(
 /// scroll, but an egui child reporting a larger min_rect must not grow
 /// the surrounding card, overlap its footer, or shift sibling sections.
 /// Reserve the parent's slot once and render the scroll area independently.
-pub fn reception_goods_viewport(
+pub(crate) fn reception_goods_viewport(
     ui:&mut Ui,height:f32,content:impl FnOnce(&mut Ui)
 ){
     if let Some(mut child)=reception_fixed_viewport(ui,height,"reception-goods-viewport"){
@@ -312,7 +310,7 @@ fn reception_fixed_viewport(ui:&mut Ui,height:f32,id:&'static str)->Option<Ui>{
 
 /// Review and recipient content scroll within the reserved body without
 /// enlarging their fixed section frames. The actual remaining height wins.
-pub fn reception_section_scroll(
+pub(crate) fn reception_section_scroll(
     ui:&mut Ui,section_height:f32,id_salt:impl std::hash::Hash,
     content:impl FnOnce(&mut Ui),
 ){
@@ -327,12 +325,12 @@ pub fn reception_section_scroll(
 /// Docked reception goods own their fixed viewport; the manual worksheet
 /// scrolls its complete card stack instead. Both use the same item table
 /// spacing and minimum-width rules without introducing another child ID.
-pub fn reception_items_body(ui:&mut Ui,width:f32,exact_width:bool){
+fn reception_items_body(ui:&mut Ui,width:f32,exact_width:bool){
     if exact_width{ui.apply_shared_width(CardWidthPolicy::Fixed,width);}else{ui.apply_shared_width(CardWidthPolicy::FillAvailable,width);}
     ui.spacing_mut().item_spacing.y=0.0;
 }
 
-pub fn reception_worksheet_items_body(ui:&mut Ui){
+pub(crate) fn reception_worksheet_items_body(ui:&mut Ui){
     let width=ui.available_width().max(
         theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+theme::RECEPTION_ITEM_REMOVE_WIDTH
     );
@@ -341,9 +339,9 @@ pub fn reception_worksheet_items_body(ui:&mut Ui){
 
 /// Preserve the established 12pt worksheet stack gap in one semantic rule.
 /// Docked panes retain their independent draggable splitter instead.
-pub const RECEPTION_STACKED_CARD_GAP:f32=theme::SPACE_12;
+pub(crate) const RECEPTION_STACKED_CARD_GAP:f32=theme::SPACE_12;
 
-pub fn reception_docked_goods_scroll(
+pub(crate) fn reception_docked_goods_scroll(
     ui:&mut Ui,section_height:f32,id_salt:impl std::hash::Hash,
     editable_columns:bool,content:impl FnOnce(&mut Ui)
 ){
@@ -369,14 +367,14 @@ pub fn reception_docked_goods_scroll(
 }
 
 /// Use the same 8/1/8pt clearance as the reception section header.
-pub fn reception_message_footer_gap(ui:&mut Ui){
+pub(crate) fn reception_message_footer_gap(ui:&mut Ui){
     crate::ui_primitives::section_divider_symmetric(ui,theme::RECEPTION_SECTION_DIVIDER_GAP);
 }
 
 /// The 6pt split interaction region is always the workspace (CANVAS)
 /// between PANEL cards, including the Kakao reservation boundary.
 /// Only hover/drag shows an axis cue; drag targets and saved sizing persist.
-pub fn paint_dock_splitter(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
+pub(crate) fn paint_dock_splitter(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
     ui.painter().rect_filled(rect, 0.0, theme::surface_palette(theme::SurfaceRole::Workspace,theme::VisualState::Normal).fill);
     paint_dock_axis_line(ui, rect, vertical, active);
 }
@@ -386,7 +384,7 @@ pub fn paint_dock_splitter(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
 /// the middle TWO pixels. A one-pixel line can only sit to one side.
 /// Odd-width gutters use a single centered pixel. Hover uses the shared
 /// 2pt token, adjusted only when necessary for symmetrical pixel margins.
-pub fn paint_dock_axis_line(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
+fn paint_dock_axis_line(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
     // No permanent 1-2pt splitter bar: section/card strokes are enough.
     // A thin resize cue appears only when the pointer is over its hit zone.
     if !active { return; }
@@ -437,7 +435,7 @@ pub fn paint_dock_axis_line(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
 /// Bridges and junctions use the SAME measured pane-divider coordinates.
 /// Painting only the bridge's left junction left a visible gap where its
 /// right endpoint met a vertical bar at fractional DPI scaling.
-pub fn paint_dock_network(
+pub(crate) fn paint_dock_network(
     ui: &Ui,
     verticals: &[(Rect, bool)],
     bridges: &[(usize, usize, f32)],
@@ -465,14 +463,14 @@ pub fn paint_dock_network(
 /// Approved 59th-round Freight page heading: 12pt from the top of the
 /// workspace. The workspace shell already supplies a 6pt outer gutter, so
 /// only the difference is added. Reception must not call this helper.
-pub fn management_page_title_top_gap(ui:&mut Ui) {
+pub(crate) fn management_page_title_top_gap(ui:&mut Ui) {
     ui.add_space((theme::SPACE_12-theme::PANEL_GAP).max(0.0));
 }
 
 /// One horizontal guide for a management heading, its optional tabs,
 /// top-right metadata and optional KPI strip. This affects ONLY the top
 /// content; primary card outer borders keep the established full width.
-pub fn management_top_content<R>(
+pub(crate) fn management_top_content<R>(
     ui:&mut Ui, add:impl FnOnce(&mut Ui)->R
 )->R{
     let output=theme::management_top_content_frame()
@@ -491,7 +489,7 @@ pub fn management_top_content<R>(
 /// Slot height/vertical stacking may differ by screen, but not its right edge.
 /// Returns egui logical-point coordinates; convert to device pixels with
 /// Context::pixels_per_point() when reporting runtime measurements.
-pub fn management_toolbar_trailing_rect(
+pub(crate) fn management_toolbar_trailing_rect(
     toolbar:Rect,desired_width:f32,top_offset:f32,height:f32
 )->Rect {
     debug_assert!(desired_width.is_finite() && desired_width>=0.0);
@@ -510,7 +508,7 @@ pub fn management_toolbar_trailing_rect(
 }
 
 /// Shared source-card geometry, reserving the same chrome across stages.
-pub fn reception_source_client_rect(body:Rect)->Rect{
+pub(crate) fn reception_source_client_rect(body:Rect)->Rect{
     let gap=theme::SPACE_8;
     // The section divider already owns the leading clearance. Reserve only
     // the card-to-document, document-to-action and final action gaps.
@@ -521,7 +519,7 @@ pub fn reception_source_client_rect(body:Rect)->Rect{
 
 /// Shared item-table to freight-group transition; call once per group,
 /// not for every dispatch origin.
-pub fn reception_items_to_freight_gap(ui:&mut Ui){
+pub(crate) fn reception_items_to_freight_gap(ui:&mut Ui){
     ui.add_space(theme::RECEPTION_ITEMS_TO_FREIGHT_GAP);
 }
 
