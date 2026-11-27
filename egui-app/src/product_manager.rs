@@ -924,7 +924,7 @@ impl ProductManager {
                         self.price_mode_exit_requested=false;
                     }
                 }
-                if self.tab==1 {
+                if self.tab==1 && self.selected.is_none() {
                     self.category_manager.report_error(error.clone());
                 }
                 if self.tab==3 {
@@ -1230,7 +1230,16 @@ impl ProductManager {
         }
         if !selecting && self.tab==1 {
             if let Some(catalog)=self.catalog.as_ref(){
-                self.category_manager.show_page(ui,catalog,can_edit,saving);
+                let blocked=saving||self.selected.is_some()||self.category_manager.has_overlay();
+                self.category_manager.show_page(ui,catalog,can_edit,blocked);
+                let requested=self.category_manager.take_product_request();
+                if let Some(id)=requested.filter(|_|!blocked){
+                    let product=rows(&catalog["products"]).iter().find(|product|
+                        field(product,"id")==id.as_str()&&field(product,"deletedAt").is_empty()
+                            &&field(product,"supersededBy").is_empty()
+                    ).cloned();
+                    if let Some(product)=product{self.begin_edit(product);}
+                }
             }else{
                 crate::card::management_pending_primary_card(ui);
             }
@@ -2115,7 +2124,7 @@ impl ProductManager {
             }
             return;
         }
-        if self.tab==1 {
+        if self.tab==1 && self.selected.is_none() {
             if let Some(catalog)=self.catalog.clone(){
                 let can_edit=self.gateway.product_write_enabled()
                     && catalog["revision"].as_u64().is_some();

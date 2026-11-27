@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "category-product-detail-157",
+  "screen": "상품 관리 / 카테고리 관리 / 상품 상세 연결",
+  "files": [
+    "egui-app/src/category_manager.rs",
+    "egui-app/src/category_tree/mod.rs",
+    "egui-app/src/category_dropdown.rs",
+    "egui-app/src/product_manager.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "상품 ID 기반 클릭 요청을 기존 ProductManager.begin_edit 및 show_detail 경로로 전달. 일반/집중 탐색 유지, 상품 상세 팝업 중복 생성 없음. 컴파일, CI 및 Windows 실제 클릭/저장/복귀 미검증.",
+  "defects": [],
+  "releaseDecision": "NOT_APPROVED",
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "noClipping",
+      "footerVisible",
+      "scrollReachable",
+      "inputReadable",
+      "alignment",
+      "interaction",
+      "hoverAndFocus"
+    ]
+  }
+}

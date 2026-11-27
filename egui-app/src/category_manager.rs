@@ -63,6 +63,7 @@ pub struct CategoryManager {
     node_cache:crate::screen_refresh::ViewProjectionCache<Option<u64>,(Vec<Category>,Vec<category_dropdown::CategoryNode>)>,
     scroll_epoch:u64,
     scroll_to:Option<String>,
+    product_request:Option<String>,
     name:String,
     editor:bool,
     expected_scope:Option<String>,
@@ -84,6 +85,7 @@ impl Default for CategoryManager {
             expanded:ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect(),
             query:String::new(),focused:false,focus:Default::default(),crumbs:Default::default(),
             tree_motion:None,nav_motion:None,mode_motion:None,map_cache:None,node_cache:Default::default(),scroll_epoch:0,scroll_to:None,
+            product_request:None,
             name:String::new(),editor:false,expected_scope:None,
             operation:None,new_name:String::new(),target:String::new(),
             transfer:false,confirm:None,after_save:None,
@@ -193,7 +195,7 @@ fn direct_count(catalog:&Value,id:&str)->usize{
 struct CategoryMapIndex {
     children:std::sync::Arc<HashMap<String,Vec<usize>>>,
     totals:std::sync::Arc<HashMap<String,usize>>,
-    products:std::sync::Arc<HashMap<String,Vec<String>>>,
+    products:std::sync::Arc<HashMap<String,Vec<(String,String)>>>,
     visible:Option<HashSet<String>>,
 }
 impl CategoryMapIndex {
@@ -206,7 +208,7 @@ impl CategoryMapIndex {
             by_id.entry(item.id.as_str()).or_insert(index);
         }
         let mut totals=HashMap::new();
-        let mut products:HashMap<String,Vec<String>>=HashMap::new();
+        let mut products:HashMap<String,Vec<(String,String)>>=HashMap::new();
         // A product contributes at most once to any ancestor even when it
         // belongs to multiple nested categories. Deleted or superseded
         // products remain excluded exactly as in the original total_count().
@@ -239,7 +241,8 @@ impl CategoryMapIndex {
             let name=field(product,"name");
             let name=if name.is_empty(){field(product,"id")}else{name};
             for leaf in assigned.difference(&parents){
-                products.entry(cats[*leaf].id.clone()).or_default().push(name.to_owned());
+                products.entry(cats[*leaf].id.clone()).or_default()
+                    .push((field(product,"id").to_owned(),name.to_owned()));
             }
         }
         Self{children:std::sync::Arc::new(children),totals:std::sync::Arc::new(totals),
@@ -270,7 +273,7 @@ impl CategoryMapIndex {
     fn branches(&self,id:&str)->&[usize]{
         self.children.get(id).map(Vec::as_slice).unwrap_or(&[])
     }
-    fn products(&self,id:&str)->&[String]{
+    fn products(&self,id:&str)->&[(String,String)]{
         self.products.get(id).map(Vec::as_slice).unwrap_or(&[])
     }
     fn total(&self,id:&str)->usize{
@@ -317,6 +320,9 @@ impl CategoryManager {
             self.confirm=Some(Confirm::GlobalLeave);
             false
         }else{true}
+    }
+    pub(crate) fn take_product_request(&mut self)->Option<String>{
+        self.product_request.take()
     }
     pub fn take_switch_to_list(&mut self)->bool{
         std::mem::take(&mut self.switch_to_list)
@@ -543,7 +549,7 @@ impl CategoryManager {
         }).sum()
     }
     fn node(&mut self,ui:&mut Ui,cats:&[Category],index:&CategoryMapIndex,
-        item:&Category,depth:usize,ancestor_guides:&[bool],is_last:bool,ancestors:&mut HashSet<String>){
+        item:&Category,depth:usize,ancestor_guides:&[bool],is_last:bool,ancestors:&mut HashSet<String>,product_enabled:bool){
         if !ancestors.insert(item.id.clone()){return;}
         if !index.shows(&item.id){ancestors.remove(&item.id);return;}
         let branches=index.branches(&item.id);
@@ -587,11 +593,13 @@ impl CategoryManager {
             let draw=|this:&mut Self,rows:&mut Ui,ancestors:&mut HashSet<String>|{
                 for (position,&child) in visible_children.iter().enumerate(){
                     this.node(rows,cats,index,&cats[child],depth+1,&child_guides,
-                        position+1==visible_children.len()&&products.is_empty(),ancestors);
+                        position+1==visible_children.len()&&products.is_empty(),ancestors,product_enabled);
                 }
-                for (position,name) in products.iter().enumerate(){
-                    category_tree::product_tree_row(rows,name,depth+1,&child_guides,
-                        position+1==products.len());
+                for (position,(id,name)) in products.iter().enumerate(){
+                    if category_tree::product_tree_row(rows,name,depth+1,&child_guides,
+                        position+1==products.len(),product_enabled&&!locked&&!id.is_empty()).clicked(){
+                        this.product_request=Some(id.clone());
+                    }
                 }
             };
             if let Some(m)=motion{
@@ -640,6 +648,7 @@ impl CategoryManager {
         }
     }
     pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,editable:bool,busy:bool){
+        self.product_request=None;
         let revision=catalog["revision"].as_u64();
         if revision.is_none(){self.node_cache.invalidate();}
         let projection=self.node_cache.get(revision,||{
@@ -717,7 +726,7 @@ impl CategoryManager {
                 let height=(panel.available_height()-theme::CATEGORY_EXPLORER_CRUMB_HEIGHT-theme::SECTION_DIVIDER_HEIGHT)
                     .max(theme::CATALOG_TREE_ROW_HEIGHT);
                 let search_focused=panel.ctx().memory(|mem|mem.focused().is_some());
-                category_dropdown::explorer_body(panel,&nodes,&node_index,&mut self.focus,
+                self.product_request=category_dropdown::explorer_body(panel,&nodes,&node_index,&mut self.focus,
                     !busy,height,search_focused,Some(&index.totals),Some(&index.products));
                 if !self.focus.moving(){
                     let new=self.focus.path.last().cloned().unwrap_or_default();
@@ -771,7 +780,7 @@ impl CategoryManager {
                     let roots=ROOTS.iter().filter_map(|(id,_)|cats.iter().find(|c|c.id==*id))
                         .filter(|c|index.shows(&c.id)).collect::<Vec<_>>();
                     for (i,current) in roots.iter().enumerate(){
-                        self.node(tree,&cats,&index,current,1,&[],i+1==roots.len(),&mut HashSet::new());
+                        self.node(tree,&cats,&index,current,1,&[],i+1==roots.len(),&mut HashSet::new(),!busy);
                     }
                     let legacy=cats.iter().filter(|c|c.parent.is_empty()&&!is_root(&c.id))
                         .cloned().collect::<Vec<_>>();
@@ -781,7 +790,7 @@ impl CategoryManager {
                             &format!("상위 분류 소속 확인 ({})",legacy.len())
                         ));
                         for row in &legacy{
-                            self.node(tree,&cats,&index,row,0,&[],true,&mut HashSet::new());
+                            self.node(tree,&cats,&index,row,0,&[],true,&mut HashSet::new(),!busy);
                         }
                     }
                 });
@@ -1188,8 +1197,8 @@ mod modal_layout_contract_tests{
         }
         assert_eq!(index.branches("b").len(),2);
         assert!(index.products("b").is_empty());
-        assert_eq!(index.products("c"),&["p1".to_owned(),"p2".to_owned()]);
-        assert_eq!(index.products("d"),&["p3".to_owned()]);
+        assert_eq!(index.products("c"),&[("p1".to_owned(),"p1".to_owned()),("p2".to_owned(),"p2".to_owned())]);
+        assert_eq!(index.products("d"),&[("p3".to_owned(),"p3".to_owned())]);
         assert!(index.shows("d"));
     }
     #[test]

@@ -321,7 +321,7 @@ fn menu_body(
     ).inner;
     let list_height=theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT
         .min((menu.ctx().content_rect().height()-270.0).max(100.0));
-    explorer_body(menu,nodes,index,state,enabled,list_height,search_response.has_focus(),None,None);
+    let _=explorer_body(menu,nodes,index,state,enabled,list_height,search_response.has_focus(),None,None);
     let busy=state.moving();
     crate::ui_primitives::soft_divider(menu);
     let mut applied=false;
@@ -339,7 +339,8 @@ fn menu_body(
 /// Shared focused explorer: the manager uses this without an Apply footer.
 pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&str,&CategoryNode>,
     state:&mut ExplorerState,enabled:bool,list_height:f32,search_focused:bool,
-    totals:Option<&HashMap<String,usize>>,products:Option<&HashMap<String,Vec<String>>>){
+    totals:Option<&HashMap<String,usize>>,products:Option<&HashMap<String,Vec<(String,String)>>>)->Option<String>{
+    let mut product_request=None;
     let now=menu.input(|i|i.time);
     if state.motion.as_ref().is_some_and(|m|m.elapsed(now)>=450.0){state.finish_motion();menu.ctx().request_repaint();}
     else if state.motion.is_some(){menu.ctx().request_repaint();}
@@ -441,10 +442,13 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                     let label=if searching{full_name(index,&path)}else{node.name.clone()};
                     paint_row(list,&label,path,usize::from(!searching),i+1==items.len()&&product_rows.is_empty(),has_children,false);
                 }
-                for (i,name) in product_rows.iter().enumerate(){
+                for (i,(id,name)) in product_rows.iter().enumerate(){
                     list.scope(|row|{
                         if alpha<1.0{row.set_opacity(alpha);}
-                        category_tree::product_tree_row(row,name,1,&[],i+1==product_rows.len());
+                        if category_tree::product_tree_row(row,name,1,&[],i+1==product_rows.len(),
+                            enabled&&!busy&&!id.is_empty()).clicked(){
+                            product_request=Some(id.clone());
+                        }
                     });
                 }
             });
@@ -469,6 +473,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
         begin_move(state,path,nodes,index,now,source,list_height);
         menu.ctx().request_repaint();
     }
+    product_request
 }
 
 type PopupStates=crate::view_state::TimedViewStore<(ExplorerState,std::time::Instant)>;

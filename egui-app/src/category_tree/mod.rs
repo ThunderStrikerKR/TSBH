@@ -99,22 +99,22 @@ fn paint_category_tree_folder(painter:&egui::Painter,rect:Rect,open:bool,ink:Col
 }
 
 pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
-    tree_row(ui,item,false)
+    tree_row(ui,item,false,true)
 }
 
-/// Read-only product leaf: same guide, indent, row height and text layout
-/// as a category, but never acts as a category selection or folder.
-pub(crate) fn product_tree_row(ui:&mut Ui,name:&str,depth:usize,ancestor_guides:&[bool],is_last:bool){
+/// Product leaf opens the existing product detail; it never changes
+/// category selection or expansion.
+pub(crate) fn product_tree_row(ui:&mut Ui,name:&str,depth:usize,ancestor_guides:&[bool],is_last:bool,enabled:bool)->Response{
     tree_row(ui,CategoryTreeRow{
         name,summary:"",depth,ancestor_guides,is_last,
         root:false,has_children:false,open:false,selected:false,
-    },true);
+    },true,enabled)
 }
 
-fn tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>,product:bool)->Response{
+fn tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>,product:bool,enabled:bool)->Response{
     let (rect,response)=ui.shared_allocate_exact_size(
         Vec2::new(ui.available_width().max(1.0),theme::CATALOG_TREE_ROW_HEIGHT),
-        if product{Sense::hover()}else{Sense::click()}
+        if enabled{Sense::click()}else{Sense::hover()}
     );
     #[cfg(test)]
     if !product{crate::ui_test_support::record_highlight_target("category row",rect,ui.clip_rect());}
@@ -122,9 +122,10 @@ fn tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>,product:bool)->Response{
     let painter=ui.painter().with_shared_clip(rect);
     if item.selected{
         crate::highlight::paint(ui,rect,crate::highlight::Geometry::Control,crate::highlight::Role::Selected);
-    }else if !product{
+    }else if enabled{
         crate::button::paint_button_hover(ui,&response,crate::highlight::Geometry::Control);
     }
+    let response=if product&&enabled{response.on_hover_cursor(egui::CursorIcon::PointingHand)}else{response};
     let guide=Stroke::new(theme::CATALOG_TREE_GUIDE_WIDTH,theme::CATALOG_TREE_GUIDE_COLOR);
     geo.guides(item.ancestor_guides,item.is_last,item.has_children,item.open,
         |segment|{painter.line_segment(segment,guide);});
