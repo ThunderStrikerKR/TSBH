@@ -18,6 +18,8 @@ pub fn management_chooser_row(
     let (rect,response)=ui.allocate_exact_size(
         Vec2::new(width,theme::MANAGEMENT_CHOOSER_ROW_HEIGHT),Sense::click()
     );
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("chooser row",rect,ui.clip_rect());
     let painter=ui.painter().clone();
     if selected{
         crate::highlight::paint(ui,rect,crate::highlight::Geometry::Control,crate::highlight::Role::ChooserSelected);
@@ -276,6 +278,8 @@ pub fn management_row_with_tags(
     let (rect,response)=ui.allocate_exact_size(
         Vec2::new(width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT),Sense::click()
     );
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("client row",rect,ui.clip_rect());
     let state=crate::highlight::States{selected,focused:response.has_focus(),hovered:response.hovered(),..Default::default()};
     let role=state.resolve();
     if selected{

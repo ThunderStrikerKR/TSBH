@@ -249,3 +249,160 @@ impl crate::gateway::BandoGateway for PopupGeometryGateway{
     fn shipping_write_enabled(&self)->bool{self.writable}
     fn excel_write_enabled(&self)->bool{self.writable}
 }
+
+/// A separate trace for nonstandard hit rectangles. Existing component traces
+/// retain their original contract and no production code allocates a trace.
+thread_local!{
+    static HIGHLIGHT_TARGETS:RefCell<Option<Vec<(&'static str,Rect,Rect)>>>=RefCell::new(None);
+}
+pub(crate) fn record_highlight_target(role:&'static str,rect:Rect,clip:Rect){
+    HIGHLIGHT_TARGETS.with(|trace|{
+        if let Some(samples)=trace.borrow_mut().as_mut(){samples.push((role,rect,clip));}
+    });
+}
+#[derive(Debug)]
+struct PaintedLabel{ text:String,rect:Rect,clip:Rect }
+pub(crate) struct HighlightSnapshot{
+    slots:Vec<Sample>,
+    components:Vec<ComponentGeometry>,
+    targets:Vec<(&'static str,Rect,Rect)>,
+    labels:Vec<PaintedLabel>,
+}
+fn painted_labels(output:&egui::FullOutput,screen:Rect)->Vec<PaintedLabel>{
+    fn visit(shape:&egui::Shape,clip:Rect,screen:Rect,out:&mut Vec<PaintedLabel>){
+        match shape{
+            egui::Shape::Text(text)=>{
+                let rect=text.galley.rect.translate(text.pos.to_vec2());
+                if rect.intersect(clip).intersect(screen).is_positive()&&!text.galley.text().is_empty(){
+                    out.push(PaintedLabel{text:text.galley.text().to_owned(),rect,clip});
+                }
+            }
+            egui::Shape::Vec(shapes)=>for shape in shapes{visit(shape,clip,screen,out);},
+            _=>{}
+        }
+    }
+    let mut out=Vec::new();
+    for shape in &output.shapes{visit(&shape.shape,shape.clip_rect,screen,&mut out);}
+    out
+}
+fn edges_near(a:Rect,b:Rect)->bool{
+    [(a.left(),b.left()),(a.right(),b.right()),(a.top(),b.top()),(a.bottom(),b.bottom())]
+        .into_iter().all(|(x,y)|x==y||(x-y).abs()<=0.5)
+}
+/// Measure the final egui pass of each frame. Input time advances without
+/// dispatching any click, wheel, keyboard edit, or business operation.
+pub(crate) fn highlight_frame(ctx:&egui::Context,screen:Rect,pointer:Option<egui::Pos2>,
+    mut draw:impl FnMut(&egui::Context))->HighlightSnapshot{
+    let time=ctx.input(|input|input.time)+0.05;
+    let events=vec![pointer.map_or(egui::Event::PointerGone,egui::Event::PointerMoved)];
+    let output=ctx.run(egui::RawInput{screen_rect:Some(screen),time:Some(time),predicted_dt:0.05,
+        events,..Default::default()},|ctx|{
+        TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
+        begin_component_geometry();
+        HIGHLIGHT_TARGETS.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
+        draw(ctx);
+    });
+    HighlightSnapshot{
+        slots:TRACE.with(|trace|trace.borrow_mut().take().unwrap()),
+        components:finish_component_geometry(screen),
+        targets:HIGHLIGHT_TARGETS.with(|trace|trace.borrow_mut().take().unwrap()),
+        labels:painted_labels(&output,screen),
+    }
+}
+impl HighlightSnapshot{
+    /// Only visible hit targets, not structural cards, table frames or rails.
+    /// Deduplicate coincident response/slot observations without dropping rows.
+    pub(crate) fn pointer_targets(&self,screen:Rect)->Vec<egui::Pos2>{
+        let mut result:Vec<egui::Pos2>=Vec::new();
+        let components=self.components.iter().filter(|s|matches!(s.role,"button"|"input"|"dropdown"|"checkbox"))
+            .map(|s|(s.rect,s.clip));
+        let targets=self.targets.iter().map(|(_,rect,clip)|(*rect,*clip));
+        let cells=self.slots.iter().filter(|(role,_)|matches!(*role,
+            "recipient name"|"recipient address"|"recipient mobile"|"recipient phone"|"recipient note"|
+            "item product"|"item quantity"|"item amount"|"freight amount"|
+            "catalog data row"|"notice product row"|"settlement order row"|"settlement payment row"))
+            .map(|(_,rect)|(*rect,screen));
+        for (rect,clip) in components.chain(targets).chain(cells){
+            let visible=rect.intersect(clip).intersect(screen);
+            if visible.width()<4.0||visible.height()<4.0{continue;}
+            let p=visible.center();
+            if !result.iter().any(|old|(*old-p).length()<1.0){result.push(p);}
+        }
+        result
+    }
+    pub(crate) fn assert_invariant(&self,other:&Self,case:&str){
+        assert_eq!(self.slots.len(),other.slots.len(),"{case}: layout slot count changed");
+        for (index,((role,a),(next,b))) in self.slots.iter().zip(&other.slots).enumerate(){
+            assert_eq!(role,next,"{case}: slot identity changed at {index}");
+            assert!(edges_near(*a,*b),"{case}: slot {role}[{index}] moved {a:?} -> {b:?}");
+        }
+        assert_eq!(self.components.len(),other.components.len(),"{case}: component count changed");
+        for (index,(a,b)) in self.components.iter().zip(&other.components).enumerate(){
+            assert_eq!(a.role,b.role,"{case}: component identity changed at {index}");
+            assert!(edges_near(a.rect,b.rect)&&edges_near(a.clip,b.clip),
+                "{case}: {}[{index}] allocation/clip changed: {a:?} -> {b:?}",a.role);
+        }
+        assert_eq!(self.targets.len(),other.targets.len(),"{case}: hit-target count changed");
+        for (index,((role,a,clip),(next,b,next_clip))) in self.targets.iter().zip(&other.targets).enumerate(){
+            assert_eq!(role,next,"{case}: hit-target identity changed at {index}");
+            assert!(edges_near(*a,*b)&&edges_near(*clip,*next_clip),
+                "{case}: hit target {role}[{index}] changed {a:?} -> {b:?}");
+        }
+        // Match repeated labels one-to-one. New overlay/tooltip text may be
+        // added, but cannot replace, move, resize or newly clip any old label.
+        let mut used=vec![false;other.labels.len()];
+        for old in &self.labels{
+            let index=other.labels.iter().enumerate().position(|(i,new)|
+                !used[i]&&old.text==new.text&&edges_near(old.rect,new.rect)&&edges_near(old.clip,new.clip))
+                .unwrap_or_else(||panic!("{case}: painted label moved, disappeared or changed clip: {old:?}"));
+            used[index]=true;
+        }
+    }
+}
+/// All observed visible targets, every sampled enter/leave frame. The
+/// initial settle permits the existing first-mount scrollbar animation only.
+pub(crate) fn sweep_highlight_geometry(ctx:&egui::Context,screen:Rect,case:&str,
+    mut draw:impl FnMut(&egui::Context)){
+    let mut baseline=highlight_frame(ctx,screen,None,&mut draw);
+    for _ in 0..11{baseline=highlight_frame(ctx,screen,None,&mut draw);}
+    let targets=baseline.pointer_targets(screen);
+    assert!(!targets.is_empty(),"{case}: no actual highlight hit targets discovered");
+    for (index,point) in targets.iter().copied().enumerate(){
+        for phase in 0..6{
+            let current=highlight_frame(ctx,screen,(phase<3).then_some(point),&mut draw);
+            baseline.assert_invariant(&current,&format!("{case} target {index} {point:?} frame {phase}"));
+        }
+    }
+    println!("HIGHLIGHT_GEOMETRY_SWEEP {case}: {} observed hit targets",targets.len());
+}
+#[cfg(test)]
+mod highlight_invariance_detector_tests{
+    use super::*;
+    #[test]
+    #[should_panic(expected="painted label moved")]
+    fn detector_rejects_single_frame_text_movement(){
+        let ctx=test_context();
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(500.0,300.0));
+        let draw=|shift:f32|highlight_frame(&ctx,screen,None,|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.painter().text(egui::pos2(50.0+shift,50.0),egui::Align2::LEFT_TOP,
+                    "unchanged label",egui::FontId::proportional(16.0),egui::Color32::WHITE);
+            });
+        });
+        let baseline=draw(0.0);
+        baseline.assert_invariant(&draw(2.0),"deliberate one-frame regression");
+    }
+    #[test]
+    #[should_panic(expected="allocation/clip changed")]
+    fn detector_rejects_component_size_change(){
+        let ctx=test_context();
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(500.0,300.0));
+        let draw=|width:f32|highlight_frame(&ctx,screen,None,|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let (rect,_)=ui.allocate_exact_size(egui::vec2(width,36.0),egui::Sense::hover());
+                record_component_geometry("button",rect,ui.clip_rect(),None);
+            });
+        });
+        draw(100.0).assert_invariant(&draw(104.0),"deliberate resize");
+    }
+}

@@ -18,8 +18,10 @@
     "egui-app/src/composite_reception.rs",
     "egui-app/src/main.rs",
     "egui-app/src/ui_regressions.rs",
-    "egui-app/src/highlight/regression_tests.rs"
+    "egui-app/src/highlight/regression_tests.rs",
+    "egui-app/src/ui_test_support.rs",
+    "egui-app/src/category_tree/mod.rs"
   ],
   "visualStatus": "NOT_VERIFIED",
-  "reason": "실제 egui headless FullOutput 도형 기반 자동 검사를 CI에 연결. 아직 CI 실행 결과 및 Windows 실제 스크린샷·GPU 픽셀 증거는 미확보."
+  "reason": "하이라이트 전후 실렌더링 좌표·클리핑 추적 및 21개 관리 탭/접수 fixture 포인터 순회, 상태 매트릭스 CI 코드 추가. CI 결과 및 Windows GPU 실화면 미확인."
 }

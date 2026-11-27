@@ -221,3 +221,56 @@ fn source_block_geometry_and_value_clearance_survive_real_draw_list(){
     assert_eq!(normal.left(),77.5);assert_eq!(normal.top(),51.0);
     assert_eq!(value.left(),81.0);assert_eq!(value.top(),96.0);
 }
+
+#[test]
+fn highlight_invariance_semantic_states_on_real_components(){
+    use crate::ui_test_support::highlight_frame;
+    for scale in [1.0,1.25,1.5,2.0]{
+        let ctx=test_context();ctx.set_pixels_per_point(scale);
+        let screen=Rect::from_min_size(Pos2::ZERO,Vec2::new(900.0,850.0));
+        let mut baseline=None;
+        for state in 0..8{
+            for frame in 0..3{
+                let snapshot=highlight_frame(&ctx,screen,None,|ctx|{
+                    crate::one_touch::set(ctx,if state==3||state==5{crate::one_touch::Stage::Review}
+                        else{crate::one_touch::Stage::None},false);
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        let mut name="홍길동".to_owned();let mut address="합성 주소".to_owned();
+                        let mut mobile="010-0000-0000".to_owned();let mut phone="02-0000-0000".to_owned();
+                        let mut note="합성 메시지".to_owned();
+                        let linked=state==2||state==5;
+                        let required=state==4||state==5;
+                        crate::composite_reception::reception_recipient_fields(ui,&mut name,&mut address,&mut mobile,&mut phone,&mut note,
+                            FieldHighlights::new([linked;5],[required;5],[false;5]));
+                        crate::composite_reception::reception_item_row(ui,"검증 상품","3개","10,000원",
+                            FieldHighlights::new([linked;3],[required;3],[false;3]),true,true);
+                        crate::button::action_with_emphasis(ui,"상품 추가",theme::ButtonRole::Standard,true,
+                            if required{Some(Role::RequiredInput)}else if state==3{Some(Role::ReviewTint)}else{None});
+                        crate::dropdown::reception_cod_dropdown(ui,Some(false),(true,state==3));
+                        let mut checked=state==1||state==5;
+                        crate::checkbox::checkbox(ui,&mut checked,"선택",true);
+                        crate::button::calendar_day(ui,"27",36.0,state==1||state==5,true);
+                        crate::category_tree::category_tree_row(ui,crate::category_tree::CategoryTreeRow{
+                            name:"분류",summary:"",depth:0,ancestor_guides:&[],is_last:true,root:true,
+                            has_children:true,open:false,selected:state==1||state==5,
+                        });
+                        crate::card::workflow_group_card(ui,state==1||state==5,linked,|card|{
+                            crate::button::action(card,"관리",theme::ButtonRole::Standard,true);
+                        });
+                        let (rect,_)=ui.allocate_exact_size(Vec2::new(128.0,42.0),Sense::hover());
+                        let mut qty="3".to_owned();
+                        let _=crate::input::reception_item_numeric_editor(ui,rect,&mut qty,state==6,None,
+                            (crate::input::ReceptionNumericCell::Quantity,required));
+                        let (after,_)=ui.allocate_exact_size(Vec2::new(100.0,20.0),Sense::hover());
+                        crate::ui_test_support::record("following control",after);
+                    });
+                });
+                if state==0{
+                    if frame==2{baseline=Some(snapshot);}
+                }else{
+                    baseline.as_ref().unwrap().assert_invariant(&snapshot,&format!("semantic state {state} frame {frame} dpi {scale}"));
+                }
+            }
+        }
+    }
+}

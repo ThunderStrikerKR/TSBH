@@ -99,6 +99,8 @@ pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
     let (rect,response)=ui.allocate_exact_size(
         Vec2::new(ui.available_width().max(1.0),theme::CATALOG_TREE_ROW_HEIGHT),Sense::click()
     );
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("category row",rect,ui.clip_rect());
     let geo=CategoryTreeGeometry::new(rect,item.depth);
     let painter=ui.painter().with_clip_rect(rect);
     if item.selected{

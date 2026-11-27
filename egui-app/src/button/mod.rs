@@ -6,6 +6,8 @@ use crate::ui_primitives::{paint_workflow_icon,WorkflowIcon,ManagementChevronDir
 
 /// Register an actual interaction, then paint using the shared primitive.
 fn paint_button_hover_corners(ui:&Ui,response:&Response,geometry:crate::highlight::Geometry){
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("custom action",response.rect,ui.clip_rect());
     crate::floating_notice::remember_response(ui.ctx(),response);
     crate::ui_primitives::paint_action_hover_corners(ui,response,geometry);
 }
@@ -354,6 +356,8 @@ pub(crate) fn workflow_fixed_action(
     let response=ui.interact(
         rect,id,if enabled{Sense::click()}else{Sense::hover()}
     );
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("workflow action",response.rect,ui.clip_rect());
     let stage=matches!(action,WorkflowFixedAction::Stage(_));
     let role=if stage{theme::ButtonRole::Emphasized}else{theme::ButtonRole::Standard};
     let (_,fill,ink,stroke)=crate::button::action_style(role,enabled,false);
@@ -550,6 +554,8 @@ pub(crate) fn calendar_day(grid:&mut Ui,day:&str,width:f32,selected:bool,today:b
         ui.add_sized(egui::vec2(width,width),
             egui::Button::new(typography::body(day)).corner_radius(crate::highlight::Geometry::Control.corners()))
     }).inner;
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("calendar day",response.rect,grid.clip_rect());
     if grid.is_enabled(){crate::floating_notice::remember_response(grid.ctx(),&response);}
     response
 }

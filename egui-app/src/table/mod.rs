@@ -510,6 +510,8 @@ pub(crate) fn fixed_row<const N:usize>(
     row_scope(ui,id,rect,|row|{
         row.set_clip_rect(row.clip_rect().intersect(rect));
         row.allocate_exact_size(rect.size(),egui::Sense::hover());
+        #[cfg(test)]
+        crate::ui_test_support::record_highlight_target("table row",rect,row.clip_rect());
         let selected=matches!(tone,RowTone::SelectedIf(true));
         if selected{
             crate::highlight::paint_fill(row.painter(),rect,crate::highlight::Geometry::TableRow,crate::highlight::Role::Selected);

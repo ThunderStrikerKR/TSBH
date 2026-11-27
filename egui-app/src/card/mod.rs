@@ -545,6 +545,8 @@ pub(crate) fn workflow_group_card<R>(
         crate::card::apply_width_policy(card,crate::card::CardWidthPolicy::FillAvailable,width);
         body(card)
     });
+    #[cfg(test)]
+    crate::ui_test_support::record_component_geometry("workflow card",response.response.rect,ui.clip_rect(),None);
     let state=crate::highlight::States{selected,linked:preview,..Default::default()};
     if let Some(role)=state.resolve(){
         crate::highlight::paint_stripe(ui.painter(),

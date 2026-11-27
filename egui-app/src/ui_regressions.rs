@@ -1173,6 +1173,65 @@ pub(crate) mod general_screen_geometry_tests {
             _=>panic!("unregistered screen {name}")
         }
     }
+    /// The production page entrypoints are shared with the existing geometry
+    /// fixtures; sweep the actual hit rectangles without clicking or changing data.
+    fn audit_highlight_page(name:&str,tabs:usize){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),egui::pos2(screen.x-18.0,screen.y-18.0));
+            for tab in 0..tabs{
+                let ctx=test_context();
+                let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+                let label=format!("{name}/{tab} {screen:?}");
+                let audit=|page:&mut dyn FnMut(&mut Ui)|{
+                    crate::ui_test_support::sweep_highlight_geometry(&ctx,Rect::from_min_size(egui::Pos2::ZERO,screen),&label,|ctx|{
+                        egui::CentralPanel::default().show(ctx,|root|{
+                            let mut host=root.new_child(egui::UiBuilder::new()
+                                .id_salt("actual-highlight-page").max_rect(work).layout(Layout::top_down(Align::Min)));
+                            host.set_clip_rect(work);host.set_width(work.width());
+                            page(&mut host);
+                            record("page content",host.min_rect());
+                        });
+                    });
+                };
+                match name{
+                    "freight"=>{let mut p=crate::freight_manager::FreightManager::geometry_fixture(gateway,ctx.clone(),tab,true);audit(&mut |ui|p.show_page(ui));},
+                    "history"=>{let mut p=crate::order_history_manager::OrderHistoryManager::geometry_fixture(gateway,ctx.clone(),tab,true);audit(&mut |ui|p.show_page(ui));},
+                    "products"=>{let mut p=crate::product_manager::ProductManager::geometry_fixture(gateway,ctx.clone(),tab,true);audit(&mut |ui|p.show_page(ui));},
+                    "clients"=>{let mut p=crate::client_manager::ClientManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),tab,true);audit(&mut |ui|p.show_page(ui,Arc::clone(&gateway)));},
+                    "excel"=>{let mut p=crate::excel_manager::ExcelManager::geometry_fixture(gateway,ctx.clone(),tab,true);audit(&mut |ui|p.show_page(ui));},
+                    "settings"=>{let mut p=crate::settings_view::SettingsView::geometry_fixture(Arc::clone(&gateway),ctx.clone(),tab,true);audit(&mut |ui|p.show_page(ui,Arc::clone(&gateway)));},
+                    "settlement"=>{let mut p=crate::daily_settlement_manager::DailySettlementManager::geometry_fixture(gateway,ctx.clone(),tab,true);audit(&mut |ui|p.show_page(ui));},
+                    _=>panic!("unregistered highlight screen {name}"),
+                }
+            }
+        }
+    }
+    #[test] fn highlight_invariance_freight(){audit_highlight_page("freight",4);}
+    #[test] fn highlight_invariance_history(){audit_highlight_page("history",1);}
+    #[test] fn highlight_invariance_products(){audit_highlight_page("products",5);}
+    #[test] fn highlight_invariance_clients(){audit_highlight_page("clients",3);}
+    #[test] fn highlight_invariance_excel(){audit_highlight_page("excel",3);}
+    #[test] fn highlight_invariance_settings(){audit_highlight_page("settings",4);}
+    #[test] fn highlight_invariance_settlement(){audit_highlight_page("settlement",1);}
+    #[test]
+    fn highlight_invariance_reception(){
+        for (screen,_) in data_geometry_dimensions(){
+            let ctx=test_context();
+            let mut app=crate::BandoEgui::with_layout(crate::layout::LayoutState::default());
+            app.gateway=Arc::new(GeometryGateway);
+            app.raw_source="합성 발주원문\\n검증 수취인 및 상품".into();
+            app.analysis=Some(crate::reception_service::ReceptionAnalysis{
+                recognition:serde_json::json!({"recipients":[
+                    {"id":"geometry-r1","name":"검증 수취인","address":"합성 주소","mobile":"010-0000-0000","phone":"","note":"","freightCode":"010",
+                    "items":[{"id":"geometry-i1","name":"검증 상품","quantity":1}]}
+                ]}),
+                reference:vec![],client_match:Value::Null,client_candidates:vec![],
+                matched_client_name:None,chosen_client_name:None,directory_count:0,linked_spans:vec![]
+            });
+            crate::ui_test_support::sweep_highlight_geometry(&ctx,Rect::from_min_size(egui::Pos2::ZERO,screen),
+                &format!("reception {screen:?}"),|ctx|app.reception(ctx));
+        }
+    }
     fn first(trace:&[Sample],name:&str)->Rect{
         trace.iter().find(|(kind,_)|*kind==name)
             .unwrap_or_else(||panic!("missing actual {name} allocation")).1
