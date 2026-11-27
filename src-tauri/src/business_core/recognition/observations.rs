@@ -2496,7 +2496,8 @@ pub(super) fn compare_registered_models(payload:&Value)->Result<Value,String>{
     let legacy_baseline=payload["compareAgainstLegacy"]==true;
     // Internal bootstrap reuses the candidate's verified model envelope,
     // but the reference prediction is the unchanged original classifier.
-    if cutoff>=as_of||(a["modelId"]==b["modelId"])!=legacy_baseline||am["clientBuildVersion"]!=bm["clientBuildVersion"]{
+    if cutoff>=as_of||(a["modelId"]==b["modelId"])!=legacy_baseline||
+        (legacy_baseline&&a!=b)||am["clientBuildVersion"]!=bm["clientBuildVersion"]{
         return Err("독립 평가 모델 또는 시각 불일치".into());
     }
     let alpha=match payload.get("inferenceAlpha"){
@@ -2583,6 +2584,23 @@ pub(super) fn compare_registered_models(payload:&Value)->Result<Value,String>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn owner_bootstrap_compares_legacy_without_requiring_manual_model(){
+        let model=json!({"modelId":"candidate","createdAt":"2026-01-02T00:00:00Z",
+            "model":{"availableAfter":"2026-01-01T00:00:00Z","clientBuildVersion":"test",
+                "sourceDigests":{"training":"digest"}}});
+        let mut payload=json!({"baseline":model,"candidate":model,"evaluationAsOf":"2026-01-03T00:00:00Z",
+            "orders":[{"id":"training"}]});
+        assert!(compare_registered_models(&payload).is_err());
+        payload["compareAgainstLegacy"]=json!(true);
+        let report=compare_registered_models(&payload).unwrap();
+        assert_eq!(report["baselineModelId"],"legacy");
+        assert_eq!(report["candidateModelId"],"candidate");
+        assert_eq!(report["groups"],json!([]));
+        assert_eq!(report["decisionChanged"],false);
+        payload["baseline"]["model"]["clientBuildVersion"]=json!("other");
+        assert!(compare_registered_models(&payload).is_err());
+    }
     #[test]
     fn paired_metrics_keep_abstentions_and_order_weights_separate(){
         let mut a=PairedEvaluation::default();
