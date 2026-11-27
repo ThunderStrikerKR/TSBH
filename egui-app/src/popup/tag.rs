@@ -1,5 +1,6 @@
 //! Shared tag block geometry. Read-only and removable tags differ only
 //! by the reserved action slot and the caller's display policy.
+use crate::ui_layout::SharedAllocationExt as _;
 use eframe::egui::{self,Rect,Response,Sense,Ui,Vec2};
 use crate::{theme,typography};
 
@@ -37,7 +38,7 @@ pub(crate) fn removable_tag_chip(ui:&mut Ui,tag:&str)->Response{
         format!("{}…",tag.chars().take(22).collect::<String>())
     }else{tag.to_owned()};
     let chip=TagChip::new(ui,&visible,true);
-    let (rect,_)=ui.allocate_exact_size(chip.size(),Sense::hover());
+    let (rect,_)=ui.shared_allocate_exact_size(chip.size(),Sense::hover());
     let label_rect=chip.paint(ui,rect,ui.clip_rect());
     let label=ui.interact(label_rect,ui.make_persistent_id(("tag-label",tag)),Sense::hover());
     #[cfg(test)]
