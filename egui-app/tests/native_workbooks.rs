@@ -51,7 +51,7 @@ fn factory_state()->Value{
     let recipient=json!({"id":"r1","name":"김수취","address":"서울 종로구 10",
         "phone":"010-1234-5678","mobile":"","actualFreight":null,
         "items":[{"id":"item","origin":"FACTORY"}]});
-    json!({"revision":3,"factoryReplies":[],"settings":{"operatorName":"직원"},
+    json!({"revision":3,"factoryReplies":[],"settings":{"operatorName":"작업자"},
         "orders":[{"id":"o1","recipients":[recipient.clone()]}],
         "workflow":{"shipments":[{"id":"s1","orderId":"o1","recipientId":"r1",
             "tracking":{},"actualFreight":{}}],
@@ -61,7 +61,7 @@ fn factory_state()->Value{
 fn analyze(bytes:&[u8])->Value{
     let mut p=read_factory_reply("합성.xlsx",bytes).unwrap();
     p["state"]=factory_state();p["businessDate"]=json!("2026-11-13");
-    p["at"]=json!("2026-11-13T10:00:00Z");p["actor"]=json!("합성 직원");
+    p["at"]=json!("2026-11-13T10:00:00Z");p["actor"]=json!("합성 작업자");
     factory_reply::execute("analyze_factory_reply",&p).unwrap()
 }
 #[test]

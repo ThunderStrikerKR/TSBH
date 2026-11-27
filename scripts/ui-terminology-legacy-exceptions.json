@@ -5,39 +5,9 @@
     "reason": "legacy read/display compatibility"
   },
   {
-    "path": "egui-app/src/factory_reply_inbox.rs",
-    "line": "\"factoryReplies\":[],\"settings\":{\"accounts\":[],\"operatorName\":\"합성 직원\",",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "egui-app/src/factory_reply_inbox.rs",
-    "line": "source[\"actor\"]=json!(\"합성 직원\");",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "egui-app/src/main.rs",
-    "line": "original:String::new(),text:\"직원 메모\".into(),",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "egui-app/src/manual_workspace.rs",
-    "line": "updated[\"recipients\"][0][field]=json!(\"직원 수정\");",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "egui-app/src/manual_workspace.rs",
-    "line": "item_id:None,field:\"note\".into(),value:json!(\"직원 메모\")",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "egui-app/src/manual_workspace.rs",
-    "line": "assert_eq!(order[\"recipients\"][0][\"note\"],\"직원 메모\");",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
     "path": "egui-app/src/model_group_manager.rs",
     "line": "assert!(!body.contains(\"직원\"));",
-    "reason": "existing regression fixture/assertion"
+    "reason": "prohibited wording regression assertion"
   },
   {
     "path": "crates/bando-data-access/src/notification_store.rs",
@@ -45,54 +15,9 @@
     "reason": "legacy read/display compatibility"
   },
   {
-    "path": "src-tauri/src/backup_manager.rs",
-    "line": "current[\"settings\"][\"operatorName\"]=json!(\"현재 작업 직원\");",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/backup_manager.rs",
-    "line": "\"raw\":\"과거 발주 원문\",\"receipt\":{\"original\":\"과거 발주 원문\",\"actor\":\"가상 직원\"},",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/business_core/catalog_clients/title_clients.rs",
-    "line": "\"handle\":\"1\",\"clientId\":\"c1\",\"actor\":\"직원\",",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/business_core/rules/factory_reply.rs",
-    "line": "json!({\"revision\":3,\"factoryReplies\":[],\"settings\":{\"operatorName\":\"직원\"},",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/business_core/rules/factory_reply.rs",
-    "line": "\"actor\":\"직원\"})",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
     "path": "src-tauri/src/business_core/rules/factory_reply.rs",
     "line": "\"actual\":8500,\"issue\":\"기존 송장 / 실제 운임과 충돌합니다. 직원 확인 필요\",",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/business_core/rules/history.rs",
-    "line": "\"actor\":\"직원 A\",\"shipmentIds\":[\"s1\",\"s2\"]},",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/business_core/rules/history.rs",
-    "line": "\"actor\":\"직원 B\",\"shipmentIds\":[\"s2\"]}",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/business_core/rules/history.rs",
-    "line": "assert_eq!(approval[\"actors\"],json!([\"직원 A\",\"직원 B\"]));",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/business_core/rules/issues.rs",
-    "line": "\"recipientId\":\"r\",\"itemId\":\"i\",\"now\":\"2026-11-17T09:00:00Z\",\"actor\":\"직원\"});",
-    "reason": "existing regression fixture/assertion"
+    "reason": "legacy terminology compatibility regression"
   },
   {
     "path": "src-tauri/src/business_core/rules/mod.rs",
@@ -117,136 +42,21 @@
   {
     "path": "src-tauri/src/business_core/rules/mod.rs",
     "line": "assert_eq!(canonical_event_action(\"공장 전달 직원 확인\"),FACTORY_DELIVERY_CONFIRMED);",
-    "reason": "existing regression fixture/assertion"
+    "reason": "legacy terminology compatibility regression"
   },
   {
     "path": "src-tauri/src/business_core/rules/mod.rs",
     "line": "assert_eq!(display_actor(\"직원\"),UNASSIGNED_ACTOR);",
-    "reason": "existing regression fixture/assertion"
+    "reason": "legacy terminology compatibility regression"
   },
   {
     "path": "src-tauri/src/business_core/rules/mod.rs",
     "line": "assert_eq!(display_actor(\"직원(이름 미설정)\"),UNASSIGNED_ACTOR);",
-    "reason": "existing regression fixture/assertion"
+    "reason": "legacy terminology compatibility regression"
   },
   {
     "path": "src-tauri/src/business_core/rules/mod.rs",
     "line": "assert_eq!(display_reason(\"직원이 운임 설정 변경\"),\"운임 설정 변경\");",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/business_core/rules/reception_merge.rs",
-    "line": "\"recipients\":[{\"id\":\"old\",\"name\":\"직원확정\",\"address\":\"서울\",",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/business_core/rules/reception_merge.rs",
-    "line": "assert_eq!(r[\"name\"],\"직원확정\");",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/business_core/rules/shipping.rs",
-    "line": "let order=json!({\"recipients\":[{\"id\":\"r\",\"name\":\"직원 확인\",",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/factory_conflict.rs",
-    "line": "\"issue\":\"기존 송장 / 실제 운임과 충돌합니다. 직원 확인 필요\"",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/factory_reply_watch.rs",
-    "line": "\"actor\":\"직원\",\"rows\":[{",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/product_name_enrichment.rs",
-    "line": "before[\"products\"][second][\"name\"] = json!(\"직원 직접 지정 이름\");",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/product_name_enrichment.rs",
-    "line": "assert_eq!(after[\"products\"][second][\"name\"], \"직원 직접 지정 이름\");",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/product_name_enrichment.rs",
-    "line": "\"반도스탠드 BD Desk JS-4 Black 검정 / 직원 직접 수정\"",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/product_name_enrichment.rs",
-    "line": "\"before\": \"직원 기록 이전 이름\", \"after\": \"공식 이름\",",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/product_name_enrichment.rs",
-    "line": "\"BD Desk JS-4 Black 검정 / 직원 직접 수정\");",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/product_name_enrichment.rs",
-    "line": "\"반도스탠드 BD Desk JS-3 Black 검정 (자바라 길이 43cm) / 직원 별도 메모\"",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/product_name_enrichment.rs",
-    "line": "\"BD Desk JS-3 Black 검정 (자바라 길이 43cm) / 직원 별도 메모\"",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/product_name_enrichment.rs",
-    "line": "p[\"name\"] = json!(\"BD FloorJS-2BK / 직원 직접 작성한 상품명\");",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/product_name_enrichment.rs",
-    "line": "assert_eq!(p[\"name\"], \"BD FloorJS-2BK / 직원 직접 작성한 상품명\");",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/product_name_enrichment.rs",
-    "line": "item[\"name\"]=json!(\"BD LED-2W / 직원이 직접 수정한 상품명\");",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/product_name_enrichment.rs",
-    "line": "assert_eq!(updated[\"name\"],\"BD LED-2W / 직원이 직접 수정한 상품명\");",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/reception.rs",
-    "line": "\"actor\":\"직원\",\"reason\":\"잘못 입력된 모델 정정\",\"before\":\"수정 전\",\"after\":\"수정 후\",",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/sale_unit_migration.rs",
-    "line": "\"receipt\":{\"original\":\"가상원문\",\"actor\":\"가상 직원\"}}",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/workflow_sqlite_integration_tests.rs",
-    "line": "edit[\"recipients\"][0][\"note\"] = json!(\"미저장 직원 수정\");",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/workflow_sqlite_integration_tests.rs",
-    "line": "\"미저장 직원 수정\");",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/working_receptions.rs",
-    "line": "let mut edited=frozen.clone();edited[\"raw\"]=json!(\"직원 수정\");",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/working_receptions.rs",
-    "line": "assert!(still.contains(\"직원 수정\"));",
-    "reason": "existing regression fixture/assertion"
-  },
-  {
-    "path": "src-tauri/src/working_receptions.rs",
-    "line": "let mut edit=frozen.clone();edit[\"raw\"]=json!(\"직원 수정\");",
-    "reason": "existing regression fixture/assertion"
+    "reason": "legacy terminology compatibility regression"
   }
 ]

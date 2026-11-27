@@ -494,9 +494,9 @@ mod tests {
             "shipments":[{"id":"s1","orderId":"o1"},{"id":"s2","orderId":"o1"}],
             "confirmations":[
                 {"id":"c1","confirmedAt":"2026-11-19T16:30:00Z",
-                 "actor":"직원 A","shipmentIds":["s1","s2"]},
+                 "actor":"작업자 A","shipmentIds":["s1","s2"]},
                 {"id":"c2","confirmedAt":"2026-11-20T18:00:00Z",
-                 "actor":"직원 B","shipmentIds":["s2"]}
+                 "actor":"작업자 B","shipmentIds":["s2"]}
             ],
             "events":[{"action":"입금 승인 재확인 필요",
                 "before":"c1","shipmentIds":["s2"]}],
@@ -510,7 +510,7 @@ mod tests {
         assert_eq!(approval["dateTime"],"2026-11-21 03:00");
         assert_eq!(approval["partial"],false);
         assert_eq!(approval["approvedShipments"],2);
-        assert_eq!(approval["actors"],json!(["직원 A","직원 B"]));
+        assert_eq!(approval["actors"],json!(["작업자 A","작업자 B"]));
 
         // Reconfirm invalidation affects only the targeted shipment.
         state["workflow"]["confirmations"].as_array_mut().unwrap().pop();

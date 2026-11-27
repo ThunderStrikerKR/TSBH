@@ -785,7 +785,7 @@ mod tests {
         let recipient=json!({"id":"r1","name":"김수취","address":"서울 종로구 10",
             "phone":"010-1234-5678","mobile":"","actualFreight":null,
             "items":[{"id":"item","origin":"FACTORY"}]});
-        json!({"revision":3,"factoryReplies":[],"settings":{"operatorName":"직원"},
+        json!({"revision":3,"factoryReplies":[],"settings":{"operatorName":"작업자"},
             "orders":[{"id":"o1","recipients":[recipient.clone()]}],
             "workflow":{"shipments":[{"id":"s1","orderId":"o1","recipientId":"r1",
                 "tracking":{},"actualFreight":{}}],
@@ -801,7 +801,7 @@ mod tests {
             "trackingNumeric":false,"reservedJ":false,"extraAfterQ":false
         }],"id":"factory-reply-test","filename":"reply.xlsx",
             "businessDate":"2026-11-13","at":"2026-11-13T10:00:00Z",
-            "actor":"직원"})
+            "actor":"작업자"})
     }
     #[test] fn collision_preview_is_read_only_and_recovers_exact_old_values(){
         let mut state=fixture();

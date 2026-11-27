@@ -586,7 +586,7 @@ mod tests {
         candidate["factoryReplies"].as_array_mut().unwrap().push(json!({
             "id":id,"filename":filename,"status":"APPLIED",
             "businessDate":"2026-11-13","at":"2026-11-13T08:05:00Z",
-            "actor":"직원","rows":[{
+            "actor":"작업자","rows":[{
                 "row":2,"name":"박수하","address":"서울 서초구 １２３",
                 "contacts":["010-1111-2222"],"tracking":"001234567890",
                 "actual":4000,"shipmentId":"s1","orderId":"o1","applied":true

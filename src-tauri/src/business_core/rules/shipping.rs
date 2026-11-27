@@ -957,7 +957,7 @@ mod p1_product_freight_tests {
                         "maxConfirmed":true,"perItem":null,"fees":{"2":4000}}}],
                 "combinations":[]}
         });
-        let order=json!({"recipients":[{"id":"r","name":"직원 확인",
+        let order=json!({"recipients":[{"id":"r","name":"작업자 확인",
             "dispatchOrigin":"FACTORY",
             "items":[{"id":"i","name":"709","productId":"p","variantId":"v",
                 "origin":"FACTORY","quantity":2}]}]});

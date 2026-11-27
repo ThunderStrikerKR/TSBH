@@ -132,7 +132,7 @@ fn native_draft_preview_and_reconcile_are_read_only_against_relational_sqlite() 
     assert_eq!(detail["shipmentCount"], 1);
 
     let mut edit = saved["orders"][0].clone();
-    edit["recipients"][0]["note"] = json!("미저장 직원 수정");
+    edit["recipients"][0]["note"] = json!("미저장 작업자 수정");
     let event_ids = (0..256).map(|index|format!("transient-audit-{index}"))
         .collect::<Vec<_>>();
     let preview = rust("reconcile_workflow", json!({
@@ -140,7 +140,7 @@ fn native_draft_preview_and_reconcile_are_read_only_against_relational_sqlite() 
         "now":"2026-11-13T12:15:00+09:00","eventIds":event_ids
     })).expect("native reconciliation must return an unsaved preview");
     assert_eq!(preview["state"]["orders"][0]["recipients"][0]["note"],
-        "미저장 직원 수정");
+        "미저장 작업자 수정");
     assert_eq!(get_snapshot(&conn).unwrap(), saved);
     assert_eq!(saved["workflow"]["events"].as_array().unwrap().len(),
         persisted_event_count);

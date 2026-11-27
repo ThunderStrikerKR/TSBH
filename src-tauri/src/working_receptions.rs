@@ -298,7 +298,7 @@ mod tests {
         let frozen=json!({"id":"c","confirmedAt":"2026-11-19T00:00:00Z","raw":"원본"});
         conn.execute("INSERT INTO order_index(id) VALUES('c')",[]).unwrap();
         conn.execute("INSERT INTO core_orders(id,payload) VALUES('c',?1)",[frozen.to_string()]).unwrap();
-        let mut edited=frozen.clone();edited["raw"]=json!("직원 수정");
+        let mut edited=frozen.clone();edited["raw"]=json!("작업자 수정");
         replace(&mut conn,vec![edited.clone()]).unwrap();
         assert_eq!(load(&conn).unwrap(),vec![edited.clone()]);
         let stored:String=conn.query_row("SELECT payload FROM core_orders WHERE id='c'",[],|r|r.get(0)).unwrap();
@@ -313,7 +313,7 @@ mod tests {
         assert!(replace(&mut conn,vec![edited]).is_err());
         let still:String=conn.query_row(
             "SELECT payload FROM reception_confirmed_edits WHERE id='c'",[],|r|r.get(0)).unwrap();
-        assert!(still.contains("직원 수정"));
+        assert!(still.contains("작업자 수정"));
     }
     #[test]
     fn normalized_recipient_changes_invalidate_confirmed_edit_baseline() {
@@ -328,7 +328,7 @@ mod tests {
             [json!({"id":"r1","name":"가상"}).to_string()]).unwrap();
         conn.execute("INSERT INTO core_items(id,recipient_id,payload) VALUES('i1','r1',?1)",
             [json!({"id":"i1","quantity":1}).to_string()]).unwrap();
-        let mut edit=frozen.clone();edit["raw"]=json!("직원 수정");
+        let mut edit=frozen.clone();edit["raw"]=json!("작업자 수정");
         replace(&mut conn,vec![edit.clone()]).unwrap();
         assert_eq!(load(&conn).unwrap(),vec![edit.clone()]);
         conn.execute("UPDATE core_items SET payload=?1 WHERE id='i1'",

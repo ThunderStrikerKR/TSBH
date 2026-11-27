@@ -468,7 +468,7 @@ mod tests {
             {"kind":"CHAT","title":"악기사","handle":"2"}]);
         assert_eq!(remembered(&state,&multiple),None);
         let result=remember(&json!({"state":state,"windows":multiple,
-            "handle":"1","clientId":"c1","actor":"직원",
+            "handle":"1","clientId":"c1","actor":"작업자",
             "now":"2026-11-15T00:00:00Z"})).unwrap();
         assert_eq!(result["state"]["settings"]["kakaoTitleMappings"]["악기사"]["ambiguous"],true);
     }

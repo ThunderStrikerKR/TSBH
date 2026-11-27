@@ -997,7 +997,7 @@ mod quantity_staff_projection_tests {
         let good=order(item());
         assert_eq!(eligible_flag(&good),Some(true));
         let args=|o|json!({"action":"approve_missing_quantity","order":o,
-            "recipientId":"r","itemId":"i","now":"2026-11-17T09:00:00Z","actor":"직원"});
+            "recipientId":"r","itemId":"i","now":"2026-11-17T09:00:00Z","actor":"작업자"});
         let applied=issue_action(&args(good.clone())).unwrap();
         assert_eq!(applied["order"]["recipients"][0]["items"][0]["quantity"],1);
         for mutate in [

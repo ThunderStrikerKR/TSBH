@@ -11631,7 +11631,7 @@ mod reception_workflow_admission_integration_tests {
         app.inline_editor=Some(InlineReceptionEditor{
             source_id:"draft-1".into(),
             target:InlineTarget{recipient_id:"r1".into(),item_id:None,field:"note"},
-            original:String::new(),text:"직원 메모".into(),
+            original:String::new(),text:"작업자 메모".into(),
             focus_next:false,click_at:None
         });
         app.request_draft_confirmation("draft-1",&ctx);

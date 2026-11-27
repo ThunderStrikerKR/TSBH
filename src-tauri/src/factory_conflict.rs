@@ -229,7 +229,7 @@ mod tests {
                     "row":2,"name":"김수취","address":"서울 강남구 123",
                     "contacts":["010-1234-5678"],"tracking":"009988776655",
                     "actual":4000,"shipmentId":"ship-1","orderId":"order-1",
-                    "issue":"기존 송장 / 실제 운임과 충돌합니다. 직원 확인 필요"
+                    "issue":"기존 송장 / 실제 운임과 충돌합니다. 확인 필요"
                 }]
             }]
         });

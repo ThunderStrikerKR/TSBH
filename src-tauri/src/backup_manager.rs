@@ -320,7 +320,7 @@ mod tests {
         let path=base.join("main.sqlite");
         let mut live=initialize_database(&path).unwrap();
         let mut current=get_snapshot(&live).unwrap();
-        current["settings"]["operatorName"]=json!("현재 작업 직원");
+        current["settings"]["operatorName"]=json!("현재 작업 작업자");
         let current=write_snapshot(&mut live,current,0,false).unwrap();
         assert_eq!(current["revision"],1);
 
@@ -367,7 +367,7 @@ mod tests {
             {"id":"legacy-confirmed","clientId":"legacy-dealer",
              "createdAt":"2026-11-08T01:00:00+09:00",
              "confirmedAt":"2026-11-08T01:05:00+09:00","status":"STATEMENT",
-             "raw":"과거 발주 원문","receipt":{"original":"과거 발주 원문","actor":"가상 직원"},
+             "raw":"과거 발주 원문","receipt":{"original":"과거 발주 원문","actor":"가상 작업자"},
              "confirmationSnapshot":{"raw":"과거 발주 원문","recipients":[{
                  "items":[{"productId":"bando-site-351","variantId":first,
                      "name":"과거 확정 상품명","quantity":3,"unitPrice":16321}]}]},
