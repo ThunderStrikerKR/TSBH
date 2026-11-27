@@ -254,9 +254,9 @@ pub const SECTION_DIVIDER_GAP: f32 = SPACE_12;
 pub const SECTION_DIVIDER_HEIGHT: f32 = 2.0 * SECTION_DIVIDER_GAP + SOFT_DIVIDER_WIDTH;
 // Reception cards use one 8pt vertical inset on both edges.
 pub const RECEPTION_PANE_PADDING_Y: f32 = SPACE_8;
-// The outer source frame owns the 4pt document inset. Both native TextEdit
-// and the manual Galley renderer use this same additional text margin.
-pub const SOURCE_DOCUMENT_TEXT_MARGIN: i8 = 0;
+// The source highlight extends 3.5pt beyond glyph ink. Reserve 4pt inside
+// the shared document viewport so edge tokens retain their complete border.
+pub const SOURCE_DOCUMENT_TEXT_MARGIN: i8 = 4;
 // Source's current-client summary is supporting information beside a
 // primary INPUT editor. Use master row/subsection roles, not a second editor.
 pub const RECEPTION_CLIENT_SUMMARY_BG: Color32 = TABLE_ROW_ALT_BG;
