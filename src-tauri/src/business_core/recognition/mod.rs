@@ -287,12 +287,24 @@ struct InterveningLines {
     blank_lines: usize,
     max_consecutive_blank_lines: usize,
 }
-fn intervening_lines(raw: &str, earlier: usize, later: usize) -> InterveningLines {
-    let mut result = InterveningLines::default();
-    if later <= earlier + 1 { return result; }
-    let mut current_blank_run = 0usize;
-    for line in raw.split('\n').skip(earlier + 1).take(later - earlier - 1) {
-        if line.trim().is_empty() {
+// Shared geometry, independent of the classification or learning policy.
+// Index each physical line once per invocation instead of repeatedly
+// walking the raw document from its beginning for every candidate pair.
+struct SourceGeometry {
+    blank: Vec<bool>,
+}
+impl SourceGeometry {
+    fn new(raw:&str)->Self{
+        Self{blank:raw.split('\n').map(|line|line.trim().is_empty()).collect()}
+    }
+    fn between(&self,earlier:usize,later:usize)->InterveningLines{
+        let mut result=InterveningLines::default();
+        let start=earlier.saturating_add(1).min(self.blank.len());
+        let end=later.min(self.blank.len());
+        if end<=start{return result;}
+        let mut current_blank_run=0usize;
+        for &blank in &self.blank[start..end]{
+            if blank {
             result.blank_lines += 1;
             current_blank_run += 1;
             result.max_consecutive_blank_lines =
@@ -302,7 +314,18 @@ fn intervening_lines(raw: &str, earlier: usize, later: usize) -> InterveningLine
             current_blank_run = 0;
         }
     }
-    result
+        result
+    }
+}
+#[cfg(test)]
+fn intervening_lines(raw:&str,earlier:usize,later:usize)->InterveningLines{
+    SourceGeometry::new(raw).between(earlier,later)
+}
+// Both engines use source-to-target direction; retain the old magnitude
+// where a fixed legacy rule requires an unsigned distance.
+fn signed_line_distance(from:u64,to:u64)->i64{
+    if to>=from{(to-from).min(i64::MAX as u64) as i64}
+    else{-((from-to).min(i64::MAX as u64) as i64)}
 }
 fn phone_regex() -> Regex {
     Regex::new(r"(?i)(0(?:50\d|1[016789]|2|[3-6]\d|70|80))[\s().-]*(\d{3,4})[\s().-]*(\d{4})")
@@ -603,7 +626,7 @@ fn owner_index(anchors: &[usize], events: &[Evidence], offset: usize) -> usize {
 // Record only the two adjacent anchors; no full-document candidate search.
 fn recipient_owner_index(
     anchors: &[usize], events: &[Evidence], evidence_index: usize, raw: &str,
-    trace: Option<&mut Vec<Value>>,
+    geometry:&SourceGeometry,trace: Option<&mut Vec<Value>>,
 ) -> usize {
     let candidate=&events[evidence_index];
     let previous=owner_index(anchors,events,candidate.start);
@@ -630,10 +653,10 @@ fn recipient_owner_index(
             && matches!(e.kind,"address"|"phone"|"mobile")
     );
     if trace.is_none() && !previous_has_delivery {return previous;}
-    let previous_gap=intervening_lines(raw,preceding.line,candidate.line);
-    let following_gap=intervening_lines(raw,candidate.line,following.line);
+    let previous_gap=geometry.between(preceding.line,candidate.line);
+    let following_gap=geometry.between(candidate.line,following.line);
     if trace.is_none() && following_gap.blank_lines>0 {return previous;}
-    let next_distance=following.line.saturating_sub(candidate.line);
+    let next_distance=signed_line_distance(candidate.line as u64,following.line as u64).max(0) as usize;
     if trace.is_none() && next_distance>3 {return previous;}
     let has_nearby_address=events.iter().any(|e|
         e.kind=="address" && e.paragraph==candidate.paragraph
@@ -648,7 +671,7 @@ fn recipient_owner_index(
         else if contact_without_address {Some("contact_without_nearby_address")}
         else {None};
 
-    let preceding_distance=candidate.line.saturating_sub(preceding.line);
+    let preceding_distance=signed_line_distance(preceding.line as u64,candidate.line as u64).max(0) as usize;
     // These are the original score components, not probabilities. No
     // score is fabricated for a candidate the original gates rejected.
     let previous_paragraph=if same_previous {80usize} else {0};
@@ -908,6 +931,7 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
     overrides:&std::collections::BTreeMap<(usize,usize),(usize,usize)>)->Result<Value,String>{
     let client_id = client_id(client);
     let lines = physical_lines(raw);
+    let geometry=SourceGeometry::new(raw);
     let mut events: Vec<Evidence> = Vec::new();
     let mut product_hits: Vec<ProductHit> = Vec::new();
     let mut candidate_trace=Vec::new();
@@ -1279,7 +1303,7 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
     let mut applied=0usize;
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
-        let mut row_index = recipient_owner_index(&anchors,&events,index,raw,owner_trace.as_mut());
+        let mut row_index = recipient_owner_index(&anchors,&events,index,raw,&geometry,owner_trace.as_mut());
         if !overrides.is_empty(){
             let e=&events[index];
             let source=(utf16(raw,e.start),utf16(raw,e.end));
@@ -2117,6 +2141,29 @@ mod tests {
         assert_eq!(recipients.len(),1);
         assert_eq!(recipients[0]["mobile"],"010-1234-5678");
         assert_eq!(recipients[0]["phone"],"010-3456-7890");
+    }
+    #[test]
+    fn shared_source_geometry_preserves_legacy_line_ranges_and_direction(){
+        let raw="a\r\n \r\n\t\ncontent\n\nend";
+        let geometry=SourceGeometry::new(raw);
+        for earlier in 0..8usize{
+            for later in 0..8usize{
+                let mut expected=InterveningLines::default();
+                let mut run=0;
+                if later>earlier+1{
+                    for line in raw.split('\n').skip(earlier+1).take(later-earlier-1){
+                        if line.trim().is_empty(){
+                            expected.blank_lines+=1;run+=1;
+                            expected.max_consecutive_blank_lines=expected.max_consecutive_blank_lines.max(run);
+                        }else{expected.content_lines+=1;run=0;}
+                    }
+                }
+                assert_eq!(geometry.between(earlier,later),expected);
+            }
+        }
+        assert_eq!(signed_line_distance(2,5),3);
+        assert_eq!(signed_line_distance(5,2),-3);
+        assert_eq!(signed_line_distance(2,2),0);
     }
     #[test]
     fn content_blank_and_whitespace_only_lines_are_distinct_evidence() {
