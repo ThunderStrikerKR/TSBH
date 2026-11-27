@@ -213,13 +213,21 @@ fn workflow_review_entries(native:&Value,shipments:&[ShipmentRow])->Vec<Value>{
         represented.insert(review_message_key(&label));
         let title=text(issue,"title");
         if !title.is_empty()&&text(issue,"severity")=="ACTION"{
-            let recipient=shipments.iter().find(|s|
-                s.recipient_id==text(issue,"recipientId") &&
-                (text(issue,"orderId").is_empty()||s.order_id==text(issue,"orderId")))
-                .or_else(||shipments.first());
+            let rid=text(issue,"recipientId");
+            let recipient=if rid.is_empty(){shipments.first()}else{
+                shipments.iter().find(|s|s.recipient_id==rid &&
+                    (text(issue,"orderId").is_empty()||s.order_id==text(issue,"orderId")))
+            };
             if let Some(s)=recipient{
                 let name=if s.recipient_name.is_empty(){"수취인"}else{&s.recipient_name};
-                represented.insert(review_message_key(&format!("{name}: {title}")));
+                // A bare name is not an identity. Keep the original structured
+                // cards, and only match recipient-scoped string aliases if
+                // the name maps to exactly one recipient in this group.
+                if rid.is_empty()||shipments.iter().filter(|row|
+                    row.recipient_name==s.recipient_name).all(|row|
+                    row.order_id==s.order_id&&row.recipient_id==s.recipient_id){
+                    represented.insert(review_message_key(&format!("{name}: {title}")));
+                }
             }
         }
         issues.push(issue.clone());
