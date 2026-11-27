@@ -1194,6 +1194,8 @@ pub(crate) fn recognition_learning_support(input:&Value)->Result<Value,String>{
     PreviewStore::recognition_learning_support(input,|orders|{
         if let Some(config)=input.get("legacyScoreCalibration"){
             recognition::execute("calibrate_legacy_scores",serde_json::json!({"orders":orders,"config":config}))
+        }else if let Some(config)=input.get("shadowCandidateCalibration"){
+            recognition::execute("calibrate_shadow_candidates",serde_json::json!({"orders":orders,"config":config}))
         }else{recognition::execute("evaluate_shadow_predictions",serde_json::json!({"orders":orders}))}
     })
 }

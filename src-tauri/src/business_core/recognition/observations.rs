@@ -1221,6 +1221,224 @@ pub(super) fn calibrate_legacy_scores(payload:&Value)->Result<Value,String>{
         "calibratedProbability":null,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
 }
 
+// P07-02: multiclass calibration on the original captured support vector.
+// Last component is pooled outside-candidate mass, not a selectable SKU.
+const SHADOW_TEMPERATURES:[f64;5]=[1.0,0.5,0.75,1.5,2.0];
+const SHADOW_SMOOTHING:[f64;5]=[0.0,0.01,0.05,0.10,0.20];
+type ShadowGroup=(String,String,String);
+struct ShadowCalibrationSample{
+    distribution:Vec<f64>,actual:usize,label:&'static str,
+}
+fn shadow_distribution(report:&Value,allowed:&BTreeSet<&str>,actual:&str)
+    ->Option<ShadowCalibrationSample>{
+    if allowed.is_empty()||allowed.len()>64{return None;}
+    let total=report["totalSupportMass"].as_f64().filter(|v|v.is_finite()&&*v>0.0)?;
+    let outside=report["outsideCandidateSupportMass"].as_f64().filter(|v|v.is_finite()&&*v>=0.0)?;
+    let mut masses=BTreeMap::new();
+    for c in report["candidates"].as_array()?{
+        let id=c["candidate"].as_str().filter(|id|allowed.contains(id))?;
+        let mass=c["supportMass"].as_f64().filter(|v|v.is_finite()&&*v>=0.0)?;
+        if masses.insert(id,mass).is_some(){return None;}
+    }
+    if masses.len()!=allowed.len(){return None;}
+    let sum=masses.values().sum::<f64>()+outside;
+    if !sum.is_finite()||sum<=0.0||(sum-total).abs()>1e-7*total.max(1.0){return None;}
+    let mut distribution=allowed.iter().map(|id|masses[id]/sum).collect::<Vec<_>>();
+    distribution.push(outside/sum);
+    let actual=allowed.iter().position(|id|*id==actual).unwrap_or(allowed.len());
+    Some(ShadowCalibrationSample{distribution,actual,label:""})
+}
+fn shadow_transform(raw:&[f64],temperature:f64,smoothing:f64)->Vec<f64>{
+    let power=raw.iter().map(|p|p.powf(1.0/temperature)).collect::<Vec<_>>();
+    let sum=power.iter().sum::<f64>();
+    let uniform=smoothing/raw.len() as f64;
+    power.into_iter().map(|p|(1.0-smoothing)*p/sum+uniform).collect()
+}
+fn multiclass_brier(p:&[f64],actual:usize)->f64{
+    p.iter().enumerate().map(|(i,x)|(x-if i==actual{1.0}else{0.0}).powi(2)).sum()
+}
+#[derive(Default)]
+struct ShadowFit{orders:usize,losses:[f64;25]}
+impl ShadowFit{
+    fn add_order(&mut self,samples:&[ShadowCalibrationSample]){
+        if samples.is_empty(){return;}
+        self.orders+=1;
+        for (i,t) in SHADOW_TEMPERATURES.iter().enumerate(){
+            for (j,s) in SHADOW_SMOOTHING.iter().enumerate(){
+                let loss=samples.iter().map(|v|multiclass_brier(
+                    &shadow_transform(&v.distribution,*t,*s),v.actual)).sum::<f64>()/samples.len() as f64;
+                self.losses[i*5+j]+=loss;
+            }
+        }
+    }
+    fn parameters(&self)->Option<(f64,f64)>{
+        if self.orders<MIN_CALIBRATION_ORDERS{return None;}
+        // Prefer identity on exact ties. No tuning on evaluation orders.
+        let mut best=0;
+        for i in 1..self.losses.len(){
+            if self.losses[i]+1e-10<self.losses[best]{best=i;}
+        }
+        Some((SHADOW_TEMPERATURES[best/5],SHADOW_SMOOTHING[best%5]))
+    }
+}
+#[derive(Default)]
+struct ShadowCalTest{
+    eligible:usize,covered:usize,outside:usize,orders:usize,covered_orders:usize,
+    raw_loss:f64,adjusted_loss:f64,macro_raw:f64,macro_adjusted:f64,
+}
+impl ShadowCalTest{
+    fn observe(&mut self,v:&ShadowCalibrationSample,params:Option<(f64,f64)>){
+        self.eligible+=1;self.outside+=usize::from(v.actual+1==v.distribution.len());
+        if let Some((t,s))=params{
+            self.covered+=1;
+            self.raw_loss+=multiclass_brier(&v.distribution,v.actual);
+            self.adjusted_loss+=multiclass_brier(&shadow_transform(&v.distribution,t,s),v.actual);
+        }
+    }
+    fn merge(&mut self,o:Self){
+        if o.eligible==0{return;}
+        self.orders+=1;self.eligible+=o.eligible;self.covered+=o.covered;self.outside+=o.outside;
+        self.raw_loss+=o.raw_loss;self.adjusted_loss+=o.adjusted_loss;
+        if o.covered>0{self.covered_orders+=1;
+            self.macro_raw+=o.raw_loss/o.covered as f64;
+            self.macro_adjusted+=o.adjusted_loss/o.covered as f64;}
+    }
+    fn wire(&self)->Value{
+        let div=|x:f64,n:usize|(n>0).then(||x/n as f64);
+        json!({"eligibleObservations":self.eligible,"coveredObservations":self.covered,
+            "outsideCandidateObservations":self.outside,"independentOrders":self.orders,
+            "coveredOrders":self.covered_orders,"coverage":div(self.covered as f64,self.eligible),
+            "rawBrierOnCovered":div(self.raw_loss,self.covered),
+            "adjustedBrierOnCovered":div(self.adjusted_loss,self.covered),
+            "orderMacroRawBrier":div(self.macro_raw,self.covered_orders),
+            "orderMacroAdjustedBrier":div(self.macro_adjusted,self.covered_orders)})
+    }
+}
+pub(super) fn calibrate_shadow_candidates(payload:&Value)->Result<Value,String>{
+    let config=&payload["config"];
+    let date=|v:&Value|v.as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
+    let fit_start=date(&config["fitStart"]).ok_or("학습 보정 시작 시각 오류")?;
+    let test_start=date(&config["testStart"]).ok_or("학습 평가 시작 시각 오류")?;
+    let test_end=date(&config["testEnd"]).ok_or("학습 평가 종료 시각 오류")?;
+    let as_of=date(&config["evaluationAsOf"]).ok_or("학습 평가 기준 시각 오류")?;
+    if !(fit_start<test_start&&test_start<test_end&&test_end<=as_of){return Err("학습 보정 기간 순서 오류".into());}
+    let build=config["clientBuildVersion"].as_str().filter(|s|!s.is_empty()&&s.len()<=128)
+        .ok_or("보정 대상 빌드 버전 필요")?;
+    let orders=payload["orders"].as_array().filter(|a|!a.is_empty()&&a.len()<=250).ok_or("학습 보정 주문 한도 오류")?;
+    let mut seen=BTreeSet::new();
+    let mut fits=BTreeMap::<ShadowGroup,ShadowFit>::new();
+    let mut tests=Vec::new();
+    let (mut skipped,mut late,mut invalid,mut missing,mut labels_excluded)=(0usize,0usize,0usize,0usize,0usize);
+    let (mut fit_orders,mut test_orders)=(0usize,0usize);
+    for order in orders{
+        let id=order["id"].as_str().filter(|s|!s.is_empty()).ok_or("학습 보정 주문 ID 오류")?;
+        if !seen.insert(id){return Err("학습 보정 주문 ID 중복".into());}
+        let snap=&order["confirmationSnapshot"];
+        let first=&snap["recognitionBaseline"]["initialAnalysis"];
+        let capture=&first["initialPredictionCapture"];
+        let shadow=&capture["learningShadow"];
+        let (Some(start),Some(end),Some(predicted),Some(confirmed))=(date(&capture["analysisStartedAt"]),
+            date(&capture["analysisCompletedAt"]),date(&shadow["capturedAt"]),date(&order["confirmedAt"]))
+            else{skipped+=1;continue;};
+        if order["learningActive"]!=true||order["deletedAt"].as_str().is_some_and(|s|!s.is_empty())||
+            capture["origin"]!="native_reception_worker"||capture["schemaVersion"]!=1||
+            capture["orderId"].as_str()!=Some(id)||capture["clientBuildVersion"].as_str()!=Some(build)||
+            shadow["status"]!="captured_shadow_support"||shadow["captureVersion"]!=4||
+            shadow["explicitToWeakRatio"].as_f64()!=Some(3.0)||shadow["sourceDigestsMatched"]!=true||
+            shadow["decisionChanged"]!=false||shadow["modelId"].as_str().is_none_or(|s|!s.starts_with("shadow-")||s.len()!=71)||
+            snap["at"]!=order["confirmedAt"]||!(start<=end&&end<=predicted&&predicted<confirmed)||
+            start<fit_start||predicted>=test_end||start<test_start&&predicted>=test_start{skipped+=1;continue;}
+        let fit=predicted<test_start;
+        if (fit&&confirmed>=test_start)||(!fit&&confirmed>as_of){late+=1;continue;}
+        let Some(events)=order["recognitionAuditEvents"].as_array()else{skipped+=1;continue;};
+        if events.iter().any(|e|date(&e["at"]).is_none_or(|t|t<=predicted||t>confirmed)){skipped+=1;continue;}
+        let compared=compare(order)?;
+        if compared["auditCoverage"]!="verified_manifest"{skipped+=1;continue;}
+        let raw=snap["raw"].as_str().ok_or("학습 보정 원문 누락")?;
+        let units=raw.encode_utf16().collect::<Vec<_>>();
+        let projection=super::learning_context::lookup(&json!({"raw":raw,"initialAnalysis":first}))?;
+        let mut local=BTreeMap::<ShadowGroup,Vec<ShadowCalibrationSample>>::new();
+        let mut used=BTreeSet::new();
+        for obs in rows(&compared["observations"]){
+            let label=match obs["outcome"].as_str(){
+                Some("explicit_correction_observed") if obs["eligibleForCandidateLearning"]==true=>"explicit_correction",
+                Some("unchanged_observed") if obs["eligibleForCandidateLearning"]==true=>"unchanged_proxy",
+                _=>{labels_excluded+=1;continue;}
+            };
+            let (Some(old),Some(actual),Some(s),Some(task))=(singleton(&obs["initialCandidates"]),
+                singleton(&obs["finalCandidates"]),position(&units,&obs["source"]),obs["task"].as_str())
+                else{labels_excluded+=1;continue;};
+            if label=="explicit_correction"&&(old==actual||singleton(&obs["positiveCandidates"])!=Some(actual)||
+                singleton(&obs["negativeCandidates"])!=Some(old))||label=="unchanged_proxy"&&old!=actual{
+                labels_excluded+=1;continue;
+            }
+            if !used.insert((s,task)){return Err("학습 보정 관측 위치 중복".into());}
+            let expected=if task=="recipient_ownership"{&projection["entries"]}else{&projection["fieldEntries"]};
+            let mut entries=rows(expected).filter(|v|position(&units,&v["source"])==Some(s)&&
+                (task=="recipient_ownership"||v["task"].as_str()==Some(task)));
+            let Some(entry)=entries.next()else{invalid+=1;continue;};
+            if entries.next().is_some(){invalid+=1;continue;}
+            let mut locs=rows(&shadow["locations"]).filter(|v|position(&units,v)==Some(s)&&v["task"].as_str()==Some(task));
+            let Some(loc)=locs.next()else{missing+=1;continue;};
+            if locs.next().is_some(){invalid+=1;continue;}
+            let allowed=rows(&loc["candidates"]).filter_map(Value::as_str).collect::<BTreeSet<_>>();
+            let expected_ids=if task=="recipient_ownership"{BTreeSet::from(["previous","next"])}
+                else{rows(&entry["shadowCandidates"]).filter_map(Value::as_str).collect()};
+            let coverage=loc["candidateCoverage"].as_str().unwrap_or("");
+            if allowed!=expected_ids||!allowed.contains(old)||allowed.len()!=rows(&loc["candidates"]).count()||
+                !matches!(coverage,"traced_pair"|"traced_partial"|"observed_only")||
+                (task=="recipient_ownership"&&coverage!="traced_pair")||
+                (task!="recipient_ownership"&&entry["candidateCoverage"].as_str()!=Some(coverage)){
+                invalid+=1;continue;
+            }
+            let mut tiers=BTreeSet::new();
+            for ctx in rows(&entry["contexts"]){
+                let (Some(key),Some(level))=(ctx["key"].as_str(),ctx["level"].as_str())else{invalid+=1;continue;};
+                if !tiers.insert(level)||!rows(&loc["contextKeys"]).any(|k|k.as_str()==Some(key)){invalid+=1;continue;}
+                let mut reports=rows(&shadow["contexts"]).filter(|r|r["task"].as_str()==Some(task)&&
+                    r["contextKey"].as_str()==Some(key)&&r["supportVersion"]==4&&
+                    r["featureVersion"]==1&&r["contributionVersion"]==2&&
+                    rows(&r["candidateIds"]).filter_map(Value::as_str).collect::<BTreeSet<_>>()==allowed);
+                let Some(r)=reports.next()else{missing+=1;continue;};
+                if reports.next().is_some(){invalid+=1;continue;}
+                let Some(mut sample)=shadow_distribution(r,&allowed,actual)else{missing+=1;continue;};
+                sample.label=label;
+                local.entry((task.to_owned(),level.to_owned(),coverage.to_owned())).or_default().push(sample);
+            }
+        }
+        if local.is_empty(){continue;}
+        if fit{fit_orders+=1;for (key,samples) in local{fits.entry(key).or_default().add_order(&samples);}}
+        else{test_orders+=1;tests.push(local);}
+    }
+    let mut totals=BTreeMap::<(ShadowGroup,String),ShadowCalTest>::new();
+    for order in tests{
+        for (key,samples) in order{
+            let params=fits.get(&key).and_then(ShadowFit::parameters);
+            let mut local=BTreeMap::<&str,ShadowCalTest>::new();
+            for sample in samples{
+                for label in [sample.label,"mixed_proxy"]{local.entry(label).or_default().observe(&sample,params);}
+            }
+            for (label,metrics) in local{totals.entry((key.clone(),label.to_owned())).or_default().merge(metrics);}
+        }
+    }
+    let models=fits.into_iter().map(|((task,level,coverage),v)|{
+        let params=v.parameters();
+        json!({"task":task,"contextLevel":level,"candidateCoverage":coverage,"fitOrders":v.orders,
+            "temperature":params.map(|p|p.0),"uniformSmoothing":params.map(|p|p.1)})
+    }).collect::<Vec<_>>();
+    let groups=totals.into_iter().map(|(((task,level,coverage),label),v)|json!({
+        "task":task,"contextLevel":level,"candidateCoverage":coverage,"labelKind":label,"metrics":v.wire()})).collect::<Vec<_>>();
+    Ok(json!({"status":"shadow_candidate_calibration_diagnostic_only",
+        "method":"order_macro_multiclass_brier_grid_v1","captureVersion":4,"supportVersion":4,
+        "clientBuildVersion":build,"explicitToWeakRatio":3.0,"minimumFitOrders":MIN_CALIBRATION_ORDERS,
+        "fitStart":config["fitStart"],"testStart":config["testStart"],"testEnd":config["testEnd"],"evaluationAsOf":config["evaluationAsOf"],
+        "fitOrders":fit_orders,"testOrders":test_orders,"excludedOrders":skipped,"lateLabelOrders":late,
+        "invalidJoins":invalid,"missingDistributions":missing,"excludedUnverifiedLabels":labels_excluded,
+        "models":models,"testGroups":groups,"outsideBucketSelectable":false,
+        "fitLabelKind":"mixed_operational_proxy","representativeLabelsVerified":false,"historicalModelVerified":false,
+        "sourceProvenanceVerified":false,"calibratedProbability":null,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
@@ -1340,6 +1558,32 @@ mod tests{
         let v=counts.wire();assert_eq!(v["observedCorrectionFraction"],0.1);
         assert_eq!(v["orderMacroCorrectionFraction"],0.5);
         assert_eq!(v["trueErrorRateVerified"],false);
+    }
+    #[test]
+    fn shadow_multiclass_transform_preserves_mass_and_outside_category(){
+        let allowed=BTreeSet::from(["a","b"]);
+        let r=json!({"totalSupportMass":10.0,"outsideCandidateSupportMass":2.0,
+            "candidates":[{"candidate":"a","supportMass":7.0},{"candidate":"b","supportMass":1.0}]});
+        let v=shadow_distribution(&r,&allowed,"not-listed").unwrap();
+        assert_eq!(v.actual,2);
+        assert_eq!(v.distribution,vec![0.7,0.1,0.2]);
+        let p=shadow_transform(&v.distribution,1.5,0.05);
+        assert!((p.iter().sum::<f64>()-1.0).abs()<1e-10);
+        assert!(p[2]>0.0);
+        let mut bad=r.clone();bad["totalSupportMass"]=json!(11.0);
+        assert!(shadow_distribution(&bad,&allowed,"a").is_none());
+    }
+    #[test]
+    fn shadow_calibration_fits_only_after_minimum_independent_orders(){
+        let sample=||ShadowCalibrationSample{distribution:vec![0.9,0.1,0.0],actual:1,label:"explicit_correction"};
+        let mut fit=ShadowFit::default();fit.add_order(&(0..100).map(|_|sample()).collect::<Vec<_>>());
+        assert!(fit.parameters().is_none());
+        for _ in 0..4{fit.add_order(&[sample()]);}
+        let params=fit.parameters().unwrap();
+        let mut metrics=ShadowCalTest::default();metrics.observe(&sample(),Some(params));metrics.observe(&sample(),None);
+        let mut total=ShadowCalTest::default();total.merge(metrics);
+        assert_eq!(total.wire()["coverage"],0.5);
+        assert!(total.wire()["adjustedBrierOnCovered"].as_f64().unwrap()<total.wire()["rawBrierOnCovered"].as_f64().unwrap());
     }
     fn owner_fixture()->Value{
         // Emoji makes the UTF-16 positions differ from byte offsets.
