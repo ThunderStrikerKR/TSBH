@@ -244,7 +244,7 @@ impl BrandManager {
                             }
                             crate::popup::modal_labeled_row_with_width(body,"검색 별칭",theme::MODAL_FORM_WIDE_LABEL_WIDTH,|line|{
                             line.vertical(|body|{
-                            let interaction=crate::input::tag_block_editor(body,&self.form.aliases,
+                            let interaction=crate::ui_layout::tag_block_editor(body,&self.form.aliases,
                                 &mut self.alias_input,"검색 별칭 입력");
                             if interaction.changed{self.alias_notice=None;}
                             if let Some(tag)=interaction.remove{
