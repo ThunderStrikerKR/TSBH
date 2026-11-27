@@ -201,6 +201,7 @@ fn field_contexts_from_events(units:&[u16],first:&Value,events:&[Event],lead:&st
 // value alone is not evidence that the full competing set was retained.
 struct ShadowIndex<'a>{
     links:BTreeMap<Span,Vec<(&'a Value,&'a Value)>>,
+    initial_types:BTreeMap<Span,Vec<&'a str>>,
     items:BTreeMap<&'a str,Vec<(usize,&'a Value)>>,
     products:BTreeMap<(u64,u64),Vec<(usize,&'a Value,Span)>>,
     gates:BTreeMap<Span,Vec<(usize,&'a Value)>>,
@@ -209,8 +210,13 @@ struct ShadowIndex<'a>{
 impl<'a> ShadowIndex<'a>{
     fn new(units:&[u16],first:&'a Value)->Self{
         let trace=&first["classificationCandidateTrace"];
-        let mut out=Self{links:BTreeMap::new(),items:BTreeMap::new(),products:BTreeMap::new(),
+        let mut out=Self{links:BTreeMap::new(),initial_types:BTreeMap::new(),items:BTreeMap::new(),products:BTreeMap::new(),
             gates:BTreeMap::new(),traced:trace["schemaVersion"]==1};
+        for candidate in rows(&first["candidates"]){
+            if let Some(s)=span(units,candidate){
+                out.initial_types.entry(s).or_default().push(candidate["kind"].as_str().unwrap_or(""));
+            }
+        }
         for row in rows(&first["recipients"]){
             for source in rows(&row["sources"]){
                 if let Some(s)=span(units,source){out.links.entry(s).or_default().push((row,source));}
@@ -242,6 +248,15 @@ impl<'a> ShadowIndex<'a>{
 #[cfg(test)]
 fn field_shadow_projection(units:&[u16],first:&Value,s:Span,task:&str)->Value{
     field_shadow_from_index(units,&ShadowIndex::new(units,first),s,task)
+}
+// R01: bind the baseline to the unique original candidate AND its exact
+// source link. A phone/mobile slot mismatch is not a type correction.
+fn type_baseline<'a>(index:&ShadowIndex<'a>,s:Span)->Option<&'a str>{
+    let kinds=index.initial_types.get(&s).filter(|v|v.len()==1)?;
+    let kind=kinds[0];
+    role(kind)?;
+    let links=index.links.get(&s).filter(|v|v.len()==1)?;
+    (links[0].1["field"].as_str()==Some(kind)).then_some(kind)
 }
 fn field_shadow_from_index(units:&[u16],index:&ShadowIndex<'_>,s:Span,task:&str)->Value{
     let mut candidates=BTreeSet::new();
@@ -362,9 +377,13 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
     ).collect::<Vec<_>>();
     let field_entries=field_contexts_from_events(&units,first,&events,lead).into_iter().map(|((s,task),keys)|{
         let shadow=field_shadow_from_index(&units,&index,s,task);
-        json!({"source":{"start":s.0,"end":s.1},"task":task,"contexts":keys,
+        let mut entry=json!({"source":{"start":s.0,"end":s.1},"task":task,"contexts":keys,
             "shadowCandidates":shadow["candidates"],"candidateCoverage":shadow["coverage"],
-            "traceReferences":shadow["traceReferences"],"traceIsTrainingEvidence":false})
+            "traceReferences":shadow["traceReferences"],"traceIsTrainingEvidence":false});
+        if task=="type"{
+            entry["legacyTypeCandidate"]=json!(type_baseline(&index,s));
+        }
+        entry
     }).collect::<Vec<_>>();
     let mut result=json!({"featureVersion":FEATURE_VERSION,"entries":entries,"fieldEntries":field_entries});
     // Optional offline comparison. Ordinary context projection remains unchanged.
@@ -820,6 +839,21 @@ mod tests{
         let duplicate=ambiguous["recipients"][0]["items"][0].clone();
         ambiguous["recipients"][0]["items"].as_array_mut().unwrap().push(duplicate);
         assert!(field_shadow_candidates(&units,&ambiguous,(0,3),"product").is_empty());
+    }
+    #[test]
+    fn type_baseline_requires_unique_original_kind_and_exact_source_link(){
+        let units="709".encode_utf16().collect::<Vec<_>>();
+        let mut first=json!({"candidates":[{"start":0,"end":3,"text":"709","kind":"product","line":0,"paragraph":0}],
+            "recipients":[{"items":[{"sources":[{"start":0,"end":3,"text":"709","field":"product"}]}]}]});
+        assert_eq!(type_baseline(&ShadowIndex::new(&units,&first),(0,3)),Some("product"));
+        let projected=lookup(&json!({"raw":"709","initialAnalysis":first})).unwrap();
+        assert_eq!(projected["fieldEntries"][0]["legacyTypeCandidate"],"product");
+        first["candidates"][0]["kind"]=json!("name");
+        assert_eq!(type_baseline(&ShadowIndex::new(&units,&first),(0,3)),None);
+        first["candidates"][0]["kind"]=json!("product");
+        let duplicate=first["candidates"][0].clone();
+        first["candidates"].as_array_mut().unwrap().push(duplicate);
+        assert_eq!(type_baseline(&ShadowIndex::new(&units,&first),(0,3)),None);
     }
     #[test]
     fn field_contexts_use_initial_shape_task_and_manual_client_only(){
