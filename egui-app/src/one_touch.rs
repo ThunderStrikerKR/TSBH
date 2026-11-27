@@ -218,7 +218,7 @@ mod tests{
                 let (r,_)=ui.allocate_exact_size(egui::vec2(100.0,30.0),egui::Sense::hover());
                 background(ui,r);outline(ui,r);
                 let (r,_)=ui.allocate_exact_size(egui::vec2(100.0,30.0),egui::Sense::hover());
-                mark(ui,r);
+                crate::highlight::paint(ui,r,crate::highlight::Geometry::Control,crate::highlight::Role::ReviewTint);
             });
         });
         assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r) if r.fill==theme::ONE_TOUCH_BG)));

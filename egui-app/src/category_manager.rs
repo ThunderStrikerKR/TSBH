@@ -641,7 +641,6 @@ impl CategoryManager {
             // No vacated heading or help-text rows. Reserve one 36pt
             // search-and-actions toolbar, exactly as the management master.
             crate::category_tree::configure_tree_rows(panel);
-            let width=panel.available_width().max(1.0);
             let focus_action_width=theme::INPUT_HEIGHT*3.0+theme::SPACE_12;
             crate::ui_layout::management_toolbar_pair(panel,crate::ui_layout::ToolbarPair{
                 search_id:"category-map-search-toolbar",actions_id:"category-map-actions-toolbar",

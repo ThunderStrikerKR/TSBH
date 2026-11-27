@@ -97,7 +97,7 @@ fn management_dropdown_trigger_inner(
     let width=width.min(ui.available_width()).max(1.0);
     // Parent Ui may be disabled independently of the explicit enabled flag.
     let interactive=enabled && ui.is_enabled();
-    let (fill,ink,stroke)=crate::button::field_action_palette(interactive,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
+    let (fill,_,stroke)=crate::button::field_action_palette(interactive,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
     let arrow_ink=theme::icon_ink(theme::IconRole::Secondary,theme::VisualState::enabled(interactive));
     // Inline modal rows opt into the 36pt form interaction height;
     // standard management toolbars retain their 34pt minimum.

@@ -388,8 +388,8 @@ impl ModelGroupManager {
                         };
                         if editing{
                             let width=body.available_width();
-                            crate::ui_layout::fixed_row(body,egui::vec2(width,body_height),
-                                egui::Layout::top_down(egui::Align::Min),render);
+                            crate::ui_layout::fixed_row(body,eframe::egui::vec2(width,body_height),
+                                Layout::top_down(Align::Min),render);
                         }else{render(body);}
                     });
                     let mut request_delete=false;
