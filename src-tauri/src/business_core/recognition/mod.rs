@@ -109,6 +109,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "compare_registered_models" => observations::compare_registered_models(&payload),
         "project_owner_contexts" => learning_context::lookup(&payload),
         "evaluate_owner_weights" => evaluate_owner_weights(&payload),
+        "evaluate_field_weights" => evaluate_field_weights(&payload),
         "summarize_owner_statistics" => learning_context::statistics(&payload),
         "summarize_learning_confirmation" => learning_context::summarize_confirmation(&payload),
         _ => Err(format!("unknown recognition operation: {operation}")),
@@ -896,6 +897,92 @@ fn evaluate_owner_weights(payload:&Value)->Result<Value,String>{
             "selected":weight_metrics(&holdout,Some(best))},
         "unseenPatterns":if unseen.is_empty(){Value::Null}else{json!({"legacy":weight_metrics(&unseen,None),
             "selected":weight_metrics(&unseen,Some(best))})},
+        "labelProvenanceVerified":false,"productionAuthorized":false}))
+}
+// Bounded multicandidate experiment, shared by type and quantity-link
+// projections. A hard-invalid candidate is never recovered by a weight.
+#[derive(Clone,Copy)]
+struct FieldWeightCandidate<'a>{id:&'a str,features:[u8;3],blocked:bool}
+fn field_weight_choice<'a>(candidates:&[FieldWeightCandidate<'a>],weights:[i32;3],margin:i32)->Option<&'a str>{
+    let mut best:Option<(&str,i32)>=None;
+    let mut second=None;
+    for c in candidates.iter().filter(|c|!c.blocked){
+        let score=c.features.iter().zip(weights).map(|(f,w)|i32::from(*f)*w).sum::<i32>();
+        if best.is_none_or(|(_,v)|score>v){
+            second=best.map(|(_,v)|v);best=Some((c.id,score));
+        }else{second=Some(second.map_or(score,|v:i32|v.max(score)));}
+    }
+    let (id,score)=best?;
+    if score<margin||second.is_some_and(|v|score-v<margin){None}else{Some(id)}
+}
+struct FieldWeightSample<'a>{
+    order:&'a str,pattern:&'a str,expected:&'a str,legacy:&'a str,
+    candidates:Vec<FieldWeightCandidate<'a>>,
+}
+fn field_weight_samples(v:&Value)->Result<Vec<FieldWeightSample<'_>>,String>{
+    let rows=v.as_array().filter(|a|!a.is_empty()&&a.len()<=4096).ok_or("표본 수 범위 오류")?;
+    let mut seen=HashSet::new();
+    let mut patterns=std::collections::BTreeMap::new();
+    let mut out=Vec::new();
+    for r in rows{
+        let key=|k:&str|r[k].as_str().filter(|s|!s.is_empty()&&s.len()<=1024).ok_or("평가 식별자 오류");
+        let order=key("orderId")?;let pattern=key("patternKey")?;let source=key("sourceId")?;
+        if !seen.insert((order,source)){return Err("중복 평가 원문".into());}
+        if patterns.insert(order,pattern).is_some_and(|p|p!=pattern){return Err("주문 패턴 충돌".into());}
+        let expected=key("expected")?;let legacy=key("legacy")?;
+        let mut ids=HashSet::new();let mut candidates=Vec::new();
+        for c in r["candidates"].as_array().filter(|a|a.len()<=64).ok_or("후보 수 범위 오류")?{
+            let id=c["id"].as_str().filter(|s|!s.is_empty()&&s.len()<=1024&&*s!="abstain").ok_or("후보 ID 오류")?;
+            if !ids.insert(id){return Err("중복 후보".into());}
+            let values=c["features"].as_array().filter(|a|a.len()==3).ok_or("특징 차원 오류")?;
+            let mut features=[0;3];
+            for (i,v) in values.iter().enumerate(){features[i]=v.as_u64().filter(|v|*v<=8).ok_or("특징 정규화 범위 오류")? as u8;}
+            let blocked=c["blocked"].as_bool().ok_or("후보 제약 정보 누락")?;
+            candidates.push(FieldWeightCandidate{id,features,blocked});
+        }
+        out.push(FieldWeightSample{order,pattern,expected,legacy,candidates});
+    }
+    Ok(out)
+}
+fn field_weight_metrics(samples:&[FieldWeightSample<'_>],profile:Option<([i32;3],i32)>)->Value{
+    let mut patterns=std::collections::BTreeMap::<&str,(usize,usize)>::new();
+    let mut orders=std::collections::BTreeMap::<&str,(usize,usize)>::new();
+    let mut correct=0;let mut absent=0;let mut abstain=0;
+    for s in samples{
+        let prediction=profile.map_or(s.legacy,|(w,m)|field_weight_choice(&s.candidates,w,m).unwrap_or("abstain"));
+        let ok=if prediction==s.expected{1}else{0};
+        correct+=ok;
+        if prediction=="abstain"{abstain+=1;}
+        if s.expected!="abstain"&&!s.candidates.iter().any(|c|c.id==s.expected&&!c.blocked){absent+=1;}
+        for e in [patterns.entry(s.pattern).or_default(),orders.entry(s.order).or_default()]{e.0+=ok;e.1+=1;}
+    }
+    let mean=|m:&std::collections::BTreeMap<&str,(usize,usize)>|m.values().map(|(a,b)|*a as f64/ *b as f64).sum::<f64>()/m.len() as f64;
+    json!({"correct":correct,"total":samples.len(),"microAccuracy":correct as f64/samples.len() as f64,
+        "macroPatternAccuracy":mean(&patterns),"macroOrderAccuracy":mean(&orders),
+        "independentOrders":orders.len(),"abstained":abstain,"expectedCandidateUnavailable":absent})
+}
+fn evaluate_field_weights(payload:&Value)->Result<Value,String>{
+    let task=payload["task"].as_str().filter(|v|matches!(*v,"type"|"quantity_link")).ok_or("평가 작업 오류")?;
+    let fit=field_weight_samples(&payload["fit"])?;let holdout=field_weight_samples(&payload["holdout"])?;
+    let ids=fit.iter().map(|s|s.order).collect::<HashSet<_>>();
+    if holdout.iter().any(|s|ids.contains(s.order)){return Err("학습·검증 주문 중복".into());}
+    let patterns=fit.iter().map(|s|s.pattern).collect::<HashSet<_>>();
+    let unseen=holdout.iter().filter(|s|!patterns.contains(s.pattern)).collect::<Vec<_>>();
+    let unseen_count=unseen.iter().map(|s|s.order).collect::<HashSet<_>>().len();
+    let mut best=([1,1,0],2);
+    let objective=|m:&Value|0.5*m["microAccuracy"].as_f64().unwrap_or(0.0)+0.5*m["macroPatternAccuracy"].as_f64().unwrap_or(0.0);
+    let mut score=objective(&field_weight_metrics(&fit,Some(best)));
+    for a in [0,1,2]{for b in [0,1,2]{for c in [0,1,2]{for m in [2,4,6]{
+        if a+b+c==0{continue;}
+        let profile=([a,b,c],m);
+        let next=objective(&field_weight_metrics(&fit,Some(profile)));
+        if next>score+1e-12{best=profile;score=next;}
+    }}}}
+    let unseen_correct=unseen.iter().filter(|s|field_weight_choice(&s.candidates,best.0,best.1).unwrap_or("abstain")==s.expected).count();
+    Ok(json!({"task":task,"status":"offline_comparison_only","profile":{"weights":best.0,"margin":best.1},
+        "fit":{"legacy":field_weight_metrics(&fit,None),"selected":field_weight_metrics(&fit,Some(best))},
+        "holdout":{"legacy":field_weight_metrics(&holdout,None),"selected":field_weight_metrics(&holdout,Some(best))},
+        "unseenPatterns":{"independentOrders":unseen_count,"correct":unseen_correct,"total":unseen.len()},
         "labelProvenanceVerified":false,"productionAuthorized":false}))
 }
 fn compare_owner_candidates(candidate:&Evidence,preceding:&Evidence,following:&Evidence,
@@ -2573,6 +2660,23 @@ mod tests {
             r.as_object_mut().unwrap().remove("candidatePolicyComparison");
         }
         assert_eq!(baseline,compared);
+    }
+    #[test]
+    fn field_weight_evaluation_preserves_constraints_and_missing_candidates(){
+        let sample=|id:&str,pattern:&str,expected:&str|json!({"orderId":id,"patternKey":pattern,
+            "sourceId":"s","expected":expected,"legacy":"abstain","candidates":[
+                {"id":"a","features":[4,4,0],"blocked":false},
+                {"id":"b","features":[8,8,8],"blocked":true}]});
+        let fit=sample("fit","A","a");let holdout=sample("test","B","b");
+        let report=evaluate_field_weights(&json!({"task":"quantity_link","fit":[fit],"holdout":[holdout]})).unwrap();
+        assert_eq!(report["fit"]["selected"]["correct"],1);
+        assert_eq!(report["holdout"]["selected"]["correct"],0);
+        assert_eq!(report["holdout"]["selected"]["expectedCandidateUnavailable"],1);
+        assert_eq!(report["productionAuthorized"],false);
+        assert!(evaluate_field_weights(&json!({"task":"type","fit":[fit],"holdout":[fit]})).is_err());
+        let tied=[FieldWeightCandidate{id:"a",features:[4,4,0],blocked:false},
+            FieldWeightCandidate{id:"b",features:[4,4,0],blocked:false}];
+        assert_eq!(field_weight_choice(&tied,[1,1,0],2),None);
     }
     #[test]
     fn owner_weight_evaluation_separates_fit_holdout_and_unseen_patterns(){
