@@ -397,7 +397,22 @@ fn failure_matches_issue(error:&str,name:&str,title:&str,detail:&str)->bool{
         (!detail.is_empty()&&line==detail))
 }
 /// Visual mapping only. The native severity and action routing remain authoritative.
-fn issue_tone(issue:&Value)->ReviewTone {
+// Normal stage waiting notices remain visible even when the order card
+// already shows the next action. Only their presentation tone changes.
+fn waiting_payment_amount(detail:&str)->bool{
+    detail.rsplit_once(" 입금 청구 ").is_some_and(|(dealer,amount)|
+        !dealer.trim().is_empty()&&amount.strip_suffix('원').is_some_and(|n|
+            !n.is_empty()&&n.chars().any(|c|c.is_ascii_digit())&&
+            n.chars().all(|c|c.is_ascii_digit()||c==',')))
+}
+fn routine_stage_notice(issue:&Value)->bool{
+    if text(issue,"kind")!="STAGE_BLOCKER"||text(issue,"severity")!="ACTION"{return false;}
+    let detail=text(issue,"detail").trim().trim_end_matches('.');
+    let problem=detail.rsplit_once(": ").map(|(_,problem)|problem).unwrap_or(detail);
+    matches!(problem,"운임 적용 필요"|"계좌 안내 완료 필요")||waiting_payment_amount(detail)
+}
+pub(crate) fn issue_tone(issue:&Value)->ReviewTone {
+    if routine_stage_notice(issue){return ReviewTone::Info;}
     match (text(issue,"severity"),text(issue,"kind"),text(issue,"resolution")) {
         ("ERROR",_,_) | (_,"CLIENT_MATCH_ERROR",_) => ReviewTone::Error,
         ("INFO",_,"RESOLVED") => ReviewTone::Complete,
@@ -619,12 +634,8 @@ pub(crate) fn issue_instruction(issue:&Value)->Option<&'static str>{
         if detail.ends_with(" 입금 청구액 확인 필요")||problem=="입금 청구액 확인 필요"{
             return Some("청구 금액과 기존 입금 내역을 확인한 뒤 입금 확인 단계를 진행하세요.");
         }
-        if let Some((dealer,amount))=detail.rsplit_once(" 입금 청구 "){
-            if !dealer.trim().is_empty()&&amount.strip_suffix('원').is_some_and(|n|
-                !n.is_empty()&&n.chars().any(|c|c.is_ascii_digit())&&
-                n.chars().all(|c|c.is_ascii_digit()||c==',')){
-                return Some("거래처의 미입금 금액입니다. 실제 입금액을 확인한 뒤 입금 확인 단계를 진행하세요.");
-            }
+        if waiting_payment_amount(detail){
+            return Some("거래처의 미입금 금액입니다. 실제 입금액을 확인한 뒤 입금 확인 단계를 진행하세요.");
         }
         return match problem{
             "청구액 미확정"=>Some("품목 단가, 수량 및 운임을 확인하여 청구액을 확정하세요."),
@@ -828,6 +839,27 @@ fn issue_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn routine_stage_notices_stay_visible_blue_without_changing_native_blockers(){
+        for detail in ["가상 수취인: 운임 적용 필요","가상 수취인: 계좌 안내 완료 필요",
+            "가상 거래처 입금 청구 90,000원"]{
+            let issue=json!({"kind":"STAGE_BLOCKER","severity":"ACTION","detail":detail});
+            assert_eq!(issue_tone(&issue),ReviewTone::Info);
+            assert_eq!(issue["severity"],"ACTION");
+            assert_eq!(workflow_review_text(&issue,detail,&Value::Null),detail);
+            assert!(issue_instruction(&issue).is_some());
+        }
+        for detail in ["가상 수취인: 청구액 미확정","가상 거래처 입금 청구액 확인 필요",
+            "가상 수취인: 입금 부족","가상 거래처 입금 청구 오류"]{
+            let issue=json!({"kind":"STAGE_BLOCKER","severity":"ACTION","detail":detail});
+            assert_eq!(issue_tone(&issue),ReviewTone::Action);
+        }
+        for kind in ["FREIGHT","ACCOUNT","NOTICE"]{
+            assert_eq!(issue_tone(&json!({"kind":kind,"severity":"ACTION"})),ReviewTone::Action);
+        }
+        assert_eq!(issue_tone(&json!({"kind":"STAGE_BLOCKER","severity":"ERROR",
+            "detail":"가상 수취인: 운임 적용 필요"})),ReviewTone::Error);
+    }
     #[test]
     fn workflow_review_projection_keeps_original_data_and_approved_state(){
         let issue=json!({"kind":"ACCOUNT","severity":"ACTION","title":"입금 계좌를 등록 / 선택하세요"});
