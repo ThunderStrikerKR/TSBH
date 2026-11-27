@@ -2,8 +2,7 @@
 use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Stroke,Ui,UiBuilder,Vec2};
 use crate::card::UiWidthPolicyExt;
 use crate::{theme,typography};
-use crate::theme::{BUTTON_HOVER_TINT,SOFT_DIVIDER_WIDTH,SELECTION};
-
+ 
 /// Shared state caption for content-sized lists and menus with no reserved body.
 /// Fixed viewports use management_body_state_overlay instead.
 pub fn management_body_state_inline(ui:&mut Ui,caption:&str){
