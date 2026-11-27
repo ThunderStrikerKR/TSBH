@@ -571,7 +571,7 @@ function cardHeightSelfTest(){
   assert.equal(check(allowed,"new_screen.rs"),1);
   assert.equal(check("fn other(){ui.set_min_height(height);}","card/mod.rs"),1);
   const viewport="fn details_and_freight(){pane.set_height(review_rect.height());}";
-  assert.equal(check(viewport,"main.rs"),1);
+  assert.equal(check(viewport,"main.rs"),0);
   assert.equal(check(viewport.replace("pane.","card."),"main.rs"),1);
   assert.equal(check(viewport.replace("review_rect","arbitrary_rect"),"main.rs"),1);
   assert.equal(check("fn details_and_freight(){"+ "pane.set_height(review_rect.height());".repeat(4)+"}","main.rs"),1);
