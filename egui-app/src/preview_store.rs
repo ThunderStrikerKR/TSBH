@@ -1484,6 +1484,47 @@ impl PreviewStore {
         let mut v=status("shadow_model_promoted");v["selectedModelId"]=json!(candidate);Ok(v)
     }
 
+    pub(crate) fn paired_field_evaluation(input:&Value,evaluate:impl Fn(&Value)->Result<Value,String>)->Result<Value,String>{
+        let baseline_id=input["baselineModelId"].as_str().ok_or("기준 필드 모델 ID 누락")?;
+        let candidate_id=input["candidateModelId"].as_str().ok_or("후보 필드 모델 ID 누락")?;
+        if baseline_id==candidate_id{return Err("서로 다른 필드 모델 필요".into());}
+        let ids=input["orderIds"].as_array().filter(|v|!v.is_empty()&&v.len()<=250).ok_or("필드 비교 주문 범위 오류")?
+            .iter().map(|v|v.as_str().filter(|v|!v.trim().is_empty()&&v.len()<=1024).map(str::to_owned).ok_or("필드 비교 주문 ID 오류".to_owned()))
+            .collect::<Result<Vec<_>,_>>()?;
+        if ids.iter().collect::<std::collections::BTreeSet<_>>().len()!=ids.len(){return Err("필드 비교 주문 중복".into());}
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
+        let baseline=read_field_candidate(&tx,&scope,baseline_id)?;
+        let candidate=read_field_candidate(&tx,&scope,candidate_id)?;
+        if baseline["model"]["task"]!=candidate["model"]["task"]{return Err("필드 비교 작업 불일치".into());}
+        for m in [&baseline,&candidate]{verify_field_sources(&tx,&scope,&m["model"],None)?;}
+        let (frozen,orders,digests)=crate::business_state::read_learning_inputs(&ids,|sources|{
+            let (misses,digests)=select_learning_changes(&tx,&scope,sources)?;
+            if !misses.is_empty()||digests.len()!=ids.len(){return Err("필드 비교 확정 원본 동기화 필요".into());}
+            Ok((ids.clone(),digests))
+        })?;
+        let orders=attach_learning_audit(&tx,&frozen,orders)?;
+        tx.commit().map_err(|e|e.to_string())?;
+        let payload=json!({"baseline":baseline,"candidate":candidate,"orders":orders,
+            "evaluationAsOf":chrono::Utc::now().to_rfc3339(),"clientBuildVersion":env!("CARGO_PKG_VERSION")});
+        let mut report=evaluate(&payload)?;
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
+        if read_field_candidate(&tx,&scope,baseline_id)?!=baseline||read_field_candidate(&tx,&scope,candidate_id)?!=candidate{
+            return Err("필드 비교 모델 변경".into());
+        }
+        for m in [&baseline,&candidate]{verify_field_sources(&tx,&scope,&m["model"],None)?;}
+        let current=crate::business_state::read_learning_sources(&ids)?;
+        verify_learning_sync_sources(&tx,&frozen,&digests,&current)?;
+        let (misses,latest)=select_learning_changes(&tx,&scope,&current)?;
+        if !misses.is_empty()||latest!=digests||
+            crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("필드 비교 원본 변경".into());
+        }
+        report["currentSourceDigestsVerified"]=json!(true);
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(report)
+    }
+
     pub(crate) fn recognition_learning_support(input:&Value,
         evaluate:impl Fn(&[Value])->Result<Value,String>)->Result<Value,String>{
         if input.get("fieldBlendRegistry").is_some()&&input.as_object().is_none_or(|o|o.len()!=1){
