@@ -384,7 +384,10 @@ pub(crate) fn multiline_text_field_sized(
         .frame(frame)
         .margin(margin)
         .desired_rows(desired_rows);
-    ui.add_sized(size,editor)
+    let response=ui.add_sized(size,editor);
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("multiline input",response.rect,ui.clip_rect());
+    response
 }
 
 /// Source-document text styling is shared while the caller supplies its
@@ -831,6 +834,8 @@ pub(crate) fn reception_recipient_value_hit(ui:&mut Ui,display:&Response)->Respo
         display.id.with("recipient-value-hit"),
         egui::Sense::click()
     );
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("recipient field hit",hit.rect,ui.clip_rect());
     if hit.hovered(){
         ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
     }
@@ -840,10 +845,13 @@ pub(crate) fn reception_recipient_value_hit(ui:&mut Ui,display:&Response)->Respo
 /// OCR image zoom uses a fixed control width and a separate formatted label.
 /// Keep the native slider's keyboard and drag behavior.
 pub(crate) fn ocr_zoom_slider(ui:&mut Ui,zoom:&mut f32)->Response{
-    ui.add_sized(
+    let response=ui.add_sized(
         Vec2::new(118.0,24.0),
         egui::Slider::new(zoom,0.5..=4.0).show_value(false)
-    )
+    );
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("OCR slider",response.rect,ui.clip_rect());
+    response
 }
 
 #[cfg(test)]

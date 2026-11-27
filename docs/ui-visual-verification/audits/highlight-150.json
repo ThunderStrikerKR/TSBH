@@ -20,8 +20,13 @@
     "egui-app/src/ui_regressions.rs",
     "egui-app/src/highlight/regression_tests.rs",
     "egui-app/src/ui_test_support.rs",
-    "egui-app/src/category_tree/mod.rs"
+    "egui-app/src/category_tree/mod.rs",
+    "egui-app/src/category_dropdown.rs",
+    "egui-app/src/manual_source_view.rs",
+    "egui-app/src/ui_layout.rs",
+    "egui-app/src/floating_notice.rs",
+    "egui-app/src/popup/tag.rs"
   ],
   "visualStatus": "NOT_VERIFIED",
-  "reason": "하이라이트 전후 실렌더링 좌표·클리핑 추적 및 21개 관리 탭/접수 fixture 포인터 순회, 상태 매트릭스 CI 코드 추가. CI 결과 및 Windows GPU 실화면 미확인."
+  "reason": "CI 실패 로그 기반 수정 및 추가 hit target/대각선 vector icon 추적. 수정 후 CI 및 실제 Windows GPU 스크린샷은 미검증."
 }

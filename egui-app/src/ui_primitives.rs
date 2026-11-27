@@ -187,6 +187,8 @@ pub(crate) fn date_navigation_segmented_surface_with_state<R>(
     state:impl FnOnce(&R)->crate::highlight::States
 )->(Rect,R){
     let (outer,_)=ui.allocate_exact_size(size,Sense::hover());
+    #[cfg(test)]
+    crate::ui_test_support::record_component_geometry("segmented frame",outer,ui.clip_rect(),None);
     let inner=outer.shrink(theme::FRAME_STROKE_WIDTH);
     if let Some(role)=base_role{
         crate::highlight::field_background(ui,outer,role,true);

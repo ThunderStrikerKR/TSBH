@@ -317,6 +317,8 @@ fn management_dropdown_option_inner<T:PartialEq>(
     };
     let row=response.rect;
     let painter=ui.painter().with_clip_rect(row.shrink(2.0));
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("dropdown option",row,ui.clip_rect());
     let caption_ink=match style{
         ManagementDropdownOptionStyle::Status(color)=>color,
         _ if selected=>theme::ORANGE_EMPHASIS_TEXT,

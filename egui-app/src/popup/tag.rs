@@ -40,6 +40,8 @@ pub(crate) fn removable_tag_chip(ui:&mut Ui,tag:&str)->Response{
     let (rect,_)=ui.allocate_exact_size(chip.size(),Sense::hover());
     let label_rect=chip.paint(ui,rect,ui.clip_rect());
     let label=ui.interact(label_rect,ui.make_persistent_id(("tag-label",tag)),Sense::hover());
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("tag label",label.rect,ui.clip_rect());
     crate::ui_primitives::shortened_text_tooltip(label,&visible,tag);
     let icon=theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
     let inner=rect.shrink2(chip.inset);

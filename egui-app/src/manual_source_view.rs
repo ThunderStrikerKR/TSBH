@@ -53,6 +53,8 @@ pub fn source_document(
         egui::vec2(width,content_height.max(theme::INPUT_HEIGHT)),
         if enabled{Sense::click_and_drag()}else{Sense::hover()},
     );
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("manual source viewport",response.rect,ui.clip_rect());
     let galley_pos=rect.min+egui::vec2(text_inset,text_inset);
     let (fills,outlines)=source_highlight::block_shapes_manual(
         raw,&galley,galley_pos,spans,selected_recipient,active,assigned_ids,

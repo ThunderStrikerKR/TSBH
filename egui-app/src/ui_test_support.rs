@@ -267,6 +267,7 @@ pub(crate) struct HighlightSnapshot{
     components:Vec<ComponentGeometry>,
     targets:Vec<(&'static str,Rect,Rect)>,
     labels:Vec<PaintedLabel>,
+    icon_segments:Vec<([egui::Pos2;2],Rect)>,
 }
 fn painted_labels(output:&egui::FullOutput,screen:Rect)->Vec<PaintedLabel>{
     fn visit(shape:&egui::Shape,clip:Rect,screen:Rect,out:&mut Vec<PaintedLabel>){
@@ -275,6 +276,26 @@ fn painted_labels(output:&egui::FullOutput,screen:Rect)->Vec<PaintedLabel>{
                 let rect=text.galley.rect.translate(text.pos.to_vec2());
                 if rect.intersect(clip).intersect(screen).is_positive()&&!text.galley.text().is_empty(){
                     out.push(PaintedLabel{text:text.galley.text().to_owned(),rect,clip});
+                }
+            }
+            egui::Shape::Vec(shapes)=>for shape in shapes{visit(shape,clip,screen,out);},
+            _=>{}
+        }
+    }
+    let mut out=Vec::new();
+    for shape in &output.shapes{visit(&shape.shape,shape.clip_rect,screen,&mut out);}
+    out
+}
+fn painted_icon_segments(output:&egui::FullOutput,screen:Rect)->Vec<([egui::Pos2;2],Rect)>{
+    fn visit(shape:&egui::Shape,clip:Rect,screen:Rect,out:&mut Vec<([egui::Pos2;2],Rect)>){
+        match shape{
+            egui::Shape::LineSegment{points,..}=>{
+                let delta=points[1]-points[0];
+                // Short diagonal segments are glyph strokes (e.g. chevron/X).
+                // Axis-aligned table dividers, cursors and border rules are not.
+                if delta.x.abs()>0.5&&delta.y.abs()>0.5&&delta.length()<=40.0
+                    &&Rect::from_two_pos(points[0],points[1]).intersect(clip).intersect(screen).is_positive(){
+                    out.push((*points,clip));
                 }
             }
             egui::Shape::Vec(shapes)=>for shape in shapes{visit(shape,clip,screen,out);},
@@ -307,6 +328,7 @@ pub(crate) fn highlight_frame(ctx:&egui::Context,screen:Rect,pointer:Option<egui
         components:finish_component_geometry(screen),
         targets:HIGHLIGHT_TARGETS.with(|trace|trace.borrow_mut().take().unwrap()),
         labels:painted_labels(&output,screen),
+        icon_segments:painted_icon_segments(&output,screen),
     }
 }
 impl HighlightSnapshot{
@@ -329,6 +351,16 @@ impl HighlightSnapshot{
             if !result.iter().any(|old|(*old-p).length()<1.0){result.push(p);}
         }
         result
+    }
+    pub(crate) fn assert_icon_invariant(&self,other:&Self,case:&str){
+        let mut used=vec![false;other.icon_segments.len()];
+        for (points,clip) in &self.icon_segments{
+            let index=other.icon_segments.iter().enumerate().position(|(i,(next,next_clip))|
+                !used[i]&&edges_near(*clip,*next_clip)&&
+                (points[0]-next[0]).length()<=0.5&&(points[1]-next[1]).length()<=0.5)
+                .unwrap_or_else(||panic!("{case}: vector icon segment moved or disappeared: {points:?}"));
+            used[index]=true;
+        }
     }
     pub(crate) fn assert_invariant(&self,other:&Self,case:&str){
         assert_eq!(self.slots.len(),other.slots.len(),"{case}: layout slot count changed");
@@ -370,7 +402,9 @@ pub(crate) fn sweep_highlight_geometry(ctx:&egui::Context,screen:Rect,case:&str,
     for (index,point) in targets.iter().copied().enumerate(){
         for phase in 0..6{
             let current=highlight_frame(ctx,screen,(phase<3).then_some(point),&mut draw);
-            baseline.assert_invariant(&current,&format!("{case} target {index} {point:?} frame {phase}"));
+            let sample=format!("{case} target {index} {point:?} frame {phase}");
+            baseline.assert_invariant(&current,&sample);
+            baseline.assert_icon_invariant(&current,&sample);
         }
     }
     println!("HIGHLIGHT_GEOMETRY_SWEEP {case}: {} observed hit targets",targets.len());
@@ -391,6 +425,19 @@ mod highlight_invariance_detector_tests{
         });
         let baseline=draw(0.0);
         baseline.assert_invariant(&draw(2.0),"deliberate one-frame regression");
+    }
+    #[test]
+    #[should_panic(expected="vector icon segment moved")]
+    fn detector_rejects_moved_vector_icon(){
+        let ctx=test_context();
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(500.0,300.0));
+        let draw=|shift:f32|highlight_frame(&ctx,screen,None,|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.painter().line_segment([egui::pos2(50.0+shift,50.0),egui::pos2(56.0+shift,56.0)],
+                    egui::Stroke::new(1.0,egui::Color32::WHITE));
+            });
+        });
+        draw(0.0).assert_icon_invariant(&draw(2.0),"deliberate vector shift");
     }
     #[test]
     #[should_panic(expected="allocation/clip changed")]

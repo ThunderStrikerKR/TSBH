@@ -32,3 +32,7 @@
 실제 egui 프레임의 기존 TRACE, ComponentGeometry, 별도 사용자 지정 hit-target 및 FullOutput 텍스트 Rect/clip을 수집한다. 같은 데이터/탭/화면에서 관측된 visible hit target을 실제 pointer moved/gone 이벤트로 순회, 초기 12프레임 안정화 후 진입 3프레임/이탈 3프레임마다 0.5pt 허용오차로 비교한다. 기존 라벨은 반복 문자열까지 일대일 대응하며 새 툴팁/오버레이 텍스트만 허용한다. 7개 관리 페이지군 21개 탭 × 기존 3개 화면 크기와 접수 fixture, 의미 상태 공통 컴포넌트 4배율 테스트, 검출기 음성 테스트 2개 추가. 자동 컴파일 게이트 연결. 스크롤/실제 업무 선택 변경/팝업 개폐와 GPU 픽셀은 별도 범위. 추적되지 않은 네이티브 아이콘/도형과 운영 데이터의 모든 동적 경로까지 전수 검증한 것은 아님. CI 실행 결과 미확인.
 
 보완: 강조가 켜질 때만 호출되는 후처리 함수에서 테스트 hit rect를 기록하지 않도록 변경하고, 실제 컨트롤 할당 지점에서 동일 상태로 추적한다. 실제 source layout/block_shapes에서 활성 링크가 변경되는 경우 기존 텍스트 및 다음 복사 버튼 Rect를 비교하는 테스트 추가. 결과 미확인.
+
+## 150차 CI 오류 및 추가 미추적 경로
+
+기준 d7ec7135에서 static 자체검사 실패(새 dropdown trigger 계약 누락), Windows 및 native 컴파일 실패(Geometry 이전 누락, test API 이동, String/float 유형)를 로그로 확인하여 27dabc08에서 수정. 추가 hit trace: 편집 셀/정렬 헤더/주문 이력 행/드롭다운 옵션/다중행 입력/수취인 hit/OCR slider/경로 crumb/수동 원문/알림 닫기/태그 라벨/패널 splitter, 고정행과 분할형 프레임 component rect. 실제 draw list 짧은 대각선 glyph 선분도 pointer sweep에 비교하고 음성 테스트 추가. 메뉴 옵션 및 태그의 실제 공통 renderer fixture 추가. 전체 운영 팝업, 비선분 도형 및 실제 GPU 검증은 미완료.

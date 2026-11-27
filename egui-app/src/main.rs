@@ -6181,6 +6181,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 );
                                 let id = ui.make_persistent_id(("horizontal-splitter", index));
                                 let response = ui.interact(splitter, id, Sense::click_and_drag());
+                                #[cfg(test)]
+                                crate::ui_test_support::record_highlight_target("pane splitter",response.rect,ui.clip_rect());
                                 if response.hovered() || response.dragged() {
                                     ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                                 }

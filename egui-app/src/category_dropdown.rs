@@ -217,6 +217,8 @@ fn crumb_width(ui:&Ui,name:&str)->f32{
 fn crumb_text(ui:&mut Ui,name:&str,width:f32,current:bool,enabled:bool)->Response{
     let (rect,response)=ui.allocate_exact_size(Vec2::new(width.max(0.0),theme::CATEGORY_EXPLORER_CRUMB_HEIGHT),
         if enabled&&!current{egui::Sense::click()}else{egui::Sense::hover()});
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("category breadcrumb",response.rect,ui.clip_rect());
     if enabled&&!current{crate::button::paint_button_hover(ui,&response,crate::highlight::Geometry::Control);}
     let visible=typography::fit_category_path(ui,name,(width-12.0).max(0.0),typography::CategoryPathFont::Body);
     let galley=typography::category_tree_name_galley(ui,&visible,false);

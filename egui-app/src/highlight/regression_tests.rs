@@ -312,3 +312,23 @@ fn highlight_invariance_source_glyphs_and_adjacent_slots(){
         baseline.assert_invariant(&draw(false),"source linked leave");
     }
 }
+
+#[test]
+fn highlight_invariance_open_dropdown_options_and_tag_controls(){
+    for width in [420.0,800.0]{
+        let ctx=test_context();
+        let screen=Rect::from_min_size(Pos2::ZERO,Vec2::new(width,500.0));
+        let mut selected="a";
+        let tags=["검증 태그".to_owned(),"긴 합성 태그 이름".to_owned()];
+        let mut entry=String::new();
+        crate::ui_test_support::sweep_highlight_geometry(&ctx,screen,"open option and tag controls",|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                crate::dropdown::management_dropdown_option_palette(ui);
+                crate::dropdown::management_dropdown_option(ui,&mut selected,"a","선택 항목");
+                crate::dropdown::management_dropdown_option(ui,&mut selected,"b","다른 항목");
+                crate::ui_layout::tag_block_editor(ui,&tags,&mut entry,"검색 태그 입력");
+                crate::button::action(ui,"적용",theme::ButtonRole::Standard,true);
+            });
+        });
+    }
+}

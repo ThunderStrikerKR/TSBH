@@ -25,6 +25,8 @@ pub(crate) fn editable_cell_hit(
     overflow:bool,full:&str
 )->egui::Response{
     let response=ui.interact(rect,id,if editable{Sense::click()}else{Sense::hover()});
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("editable table cell",response.rect,ui.clip_rect());
     let response=crate::ui_primitives::overflow_tooltip(response,overflow,full);
     if editable{response.on_hover_cursor(cursor)}else{response}
 }
@@ -583,6 +585,8 @@ pub(crate) fn heading(
 pub(crate) fn sort_clicked(ui:&mut Ui,hit:Rect,id:impl std::hash::Hash)->bool{
     if hit.width()<=0.0||hit.height()<=0.0{return false;}
     let response=ui.interact(hit,ui.make_persistent_id(id),egui::Sense::click());
+    #[cfg(test)]
+    crate::ui_test_support::record_highlight_target("sort header",response.rect,ui.clip_rect());
     if response.hovered(){management_master_header_sort_hover(ui,hit);}
     response.clicked()
 }
@@ -597,6 +601,8 @@ pub(crate) fn history_row<const N:usize>(
 ){
     row_scope(ui,id,rect,|row|{
         row.allocate_exact_size(rect.size(),egui::Sense::hover());
+        #[cfg(test)]
+        crate::ui_test_support::record_highlight_target("history row",rect,row.clip_rect());
         if let Some(block)=detail{
             row.painter().rect_filled(rect,0.0,theme::surface_palette(theme::SurfaceRole::Workspace,theme::VisualState::Normal).fill);
             crate::card::paint_shipment_detail_surface(row,block,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill,false);

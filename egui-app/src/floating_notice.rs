@@ -546,6 +546,8 @@ pub fn show(ctx: &Context) {
                 let response=ui.interact(
                     hit,Id::new(NOTICE_ID).with("close"),Sense::click()
                 );
+                #[cfg(test)]
+                crate::ui_test_support::record_highlight_target("notice close",response.rect,ui.clip_rect());
                 remember_response(ui.ctx(),&response);
                 crate::ui_primitives::paint_action_hover_corners(ui,&response,crate::highlight::Geometry::Compact);
                 paint_close(&painter,center);

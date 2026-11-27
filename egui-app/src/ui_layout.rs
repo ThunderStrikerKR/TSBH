@@ -59,6 +59,8 @@ pub fn fixed_row<R>(
     let (rect,_response)=ui.allocate_exact_size(
         Vec2::new(width,height),Sense::hover()
     );
+    #[cfg(test)]
+    crate::ui_test_support::record_component_geometry("fixed layout row",rect,ui.clip_rect(),None);
     // Render in a detached child Ui: its content can grow internally, but
     // it cannot advance the parent's cursor or move the next sibling.
     let mut row=ui.new_child(
