@@ -1,4 +1,6 @@
 //! Low-level UI primitives independent of composite screens and controls.
+use crate::ui_layout::SharedUiClipExt as _;
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Stroke,Ui,UiBuilder,Vec2};
@@ -218,7 +220,7 @@ pub(crate) fn navigation_segment_child(
     let rect=crate::ui_layout::aligned_rect(rect);
     let mut child=parent.new_child(UiBuilder::new().id_salt(id)
         .aligned_max_rect(rect).layout(layout));
-    child.set_clip_rect(rect.intersect(parent.clip_rect()));
+    child.restrict_shared_clip(rect.intersect(parent.clip_rect()));
     child
 }
 
@@ -276,7 +278,7 @@ pub fn form_field_label_sized(ui:&mut Ui,label:&str,width:f32)->Response {
     let pos=egui::pos2(rect.left(),
         rect.top()+typography::form_label_text_y(rect.height(),galley.size().y));
     let overflow=galley.size().x>rect.width()+0.5;
-    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).galley(pos,galley,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
+    ui.painter().with_shared_clip(rect.intersect(ui.clip_rect())).galley(pos,galley,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
     overflow_tooltip(response,overflow,label)
 }
 pub fn form_field_label(ui:&mut Ui,label:&str)->Response {
