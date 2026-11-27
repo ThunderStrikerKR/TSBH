@@ -71,7 +71,10 @@ pub(crate) struct TagBlockEdit{
 pub(crate) fn tag_block_editor(ui:&mut Ui,tags:&[String],input:&mut String,hint:&str)->TagBlockEdit{
     let mut remove=None;
     if !tags.is_empty(){
-        ui.horizontal_wrapped(|chips|{
+        // Start-align fixed-height chips so the first sibling cannot be
+        // repositioned when a later sibling expands the wrapping row.
+        ui.scope_builder(egui::UiBuilder::new()
+            .layout(Layout::left_to_right(Align::Min).with_main_wrap(true)),|chips|{
             crate::ui_layout::apply_spacing_role(chips,crate::ui_layout::SpacingRole::TagChips);
             for tag in tags{
                 if crate::popup::removable_tag_chip(chips,tag).clicked(){

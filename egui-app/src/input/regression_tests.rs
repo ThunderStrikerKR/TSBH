@@ -640,3 +640,47 @@ mod shared_input_width_rendered_geometry_tests{
         }
     }
 }
+
+#[test]
+fn tag_blocks_share_top_bottom_and_vertical_centers_even_when_wrapped(){
+    let tags=["가상06","테스트거래처06","테스트 납품처 06","UI-SAMPLE-C06",
+        "매우 긴 검색 별칭을 사용해도 고정된 높이를 유지한다"].map(str::to_owned);
+    for width in [900.0,360.0]{
+        let ctx=test_context();
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(width,500.0));
+        let mut entry=String::new();
+        crate::ui_test_support::TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
+        let _=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                crate::input::tag_block_editor(ui,&tags,&mut entry,"검색 태그 입력");
+            });
+        });
+        let measured=crate::ui_test_support::TRACE.with(|trace|trace.borrow_mut().take().unwrap());
+        let collect=|name:&str|measured.iter().filter(|(role,_)|*role==name)
+            .map(|(_,rect)|*rect).collect::<Vec<_>>();
+        let chips=collect("tag chip");
+        let labels=collect("tag label");
+        let actions=collect("tag remove");
+        assert_eq!(chips.len(),tags.len());
+        assert_eq!(labels.len(),chips.len());
+        assert_eq!(actions.len(),chips.len());
+        let close=|a:f32,b:f32|assert!((a-b).abs()<=0.5,"{a} != {b}");
+        for index in 0..chips.len(){
+            let chip=chips[index];
+            close(chip.height(),34.0);
+            close(chip.center().y,labels[index].center().y);
+            close(chip.center().y,actions[index].center().y);
+            if index>0{
+                let prior=chips[index-1];
+                if chip.left()>prior.left(){
+                    close(chip.top(),prior.top());
+                    close(chip.bottom(),prior.bottom());
+                }else{
+                    assert!(chip.top()>=prior.bottom()+theme::SPACE_8-0.5);
+                }
+            }
+        }
+        if width==900.0{assert!(chips.iter().all(|r|(r.top()-chips[0].top()).abs()<=0.5));}
+        else{assert!(chips.last().unwrap().top()>chips[0].top());}
+    }
+}
