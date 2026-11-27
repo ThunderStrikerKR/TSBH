@@ -104,7 +104,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
             // feature object as production assignment, with no reparse.
             if payload.get("includeDocumentFeatures").and_then(Value::as_bool)==Some(true){
                 let document=extract_document(raw,&reception,payload.get("client"));
-                let evaluation=document.features.evaluation(&document.events);
+                let evaluation=document.features.evaluation(&document.events,&document.geometry);
                 let mut result=assign_document(document,&reception,payload.get("client"))?;
                 result["documentFeatures"]=evaluation;
                 Ok(result)
@@ -1019,6 +1019,7 @@ fn dated_dispatch_instruction(text:&str)->bool{
 struct DocumentFeatures{
     ordered:Vec<usize>,
     ranks:Vec<usize>,
+    positions:Vec<[(usize,usize);2]>, // (Unicode scalar, UTF-16) at both endpoints
     anchors:Vec<usize>,
     roles:Vec<&'static str>,
     ranges:Vec<(usize,usize)>,
@@ -1034,8 +1035,46 @@ fn structural_role(kind:&str)->Option<&'static str>{
         "quantity"=>Some("Q"),_=>None,
     }
 }
+// Index only actual event endpoints in one forward source pass.
+fn event_positions(raw:&str,events:&[Evidence])->Option<Vec<[(usize,usize);2]>>{
+    let mut endpoints=Vec::with_capacity(events.len().saturating_mul(2));
+    for (i,e) in events.iter().enumerate(){
+        if e.start>e.end||raw.get(e.start..e.end).is_none(){return None;}
+        endpoints.push((e.start,i,0usize));endpoints.push((e.end,i,1usize));
+    }
+    endpoints.sort_unstable();
+    let mut positions=vec![[(0usize,0usize);2];events.len()];
+    let mut chars=raw.char_indices().peekable();
+    let (mut scalar,mut units)=(0usize,0usize);
+    for (offset,i,end) in endpoints{
+        while chars.peek().is_some_and(|(at,_)|*at<offset){
+            let (_,c)=chars.next().unwrap();scalar+=1;units+=c.len_utf16();
+        }
+        positions[i][end]=(scalar,units);
+    }
+    Some(positions)
+}
+fn signed_distance(a:usize,b:usize)->i64{
+    if b>=a{(b-a) as i64}else{-((a-b) as i64)}
+}
+// Local adjacent blocks can differ by one insertion, deletion, or adjacent
+// swap. These are comparison evidence only, never merged pattern identities.
+fn near_role_block(a:&[&str],b:&[&str])->&'static str{
+    if a==b{return "exact";}
+    if a.len()==b.len(){
+        let Some(i)=a.iter().zip(b).position(|(x,y)|x!=y)else{return "different";};
+        if i+1<a.len()&&a[i]==b[i+1]&&a[i+1]==b[i]&&a[i+2..]==b[i+2..]{
+            return "adjacent_swap";
+        }
+        return "different";
+    }
+    let (short,long,kind)=if a.len()<b.len(){(a,b,"one_extra")}else{(b,a,"one_missing")};
+    if long.len()!=short.len()+1{return "different";}
+    let i=short.iter().zip(long).position(|(x,y)|x!=y).unwrap_or(short.len());
+    if short[i..]==long[i+1..]{kind}else{"different"}
+}
 impl DocumentFeatures{
-    fn new(events:&[Evidence],deferred:&DeferredCandidates)->Self{
+    fn new(raw:&str,events:&[Evidence],deferred:&DeferredCandidates)->Self{
         let mut ordered=(0..events.len()).collect::<Vec<_>>();
         ordered.sort_by_key(|&i|(events[i].start,events[i].end));
         let mut ranks=vec![0;events.len()];
@@ -1045,10 +1084,13 @@ impl DocumentFeatures{
         if anchors.is_empty(){
             anchors=ordered.iter().copied().filter(|&i|events[i].kind=="address").collect();
         }
+        let positions=event_positions(raw,events);
+        let invalid_positions=positions.is_none();
+        let positions=positions.unwrap_or_else(||vec![[(0,0);2];events.len()]);
         let mut roles=Vec::new();
         let mut ranges:Vec<(usize,usize)>=Vec::new();
         let mut last_end=0usize;
-        let mut ambiguous=deferred.truncated||deferred.entries.values().any(|r|!r.hard());
+        let mut ambiguous=invalid_positions||deferred.truncated||deferred.entries.values().any(|r|!r.hard());
         for (rank,&i) in ordered.iter().enumerate(){
             let event=&events[i];
             let Some(role)=structural_role(event.kind)else{continue};
@@ -1057,11 +1099,10 @@ impl DocumentFeatures{
             // Collapse adjacent product/quantity runs, retaining the raw
             // event sequence and section bounds for individual decisions.
             // A leading unattached quantity is NOT an item section.
-            let merge=ranges.last().is_some_and(|&(a,b)|{
-                b==rank&&events[ordered[a]].paragraph==event.paragraph&&
-                ((roles.last()==Some(&"P")&&matches!(role,"P"|"Q"))||
-                 (roles.last()==Some(&"T")&&role=="T"))
-            });
+            // Optional notes and blank separators do not by themselves
+            // make a new role section or a new pattern identity.
+            let merge=matches!((roles.last().copied(),role),
+                (Some("P"),"P"|"Q")|(Some("T"),"T"));
             if merge{ranges.last_mut().unwrap().1=rank+1;}
             else{roles.push(role);ranges.push((rank,rank+1));}
         }
@@ -1081,16 +1122,19 @@ impl DocumentFeatures{
         }
         let exact_repeat=if period>0&&roles.len()%period==0{roles.len()/period}else{0};
         let incomplete_tail=if period>0{roles.len()%period}else{0};
-        Self{ordered,ranks,anchors,roles,ranges,period,exact_repeat,incomplete_tail,ambiguous}
+        Self{ordered,ranks,positions,anchors,roles,ranges,period,exact_repeat,incomplete_tail,ambiguous}
     }
     fn relation(&self,events:&[Evidence],from:usize,to:usize)->(i64,i64,bool){
         let a=&events[from];let b=&events[to];
-        let signed=|x:usize,y:usize|if y>=x{(y-x) as i64}else{-((x-y) as i64)};
-        (signed(a.line,b.line),signed(self.ranks[from],self.ranks[to]),a.paragraph==b.paragraph)
+        (signed_distance(a.line,b.line),signed_distance(self.ranks[from],self.ranks[to]),a.paragraph==b.paragraph)
     }
     // An evaluation identity, NOT a training key. Incomplete coverage
     // and unknown roles cannot be promoted to independent learning.
-    fn evaluation(&self,events:&[Evidence])->Value{
+    fn evaluation(&self,events:&[Evidence],geometry:&SourceGeometry)->Value{
+        if events.len()>4096{
+            return json!({"version":1,"evaluationKey":null,"trainingKey":null,
+                "status":"event_budget_exceeded"});
+        }
         let cycle=if self.exact_repeat>0{&self.roles[..self.period]}else{self.roles.as_slice()};
         let segments=self.ranges.iter().map(|&(a,b)|{
             let first=&events[self.ordered[a]];let last=&events[self.ordered[b-1]];
@@ -1103,10 +1147,43 @@ impl DocumentFeatures{
             for &b in self.roles.iter().skip(i+1).take(2){*partial.entry((a,b)).or_default()+=1;}
         }
         let partial=partial.into_iter().map(|((a,b),count)|json!([a,b,count])).collect::<Vec<_>>();
+        let mut relations=Vec::new();
+        for (i,&from) in self.ordered.iter().enumerate(){
+            for &to in self.ordered.iter().skip(i+1).take(2){
+                let (line,rank,same_paragraph)=self.relation(events,from,to);
+                let gap=geometry.between(events[from].line,events[to].line);
+                let a=self.positions[from];let b=self.positions[to];
+                relations.push(json!({"from":from,"to":to,"signedLine":line,"signedRank":rank,
+                    "signedScalarStart":signed_distance(a[0].0,b[0].0),
+                    "signedUtf16Start":signed_distance(a[0].1,b[0].1),
+                    "scalarGap":signed_distance(a[1].0,b[0].0),
+                    "utf16Gap":signed_distance(a[1].1,b[0].1),
+                    "sameParagraph":same_paragraph,"blankLines":gap.blank_lines,
+                    "contentLines":gap.content_lines,"maxBlankRun":gap.max_consecutive_blank_lines}));
+            }
+        }
+        let observed=self.ordered.iter().map(|&i|json!({
+            "index":i,"role":structural_role(events[i].kind).unwrap_or("optional"),
+            "utf16Start":self.positions[i][0].1,"utf16End":self.positions[i][1].1
+        })).collect::<Vec<_>>();
+        let mut starts=self.roles.iter().enumerate().filter_map(|(i,r)|(*r=="N").then_some(i)).collect::<Vec<_>>();
+        starts.push(self.roles.len());
+        let mut local=Vec::new();
+        for (i,w) in starts.windows(2).enumerate(){
+            let block=&self.roles[w[0]..w[1]];
+            let relation=if i>0{near_role_block(&self.roles[starts[i-1]..w[0]],block)}else{"first"};
+            local.push(json!({"startRole":w[0],"endRole":w[1],"relation":relation}));
+        }
+        let repeat_segments=if self.period>0&&(self.exact_repeat>1||self.incomplete_tail>0){
+            (0..self.roles.len()/self.period).map(|i|json!({
+                "startRole":i*self.period,"endRole":(i+1)*self.period
+            })).collect::<Vec<_>>()
+        }else{Vec::new()};
         json!({"version":1,"coordinateUnit":"utf8_byte",
-            "evaluationKey":if self.ambiguous||cycle.is_empty(){Value::Null}else{json!([1,cycle])},
-            "roles":self.roles,"segments":segments,"period":self.period,
+            "evaluationKey":if self.ambiguous||cycle.is_empty()||self.incomplete_tail>0{Value::Null}else{json!([1,cycle])},
+            "roles":self.roles,"observed":observed,"segments":segments,"period":self.period,
             "exactRepeatCount":self.exact_repeat,"incompleteTail":self.incomplete_tail,
+            "repeatSegments":repeat_segments,"localBlocks":local,"relations":relations,
             "partialOrder":partial,"ambiguous":self.ambiguous,"trainingKey":null})
     }
 }
@@ -1497,7 +1574,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         }
     }
     let delivery=DeliveryGeometry::new(&events);
-    let features=DocumentFeatures::new(&events,&exclusions);
+    let features=DocumentFeatures::new(raw,&events,&exclusions);
     ExtractedDocument{raw,lines,events,product_hits,geometry,delivery,exclusions,features}
 }
 fn analyze(raw:&str,state:&Value,client:Option<&Value>)->Result<Value,String>{
@@ -2344,21 +2421,43 @@ mod tests {
             kind,value:String::new(),start:i*3,end:i*3+1,line:i,paragraph:usize::from(i>=6),
             reason:"synthetic",recipient:None,item_id:None
         }).collect::<Vec<_>>();
-        let features=DocumentFeatures::new(&events,&DeferredCandidates::default());
+        let raw="x".repeat(kinds.len()*3);
+        let geometry=SourceGeometry::new(&raw);
+        let features=DocumentFeatures::new(&raw,&events,&DeferredCandidates::default());
         assert_eq!(features.anchors,vec![0,6]);
         assert_eq!(features.roles,vec!["N","T","P","N","T","P"]);
         assert_eq!(features.exact_repeat,2);
         assert_eq!(features.period,3);
         assert_eq!(features.relation(&events,6,1),(-5,-5,false));
-        let eval=features.evaluation(&events);
+        let eval=features.evaluation(&events,&geometry);
         assert_eq!(eval["evaluationKey"],json!([1,["N","T","P"]]));
         assert!(eval["trainingKey"].is_null());
-        let incomplete=DocumentFeatures::new(&events[..7],&DeferredCandidates::default());
+        let incomplete=DocumentFeatures::new(&raw,&events[..7],&DeferredCandidates::default());
         assert_eq!(incomplete.incomplete_tail,1);
         assert_eq!(incomplete.exact_repeat,0);
         let mut uncertain=DeferredCandidates::default();
         uncertain.truncated=true;
-        assert!(DocumentFeatures::new(&events,&uncertain).evaluation(&events)["evaluationKey"].is_null());
+        assert!(DocumentFeatures::new(&raw,&events,&uncertain).evaluation(&events,&geometry)["evaluationKey"].is_null());
+        assert!(incomplete.evaluation(&events[..7],&geometry)["evaluationKey"].is_null());
+        assert_eq!(near_role_block(&["N","T","A"],&["N","A","T"]),"adjacent_swap");
+        assert_eq!(near_role_block(&["N","T"],&["N","A","T"]),"one_extra");
+        assert_eq!(near_role_block(&["N","A","T"],&["N","T"]),"one_missing");
+    }
+    #[test]
+    fn document_feature_character_positions_distinguish_utf16_and_scalar(){
+        let raw="😀N\nT";
+        let events=vec![
+            Evidence{kind:"name",value:"N".into(),start:4,end:5,line:0,paragraph:0,
+                reason:"synthetic",recipient:None,item_id:None},
+            Evidence{kind:"mobile",value:"T".into(),start:6,end:7,line:1,paragraph:0,
+                reason:"synthetic",recipient:None,item_id:None}
+        ];
+        let f=DocumentFeatures::new(raw,&events,&DeferredCandidates::default());
+        assert_eq!(f.positions,vec![[(1,2),(2,3)],[(3,4),(4,5)]]);
+        let e=f.evaluation(&events,&SourceGeometry::new(raw));
+        assert_eq!(e["relations"][0]["utf16Gap"],1);
+        assert_eq!(e["relations"][0]["signedLine"],1);
+        assert_eq!(e["observed"][0]["utf16Start"],2);
     }
     #[test]
     fn unclassified_records_are_not_promoted_to_fields(){
