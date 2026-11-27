@@ -79,7 +79,7 @@ mod fixed_layout_slot_contract_tests {
                     let expected_gap=ui.spacing().item_spacing.y;
                     let slot=fixed_status_slot(
                         ui,status_width,typography::METADATA_LINE_HEIGHT,
-                        message,message,theme::DANGER
+                        message,message,theme::message_ink(theme::MessageInkRole::Danger)
                     );
                     let (next,_)=ui.allocate_exact_size(
                         Vec2::new(120.0,theme::ACTION_STANDARD_HEIGHT),Sense::hover()
@@ -383,7 +383,9 @@ mod management_async_layout_contract_tests {
         assert!(!rendered.contains("management_list_strip_frame().show(panel,|empty|"));
         let settlement=include_str!("daily_settlement_manager.rs");
         assert!(settlement.contains("let values=["));
-        assert!(settlement.contains("for (name,value) in ["));
+        assert!(settlement.contains("for (index,(name,value)) in ["));
+        assert!(settlement.contains("].into_iter().zip(values.iter()).enumerate(){"));
+        assert!(settlement.contains("kpi(strip,name,value,state);"));
         let model_groups=include_str!("model_group_manager.rs");
         assert!(!model_groups.contains("if self.dirty(){\n                                crate::ui_primitives::soft_divider(right);"));
         let aliases=include_str!("alias_manager.rs");
@@ -433,8 +435,9 @@ mod management_async_behavior_regression_tests {
         // Verify the actual dispatch and selected workbook kind, not the
         // retired single-argument product-only signature.
         assert_eq!(menu.matches("let client=self.client;").count(),2);
-        assert!(menu.contains("self.start(menu.ctx(),move||export_file(native.as_ref(),client));"));
-        assert!(menu.contains("self.start(menu.ctx(),move||preview_file(native.as_ref(),client));"));
+        assert!(menu.contains("self.start(ctx,move||export_file(native.as_ref(),client));"));
+        assert!(menu.contains("self.start(ctx,move||preview_file(native.as_ref(),client));"));
+        assert_eq!(menu.matches("menu.workbook_action(").count(),2);
     }
 
     #[test]
@@ -448,7 +451,7 @@ mod management_async_behavior_regression_tests {
         assert!(!settlement.contains("결산 자료 확인 중"));
 
         let model_groups=include_str!("model_group_manager.rs");
-        assert!(model_groups.contains("writable&&!busy&&self.dirty()"));
+        assert!(model_groups.contains("writable&&!busy&&!nested&&self.dirty()"));
         assert!(model_groups.contains("workspace.header(title,\"닫기\""));
 
         let aliases=include_str!("alias_manager.rs");
@@ -594,6 +597,35 @@ mod shared_screen_component_contract_tests {
 mod common_action_tooltip_tests{
     use super::*;
     #[test]
+    fn actual_form_and_table_captions_are_visible_with_explicit_overflow_policy(){
+        for scale in [1.0_f32,1.25,1.5]{
+            let ctx=test_context();
+            ctx.set_pixels_per_point(scale);
+            let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(800.0,500.0));
+            let mut field=Rect::NOTHING;
+            let mut table=Rect::NOTHING;
+            let mut narrow=Rect::NOTHING;
+            let full="반도스탠드 대형 오케스트라 보면대";
+            let output=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    field=crate::ui_primitives::form_field_label_sized(ui,"판매 상태",180.0).rect;
+                    table=ui.allocate_exact_size(Vec2::new(160.0,36.0),Sense::hover()).0;
+                    crate::table::paint_management_text_cell(ui,table,"판매중","판매중",
+                        typography::ManagementTableCellRole::Status,egui::Align2::LEFT_CENTER,
+                        "caption-status",false);
+                    narrow=ui.allocate_exact_size(Vec2::new(60.0,36.0),Sense::hover()).0;
+                    crate::table::paint_management_text_cell(ui,narrow,full,full,
+                        typography::ManagementTableCellRole::ProductName,egui::Align2::LEFT_CENTER,
+                        "caption-long-product",false);
+                });
+            });
+            crate::ui_test_support::assert_painted_caption(&output,"판매 상태",field);
+            crate::ui_test_support::assert_painted_caption(&output,"판매중",table);
+            let ink=crate::ui_test_support::assert_caption_visibility(&output,full,narrow,true);
+            assert!(ink.width()>narrow.width(),"long product fixture must actually overflow");
+        }
+    }
+    #[test]
     fn only_overflowing_text_qualifies_for_a_tooltip(){
         let rect=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(100.0,20.0));
         assert!(!text_exceeds_rect(Vec2::new(80.0,18.0),rect));
@@ -633,7 +665,10 @@ mod common_action_tooltip_tests{
                     let output=ctx.run(egui::RawInput{
                         screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(800.0,500.0))),
                         time:Some(frame as f64*0.1),predicted_dt:0.1,
-                        events:vec![egui::Event::PointerMoved(pointer)],
+                        // Send a movement only when the pointer actually changes.
+                        // Repeated synthetic movements can reset native hover settling.
+                        events:if frame<=1{vec![egui::Event::PointerMoved(pointer)]}else{Vec::new()},
+                        focused:true,
                         ..Default::default()
                     },|ctx|{
                         egui::CentralPanel::default().show(ctx,|ui|{
@@ -791,6 +826,166 @@ mod shared_selection_interaction_tests {
         }
         draw(vec![])
     }
+    // Sample the actual response interior, away from antialiased borders
+    // and rounded corners. Outside probes are deliberately far enough from
+    // the widget that egui's native pointer-radius tolerance cannot snap.
+    fn hit_probes(rect:Rect)->[egui::Pos2;5]{
+        let x=rect.width()*0.2;
+        let y=rect.height()*0.2;
+        [rect.center(),egui::pos2(rect.left()+x,rect.center().y),
+            egui::pos2(rect.right()-x,rect.center().y),
+            egui::pos2(rect.center().x,rect.top()+y),
+            egui::pos2(rect.center().x,rect.bottom()-y)]
+    }
+    #[test]
+    fn actual_action_button_hit_area_edges_disabled_and_neighbor_are_independent(){
+        use theme::ButtonRole;
+        for role in [ButtonRole::Standard,ButtonRole::Primary,ButtonRole::Danger,
+            ButtonRole::Emphasized,ButtonRole::TableSecondary,ButtonRole::Quiet,
+            ButtonRole::Navigation,ButtonRole::ActiveNavigation,
+            ButtonRole::ManagementTab,ButtonRole::ActiveManagementTab,
+            ButtonRole::KakaoControl,ButtonRole::ActiveKakaoControl]{
+            for scale in [1.0_f32,1.25,1.5]{
+                for probe in 0..7{
+                    let ctx=test_context();
+                    ctx.set_pixels_per_point(scale);
+                    let mut actions=0;
+                    let mut neighbors=0;
+                    let mut draw=|enabled,parent,events|{
+                        let mut frame=None;
+                        let _=ctx.run(raw(&ctx,events),|ctx|{
+                            egui::CentralPanel::default().show(ctx,|ui|{
+                                ui.horizontal(|ui|{
+                                    let response=ui.add_enabled_ui(parent,|ui|
+                                        crate::button::action_with_min_width(ui,"적용",role,enabled,120.0)).inner;
+                                    ui.add_space(16.0);
+                                    let neighbor=crate::button::action_with_min_width(ui,"다른 작업",ButtonRole::Standard,true,120.0);
+                                    if response.clicked(){actions+=1;}
+                                    if neighbor.clicked(){neighbors+=1;}
+                                    frame=Some((response.rect,neighbor.rect,response.enabled()));
+                                });
+                            });
+                        });
+                        frame.unwrap()
+                    };
+                    let base=draw(true,true,vec![]);
+                    let (pos,enabled,parent)=match probe{
+                        0..=4=>(hit_probes(base.0)[probe],true,true),
+                        5=>(base.1.center(),true,true),
+                        _=>(base.0.center(),false,true)
+                    };
+                    let current=click(pos,|events|draw(enabled,parent,events));
+                    assert_layout_rects_invariant(&[("action",base.0),("neighbor",base.1)],
+                        &[("action",current.0),("neighbor",current.1)]);
+                    assert_eq!(current.2,enabled&&parent);
+                    if probe==6{
+                        let blocked=click(base.0.center(),|events|draw(true,false,events));
+                        assert!(!blocked.2);
+                    }
+                    drop(draw);
+                    assert_eq!(actions,if probe<5{1}else{0},"button hit probe {probe} scale {scale}");
+                    assert_eq!(neighbors,if probe==5{1}else{0},"neighbor hit probe {probe} scale {scale}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn actual_form_input_hit_area_focus_text_and_disabled_permissions(){
+        use crate::input::{field,FieldKind};
+        for kind in [FieldKind::Text,FieldKind::Address,FieldKind::Telephone,
+            FieldKind::Quantity,FieldKind::Money]{
+            for scale in [1.0_f32,1.25,1.5]{
+                for probe in 0..8{
+                    let ctx=test_context();
+                    ctx.set_pixels_per_point(scale);
+                    let mut value=String::new();
+                    let mut draw=|enabled,parent,events|{
+                        let mut frame=None;
+                        let _=ctx.run(raw(&ctx,events),|ctx|{
+                            egui::CentralPanel::default().show(ctx,|ui|{
+                                let response=ui.add_enabled_ui(parent,|ui|field(ui,&mut value,kind,enabled)).inner;
+                                frame=Some((response.rect,response.id,response.has_focus(),response.enabled()));
+                            });
+                        });
+                        frame.unwrap()
+                    };
+                    let base=draw(true,true,vec![]);
+                    let (pos,enabled,parent)=match probe{
+                        0..=4=>(hit_probes(base.0)[probe],true,true),
+                        5=>(egui::pos2(700.0,500.0),true,true),
+                        6=>(base.0.center(),false,true),
+                        _=>(base.0.center(),true,false)
+                    };
+                    let clicked=click(pos,|events|draw(enabled,parent,events));
+                    let typed=draw(enabled,parent,vec![egui::Event::Text("7".into())]);
+                    assert_layout_rects_invariant(&[("input",base.0)],&[("input",typed.0)]);
+                    assert_eq!(clicked.1,typed.1);
+                    assert_eq!(clicked.2,probe<5,"{kind:?} focus probe {probe} scale {scale}");
+                    assert_eq!(typed.3,enabled&&parent);
+                    drop(draw);
+                    assert_eq!(value,if probe<5{"7"}else{""},
+                        "{kind:?} text probe {probe} scale {scale}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn clipped_controls_reject_clicks_in_hidden_half_of_allocation(){
+        #[derive(Clone,Copy,Debug)]
+        enum Control{Button,Input,Checkbox,Dropdown}
+        for control in [Control::Button,Control::Input,Control::Checkbox,Control::Dropdown]{
+            for scale in [1.0_f32,1.25,1.5]{
+                for visible in [true,false]{
+                    let ctx=test_context();
+                    ctx.set_pixels_per_point(scale);
+                    let mut actions=0;
+                    let mut value=String::new();
+                    let mut checked=false;
+                    let mut draw=|clip:Option<Rect>,events|{
+                        let mut frame=None;
+                        let _=ctx.run(raw(&ctx,events),|ctx|{
+                            egui::CentralPanel::default().show(ctx,|ui|{
+                                if let Some(clip)=clip{ui.set_clip_rect(ui.clip_rect().intersect(clip));}
+                                let response=match control{
+                                    Control::Button=>crate::button::action_with_min_width(ui,
+                                        "적용",theme::ButtonRole::Standard,true,180.0),
+                                    Control::Input=>crate::input::field(ui,&mut value,crate::input::FieldKind::Text,true),
+                                    Control::Checkbox=>checkbox(ui,&mut checked,"전체 배송 건을 선택합니다",true),
+                                    Control::Dropdown=>crate::dropdown::management_dropdown_trigger(ui,"선불",180.0,true,None),
+                                };
+                                if response.clicked(){actions+=1;}
+                                frame=Some((response.rect,response.interact_rect,response.has_focus()));
+                            });
+                        });
+                        frame.unwrap()
+                    };
+                    let base=draw(None,vec![]);
+                    let clip=Rect::from_min_max(egui::pos2(0.0,0.0),
+                        egui::pos2(base.0.center().x,700.0));
+                    let clipped=draw(Some(clip),vec![]);
+                    assert_layout_rects_invariant(&[("allocation",base.0)],&[("allocation",clipped.0)]);
+                    let expected=base.0.intersect(clip);
+                    crate::ui_test_support::assert_rect_geometry("clipped hit region",clipped.1,expected,1.0);
+                    let pos=egui::pos2(base.0.left()+base.0.width()*if visible{0.2}else{0.8},base.0.center().y);
+                    let result=click(pos,|events|draw(Some(clip),events));
+                    if matches!(control,Control::Input){
+                        assert_eq!(result.2,visible,"{control:?}: clipped focus scale {scale}");
+                        draw(Some(clip),vec![egui::Event::Text("7".into())]);
+                    }
+                    drop(draw);
+                    if matches!(control,Control::Input){
+                        assert_eq!(value,if visible{"7"}else{""});
+                    }else{
+                        assert_eq!(actions,if visible{1}else{0},"{control:?}: clipped activation scale {scale}");
+                    }
+                    if matches!(control,Control::Checkbox){assert_eq!(checked,visible);}
+                }
+            }
+        }
+    }
+
     #[derive(Clone,Copy,Debug)]
     enum Selector { Ordinary,Compact,Status }
     struct SelectFrame {
@@ -805,6 +1000,7 @@ mod shared_selection_interaction_tests {
         events:Vec<egui::Event>)->SelectFrame{
         let mut frame=None;
         let _=ctx.run(raw(ctx,events),|ctx|{
+            crate::ui_test_support::begin_component_geometry();
             crate::floating_notice::begin_page(ctx,"synthetic selectors");
             egui::CentralPanel::default().show(ctx,|ui|{
                 ui.set_width(480.0);
@@ -814,7 +1010,7 @@ mod shared_selection_interaction_tests {
                     Selector::Status=>["판매중","품절"],
                 };
                 let width=if matches!(kind,Selector::Compact){90.0}else{180.0};
-                let colors=[theme::TEXT,theme::DANGER];
+                let colors=[theme::text_ink(theme::TextRole::Value,theme::TextState::Normal),theme::message_ink(theme::MessageInkRole::Danger)];
                 let label=labels[*selected];
                 let current_color=colors[*selected];
                 let mut options=Vec::new();
@@ -843,6 +1039,9 @@ mod shared_selection_interaction_tests {
                     enabled:trigger.enabled()});
             });
         });
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,700.0));
+        let samples=crate::ui_test_support::finish_component_geometry(screen);
+        crate::ui_test_support::assert_independent_control_hits(&samples,screen,"dropdown pointer frame");
         frame.expect("shared dropdown rendered")
     }
     fn same_select_slots(base:&SelectFrame,frame:&SelectFrame){
@@ -906,6 +1105,32 @@ mod shared_selection_interaction_tests {
         }
     }
 
+    #[test]
+    fn actual_dropdown_trigger_and_option_hit_areas_cover_visible_interior(){
+        for kind in [Selector::Ordinary,Selector::Compact,Selector::Status]{
+            for scale in [1.0_f32,1.25,1.5]{
+                for probe in 0..5{
+                    let ctx=test_context();
+                    ctx.set_pixels_per_point(scale);
+                    let mut selected=0;
+                    let mut changes=0;
+                    let mut draw=|events|select_frame(&ctx,kind,&mut selected,true,true,&mut changes,events);
+                    let base=draw(vec![]);
+                    let opened=click(hit_probes(base.trigger)[probe],&mut draw);
+                    same_select_slots(&base,&opened);
+                    assert_eq!(opened.options.len(),2,
+                        "{kind:?} trigger probe {probe} scale {scale}");
+                    let closed=click(hit_probes(opened.options[1])[probe],&mut draw);
+                    same_select_slots(&base,&closed);
+                    assert!(closed.options.is_empty(),"{kind:?}: option probe {probe} did not close menu");
+                    drop(draw);
+                    assert_eq!(selected,1,"{kind:?}: wrong option selected at probe {probe}");
+                    assert_eq!(changes,1,"{kind:?}: option must change exactly once");
+                }
+            }
+        }
+    }
+
     #[derive(Clone,Copy,Debug)]
     enum CheckKind{Ordinary,List,TableHeader,TableRow}
     struct CheckFrame{hit:Rect,next:Rect,id:egui::Id,enabled:bool}
@@ -914,6 +1139,7 @@ mod shared_selection_interaction_tests {
         events:Vec<egui::Event>)->CheckFrame{
         let mut frame=None;
         let _=ctx.run(raw(ctx,events),|ctx|{
+            crate::ui_test_support::begin_component_geometry();
             egui::CentralPanel::default().show(ctx,|ui|{
                 ui.set_width(480.0);
                 let response=ui.add_enabled_ui(parent_enabled,|ui|match kind{
@@ -936,7 +1162,40 @@ mod shared_selection_interaction_tests {
                 frame=Some(CheckFrame{hit:response.rect,next,id:response.id,enabled:response.enabled()});
             });
         });
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,700.0));
+        let samples=crate::ui_test_support::finish_component_geometry(screen);
+        crate::ui_test_support::assert_independent_control_hits(&samples,screen,"checkbox pointer frame");
         frame.expect("shared checkbox rendered")
+    }
+    #[test]
+    fn actual_checkbox_hit_area_edges_and_outside_do_not_cross_activate(){
+        for kind in [CheckKind::Ordinary,CheckKind::List,CheckKind::TableHeader,CheckKind::TableRow]{
+            for scale in [1.0_f32,1.25,1.5]{
+                for probe in 0..8{
+                    let ctx=test_context();
+                    ctx.set_pixels_per_point(scale);
+                    let mut checked=false;
+                    let mut changes=0;
+                    let mut draw=|enabled,parent,events|check_frame(&ctx,kind,&mut checked,
+                        enabled,parent,&mut changes,events);
+                    let base=draw(true,true,vec![]);
+                    let (pos,enabled,parent)=match probe{
+                        0..=4=>(hit_probes(base.hit)[probe],true,true),
+                        5=>(base.next.center(),true,true),
+                        6=>(base.hit.center(),false,true),
+                        _=>(base.hit.center(),true,false)
+                    };
+                    let current=click(pos,|events|draw(enabled,parent,events));
+                    assert_layout_rects_invariant(&[("checkbox",base.hit),("following",base.next)],
+                        &[("checkbox",current.hit),("following",current.next)]);
+                    assert_eq!(base.id,current.id);
+                    assert_eq!(current.enabled,enabled&&parent);
+                    drop(draw);
+                    assert_eq!(checked,probe<5,"{kind:?}: wrong checked state probe {probe} scale {scale}");
+                    assert_eq!(changes,if probe<5{1}else{0},"{kind:?}: duplicate or stray activation");
+                }
+            }
+        }
     }
     #[test]
     fn shared_checkbox_click_toggles_once_and_disabled_clicks_preserve_value(){
@@ -1130,6 +1389,8 @@ pub(crate) mod general_screen_geometry_tests {
                 time:Some(time),predicted_dt:0.05,
                 ..Default::default()
             },|ctx|{
+                // Keep only the final pass if egui requests a sizing rerun.
+                crate::ui_test_support::begin_component_geometry();
                 egui::CentralPanel::default().show(ctx,|root|{
                     let mut host=root.new_child(egui::UiBuilder::new()
                         .id_salt("actual-management-page")
@@ -1142,6 +1403,9 @@ pub(crate) mod general_screen_geometry_tests {
             });
             let next=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
             let components=crate::ui_test_support::finish_component_geometry(Rect::from_min_size(egui::Pos2::ZERO,screen));
+            crate::ui_test_support::assert_independent_control_hits(&components,
+                Rect::from_min_size(egui::Pos2::ZERO,screen),
+                &format!("{} {screen:?} frame {frame}",std::thread::current().name().unwrap_or("management page")));
             crate::ui_test_support::assert_no_unaligned(&output,&format!("{} {screen:?} frame {frame}",std::thread::current().name().unwrap_or("management page")));
             if frame==11&&next.iter().any(|(role,_)|*role=="top content"){
                 assert!(!components.is_empty(),"actual management page did not reach a shared component renderer");
@@ -1160,7 +1424,11 @@ pub(crate) mod general_screen_geometry_tests {
         measured
     }
     fn screen_trace(name:&str,tab:usize,loaded:bool,screen:Vec2,work:Rect)->Vec<Sample>{
+        screen_trace_at_scale(name,tab,loaded,screen,work,1.0)
+    }
+    fn screen_trace_at_scale(name:&str,tab:usize,loaded:bool,screen:Vec2,work:Rect,scale:f32)->Vec<Sample>{
         let ctx=test_context();
+        ctx.set_pixels_per_point(scale);
         let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
         match name{
             "freight"=>{let mut p=crate::freight_manager::FreightManager::geometry_fixture(gateway,ctx.clone(),tab,loaded);render(&ctx,screen,work,|ui|p.show_page(ui))},
@@ -1369,6 +1637,24 @@ pub(crate) mod general_screen_geometry_tests {
         }
     }
     #[test]
+    fn actual_management_pages_keep_geometry_at_fractional_display_scales(){
+        // Logical work area remains fixed while device pixel density varies.
+        // The compact populated pages exercise every management subtab.
+        let screen=Vec2::new(1280.0,720.0);
+        let work=Rect::from_min_max(egui::pos2(380.0,80.0),egui::pos2(1262.0,702.0));
+        let cases=[("freight",4),("history",1),("products",5),("clients",3),
+            ("excel",3),("settings",4),("settlement",1)];
+        for scale in [1.25_f32,1.5]{
+            for (name,tabs) in cases{
+                for tab in 0..tabs{
+                    eprintln!("FRACTIONAL_GEOMETRY_CASE {name}/{tab} scale={scale}");
+                    let trace=screen_trace_at_scale(name,tab,true,screen,work,scale);
+                    verify_rects(name,tab,work,&trace);
+                }
+            }
+        }
+    }
+    #[test]
     fn actual_dual_master_table_header_and_rail_share_geometry(){
         let screen=Vec2::new(1920.0,1080.0);
         let work=Rect::from_min_max(egui::pos2(380.0,80.0),egui::pos2(1902.0,1062.0));
@@ -1410,8 +1696,13 @@ pub(crate) mod general_screen_geometry_tests {
                     let _=ctx.run(egui::RawInput{
                         screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,screen)),
                         ..Default::default()
-                    },|ctx|app.reception(ctx));
+                    },|ctx|{
+                        crate::ui_test_support::begin_component_geometry();
+                        app.reception(ctx);
+                    });
                     let components=crate::ui_test_support::finish_component_geometry(Rect::from_min_size(egui::Pos2::ZERO,screen));
+                    crate::ui_test_support::assert_independent_control_hits(&components,
+                        Rect::from_min_size(egui::Pos2::ZERO,screen),"actual reception");
                     crate::ui_test_support::assert_component_roles(&components,&["card"]);
                     last=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
                 }
@@ -1915,8 +2206,13 @@ pub(crate) mod general_screen_geometry_tests {
                     TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
                     crate::ui_test_support::begin_component_geometry();
                     let _=ctx.run(egui::RawInput{screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,screen)),
-                        ..Default::default()},|ctx|app.reception(ctx));
+                        ..Default::default()},|ctx|{
+                        crate::ui_test_support::begin_component_geometry();
+                        app.reception(ctx);
+                    });
                     let components=crate::ui_test_support::finish_component_geometry(Rect::from_min_size(egui::Pos2::ZERO,screen));
+                    crate::ui_test_support::assert_independent_control_hits(&components,
+                        Rect::from_min_size(egui::Pos2::ZERO,screen),"actual reception");
                     crate::ui_test_support::assert_component_roles(&components,&["card"]);
                     measured=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
                 }
@@ -1948,8 +2244,10 @@ pub(crate) mod general_screen_geometry_tests {
                     "recipient note has excess gap or is clipped: {note:?} in {recipient_card:?}");
                 let review=first(&first_recipient,"review card");
                 let items=first(&first_recipient,"items card");
-                assert!((review.height()-items.height()).abs()<=0.5,
-                    "variable card height mismatch: review={review:?}, items={items:?}");
+                let previous_review=(review.height()+items.height())*0.5;
+                let expected=(previous_review*0.85).max(theme::RECEPTION_SECTION_CHROME_HEIGHT.min(previous_review));
+                assert!((review.height()-expected).abs()<=0.5,
+                    "review must transfer 15% of former height to items: review={review:?}, items={items:?}");
                 assert!((total_card.height()-theme::RECEPTION_ORDER_TOTAL_SECTION_HEIGHT).abs()<=0.5);
             }
             app.selected_recipient=1;
@@ -2333,9 +2631,15 @@ mod shared_composite_layout_contract_tests{
             include_str!("excel_manager.rs"),include_str!("order_history_manager.rs")]{
             assert!(source.contains("crate::ui_layout::management_toolbar_slot("));
         }
-        for source in [include_str!("product_manager.rs"),include_str!("freight_manager.rs"),include_str!("excel_manager.rs")]{
-            assert!(source.contains("crate::table::control_cell("));
+        for (name,source) in [("product",include_str!("product_manager.rs")),("excel",include_str!("excel_manager.rs"))]{
+            assert!(source.contains("crate::table::control_cell("),"{name} control cell owner");
         }
+        let freight=include_str!("freight_manager.rs");
+        // Freight management uses direct editable row hits and registry
+        // action slots after removal of the redundant edit buttons.
+        assert!(freight.contains("crate::table::editable_cell_hit("));
+        assert!(freight.contains("crate::table::registry_actions("));
+        assert!(freight.contains("crate::table::fixed_row("));
         assert!(client.contains("crate::popup::modal_form_pair("));
         assert!(include_str!("automatic_message_manager.rs").contains("crate::ui_layout::workspace_pane("));
         assert!(include_str!("manual_workspace.rs").contains("crate::ui_layout::workspace_pane("));
@@ -2547,7 +2851,7 @@ mod shared_placeholder_color_contract_tests{
             assert_color(&output,HINT,APPROVED);
             value=VALUE.to_owned();
             let (output,_)=render(&ctx,None,|ui|draw(ui,&mut value));
-            assert_color(&output,VALUE,theme::TEXT);
+            assert_color(&output,VALUE,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
             assert!(colors(&output,HINT).is_empty(),"hint survives nonempty input");
             value.clear();
             let (output,_)=render(&ctx,None,|ui|draw(ui,&mut value));
@@ -2585,7 +2889,7 @@ mod shared_placeholder_color_contract_tests{
             assert_color(&output,HINT,APPROVED);
             if kind!=3{selected="id".to_owned();}
             let (output,_)=render(&ctx,None,|ui|draw(ui,&mut selected,false));
-            assert_color(&output,VALUE,theme::TEXT);
+            assert_color(&output,VALUE,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
             assert!(colors(&output,HINT).is_empty(),"hint survives selection");
             selected.clear();
             let (output,_)=render(&ctx,None,|ui|draw(ui,&mut selected,true));
