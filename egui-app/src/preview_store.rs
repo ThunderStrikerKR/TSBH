@@ -872,25 +872,44 @@ impl PreviewStore {
         let (mut conn,business,scope)=Self::learning_connection()?;
         let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
         recognition_learning_store::prepare(&tx)?;
-        let frozen=crate::business_state::read_learning_snapshots(ids)?;
-        let audit_ids=frozen.iter().filter(|order|
-            order["learningActive"]==true &&
-            order["confirmationSnapshot"]["recognitionBaseline"]["schemaVersion"]==1 &&
-            !order["deletedAt"].as_str().is_some_and(|v|!v.trim().is_empty()))
-            .map(|order|order["id"].as_str().map(str::to_owned).ok_or("확정 주문 ID 누락"))
-            .collect::<Result<Vec<_>,_>>()?;
+        use sha2::{Digest,Sha256};
+        let (frozen,mut orders,digests)=crate::business_state::read_learning_inputs(ids,|sources|{
+            let audit_ids=sources.iter().filter(|(_,source)|source.audit_needed)
+                .map(|(id,_)|id.clone()).collect::<Vec<_>>();
+            let audit=if audit_ids.is_empty(){std::collections::BTreeMap::new()}
+                else{query_learning_audit_digests(&tx,&audit_ids)?};
+            let mut misses=Vec::new();
+            let mut digests=std::collections::BTreeMap::new();
+            for (id,source) in sources.iter().filter(|(_,source)|source.active){
+                let mut hash=Sha256::new();hash.update(b"bando-learning-raw-input-v2\0");
+                hash.update(source.digest.as_bytes());
+                if source.audit_needed{
+                    hash.update([1]);
+                    hash.update(audit.get(id).ok_or("학습 감사 지문 누락")?.as_bytes());
+                }else{hash.update([0]);}
+                let digest=format!("{:x}",hash.finalize());
+                if recognition_learning_store::cached_count(&tx,&scope,id,&digest)?.is_none(){
+                    misses.push(id.clone());
+                }
+                digests.insert(id.clone(),digest);
+            }
+            Ok((misses,digests))
+        })?;
+        let audit_ids=orders.iter().filter_map(|order|order["id"].as_str())
+            .filter(|id|frozen.get(*id).is_some_and(|source|source.audit_needed))
+            .map(str::to_owned).collect::<Vec<_>>();
         let mut audit=if audit_ids.is_empty(){std::collections::BTreeMap::new()}
             else{query_reception_audit_batch(&tx,&audit_ids)?};
-        let mut orders=frozen.iter().filter(|o|o["learningActive"]==true).cloned().collect::<Vec<_>>();
         for order in &mut orders{
             let id=order["id"].as_str().ok_or("확정 주문 ID 누락")?;
             if let Some(events)=audit.remove(id){order["recognitionAuditEvents"]=json!(events);}
         }
-        let mut report=recognition_learning_store::synchronize(&tx,&scope,ids,&orders,summarize)?;
+        let mut report=recognition_learning_store::synchronize_with_digests(&tx,&scope,ids,&digests,&orders,summarize)?;
+        report["decodedOrders"]=json!(orders.len());
         let requested=ids.iter().collect::<std::collections::BTreeSet<_>>().len();
         report["missingSelectedOrders"]=json!(requested.saturating_sub(frozen.len()));
-        report["inactiveSelectedOrders"]=json!(frozen.len().saturating_sub(orders.len()));
-        if crate::business_state::read_learning_snapshots(ids)?!=frozen ||
+        report["inactiveSelectedOrders"]=json!(frozen.values().filter(|source|!source.active).count());
+        if crate::business_state::read_learning_sources(ids)?!=frozen ||
             crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
             return Err("학습 갱신 중 확정 주문 또는 업무 DB가 변경되었습니다.".into());
         }
@@ -923,6 +942,43 @@ impl PreviewStore {
     }
 
     pub fn path(&self) -> &std::path::Path { &self.path }
+}
+
+/// Read exact stored audit bytes through the existing order/time index.
+ /// No serde parse, string copies, or event JSON construction on cache hits.
+fn query_learning_audit_digests(conn:&Connection,ids:&[String])->Result<std::collections::BTreeMap<String,String>,String>{
+    use sha2::{Digest,Sha256};
+    let unique=ids.iter().collect::<std::collections::BTreeSet<_>>();
+    if unique.len()>250||unique.iter().any(|id|id.trim().is_empty()){
+        return Err("감사 지문 조회 범위 오류".into());
+    }
+    let has_context:i64=conn.query_row(
+        "SELECT count(*) FROM pragma_table_info('reception_edit_audit') WHERE name='context_json'",
+        [],|r|r.get(0)).map_err(|e|e.to_string())?;
+    let context=if has_context==1{"context_json"}else{"NULL"};
+    let sql=format!("SELECT id,order_id,source_raw,initial_analysis_json,before_rows_json,
+        after_rows_json,recorded_at,{context} FROM reception_edit_audit
+        WHERE order_id=?1 ORDER BY recorded_at,id");
+    let mut stmt=conn.prepare(&sql).map_err(|e|e.to_string())?;
+    let mut out=std::collections::BTreeMap::new();
+    let mut total_rows=0usize;let mut total_bytes=0usize;
+    for id in unique{
+        let mut hash=Sha256::new();hash.update(b"bando-audit-learning-source-v1\0");
+        let mut rows=stmt.query(params![id]).map_err(|e|e.to_string())?;
+        let mut count=0usize;
+        while let Some(row)=rows.next().map_err(|e|e.to_string())?{
+            count+=1;total_rows+=1;
+            if count>1000||total_rows>4000{return Err("감사 지문 조회 건수 한도 초과".into());}
+            for col in 0..8{
+                total_bytes=total_bytes.saturating_add(crate::business_state::hash_learning_text(
+                    &mut hash,row.get_ref(col).map_err(|e|e.to_string())?)?);
+                if total_bytes>32*1024*1024{return Err("감사 지문 조회 용량 한도 초과".into());}
+            }
+        }
+        hash.update((count as u64).to_le_bytes());
+        out.insert(id.clone(),format!("{:x}",hash.finalize()));
+    }
+    Ok(out)
 }
 
 fn query_reception_audit_batch(conn:&Connection,ids:&[String])->Result<std::collections::BTreeMap<String,Vec<Value>>,String>{

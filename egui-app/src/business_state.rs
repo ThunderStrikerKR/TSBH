@@ -401,12 +401,90 @@ fn attach_learning_lifecycle(conn:&Connection,orders:&mut [Value])->Result<(),St
     Ok(())
 }
 
-pub(crate) fn read_learning_snapshots(ids:&[String])->Result<Vec<Value>,String>{
+#[derive(Debug,PartialEq,Eq)]
+pub(crate) struct LearningSource{
+    pub active:bool,
+    pub audit_needed:bool,
+    pub digest:String,
+}
+type LearningSources=std::collections::BTreeMap<String,LearningSource>;
+
+/// Hash SQLite's borrowed text bytes before any serde JSON allocation.
+pub(crate) fn hash_learning_text(hash:&mut sha2::Sha256,value:rusqlite::types::ValueRef<'_>)->Result<usize,String>{
+    use sha2::Digest;
+    match value{
+        rusqlite::types::ValueRef::Null=>{hash.update([0]);Ok(0)}
+        rusqlite::types::ValueRef::Text(bytes)=>{
+            hash.update([1]);hash.update((bytes.len() as u64).to_le_bytes());hash.update(bytes);Ok(bytes.len())
+        }
+        _=>Err("학습 원본 SQLite 자료 유형 오류".into()),
+    }
+}
+
+fn learning_sources(conn:&Connection,ids:&[String])->Result<LearningSources,String>{
+    use sha2::{Digest,Sha256};
+    let unique=ids.iter().map(String::as_str).collect::<std::collections::BTreeSet<_>>();
+    if unique.is_empty()||ids.len()>250||unique.iter().any(|id|id.trim().is_empty()){
+        return Err("학습 조회는 1~250개 주문 ID를 명시해야 합니다.".into());
+    }
+    let placeholders=vec!["?";unique.len()].join(",");
+    let sql=format!("SELECT id,confirmed_at,json_extract(payload,'$.deletedAt'),
+        json_extract(payload,'$.confirmationSnapshot'),
+        coalesce(json_extract(payload,'$.confirmationSnapshot.recognitionBaseline.schemaVersion')=1,0)
+        FROM core_orders WHERE id IN ({placeholders}) ORDER BY id");
+    let mut stmt=conn.prepare(&sql).map_err(|e|e.to_string())?;
+    let mut rows=stmt.query(rusqlite::params_from_iter(unique.iter().copied())).map_err(|e|e.to_string())?;
+    let mut sources=LearningSources::new();
+    let mut metadata=Vec::new();
+    let mut bytes=0usize;
+    while let Some(row)=rows.next().map_err(|e|e.to_string())?{
+        let id:String=row.get(0).map_err(|e|e.to_string())?;
+        let deleted:Option<String>=row.get(2).map_err(|e|e.to_string())?;
+        let schema:i64=row.get(4).map_err(|e|e.to_string())?;
+        let mut hash=Sha256::new();hash.update(b"bando-business-learning-source-v1\0");
+        for col in 0..4{
+            bytes=bytes.saturating_add(hash_learning_text(&mut hash,row.get_ref(col).map_err(|e|e.to_string())?)?);
+            if bytes>32*1024*1024{return Err("학습 스냅샷 조회 한도 초과".into());}
+        }
+        metadata.push(serde_json::json!({"id":id}));
+        sources.insert(id,LearningSource{active:false,audit_needed:schema==1 &&
+            deleted.as_deref().is_none_or(str::is_empty),digest:format!("{:x}",hash.finalize())});
+    }
+    drop(rows);drop(stmt);
+    attach_learning_lifecycle(conn,&mut metadata)?;
+    for row in metadata{
+        let id=row["id"].as_str().ok_or("학습 주문 ID 누락")?;
+        let source=sources.get_mut(id).ok_or("학습 주문 연결 오류")?;
+        source.active=row["learningActive"]==true;
+        source.audit_needed&=source.active;
+    }
+    Ok(sources)
+}
+
+/// Select cache misses and decode only those, inside the SAME business
+/// snapshot as the raw fingerprints. The caller may hold an audit write
+/// transaction; this connection never writes to the business database.
+pub(crate) fn read_learning_inputs<T>(ids:&[String],
+    choose:impl FnOnce(&LearningSources)->Result<(Vec<String>,T),String>
+)->Result<(LearningSources,Vec<Value>,T),String>{
     let conn=open_business_read_snapshot()?;
-    let mut orders=owner_snapshot_batch(&conn,ids)?;
-    attach_learning_lifecycle(&conn,&mut orders)?;
+    let sources=learning_sources(&conn,ids)?;
+    let (misses,extra)=choose(&sources)?;
+    if misses.iter().any(|id|!sources.get(id).is_some_and(|s|s.active)){
+        return Err("학습 캐시 미스 범위 오류".into());
+    }
+    let mut orders=if misses.is_empty(){Vec::new()}else{owner_snapshot_batch(&conn,&misses)?};
+    for order in &mut orders{order["learningActive"]=Value::Bool(true);}
+    if orders.len()!=misses.len(){return Err("학습 캐시 미스 주문 누락".into());}
     conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
-    Ok(orders)
+    Ok((sources,orders,extra))
+}
+
+pub(crate) fn read_learning_sources(ids:&[String])->Result<LearningSources,String>{
+    let conn=open_business_read_snapshot()?;
+    let sources=learning_sources(&conn,ids)?;
+    conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+    Ok(sources)
 }
 
 pub(crate) fn learning_order_page(after:&str,limit:usize)->Result<Vec<String>,String>{

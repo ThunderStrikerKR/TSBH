@@ -2,6 +2,7 @@
 //! values are copied into this store. Never use this diagnostic cache to
 //! change a recognition decision until lifecycle reconciliation is wired.
 use rusqlite::{params,Connection,OptionalExtension,Transaction};
+#[cfg(test)]
 use sha2::{Digest,Sha256};
 use serde_json::{json,Value};
 use std::collections::{BTreeMap,BTreeSet};
@@ -9,7 +10,7 @@ use std::collections::{BTreeMap,BTreeSet};
 const FEATURE_VERSION:i64=1;
 // Bump whenever the meaning of a contribution or its input changes,
 // even if the public context feature keys stay the same.
-const CONTRIBUTION_VERSION:i64=1;
+const CONTRIBUTION_VERSION:i64=2;
 const SCALARS:[&str;7]=["observationCount","independentOrders","weakIndependentOrders",
     "weakUnchangedCount","explicitCorrectionCount","explicitCorrectionOrders","pendingCorrectionCount"];
 const MAPS:[&str;6]=["weakCandidates","explicitPositiveCandidates","explicitNegativeCandidates",
@@ -123,6 +124,7 @@ fn replace(tx:&Transaction<'_>,scope:&str,id:&str,new:&[Fact])->Result<bool,Stri
 // Hash the exact input to the contribution engine, including full audit
 // event bodies and lifecycle state. Streaming avoids a second JSON buffer.
 // Never persist the document or its personal values in this cache.
+#[cfg(test)]
 fn fingerprint(order:&Value)->Result<String,String>{
     struct HashWriter(Sha256);
     impl std::io::Write for HashWriter{
@@ -139,7 +141,7 @@ fn fingerprint(order:&Value)->Result<String,String>{
     Ok(format!("{:x}",writer.0.finalize()))
 }
 
-fn cached_count(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str)->Result<Option<i64>,String>{
+pub(super) fn cached_count(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str)->Result<Option<i64>,String>{
     let count:Option<i64>=tx.query_row("SELECT fact_count FROM recognition_learning_fingerprints
         WHERE scope=?1 AND feature_version=?2 AND order_id=?3 AND contribution_version=?4 AND fingerprint=?5",
         params![scope,FEATURE_VERSION,id,CONTRIBUTION_VERSION,digest],|r|r.get(0))
@@ -166,15 +168,20 @@ fn save_fingerprint(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str,count:usi
 
 /// The caller holds an IMMEDIATE transaction in the audit database across
 /// snapshot read, per-order projection, delta replacement and revalidation.
-pub(super) fn synchronize(tx:&Transaction<'_>,scope:&str,ids:&[String],orders:&[Value],
+pub(super) fn synchronize_with_digests(tx:&Transaction<'_>,scope:&str,ids:&[String],
+    digests:&BTreeMap<String,String>,orders:&[Value],
     summarize:impl Fn(&Value)->Result<Value,String>)->Result<Value,String>{
     let requested=ids.iter().map(String::as_str).collect::<BTreeSet<_>>();
     if ids.is_empty()||ids.len()>250||requested.iter().any(|id|id.trim().is_empty()){
         return Err("학습 갱신은 1~250개 주문 ID를 명시해야 합니다.".into());
     }
+    if digests.keys().any(|id|!requested.contains(id.as_str())){
+        return Err("학습 지문 주문 범위 오류".into());
+    }
     let mut by_id=BTreeMap::new();
     for order in orders{
         let id=order["id"].as_str().filter(|id|requested.contains(id)).ok_or("학습 주문 범위 오류")?;
+        if !digests.contains_key(id){return Err("학습 입력 지문 누락".into());}
         if by_id.insert(id,order).is_some(){return Err("학습 주문 중복".into());}
     }
     let mut changed=0;
@@ -182,18 +189,18 @@ pub(super) fn synchronize(tx:&Transaction<'_>,scope:&str,ids:&[String],orders:&[
     let mut reused=0;
     let mut recalculated=0;
     for id in requested.iter().copied(){
-        if let Some(order)=by_id.get(id){
-            let digest=fingerprint(order)?;
-            if let Some(count)=cached_count(tx,scope,id,&digest)?{
+        if let Some(digest)=digests.get(id){
+            if let Some(count)=cached_count(tx,scope,id,digest)?{
                 reused+=1;
                 if count>0{eligible+=1;}
                 continue;
             }
+            let order=by_id.get(id).ok_or("변경된 학습 주문 원본 누락")?;
             let new=facts(&summarize(order)?)?;
             recalculated+=1;
             if !new.is_empty(){eligible+=1;}
             if replace(tx,scope,id,&new)?{changed+=1;}
-            save_fingerprint(tx,scope,id,&digest,new.len())?;
+            save_fingerprint(tx,scope,id,digest,new.len())?;
         }else{
             // Missing/inactive orders revoke their prior contributions and
             // cache entry; reactivation must be checked from current inputs.
@@ -208,8 +215,17 @@ pub(super) fn synchronize(tx:&Transaction<'_>,scope:&str,ids:&[String],orders:&[
     Ok(json!({"status":"persisted_diagnostic_only","featureVersion":FEATURE_VERSION,
         "requestedOrders":requested.len(),"changedOrders":changed,"eligibleSelectedOrders":eligible,
         "reusedOrders":reused,"recalculatedOrders":recalculated,"contributionVersion":CONTRIBUTION_VERSION,
-        "storedContributingOrders":stored,"missingSelectedOrders":requested.len()-by_id.len(),
+        "storedContributingOrders":stored,"missingSelectedOrders":requested.len()-digests.len(),
         "automaticDecisionEnabled":false,"fullHistoryReconciled":false}))
+}
+
+#[cfg(test)]
+fn synchronize(tx:&Transaction<'_>,scope:&str,ids:&[String],orders:&[Value],
+    summarize:impl Fn(&Value)->Result<Value,String>)->Result<Value,String>{
+    let digests=orders.iter().map(|order|Ok((
+        order["id"].as_str().ok_or("학습 주문 ID 누락")?.to_owned(),fingerprint(order)?
+    ))).collect::<Result<BTreeMap<_,_>,String>>()?;
+    synchronize_with_digests(tx,scope,ids,&digests,orders,summarize)
 }
 
 pub(super) fn order_page(conn:&Connection,scope:&str,after:&str,limit:usize)->Result<Vec<String>,String>{
