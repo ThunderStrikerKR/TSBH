@@ -1794,6 +1794,46 @@ mod tests {
         assert!(recipients[1]["address"].as_str().unwrap().contains("불정로 6"));
     }
     #[test]
+    fn owner_trace_preserves_legacy_attribution_and_records_rejected_candidates(){
+        let raw="김가상\n서울특별시 마포구 월드컵로 20\n010-1234-5678\n\n경기도 성남시 분당구 불정로 6\n010-2345-6789\n박가상";
+        let baseline=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let mut traced=execute("analyze_order",json!({
+            "raw":raw,"state":state(),"collectOwnerTrace":true
+        })).unwrap();
+        let trace=traced.as_object_mut().unwrap().remove("recipientOwnerTrace").unwrap();
+        assert_eq!(traced,baseline,"observation mode may not alter legacy output");
+        assert_eq!(trace["schemaVersion"],1);
+        let decisions=trace["decisions"].as_array().unwrap();
+        assert!(decisions.iter().any(|d|
+            d["legacyFirstBlockingReason"]=="paragraph_boundary" &&
+            d["candidates"][1]["legacyScore"].is_null()));
+        let chosen=decisions.iter().find(|d|
+            d["source"]["kind"]=="address" && d["legacyFirstBlockingReason"].is_null()
+        ).expect("address before next recipient must be evaluated");
+        assert_eq!(chosen["selectedAnchor"],chosen["candidates"][1]["anchor"]);
+        assert!(chosen["candidates"][1]["legacyScore"].as_u64().unwrap()>=
+            chosen["candidates"][0]["legacyScore"].as_u64().unwrap()+30);
+        assert_eq!(chosen["candidates"][1]["sameParagraph"],true);
+        assert!(chosen["source"].get("text").is_none());
+    }
+
+    #[test]
+    fn owner_trace_records_contact_gate_without_changing_recipient(){
+        let raw="김가상\n서울특별시 마포구 월드컵로 20\n010-1234-5678\n\n010-3456-7890\n박가상";
+        let result=execute("analyze_order",json!({
+            "raw":raw,"state":state(),"collectOwnerTrace":true
+        })).unwrap();
+        assert_eq!(result["recipients"][0]["phone"],"010-3456-7890");
+        let decisions=result["recipientOwnerTrace"]["decisions"].as_array().unwrap();
+        let rejected=decisions.iter().find(|d|
+            d["legacyFirstBlockingReason"]=="contact_without_nearby_address"
+        ).expect("uncorroborated contact must retain its rejection reason");
+        assert_eq!(rejected["selectedAnchor"],rejected["candidates"][0]["anchor"]);
+        assert_eq!(rejected["nearbyAddress"],false);
+        assert_eq!(rejected["candidates"][1]["sameParagraph"],true);
+    }
+
+    #[test]
     fn address_and_phone_before_next_name_use_new_paragraph_and_proximity(){
         // A second delivery may list address/phone BEFORE its addressee.
         // Its own nearby address corroborates the contact; the blank line
