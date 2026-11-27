@@ -155,7 +155,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
             if payload.get("includeDocumentFeatures").and_then(Value::as_bool)==Some(true){
                 let document=extract_document(raw,&reception,payload.get("client"));
                 let evaluation=document.features.evaluation(&document.events,&document.geometry);
-                let mut result=assign_document(document,&reception,payload.get("client"))?;
+                let mut result=assign_document_with_trace(document,&reception,payload.get("client"),true)?;
                 result["documentFeatures"]=evaluation;
                 Ok(result)
             }else{
@@ -848,27 +848,44 @@ impl DeliveryGeometry{
 // A delivery address/contact placed BEFORE the next person's name can belong
 // to that next recipient when the preceding name is in another paragraph.
 // Distances are supporting evidence only: they never create recipients.
+// A compact record from the actual decision, not a second evaluation.
+struct OwnerChoice {
+    owner:usize,
+    reason:&'static str,
+    scores:Option<[(usize,i64);2]>,
+}
+impl OwnerChoice {
+    fn retained(owner:usize,reason:&'static str)->Self{Self{owner,reason,scores:None}}
+    fn compared(owner:usize,reason:&'static str,a:(usize,i64),b:(usize,i64))->Self{
+        Self{owner,reason,scores:Some([a,b])}
+    }
+    fn trace(&self,features:&DocumentFeatures,field:usize)->Value{
+        let (start,end)=features.utf16_span(field);
+        json!({"event":field,"start":start,"end":end,"owner":self.owner,
+            "reason":self.reason,"scores":self.scores,"margin":OWNER_WEIGHTS.margin})
+    }
+}
 fn recipient_owner_index(
     anchors: &[usize], events: &[Evidence], evidence_index: usize, geometry: &SourceGeometry,
     delivery:&DeliveryGeometry,features:&DocumentFeatures,candidates:&CommonCandidates
-) -> usize {
+) -> OwnerChoice {
     let candidate=&events[evidence_index];
     let previous=owner_index(anchors,events,candidate.start);
     if anchors.len()<2 || !matches!(candidate.kind,"address"|"phone"|"mobile") {
-        return previous;
+        return OwnerChoice::retained(previous,"field_or_single_recipient");
     }
-    let Some(&next_anchor_index)=anchors.get(previous+1) else {return previous};
+    let Some(&next_anchor_index)=anchors.get(previous+1) else {return OwnerChoice::retained(previous,"no_next_recipient")};
     let preceding=&events[anchors[previous]];
     let following=&events[next_anchor_index];
     if candidate.start<=preceding.start || candidate.start>=following.start {
-        return previous;
+        return OwnerChoice::retained(previous,"outside_candidate_interval");
     }
     // Keep existing ownership inside the preceding named person's paragraph.
     // This protects multiple phone numbers for the same recipient.
     let (_,_,previous_paragraph)=features.relation(events,anchors[previous],evidence_index);
     let (next_line,_,next_paragraph)=features.relation(events,evidence_index,next_anchor_index);
     if previous_paragraph || !next_paragraph {
-        return previous;
+        return OwnerChoice::retained(previous,"paragraph_protection");
     }
     // The prior named recipient must already have independent delivery
     // evidence before its blank-line boundary. Otherwise an address after
@@ -876,27 +893,28 @@ fn recipient_owner_index(
     // an address preceding the next recipient's name. Prefer preserving
     // ownership over an unsupported automatic handoff.
     let previous_has_delivery=delivery.between(preceding.paragraph,preceding.start,candidate.start);
-    if !previous_has_delivery {return previous;}
+    if !previous_has_delivery {return OwnerChoice::retained(previous,"prior_delivery_incomplete");}
     // A separating line containing only spaces/tabs counts as a block
     // boundary too. This is a conservative overlay on the existing gates.
     let following_gap=geometry.between(candidate.line,following.line);
-    if following_gap.blank_lines>0 {return previous;}
+    if following_gap.blank_lines>0 {return OwnerChoice::retained(previous,"blank_line_boundary");}
     let next_distance=next_line.max(0) as usize;
-    if next_distance>3 {return previous;}
+    if next_distance>3 {return OwnerChoice::retained(previous,"next_recipient_too_far");}
     let has_nearby_address=delivery.nearby_address(candidate.paragraph,candidate.line,4);
     // A phone just before the next name is not sufficient on its own.
     // A nearby Korean delivery address is independent corroboration.
     if matches!(candidate.kind,"phone"|"mobile") && !has_nearby_address {
-        return previous;
+        return OwnerChoice::retained(previous,"contact_without_address");
     }
     // Incomplete candidate data retains the pre-weight handoff rule.
     if !candidates.admits(candidate,evidence_index)||!features.positions_valid{
-        return previous+1;
+        return OwnerChoice::retained(previous+1,"incomplete_candidates_legacy");
     }
     let w=OWNER_WEIGHTS;
     let a=ownership_score(events,features,evidence_index,anchors[previous],true,w);
     let b=ownership_score(events,features,evidence_index,next_anchor_index,false,w);
-    if exceeds_margin(b,a,w.margin){previous+1}else{previous}
+    let wins=exceeds_margin(b,a,w.margin);
+    OwnerChoice::compared(if wins{previous+1}else{previous},if wins{"weighted_handoff"}else{"insufficient_margin"},(previous,a),(previous+1,b))
 }
 // Shared provisional ownership weights, not calibrated probabilities.
 // Stage 05 validates the profile independently of the hard field gates.
@@ -944,6 +962,19 @@ fn quantity_link_score(events:&[Evidence],features:&DocumentFeatures,p:usize,q:u
         +if events[p].end<=events[q].start{18}else{0}
         +if line==1&&rank==1{12}else{0}
 }
+// Preflight all inline quantity claims before any item is mutated.
+fn conflicting_inline_quantities(hits:&[ProductHit])->HashSet<usize>{
+    let mut owners=HashMap::new();
+    let mut conflicts=HashSet::new();
+    for hit in hits{
+        for &q in &hit.quantities{
+            if owners.insert(q,hit.evidence).is_some_and(|old|old!=hit.evidence){
+                conflicts.insert(q);
+            }
+        }
+    }
+    conflicts
+}
 fn ordered_quantity_pairs(events:&[Evidence],features:&DocumentFeatures,candidates:&CommonCandidates,
     mut products:Vec<(usize,usize)>,mut quantities:Vec<usize>)->Vec<(usize,usize)>{
     if candidates.truncated||!features.positions_valid||products.len()<2||
@@ -973,21 +1004,21 @@ fn ordered_quantity_pairs(events:&[Evidence],features:&DocumentFeatures,candidat
     products.into_iter().zip(quantities).map(|((item,_),q)|(item,q)).collect()
 }
 fn product_owner_index(anchors:&[usize],events:&[Evidence],features:&DocumentFeatures,
-    candidates:&CommonCandidates,hit:&ProductHit,has_leading:bool)->usize{
+    candidates:&CommonCandidates,hit:&ProductHit,has_leading:bool)->OwnerChoice{
     let e=&events[hit.evidence];
     let next=anchors.partition_point(|&a|events[a].start<=e.start);
     let previous=next.saturating_sub(1);
     let legacy=if has_leading&&!anchors.is_empty(){next.min(anchors.len()-1)}else{previous};
     if hit.common||next==0||next>=anchors.len()||candidates.truncated||!features.positions_valid{
-        return legacy;
+        return OwnerChoice::retained(legacy,"common_boundary_or_incomplete");
     }
     // The common candidate index is the admission boundary. Never promote
     // an excluded alternative or create a recipient by scoring a span.
     if !candidates.admits(e,hit.evidence){
-        return legacy;
+        return OwnerChoice::retained(legacy,"candidate_not_admitted");
     }
     let a=anchors[previous];let b=anchors[next];
-    if events[a].kind!="name"||events[b].kind!="name"{return legacy;}
+    if events[a].kind!="name"||events[b].kind!="name"{return OwnerChoice::retained(legacy,"non_name_anchor");}
     let (_,_,same_a)=features.relation(events,hit.evidence,a);
     let (_,_,same_b)=features.relation(events,hit.evidence,b);
     let w=OWNER_WEIGHTS;
@@ -996,12 +1027,13 @@ fn product_owner_index(anchors:&[usize],events:&[Evidence],features:&DocumentFea
     // In a shared paragraph, proximity alone cannot flip ownership.
     // A complete, independently repeated structure must distinguish the
     // candidates. Never cross a paragraph in favor of a structural guess.
-    if same_a==same_b&&(!same_a||structure_a==structure_b){return legacy;}
+    if same_a==same_b&&(!same_a||structure_a==structure_b){return OwnerChoice::retained(legacy,"no_distinguishing_structure");}
     let score_a=ownership_score(events,features,hit.evidence,a,legacy==previous,w);
     let score_b=ownership_score(events,features,hit.evidence,b,legacy==next,w);
-    if exceeds_margin(score_a,score_b,w.margin)&&same_a&&(same_a!=same_b||structure_a>structure_b){previous}
-    else if exceeds_margin(score_b,score_a,w.margin)&&same_b&&(same_a!=same_b||structure_b>structure_a){next}
-    else{legacy}
+    let (owner,reason)=if exceeds_margin(score_a,score_b,w.margin)&&same_a&&(same_a!=same_b||structure_a>structure_b){(previous,"weighted_previous")}
+    else if exceeds_margin(score_b,score_a,w.margin)&&same_b&&(same_a!=same_b||structure_b>structure_a){(next,"weighted_next")}
+    else{(legacy,"margin_or_structure_protection")};
+    OwnerChoice::compared(owner,reason,(previous,score_a),(next,score_b))
 }
 /// Original TypeScript resolvePrice for the recognition Item shape.
 /// The separate pricing migration remains authoritative for business rules.
@@ -1882,6 +1914,10 @@ fn analyze(raw:&str,state:&Value,client:Option<&Value>)->Result<Value,String>{
     assign_document(extract_document(raw,state,client),state,client)
 }
 fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Value>)->Result<Value,String>{
+    assign_document_with_trace(document,state,client,false)
+}
+fn assign_document_with_trace(document:ExtractedDocument<'_>,state:&Value,client:Option<&Value>,include_trace:bool)->Result<Value,String>{
+    let mut trace=include_trace.then(Vec::<Value>::new);
     let ExtractedDocument{raw,lines,mut events,product_hits,geometry,delivery,exclusions,mut features}=document;
     if !features.positions_valid{return Err("원문 후보 좌표가 일치하지 않습니다.".into());}
     // Narrowing a display span is the only post-extraction coordinate
@@ -1914,7 +1950,9 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     let mut postcodes=vec![HashSet::<String>::new();recipients.len()];
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
-        let row_index = recipient_owner_index(anchors,&events,index,&geometry,&delivery,&features,&exclusions);
+        let choice=recipient_owner_index(anchors,&events,index,&geometry,&delivery,&features,&exclusions);
+        if let Some(rows)=trace.as_mut(){rows.push(choice.trace(&features,index));}
+        let row_index=choice.owner;
         let rid = recipients[row_index]["id"].as_str().unwrap_or("").to_owned();
         let e = &events[index];
         let kind = e.kind;
@@ -2002,10 +2040,15 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
             detached[owner_index(anchors,&events,e.start)].push(i);
         }
     }
+    let conflicting_quantities=conflicting_inline_quantities(&product_hits);
     let has_leading = anchors.first().map_or(false, |a| product_hits.iter().any(|h|
         !h.common && events[h.evidence].start < events[*a].start));
     for hit in &product_hits {
-        let owner=product_owner_index(anchors,&events,&features,&exclusions,hit,has_leading);
+        let choice=product_owner_index(anchors,&events,&features,&exclusions,hit,has_leading);
+        if let Some(rows)=trace.as_mut(){
+            if !hit.common{rows.push(choice.trace(&features,hit.evidence));}
+        }
+        let owner=choice.owner;
         let attach_to: Vec<usize> = if hit.common {
             (0..recipients.len()).filter(|idx| recipients[*idx]["items"]
                 .as_array().map_or(true,|xs|xs.is_empty())).collect()
@@ -2021,7 +2064,8 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
             // - a common document total must never be multiplied
             let selected_qty = if hit.common {
                 let mut local=detached[idx].iter().copied().filter(|&qi|
-                    events[qi].item_id.is_none()&&!hit.quantities.contains(&qi));
+                    events[qi].item_id.is_none()&&!hit.quantities.contains(&qi)
+                        &&!conflicting_quantities.contains(&qi));
                 match (local.next(),local.next()){
                     (Some(q),None)=>Some(q),
                     (Some(_),Some(_))=>None,
@@ -2031,6 +2075,16 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
             } else if hit.quantities.len()==1 {
                 Some(hit.quantities[0])
             } else {None};
+            let proposed_qty=selected_qty;
+            let selected_qty=selected_qty.filter(|&i|!conflicting_quantities.contains(&i)
+                &&events[i].kind=="quantity"
+                &&(events[i].item_id.is_none()||(hit.common&&hit.each&&hit.quantities.contains(&i))));
+            if let Some(rows)=trace.as_mut(){
+                if let Some(q)=proposed_qty{
+                    rows.push(json!({"event":q,"productEvent":hit.evidence,"owner":idx,
+                        "reason":if selected_qty.is_some(){"quantity_link_accepted"}else{"quantity_link_conflict"}}));
+                }
+            }
             let quantity_value = selected_qty
                 .and_then(|i|events[i].value.parse::<i64>().ok()).filter(|q|*q>0);
             let unique=quantity_value.is_some();
@@ -2175,8 +2229,12 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
             let mut sources=vec![product_source];
             if let Some(qi)=selected_qty {
                 sources.push(source_json(raw,&events[qi],features.utf16_span(qi),&rid,&id));
-                events[qi].item_id=Some(id.clone());
-                events[qi].recipient=Some(idx);
+                // A deliberately shared per-recipient quantity keeps its
+                // first canonical evidence owner; every item still has a source.
+                if events[qi].item_id.is_none(){
+                    events[qi].item_id=Some(id.clone());
+                    events[qi].recipient=Some(idx);
+                }
             }
             item["sources"] = json!(sources);
             recipients[idx]["items"].as_array_mut().expect("items").push(item);
@@ -2200,7 +2258,7 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     // an independently supported, complete, one-to-one ordered matching.
     for idx in 0..recipients.len() {
         let standalone:Vec<usize>=detached[idx].iter().copied()
-            .filter(|&i|events[i].item_id.is_none()).collect();
+            .filter(|&i|events[i].item_id.is_none()&&!conflicting_quantities.contains(&i)).collect();
         let pending: Vec<usize> = recipients[idx]["items"].as_array().expect("items")
             .iter().enumerate().filter_map(|(i,it)|it["quantity"].is_null().then_some(i)).collect();
         let pairs=if standalone.len()==1&&pending.len()==1{
@@ -2215,6 +2273,9 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
             }else{vec![]}
         }else{vec![]};
         for (item_idx,q) in pairs{
+            if events[q].item_id.is_some()||conflicting_quantities.contains(&q){continue;}
+            if let Some(rows)=trace.as_mut(){rows.push(json!({"event":q,"owner":idx,
+                "itemIndex":item_idx,"reason":"detached_quantity_accepted"}));}
             let rid = recipients[idx]["id"].as_str().unwrap_or("").to_owned();
             let id = recipients[idx]["items"][item_idx]["id"].as_str().unwrap_or("").to_owned();
             if let Some(value) = events[q].value.parse::<i64>().ok().filter(|q|*q>0) {
@@ -2270,7 +2331,9 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
         }
         candidate
     }).collect();
-    Ok(json!({"recipients":recipients,"candidates":candidates,"unassigned":unassigned}))
+    let mut result=json!({"recipients":recipients,"candidates":candidates,"unassigned":unassigned});
+    if let Some(rows)=trace{result["decisionTrace"]=json!({"version":1,"entries":rows});}
+    Ok(result)
 }
 
 fn reanalyze(payload: &Value) -> Result<Value, String> {
@@ -2780,7 +2843,7 @@ mod tests {
         assert_eq!(a.len(),3);
         assert!(doc.features.structural_ownership_score(hit.evidence,a[1],OWNER_WEIGHTS)>=OWNER_WEIGHTS.local);
         assert_eq!(doc.features.structural_ownership_score(hit.evidence,a[2],OWNER_WEIGHTS),0);
-        assert_eq!(product_owner_index(a,&doc.events,&doc.features,&doc.exclusions,hit,true),1);
+        assert_eq!(product_owner_index(a,&doc.events,&doc.features,&doc.exclusions,hit,true).owner,1);
         let result=assign_document(doc,&state,None).unwrap();
         assert!(result["recipients"][1]["items"].as_array().unwrap().iter()
             .any(|it|it["productId"]=="pgt"&&it["quantity"]==3));
@@ -2793,7 +2856,7 @@ mod tests {
         let a=&doc.features.anchors;
         assert_eq!(doc.features.incomplete_tail,1);
         let middle=doc.product_hits.iter().find(|h|h.decision["productId"]=="pgt").unwrap();
-        assert_eq!(product_owner_index(a,&doc.events,&doc.features,&doc.exclusions,middle,true),1);
+        assert_eq!(product_owner_index(a,&doc.events,&doc.features,&doc.exclusions,middle,true).owner,1);
         let last=doc.product_hits.last().unwrap();
         assert_eq!(doc.features.structural_ownership_score(last.evidence,a[2],OWNER_WEIGHTS),0);
     }
@@ -2807,7 +2870,27 @@ mod tests {
         assert_eq!(doc.features.exact_repeat,3);
         assert_eq!(doc.features.structural_ownership_score(hit.evidence,a[0],OWNER_WEIGHTS),0);
         assert!(doc.features.structural_ownership_score(hit.evidence,a[1],OWNER_WEIGHTS)>=OWNER_WEIGHTS.repeat);
-        assert_eq!(product_owner_index(a,&doc.events,&doc.features,&doc.exclusions,hit,true),1);
+        assert_eq!(product_owner_index(a,&doc.events,&doc.features,&doc.exclusions,hit,true).owner,1);
+    }
+    #[test]
+    fn inline_quantity_conflict_is_symmetric_and_same_hit_is_not_a_conflict(){
+        let hit=|evidence,quantities|ProductHit{evidence,source_start:0,line:0,raw:String::new(),
+            decision:Value::Null,quantities,common:false,each:false};
+        let hits=vec![hit(0,vec![2,2]),hit(1,vec![2,3])];
+        assert_eq!(conflicting_inline_quantities(&hits),HashSet::from([2]));
+        assert!(conflicting_inline_quantities(&[hit(0,vec![2,2])]).is_empty());
+    }
+    #[test]
+    fn trace_is_opt_in_and_records_the_operational_decision(){
+        let raw="수취인: 김가상\n010-0000-0001\n709 1개";
+        let state=state();
+        let plain=execute("analyze_order",json!({"raw":raw,"state":state})).unwrap();
+        let mut detailed=execute("analyze_order",json!({"raw":raw,"state":state,"includeDocumentFeatures":true})).unwrap();
+        let trace=detailed.as_object_mut().unwrap().remove("decisionTrace").unwrap();
+        assert_eq!(trace["version"],1);
+        assert!(trace["entries"].as_array().unwrap().iter().any(|e|e["reason"]=="quantity_link_accepted"));
+        detailed.as_object_mut().unwrap().remove("documentFeatures");
+        assert_eq!(plain,detailed);
     }
     #[test]
     fn product_ownership_uses_local_paragraph_instead_of_global_leading_direction(){
@@ -2817,7 +2900,7 @@ mod tests {
         let hit=doc.product_hits.iter().find(|h|h.decision["productId"]=="pgt").unwrap();
         assert_eq!(doc.features.anchors.len(),3);
         let anchors=&doc.features.anchors;
-        assert_eq!(product_owner_index(anchors,&doc.events,&doc.features,&doc.exclusions,hit,true),1);
+        assert_eq!(product_owner_index(anchors,&doc.events,&doc.features,&doc.exclusions,hit,true).owner,1);
         let result=assign_document(doc,&state,None).unwrap();
         assert_eq!(result["recipients"][0]["items"][0]["productId"],"p709");
         assert_eq!(result["recipients"][1]["items"][0]["productId"],"pgt");
@@ -2831,7 +2914,7 @@ mod tests {
         let mut doc=extract_document(raw,&state,None);
         doc.exclusions.truncated=true;
         let hit=doc.product_hits.iter().find(|h|h.decision["productId"]=="pgt").unwrap();
-        assert_eq!(product_owner_index(&doc.features.anchors,&doc.events,&doc.features,&doc.exclusions,hit,true),2);
+        assert_eq!(product_owner_index(&doc.features.anchors,&doc.events,&doc.features,&doc.exclusions,hit,true).owner,2);
     }
     #[test]
     fn common_candidate_index_preserves_selected_and_excluded_roles(){
