@@ -1000,41 +1000,81 @@ impl PreviewStore {
         Ok(result)
     }
 
-    // Explicit developer opt-in; read-only model and current source check.
-    // A file is not a signed or independently approved model registry.
+    // Read only the explicitly selected local registry model. No file fallback,
+    // no automatic selection of newer revisions, and no writes on this path.
     pub(crate) fn read_blend_shadow_model(target:&str)->Result<Option<Value>,String>{
-        use std::io::Read;
-        let Some(path)=std::env::var_os("BANDO_EGUI_BLEND_SHADOW_MODEL").filter(|p|!p.is_empty())else{return Ok(None);};
-        let file=std::fs::File::open(path).map_err(|_|"그림자 결합 모델 열기 실패")?;
-        let mut bytes=Vec::new();
-        file.take(256*1024+1).read_to_end(&mut bytes).map_err(|_|"그림자 결합 모델 읽기 실패")?;
-        if bytes.len()>256*1024{return Err("그림자 결합 모델 한도 초과".into());}
-        let model:Value=serde_json::from_slice(&bytes).map_err(|_|"그림자 결합 모델 형식 오류")?;
         let (mut conn,business,scope)=Self::learning_connection()?;
-        if model["businessScope"].as_str()!=Some(scope.as_str()){return Err("그림자 결합 모델 업무 DB 불일치".into());}
-        let expected=model["sourceDigests"].as_object().filter(|m|!m.is_empty()&&m.len()<=250)
-            .ok_or("그림자 결합 모델 원본 지문 누락")?;
-        if expected.contains_key(target){return Err("그림자 결합 모델 자기 주문 포함".into());}
-        let ids=expected.keys().cloned().collect::<Vec<_>>();
         let tx=conn.transaction().map_err(|e|e.to_string())?;
-        let (frozen,_,digests)=crate::business_state::read_learning_inputs(&ids,|sources|{
-            let (misses,digests)=select_learning_changes(&tx,&scope,sources)?;
-            if !misses.is_empty(){return Err("그림자 결합 모델 원본 동기화 필요".into());}
-            Ok((Vec::new(),digests))
-        })?;
-        if json!(digests)!=model["sourceDigests"]||crate::business_state::read_learning_sources(&ids)?!=frozen||
-            crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
-            return Err("그림자 결합 모델 원본 변경".into());
-        }
+        if !blend_registry_exists(&tx)?{return Ok(None);}
+        let Some(id)=selected_blend_model(&tx,&scope)?else{return Ok(None);};
+        let model=read_registered_blend_model(&tx,&scope,&id)?;
+        verify_blend_model_sources(&tx,&scope,&business,&model,Some(target))?;
         tx.commit().map_err(|e|e.to_string())?;
         Ok(Some(model))
     }
 
+    fn blend_model_registry(input:&Value)->Result<Value,String>{
+        let action=input["action"].as_str().ok_or("결합 모델 관리 동작 누락")?;
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        let tx=if action=="list"{conn.transaction()}else{
+            conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        }.map_err(|e|e.to_string())?;
+        if action=="list"{
+            if !blend_registry_exists(&tx)?{
+                return Ok(json!({"models":[],"selectedModelId":null,"automaticChangeAuthorized":false}));
+            }
+            let selected=selected_blend_model(&tx,&scope)?;
+            let models={
+                let mut stmt=tx.prepare("SELECT model_id,created_at,available_after FROM recognition_blend_models
+                    WHERE scope=?1 ORDER BY created_at DESC,model_id LIMIT 250").map_err(|e|e.to_string())?;
+                let rows=stmt.query_map([&scope],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?)))
+                    .map_err(|e|e.to_string())?;
+                let mut models=Vec::new();
+                for row in rows{
+                    let (id,created,available)=row.map_err(|e|e.to_string())?;
+                    models.push(json!({"modelId":id,"createdAt":created,"availableAfter":available,
+                        "selected":selected.as_deref()==Some(id.as_str())}));
+                }
+                models
+            };
+            tx.commit().map_err(|e|e.to_string())?;
+            return Ok(json!({"models":models,"selectedModelId":selected,"automaticChangeAuthorized":false}));
+        }
+        if !matches!(action,"select"|"clear"){return Err("지원하지 않는 결합 모델 관리 동작".into());}
+        prepare_blend_registry(&tx)?;
+        let selected=selected_blend_model(&tx,&scope)?;
+        let expected=input.get("expectedSelectedModelId").ok_or("기존 선택 모델 확인값 필요")?;
+        if *expected!=json!(selected){return Err("선택 모델이 변경되었습니다. 다시 조회하세요.".into());}
+        let next=if action=="select"{
+            let id=input["modelId"].as_str().ok_or("결합 모델 ID 누락")?;
+            let model=read_registered_blend_model(&tx,&scope,id)?;
+            verify_blend_model_sources(&tx,&scope,&business,&model,None)?;
+            let available=chrono::DateTime::parse_from_rfc3339(model["availableAfter"].as_str().ok_or("모델 시각 오류")?)
+                .map_err(|_|"모델 시각 오류")?;
+            if available>=chrono::Utc::now(){return Err("결합 모델 사용 가능 시각 미도달".into());}
+            Some(id.to_owned())
+        }else{None};
+        set_selected_blend_model(&tx,&scope,next.as_deref())?;
+        if crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("모델 관리 중 업무 DB 변경".into());
+        }
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(json!({"previousSelectedModelId":selected,"selectedModelId":next,
+            "status":"shadow_selection_only","automaticChangeAuthorized":false}))
+    }
+
     pub(crate) fn recognition_learning_support(input:&Value,
         evaluate:impl Fn(&[Value])->Result<Value,String>)->Result<Value,String>{
+        if let Some(registry)=input.get("blendModelRegistry"){
+            if ["shadowEvaluation","legacyScoreCalibration","shadowCandidateCalibration","blendWeightLearning","localChronologicalReplay"]
+                .iter().any(|key|input.get(*key).is_some()){return Err("모델 관리와 평가 요청을 분리하세요.".into());}
+            return Self::blend_model_registry(registry);
+        }
+        let persist=input["blendWeightLearning"]["persistModel"]==true;
         let (mut conn,business,scope)=Self::learning_connection()?;
-        let tx=conn.transaction().map_err(|e|e.to_string())?;
-        // Diagnostic only: no preparation/migration or writes on this path.
+        let tx=if persist{conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)}
+            else{conn.transaction()}.map_err(|e|e.to_string())?;
+        // Explicit persistence only; ordinary evaluations remain read-only.
         let evaluation=input.get("shadowEvaluation");
         let calibration=input.get("legacyScoreCalibration");
         let shadow_calibration=input.get("shadowCandidateCalibration");
@@ -1083,6 +1123,17 @@ impl PreviewStore {
                 result["runtimeParameters"]["businessScope"]=json!(scope);
                 result["runtimeParameters"]["sourceDigests"]=json!(digests);
             }
+            if persist{
+                if orders.len()!=ids.len()||digests.len()!=ids.len()||result["status"]!="blend_weight_diagnostic_only"{
+                    return Err("모델 저장에 필요한 확정 원본 또는 학습 결과 누락".into());
+                }
+                let model=&result["runtimeParameters"];
+                verify_blend_model_sources(&tx,&scope,&business,model,None)?;
+                prepare_blend_registry(&tx)?;
+                let id=store_blend_model(&tx,&scope,model)?;
+                result["storedModelId"]=json!(id);
+                result["modelAutomaticallySelected"]=json!(false);
+            }
             result["requestedOrders"]=json!(ids.len());
             result["missingOrInactiveSourceOrders"]=json!(ids.len()-orders.len());
             result
@@ -1109,6 +1160,7 @@ impl PreviewStore {
         let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
         recognition_learning_store::prepare(&tx)?;
         let report=recognition_learning_store::reset_derived(&tx,&scope)?;
+        if blend_registry_exists(&tx)?{set_selected_blend_model(&tx,&scope,None)?;}
         if crate::business_state::authorized_business_write_path()?.canonicalize()
             .map_err(|_|"업무 DB 식별 실패")?!=business{
             return Err("학습 초기화 중 업무 DB가 변경되었습니다.".into());
@@ -1136,6 +1188,106 @@ impl PreviewStore {
 /// Read exact stored audit bytes through the existing order/time index.
  /// No serde parse, string copies, or event JSON construction on cache hits.
 type LearningDigests=std::collections::BTreeMap<String,String>;
+
+fn blend_registry_exists(conn:&Connection)->Result<bool,String>{
+    conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN
+        ('recognition_blend_models','recognition_blend_selection')",[],|r|r.get::<_,i64>(0))
+        .map_err(|e|e.to_string()).and_then(|n|match n{0=>Ok(false),2=>Ok(true),_=>Err("결합 모델 저장소 불완전".into())})
+}
+fn prepare_blend_registry(conn:&Connection)->Result<(),String>{
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS recognition_blend_models(
+        scope TEXT NOT NULL,model_id TEXT NOT NULL,registry_version INTEGER NOT NULL CHECK(registry_version=1),
+        payload TEXT NOT NULL,created_at TEXT NOT NULL,available_after TEXT NOT NULL,
+        PRIMARY KEY(scope,model_id));
+        CREATE TABLE IF NOT EXISTS recognition_blend_selection(
+        scope TEXT PRIMARY KEY,model_id TEXT NOT NULL,
+        FOREIGN KEY(scope,model_id) REFERENCES recognition_blend_models(scope,model_id));")
+        .map_err(|e|e.to_string())
+}
+fn blend_model_identity(model:&Value)->Result<(String,String),String>{
+    use sha2::{Digest,Sha256};
+    let encoded=serde_json::to_string(model).map_err(|_|"결합 모델 직렬화 오류")?;
+    if encoded.len()>256*1024{return Err("결합 모델 저장 한도 초과".into());}
+    Ok((format!("blend-{:x}",Sha256::digest(encoded.as_bytes())),encoded))
+}
+fn validate_registry_model(scope:&str,model:&Value)->Result<(),String>{
+    if model["businessScope"].as_str()!=Some(scope)||model["schemaVersion"]!=1||
+        model["automaticChangeAuthorized"]!=false||model["clientBuildVersion"].as_str()!=Some(env!("CARGO_PKG_VERSION"))||
+        model["scorePolicyVersion"]!="owner-margin-30-v1"||model["captureVersion"]!=4||model["supportVersion"]!=4||
+        model["featureVersion"]!=1||model["contributionVersion"]!=2||model["safetyPolicyVersion"]!=1||
+        model["explicitToWeakRatio"].as_f64()!=Some(3.0){
+        return Err("결합 모델 규격 또는 업무 DB 불일치".into());
+    }
+    let available=chrono::DateTime::parse_from_rfc3339(model["availableAfter"].as_str().ok_or("모델 시각 누락")?)
+        .map_err(|_|"모델 시각 오류")?;
+    if available>chrono::Utc::now(){return Err("미래 시점 결합 모델".into());}
+    let sources=model["sourceDigests"].as_object().filter(|m|!m.is_empty()&&m.len()<=250).ok_or("모델 원본 지문 누락")?;
+    if sources.iter().any(|(id,d)|id.is_empty()||id.len()>1024||d.as_str().is_none_or(|s|
+        s.len()!=64||!s.bytes().all(|b|b.is_ascii_hexdigit()))){return Err("모델 원본 지문 오류".into());}
+    for key in ["legacyBins","legacyGates","shadowModels","blendModels"]{
+        if model[key].as_array().is_none_or(|a|a.is_empty()||a.len()>64){return Err("모델 보정 구성 누락".into());}
+    }
+    if !model["blendModels"].as_array().unwrap().iter().any(|m|m["weightFitOrders"].as_u64().is_some_and(|n|n>=10)&&
+        m["learningWeight"].as_f64().is_some_and(|w|w.is_finite()&&(0.0..=1.0).contains(&w))){
+        return Err("사용 가능한 결합 가중치 없음".into());
+    }
+    Ok(())
+}
+fn store_blend_model(conn:&Connection,scope:&str,model:&Value)->Result<String,String>{
+    validate_registry_model(scope,model)?;
+    let (id,payload)=blend_model_identity(model)?;
+    let available=model["availableAfter"].as_str().ok_or("모델 시각 누락")?;
+    conn.execute("INSERT INTO recognition_blend_models(scope,model_id,registry_version,payload,created_at,available_after)
+        VALUES(?1,?2,1,?3,?4,?5) ON CONFLICT(scope,model_id) DO NOTHING",
+        params![scope,id,payload,chrono::Utc::now().to_rfc3339(),available]).map_err(|e|e.to_string())?;
+    // A hash collision or corrupted pre-existing row is never overwritten.
+    if read_registered_blend_model(conn,scope,&id)?!=*model{return Err("결합 모델 충돌".into());}
+    Ok(id)
+}
+fn read_registered_blend_model(conn:&Connection,scope:&str,id:&str)->Result<Value,String>{
+    if id.len()!=70||!id.starts_with("blend-"){return Err("결합 모델 ID 오류".into());}
+    let (version,payload):(i64,String)=conn.query_row("SELECT registry_version,payload FROM recognition_blend_models
+        WHERE scope=?1 AND model_id=?2",params![scope,id],|r|Ok((r.get(0)?,r.get(1)?)))
+        .map_err(|_|"결합 모델 조회 실패")?;
+    if version!=1||payload.len()>256*1024{return Err("결합 모델 저장 규격 오류".into());}
+    let model:Value=serde_json::from_str(&payload).map_err(|_|"결합 모델 JSON 오류")?;
+    let (actual,encoded)=blend_model_identity(&model)?;
+    if actual!=id||encoded!=payload{return Err("결합 모델 지문 불일치".into());}
+    validate_registry_model(scope,&model)?;
+    Ok(model)
+}
+fn selected_blend_model(conn:&Connection,scope:&str)->Result<Option<String>,String>{
+    conn.query_row("SELECT model_id FROM recognition_blend_selection WHERE scope=?1",[scope],|r|r.get(0))
+        .optional().map_err(|e|e.to_string())
+}
+fn set_selected_blend_model(conn:&Connection,scope:&str,id:Option<&str>)->Result<(),String>{
+    if let Some(id)=id{
+        conn.execute("INSERT INTO recognition_blend_selection(scope,model_id) VALUES(?1,?2)
+            ON CONFLICT(scope) DO UPDATE SET model_id=excluded.model_id",params![scope,id]).map_err(|e|e.to_string())?;
+    }else{conn.execute("DELETE FROM recognition_blend_selection WHERE scope=?1",[scope]).map_err(|e|e.to_string())?;}
+    Ok(())
+}
+fn verify_blend_model_sources(tx:&rusqlite::Transaction<'_>,scope:&str,business:&std::path::Path,
+    model:&Value,target:Option<&str>)->Result<(),String>{
+    validate_registry_model(scope,model)?;
+    let expected=model["sourceDigests"].as_object().ok_or("모델 원본 지문 누락")?;
+    if target.is_some_and(|id|expected.contains_key(id)){return Err("결합 모델 자기 주문 포함".into());}
+    let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending WHERE scope=?1 AND feature_version=1",
+        [scope],|r|r.get(0)).map_err(|e|e.to_string())?;
+    if pending!=0{return Err("복구 대기 학습 주문".into());}
+    let ids=expected.keys().cloned().collect::<Vec<_>>();
+    let (frozen,_,digests)=crate::business_state::read_learning_inputs(&ids,|sources|{
+        let (misses,digests)=select_learning_changes(tx,scope,sources)?;
+        if !misses.is_empty(){return Err("결합 모델 원본 동기화 필요".into());}
+        Ok((Vec::new(),digests))
+    })?;
+    if json!(digests)!=model["sourceDigests"]||crate::business_state::read_learning_sources(&ids)?!=frozen||
+        crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
+        return Err("결합 모델 원본 변경".into());
+    }
+    Ok(())
+}
+
 fn select_learning_changes(tx:&rusqlite::Transaction<'_>,scope:&str,
     sources:&crate::business_state::LearningSources)->Result<(Vec<String>,LearningDigests),String>{
     use sha2::{Digest,Sha256};
@@ -1599,6 +1751,39 @@ mod ocr_layout_tests {
 #[cfg(test)]
 mod reception_edit_audit_tests {
     use super::*;
+
+    #[test]
+    fn blend_registry_stores_immutable_revisions_and_separate_selection(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+        assert!(!blend_registry_exists(&conn).unwrap());
+        prepare_blend_registry(&conn).unwrap();
+        let mut model=json!({"businessScope":"scope","schemaVersion":1,"automaticChangeAuthorized":false,
+            "clientBuildVersion":env!("CARGO_PKG_VERSION"),"scorePolicyVersion":"owner-margin-30-v1",
+            "captureVersion":4,"supportVersion":4,"featureVersion":1,"contributionVersion":2,"safetyPolicyVersion":1,
+            "explicitToWeakRatio":3.0,"availableAfter":"2020-01-01T00:00:00Z",
+            "sourceDigests":{"synthetic":"a".repeat(64)},"legacyBins":[{}],"legacyGates":[{}],
+            "shadowModels":[{}],"blendModels":[{"weightFitOrders":10,"learningWeight":0.5}]});
+        let a=store_blend_model(&conn,"scope",&model).unwrap();
+        assert_eq!(store_blend_model(&conn,"scope",&model).unwrap(),a);
+        assert_eq!(selected_blend_model(&conn,"scope").unwrap(),None);
+        set_selected_blend_model(&conn,"scope",Some(&a)).unwrap();
+        model["blendModels"][0]["learningWeight"]=json!(0.6);
+        let b=store_blend_model(&conn,"scope",&model).unwrap();
+        assert_ne!(a,b);
+        assert_eq!(selected_blend_model(&conn,"scope").unwrap(),Some(a.clone()));
+        assert!(read_registered_blend_model(&conn,"other",&a).is_err());
+        assert!(set_selected_blend_model(&conn,"other",Some(&a)).is_err());
+        set_selected_blend_model(&conn,"scope",Some(&b)).unwrap();
+        set_selected_blend_model(&conn,"scope",Some(&a)).unwrap();
+        conn.execute("UPDATE recognition_blend_models SET payload='{}' WHERE scope='scope' AND model_id=?1",[&a]).unwrap();
+        assert!(read_registered_blend_model(&conn,"scope",&a).is_err());
+        set_selected_blend_model(&conn,"scope",None).unwrap();
+        assert!(selected_blend_model(&conn,"scope").unwrap().is_none());
+        assert_eq!(read_registered_blend_model(&conn,"scope",&b).unwrap(),model);
+        model["automaticChangeAuthorized"]=json!(true);
+        assert!(store_blend_model(&conn,"scope",&model).is_err());
+    }
 
     #[test]
     fn learning_two_database_disk_replay_uses_real_snapshot_and_audit_paths(){
