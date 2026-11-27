@@ -101,6 +101,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "run_field_blend_shadow" => observations::run_field_blend_shadow(&payload),
         "compare_field_models" => observations::compare_field_models(&payload),
         "run_blend_shadow" => observations::run_blend_shadow(&payload),
+        "replay_owner_recommendation" => replay_owner_recommendation(&payload),
         "evaluate_combined_confirmation" => observations::evaluate_combined_confirmation(&payload),
         "compare_registered_models" => observations::compare_registered_models(&payload),
         "project_owner_contexts" => learning_context::lookup(&payload),
@@ -110,6 +111,30 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
     }
 }
 
+// Replay a single checked recommendation against the same parser and
+// catalog. Do not accept caller-supplied row replacements or modify orders.
+fn replay_owner_recommendation(payload:&Value)->Result<Value,String>{
+    let raw=required_string(payload,"raw")?;
+    let state=required_state(payload)?;
+    let mut reception=state.clone();
+    reception["products"].as_array_mut().ok_or("state products must be an array")?
+        .retain(|p|p["catalog"]!="DEMO"&&!p["variants"].as_array().is_some_and(|a|a.iter().any(|v|v["source"]=="DEMO")));
+    let client=payload.get("client");
+    let first=analyze_with_owner_trace(raw,&reception,client,true,true)?;
+    // Only the parser's own fields participate in identity comparison;
+    // gateway provenance is separate from the parser output.
+    let expected=&payload["initialAnalysis"];
+    if first.as_object().is_none_or(|o|o.iter().any(|(k,v)|expected.get(k)!=Some(v))){
+        return Err("귀속 재계산의 최초 분석 불일치".into());
+    }
+    let d=&payload["decision"];
+    let (source,target,old_row,new_row,field)=observations::checked_owner_replay(raw,&first,d)?;
+    let overrides=std::collections::BTreeMap::from([(source,target)]);
+    let replay=analyze_with_owner_overrides(raw,&reception,client,false,false,&overrides)?;
+    observations::verify_owner_replay(raw,&first,&replay,source,target,old_row,new_row,&field)?;
+    Ok(json!({"status":"validated_counterfactual","recognition":replay,
+        "decisionChanged":false,"eligibleForAutomaticDecision":false}))
+}
 fn required_string<'a>(obj: &'a Value, key: &str) -> Result<&'a str, String> {
     obj.get(key).and_then(Value::as_str)
         .ok_or_else(|| format!("{key} must be a string"))
@@ -870,6 +895,13 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
 
 fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
     collect_owner_trace:bool,collect_candidate_trace:bool)->Result<Value,String>{
+    analyze_with_owner_overrides(raw,state,client,collect_owner_trace,collect_candidate_trace,&std::collections::BTreeMap::new())
+}
+// Internal counterfactual replay only. The normal analyzer has no caller
+// override parameter. Reuse the existing parser to rebuild all derived fields.
+fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
+    collect_owner_trace:bool,collect_candidate_trace:bool,
+    overrides:&std::collections::BTreeMap<(usize,usize),(usize,usize)>)->Result<Value,String>{
     let client_id = client_id(client);
     let lines = physical_lines(raw);
     let mut events: Vec<Evidence> = Vec::new();
@@ -1240,9 +1272,24 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
     }
     let mut owner_trace=collect_owner_trace.then(Vec::new);
     let mut postcodes=vec![HashSet::<String>::new();recipients.len()];
+    let mut applied=0usize;
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
-        let row_index = recipient_owner_index(&anchors,&events,index,raw,owner_trace.as_mut());
+        let mut row_index = recipient_owner_index(&anchors,&events,index,raw,owner_trace.as_mut());
+        if !overrides.is_empty(){
+            let e=&events[index];
+            let source=(utf16(raw,e.start),utf16(raw,e.end));
+            if let Some(target)=overrides.get(&source){
+                if !matches!(e.kind,"address"|"phone"|"mobile"){return Err("귀속 변경 대상 유형 오류".into());}
+                let mut matches=anchors.iter().enumerate().filter(|(_,a)|{
+                    let anchor=&events[**a];anchor.kind=="name"&&
+                        (utf16(raw,anchor.start),utf16(raw,anchor.end))==*target
+                });
+                let (destination,_)=matches.next().ok_or("귀속 변경 수취인 원문 누락")?;
+                if matches.next().is_some()||destination==row_index{return Err("귀속 변경 대상 불명확".into());}
+                row_index=destination;applied+=1;
+            }
+        }
         let rid = recipients[row_index]["id"].as_str().unwrap_or("").to_owned();
         let e = &events[index];
         let kind = e.kind;
@@ -1308,6 +1355,7 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
                 "start":utf16(raw,e.start),"end":utf16(raw,e.end)}));
         events[index].recipient = Some(row_index);
     }
+    if applied!=overrides.len(){return Err("귀속 변경 원문 중복 또는 누락".into());}
     for (row,codes) in recipients.iter_mut().zip(postcodes) {
         if codes.len()==1 {
             row["postcode"]=json!(codes.into_iter().next().unwrap());
