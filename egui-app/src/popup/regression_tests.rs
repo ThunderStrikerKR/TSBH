@@ -1414,7 +1414,7 @@ fn shared_editor_footer_keeps_delete_left_and_save_right(){
     // Verify the delete action is actually inside the leading callback,
     // rather than merely checking whether the screen mentions a footer.
     let consumers=[
-        ("brand_manager.rs",include_str!("../brand_manager.rs"),None),
+        ("brand_manager.rs",include_str!("../brand_manager.rs"),Some("브랜드 삭제")),
         ("alias_manager.rs",include_str!("../alias_manager.rs"),Some("별칭 삭제")),
         ("model_group_manager.rs",include_str!("../model_group_manager.rs"),Some("그룹 삭제")),
         ("client_manager.rs",include_str!("../client_manager.rs"),Some("거래처 삭제")),
