@@ -1,4 +1,5 @@
 //! Shared category tree geometry, rendering and interaction surface.
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use eframe::egui::{self,Color32,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::{theme,typography};
@@ -103,7 +104,7 @@ pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("category row",rect,ui.clip_rect());
     let geo=CategoryTreeGeometry::new(rect,item.depth);
-    let painter=ui.painter().with_clip_rect(rect);
+    let painter=ui.painter().with_shared_clip(rect);
     if item.selected{
         crate::highlight::paint(ui,rect,crate::highlight::Geometry::Control,crate::highlight::Role::Selected);
     }else{
@@ -130,14 +131,14 @@ pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
     let name_galley=typography::category_tree_name_galley(ui,&visible,item.root);
     let name_end=name_x+name_galley.size().x.min(name_width);
     if name_end>name_x{
-        painter.with_clip_rect(Rect::from_min_max(egui::pos2(name_x,rect.top()),
+        painter.with_shared_clip(Rect::from_min_max(egui::pos2(name_x,rect.top()),
             egui::pos2(name_end,rect.bottom()))).galley(
             egui::pos2(name_x,rect.center().y-name_galley.size().y/2.0),
             name_galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
     }
     let summary_x=(name_end+theme::CATALOG_TREE_GAP).min(right);
     if !item.summary.is_empty()&&right>summary_x{
-        painter.with_clip_rect(Rect::from_min_max(egui::pos2(summary_x,rect.top()),
+        painter.with_shared_clip(Rect::from_min_max(egui::pos2(summary_x,rect.top()),
             egui::pos2(right,rect.bottom()))).galley(
             egui::pos2(summary_x,rect.center().y-summary_galley.size().y/2.0),
             summary_galley,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
