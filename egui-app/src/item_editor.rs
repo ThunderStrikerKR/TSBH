@@ -236,10 +236,10 @@ impl ItemEditor{
             if self.search.is_none(){self.open_search(Arc::clone(&gateway),ctx);}
             let (cancelled,product)={
                 let search=self.search.as_mut().expect("manual product picker");
-                let (cancelled,chosen)=search.show_selection_modal(
-                    ctx,work_area,"native-manual-product-search"
+                let (cancelled,chosen)=search.show_selection_modal_with_state(
+                    ctx,work_area,"native-manual-product-search",busy,self.error.as_deref()
                 );
-                (cancelled,chosen.and_then(|selection|search.selection_product(&selection)))
+                (cancelled,chosen.map(|selection|search.selection_product(&selection)))
             };
             if busy{return None;}
             if cancelled{
@@ -247,7 +247,7 @@ impl ItemEditor{
                 return Some(Event::Closed);
             }
             if let Some(product)=product{
-                self.replacement=Some(product);
+                self.replacement=product;
                 if self.can_apply(){
                     self.error=None;
                     return self.replacement.clone().map(Event::Apply);
