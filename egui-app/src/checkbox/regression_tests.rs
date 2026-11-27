@@ -120,7 +120,7 @@ mod shared_checkbox_rendered_geometry_tests{
     }
 
     #[test]
-    fn checked_table_checkbox_paints_high_contrast_orange_without_leaking_style(){
+    fn checked_table_checkbox_paints_neutral_fill_without_leaking_style(){
         fn has_fill(shape:&egui::Shape,hit:Rect,fill:egui::Color32)->bool{
             match shape{
                 egui::Shape::Rect(r)=>r.fill==fill&&hit.contains(r.rect.center()),
@@ -145,7 +145,13 @@ mod shared_checkbox_rendered_geometry_tests{
                         assert_eq!(ui.visuals().widgets.inactive.bg_fill,before);
                     });
                 });
-                assert_eq!(output.shapes.iter().any(|s|has_fill(&s.shape,hit,theme::CHECKBOX_CHECKED_BG)),checked);
+                if checked{
+                    assert!(output.shapes.iter().any(|s|has_fill(&s.shape,hit,theme::CHECKBOX_CHECKED_BG)));
+                }
+                assert!(!output.shapes.iter().any(|s|
+                    has_fill(&s.shape,hit,theme::ORANGE_EMPHASIS_BG)||
+                    has_fill(&s.shape,hit,theme::SELECTED_ORDER)||
+                    has_fill(&s.shape,hit,egui::Color32::from_rgb(140,76,16))));
                 assert_eq!(value,checked);
                 if let Some((old_width,old_height,old_hit))=baseline{
                     if old_width==width&&old_height==height{
