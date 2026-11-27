@@ -509,6 +509,7 @@ impl VisualGeometry{
 }
 struct VisualStyleEntry{
     selected:Option<String>,active:Option<LinkKey>,assigned:Option<HashSet<String>>,
+    recommended:Option<HashSet<String>>,
     blocks:std::sync::Arc<[VisualBlock]>,
 }
 struct VisualCacheEntry{
@@ -522,6 +523,11 @@ thread_local!{
 fn cached_visual_blocks(raw:&str,spans:&[LinkedSpan],selected:Option<&str>,
     active:Option<&LinkKey>,assigned:Option<&HashSet<String>>)
     ->(std::sync::Arc<[VisualBlock]>,std::sync::Arc<[char]>){
+    cached_visual_blocks_recommended(raw,spans,selected,active,assigned,None)
+}
+fn cached_visual_blocks_recommended(raw:&str,spans:&[LinkedSpan],selected:Option<&str>,
+    active:Option<&LinkKey>,assigned:Option<&HashSet<String>>,recommended:Option<&HashSet<String>>)
+    ->(std::sync::Arc<[VisualBlock]>,std::sync::Arc<[char]>){
     VISUAL_CACHE.with(|cache|{
         let mut cache=cache.borrow_mut();
         let mut entry=if let Some(index)=cache.iter().position(|entry|
@@ -533,12 +539,12 @@ fn cached_visual_blocks(raw:&str,spans:&[LinkedSpan],selected:Option<&str>,
         };
         let style=if let Some(index)=entry.styles.iter().position(|style|
             style.selected.as_deref()==selected && style.active.as_ref()==active &&
-            style.assigned.as_ref()==assigned){
+            style.assigned.as_ref()==assigned && style.recommended.as_ref()==recommended){
             entry.styles.remove(index)
         }else{
             VisualStyleEntry{selected:selected.map(str::to_owned),active:active.cloned(),
-                assigned:assigned.cloned(),blocks:style_visual_blocks(
-                    &entry.geometry,spans,selected,active,assigned).into()}
+                assigned:assigned.cloned(),recommended:recommended.cloned(),blocks:style_visual_blocks(
+                    &entry.geometry,spans,selected,active,assigned,recommended).into()}
         };
         let result=(style.blocks.clone(),entry.geometry.characters.clone());
         // Bound both retained documents and hover variants. Changing a field
@@ -569,11 +575,12 @@ fn visual_blocks_with_manual_states(
     raw:&str,spans:&[LinkedSpan],selected_recipient:Option<&str>,
     active:Option<&LinkKey>,assigned_ids:Option<&HashSet<String>>
 )->Vec<VisualBlock> {
-    style_visual_blocks(&VisualGeometry::new(raw,spans),spans,selected_recipient,active,assigned_ids)
+    style_visual_blocks(&VisualGeometry::new(raw,spans),spans,selected_recipient,active,assigned_ids,None)
 }
 fn style_visual_blocks(
     geometry:&VisualGeometry,spans:&[LinkedSpan],selected_recipient:Option<&str>,
-    active:Option<&LinkKey>,assigned_ids:Option<&HashSet<String>>
+    active:Option<&LinkKey>,assigned_ids:Option<&HashSet<String>>,
+    recommended:Option<&HashSet<String>>
 )->Vec<VisualBlock>{
     let mut result:Vec<VisualBlock>=Vec::new();
     let mut starts=0;let mut ends=0;
@@ -600,7 +607,9 @@ fn style_visual_blocks(
         let Some(chosen)=focused.or(contextual).or_else(||visible.next()) else {
             continue;
         };
-        let is_focused=focused.is_some();
+        let is_focused=focused.is_some() || chosen.source_id.as_ref().is_some_and(|id|
+            recommended.is_some_and(|ids|ids.contains(id)) &&
+                assigned_ids.is_some_and(|ids|!ids.contains(id)));
         let is_context=selected_recipient==Some(chosen.key.recipient_id.as_str()) ||
             active.is_some_and(|key|key.recipient_id==chosen.key.recipient_id);
         let manual_state=assigned_ids.map(|ids| {
@@ -643,7 +652,7 @@ pub fn layout(
     font:FontId,
     color:Color32,
 )->egui::text::LayoutJob {
-    layout_with_states(raw,spans,selected_recipient,active,None,width,font,color)
+    layout_with_states(raw,spans,selected_recipient,active,None,None,width,font,color)
 }
 
 /// Used only by the manual source viewer, not by normal Reception.
@@ -653,20 +662,28 @@ pub fn layout_manual(
     assigned_ids:&HashSet<String>,width:f32,font:FontId,color:Color32
 )->egui::text::LayoutJob{
     layout_with_states(
-        raw,spans,selected_recipient,active,Some(assigned_ids),width,font,color
+        raw,spans,selected_recipient,active,Some(assigned_ids),None,width,font,color
     )
+}
+
+pub fn layout_manual_recommended(
+    raw:&str,spans:&[LinkedSpan],selected_recipient:Option<&str>,active:Option<&LinkKey>,
+    assigned_ids:&HashSet<String>,recommended:&HashSet<String>,width:f32,font:FontId,color:Color32
+)->egui::text::LayoutJob{
+    layout_with_states(raw,spans,selected_recipient,active,Some(assigned_ids),
+        Some(recommended),width,font,color)
 }
 
 fn layout_with_states(
     raw:&str,spans:&[LinkedSpan],selected_recipient:Option<&str>,
     active:Option<&LinkKey>,assigned_ids:Option<&HashSet<String>>,
-    width:f32,font:FontId,color:Color32
+    recommended:Option<&HashSet<String>>,width:f32,font:FontId,color:Color32
 )->egui::text::LayoutJob {
     let mut job=egui::text::LayoutJob::default();
     job.wrap.max_width=width;
     job.first_row_min_height=typography::RECEPTION_SOURCE_LINE_HEIGHT;
     let mut cursor=0;
-    let (blocks,_)=cached_visual_blocks(raw,spans,selected_recipient,active,assigned_ids);
+    let (blocks,_)=cached_visual_blocks_recommended(raw,spans,selected_recipient,active,assigned_ids,recommended);
     for block in blocks.iter() {
         if cursor<block.start {
             job.append(&raw[cursor..block.start],0.0,egui::TextFormat {
@@ -728,7 +745,7 @@ pub fn block_shapes(
     active:Option<&LinkKey>,clip:egui::Rect,
 )->(Vec<egui::Shape>,Vec<egui::Shape>) {
     block_shapes_with_states(
-        raw,galley,galley_pos,spans,selected_recipient,active,None,clip
+        raw,galley,galley_pos,spans,selected_recipient,active,None,None,clip
     )
 }
 
@@ -740,8 +757,17 @@ pub fn block_shapes_manual(
     active:Option<&LinkKey>,assigned_ids:&HashSet<String>,clip:egui::Rect,
 )->(Vec<egui::Shape>,Vec<egui::Shape>) {
     block_shapes_with_states(
-        raw,galley,galley_pos,spans,selected_recipient,active,Some(assigned_ids),clip
+        raw,galley,galley_pos,spans,selected_recipient,active,Some(assigned_ids),None,clip
     )
+}
+
+pub fn block_shapes_manual_recommended(
+    raw:&str,galley:&egui::Galley,galley_pos:egui::Pos2,
+    spans:&[LinkedSpan],selected_recipient:Option<&str>,active:Option<&LinkKey>,
+    assigned_ids:&HashSet<String>,recommended:&HashSet<String>,clip:egui::Rect,
+)->(Vec<egui::Shape>,Vec<egui::Shape>){
+    block_shapes_with_states(raw,galley,galley_pos,spans,selected_recipient,active,
+        Some(assigned_ids),Some(recommended),clip)
 }
 
 /// Exact visual style and row segments for one native manual source block.
@@ -865,9 +891,10 @@ pub fn manual_source_block_visual(
 fn block_shapes_with_states(
     raw:&str,galley:&egui::Galley,galley_pos:egui::Pos2,
     spans:&[LinkedSpan],selected_recipient:Option<&str>,
-    active:Option<&LinkKey>,assigned_ids:Option<&HashSet<String>>,clip:egui::Rect,
+    active:Option<&LinkKey>,assigned_ids:Option<&HashSet<String>>,
+    recommended:Option<&HashSet<String>>,clip:egui::Rect,
 )->(Vec<egui::Shape>,Vec<egui::Shape>) {
-    let (blocks,characters)=cached_visual_blocks(raw,spans,selected_recipient,active,assigned_ids);
+    let (blocks,characters)=cached_visual_blocks_recommended(raw,spans,selected_recipient,active,assigned_ids,recommended);
     let mut normal=Vec::new();
     let mut focused=Vec::new();
     let mut outlines=Vec::new();
