@@ -603,8 +603,8 @@ impl ProductManager {
                     cancelled=workspace.header("상품 선택","취소",true);
                     workspace.body_region(|ui|{
                         ui.allocate_ui_with_layout(
-                            egui::vec2(ui.available_width(),height.min(ui.available_height().max(1.0))),Layout::top_down(Align::Min),
-                            |body|self.show_page(body)
+                            egui::vec2(ui.available_width(),height),Layout::top_down(Align::Min),
+                            |body|self.show_catalog_surface(body,Some(height))
                         );
                     });
                 });
@@ -1047,6 +1047,12 @@ impl ProductManager {
     }
 
     pub fn show_page(&mut self,ui:&mut Ui){
+        self.show_catalog_surface(ui,None);
+    }
+
+    // The caller supplies the bounded popup body height. Main tabs alone
+    // use the management page's title, KPI anchor and remaining-page budget.
+    fn show_catalog_surface(&mut self,ui:&mut Ui,modal_body_height:Option<f32>){
         let page_origin_y=ui.cursor().top();
         self.poll(ui.ctx());
         // A pointer action supersedes any deferred keyboard focus target.
@@ -1065,7 +1071,7 @@ impl ProductManager {
             if self.price_mode&&self.tab==0{"products.price"}else{"products.action"},
             crate::floating_notice::Tone::Error,self.error.as_deref()
         );
-        let selecting=self.selection_client.is_some();
+        let selecting=modal_body_height.is_some();
         if !selecting{
         crate::ui_layout::management_page_title_top_gap(ui);
         crate::ui_layout::management_top_content(ui,|top|{
@@ -1162,7 +1168,7 @@ impl ProductManager {
         if !selecting && self.tab!=0 {
             crate::card::align_management_primary_card(ui,page_origin_y);
         }
-        if self.tab==4 {
+        if !selecting && self.tab==4 {
             if let Some(catalog)=self.catalog.as_ref(){
                 if let Some(data)=self.brands.show_page(ui,catalog,can_edit,saving){
                     self.start_write("upsert_brand",data,None,ui.ctx().clone());
@@ -1172,7 +1178,7 @@ impl ProductManager {
             }
             return;
         }
-        if self.tab==3 {
+        if !selecting && self.tab==3 {
             if let Some(catalog)=self.catalog.as_ref(){
                 if let Some(data)=self.aliases.show_page(
                     ui,catalog,can_edit,saving
@@ -1184,7 +1190,7 @@ impl ProductManager {
             }
             return;
         }
-        if self.tab==2 {
+        if !selecting && self.tab==2 {
             if let Some(catalog)=self.catalog.as_ref(){
                 ui.add_enabled_ui(!self.result.required(),|ui|{
                     self.model_groups.show_page(ui,catalog,Arc::clone(&self.gateway));
@@ -1194,7 +1200,7 @@ impl ProductManager {
             }
             return;
         }
-        if self.tab==1 {
+        if !selecting && self.tab==1 {
             if let Some(catalog)=self.catalog.as_ref(){
                 self.category_manager.show_page(ui,catalog,can_edit,saving);
             }else{
@@ -1205,9 +1211,22 @@ impl ProductManager {
         // Product list starts at the exact Freight Assignment card anchor.
         // Actions and optional Excel/registration editors stay INSIDE the card.
         if !selecting{crate::card::align_management_primary_card(ui,page_origin_y);}
-        let card_min_height=crate::card::management_master_table_card_min_inner_height(ui);
+        let card_min_height=if let Some(height)=modal_body_height{
+            // Same card border and insets, but the modal owns the budget.
+            crate::card::management_card_min_height_for_insets(
+                height,theme::SECTION_PADDING,theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING
+            )
+        }else{
+            crate::card::management_master_table_card_min_inner_height(ui)
+        };
         crate::card::measured_management_master_card(ui,|panel|{
-            crate::card::fill_management_primary_card(panel,card_min_height);
+            if selecting{
+                let width=panel.available_width().max(1.0);
+                crate::card::apply_width_policy(panel,crate::card::CardWidthPolicy::FillAvailable,width);
+                crate::card::apply_height_policy(panel,crate::card::CardHeightPolicy::FillAvailable,card_min_height);
+            }else{
+                crate::card::fill_management_primary_card(panel,card_min_height);
+            }
             crate::ui_layout::apply_spacing_role(panel,crate::ui_layout::SpacingRole::ExplicitVertical);
             // Freight-style dual-slot toolbar at wide widths. Only when
             // product filters genuinely need the space do actions wrap onto
