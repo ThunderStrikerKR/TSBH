@@ -1424,7 +1424,7 @@ impl FreightManager {
                 |tools|{
                     tools.set_clip_rect(left_rect);
                     tools.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,left_rect.width());
-                    tools.set_height(left_rect.height());
+                    crate::ui_layout::set_fixed_height(tools,left_rect.height());
                     crate::ui_layout::apply_spacing_role(tools,crate::ui_layout::SpacingRole::ToolbarInput);
                     // Search stays at 36pt; the shared 34pt dropdown trigger
                     // is vertically centered within the same 36pt toolbar.
@@ -1523,7 +1523,7 @@ impl FreightManager {
                     // independent table scrollbar gutter.
                     bulk.set_clip_rect(right_rect);
                     bulk.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,right_controls_rect.width());
-                    bulk.set_height(right_controls_rect.height());
+                    crate::ui_layout::set_fixed_height(bulk,right_controls_rect.height());
                     crate::ui_layout::apply_spacing_role(bulk,crate::ui_layout::SpacingRole::ToolbarInput);
                     // Bulk selection uses the same 34pt split-chevron
                     // trigger as the filter and every product-row selector.
