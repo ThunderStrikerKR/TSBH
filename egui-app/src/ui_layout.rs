@@ -35,6 +35,47 @@ mod logical_alignment_tests{
     use egui::emath::GuiRounding as _;
 
     #[test]
+    fn shared_size_constraints_preserve_native_layout_semantics(){
+        use crate::ui_primitives::{CardWidthPolicy,apply_width_policy};
+        let ctx=crate::ui_test_support::test_context();
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(600.0,500.0));
+        let _=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+            egui::CentralPanel::default().show(ctx,|root|{
+                let bounds=Rect::from_min_size(egui::pos2(20.0,20.0),Vec2::new(300.0,200.0));
+                for (index,target) in [43.01_f32,81.19,123.0].into_iter().enumerate(){
+                    let child=|root:&mut Ui,key|root.new_child(UiBuilder::new()
+                        .id_salt((index,key)).aligned_max_rect(bounds).layout(Layout::top_down(Align::Min)));
+                    let mut fixed=child(root,"fixed");
+                    let mut reference=child(root,"native fixed");
+                    set_fixed_height(&mut fixed,target);
+                    reference.set_height(target.round_ui());
+                    assert_eq!(fixed.min_rect(),reference.min_rect());
+                    assert_eq!(fixed.max_rect(),reference.max_rect());
+                    assert_eq!(fixed.min_rect().height(),target.round_ui());
+                    let mut minimum=child(root,"minimum");
+                    let mut reference=child(root,"native minimum");
+                    reserve_min_height(&mut minimum,target);
+                    reference.set_min_height(target.round_ui());
+                    assert_eq!(minimum.min_rect(),reference.min_rect());
+                    assert_eq!(minimum.max_rect(),reference.max_rect());
+                    let mut sized=child(root,"min size");
+                    let mut reference=child(root,"native min size");
+                    reserve_min_size(&mut sized,Vec2::new(target+10.0,target));
+                    reference.set_min_size(Vec2::new((target+10.0).round_ui(),target.round_ui()));
+                    assert_eq!(sized.min_rect(),reference.min_rect());
+                    assert_eq!(sized.max_rect(),reference.max_rect());
+                    let mut width=child(root,"width");
+                    let mut reference=child(root,"native width");
+                    apply_width_policy(&mut width,CardWidthPolicy::Fixed,target);
+                    reference.set_width(target.round_ui());
+                    assert_eq!(width.min_rect(),reference.min_rect());
+                    assert_eq!(width.max_rect(),reference.max_rect());
+                }
+            });
+        });
+    }
+
+    #[test]
     fn adjacent_fractional_rects_share_rounded_edges_without_drift(){
         for scale in [1.0_f32,1.25,1.5,1.75,2.0]{
             let origin=egui::pos2(7.13/scale,11.17/scale);
