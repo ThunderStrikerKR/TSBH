@@ -309,6 +309,29 @@ fn option_target(item:&Value)->Option<OptionFeatures>{
     }
     Some(features)
 }
+// Unknown slash-delimited sale labels are not covered by a color proof.
+// They must be separately written in the source, with full-token boundaries.
+fn extra_option_labels(item:&Value)->Vec<String>{
+    item["name"].as_str().unwrap_or("").split('/').skip(1).map(str::trim)
+        .filter(|part|!part.is_empty()&&*part!="색상 미표기")
+        .filter(|part|{
+            let compact=part.split_whitespace().collect::<String>();
+            let known_color=option_features(part).and_then(|v|v.color)
+                .is_some_and(|c|super::model::norm_color(part)==c);
+            let known_config=["가방포함","가방미포함","가방장착","가방미장착","가방있음","가방없음",
+                "바퀴포함","바퀴미포함","바퀴장착","바퀴미장착","바퀴있음","바퀴없음",
+                "타공","무타공","비타공","민판","타공상판","무타공상판","비타공상판","민판상판"]
+                .contains(&compact.as_str());
+            !known_color&&!known_config
+        }).map(str::to_owned).collect()
+}
+fn exact_option_label(text:&str,label:&str)->bool{
+    if label.chars().count()<2||label.len()>128{return false;}
+    let Some((a,b))=super::model::find_term(text,label,false)else{return false;};
+    !text[..a].chars().next_back().is_some_and(char::is_alphanumeric)
+        &&!text[b..].chars().next().is_some_and(char::is_alphanumeric)
+}
+
 fn verified_variant(units:&[u16],s:Span,rs:&Value,target:&Value,prior:Option<&Value>)->bool{
     let start=units[..s.0].iter().rposition(|u|*u==10).map_or(0,|p|p+1);
     let end=s.1+units[s.1..].iter().position(|u|*u==10).unwrap_or(units.len()-s.1);
@@ -333,19 +356,18 @@ fn verified_variant(units:&[u16],s:Span,rs:&Value,target:&Value,prior:Option<&Va
         written.color=Some(color);
     }
     let Some(selected)=option_target(target)else{return false;};
-    if written!=selected || written.color.is_none()&&written.configuration.is_empty(){return false;}
+    let labels=extra_option_labels(target);
+    if written!=selected || labels.iter().any(|label|!exact_option_label(&line,label))
+        || written.color.is_none()&&written.configuration.is_empty()&&labels.is_empty(){return false;}
     if let Some(prior)=prior{
         let Some(previous)=option_target(prior)else{return false;};
-        // A different ID with the same explicitly proven attributes cannot
-        // be identified as a correction of those attributes.
-        if previous==selected{return false;}
-        // Unknown differences in the label cannot be justified by a color
-        // alone. Compare all slash-delimited non-attribute components.
-        let residual=|item:&Value|item["name"].as_str().unwrap_or("").split('/')
-            .map(str::trim).filter(|part|!part.is_empty()).filter(|part|
-                option_features(part).is_none_or(|v|v.color.is_none()&&v.configuration.is_empty()))
-            .map(str::to_owned).collect::<Vec<_>>();
-        if residual(prior)!=residual(target){return false;}
+        let previous_labels=extra_option_labels(prior);
+        if previous==selected&&previous_labels==labels{return false;}
+        if super::model::model_names(prior)!=super::model::model_names(target){return false;}
+        // Competing old and new explicit labels on the same line are
+        // ambiguous, even when the final selected label itself is present.
+        if previous_labels.iter().filter(|label|!labels.contains(label))
+            .any(|label|exact_option_label(&line,label)){return false;}
     }
     true
 }
@@ -415,7 +437,7 @@ fn verified_chain<'a,T:Eq>(events:&[&'a Value],initial:T,final_value:T,
     Some(AuditChain{last_change:last_change?,changes,same_client})
 }
 
-fn reconcile_field_audits(units:&[u16],events:&[&Value],candidates:&BTreeMap<Span,Vec<(&Value,Value)>>,
+fn reconcile_field_audits(units:&[u16],initial_rows:&Value,final_rows:&Value,events:&[&Value],candidates:&BTreeMap<Span,Vec<(&Value,Value)>>,
     observations:&mut [Value]){
     for o in observations.iter_mut().filter(|v|v["task"]!="recipient_ownership"){
         let Some(s)=position(units,&o["source"])else{continue;};
@@ -463,8 +485,12 @@ fn reconcile_field_audits(units:&[u16],events:&[&Value],candidates:&BTreeMap<Spa
                 &&target["productId"].as_str().is_some_and(|id|events.iter().all(|e|
                     field_state(units,&e["beforeRows"],s,"product").as_deref()==Some(id)
                     &&field_state(units,&e["afterRows"],s,"product").as_deref()==Some(id)))
-                &&unique_source_target(units,&event["beforeRows"],s).is_some_and(|(prior,_)|
-                    verified_variant(units,s,&event["afterRows"],target,Some(prior))),
+                &&unique_source_target(units,initial_rows,s).is_some_and(|(prior,_)|
+                    verified_variant(units,s,&event["afterRows"],target,Some(prior))&&
+                    unique_source_target(units,final_rows,s).is_some_and(|(final_item,_)|
+                        option_target(final_item)==option_target(target)&&
+                        extra_option_labels(final_item)==extra_option_labels(target)&&
+                        verified_variant(units,s,final_rows,final_item,Some(prior)))),
             "quantity"=>target["quantityConfirmed"]==true
                 &&target["quantity"].as_i64().is_some_and(|q|q>0&&q.to_string()==final_value)
                 &&{
@@ -521,7 +547,7 @@ fn reconcile_owner_audits(payload:&Value,units:&[u16],first:&Value,observations:
     }
     ordered.sort_by(|a,b|a.0.cmp(&b.0));
     let ordered=ordered.into_iter().map(|(_,event)|event).collect::<Vec<_>>();
-    reconcile_field_audits(units,&ordered,&candidates,observations);
+    reconcile_field_audits(units,&first["recipients"],&snapshot["recipients"],&ordered,&candidates,observations);
     for observation in observations.iter_mut().filter(|v|v["task"]=="recipient_ownership"){
         let Some(s)=position(units,&observation["source"])else{continue;};
         let entries=candidates.get(&s).into_iter().flatten()
