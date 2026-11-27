@@ -18,6 +18,7 @@ mod validation;
 pub mod change_set;
 pub mod validation_dependencies;
 pub mod validation_gate;
+mod validation_transitions;
 mod category_assignment;
 pub use category_assignment::{validate_product_assignment,validate_category_transition};
 mod relational_write;

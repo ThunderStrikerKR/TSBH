@@ -7,7 +7,7 @@ use serde_json::{json,Value};
 use std::time::{SystemTime,UNIX_EPOCH};
 
 #[path = "../../../src-tauri/src/business_core/catalog_clients.rs"]
-mod catalog_clients;
+pub(super) mod catalog_clients;
 
 pub(crate) fn validate_native_model_groups(state:&Value)->Result<(),String>{
     catalog_clients::validate_model_groups(state)

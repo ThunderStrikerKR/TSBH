@@ -39,8 +39,16 @@ fn binding(rule:Validator)->Option<Check>{
         Workflow=>workflow,
         Message=>message,
         ProvisionalNotice=>provisional,
-        Product|Price|PriceHistory|BrandLink|Alias|Shipping|ShippingHistory|
-        FactoryReply|Registration|Mapping=>return None,
+        Product=>crate::validation_transitions::product,
+        Price=>crate::validation_transitions::price,
+        PriceHistory=>crate::validation_transitions::price_history,
+        BrandLink=>crate::validation_transitions::brand_link,
+        Alias=>crate::validation_transitions::alias,
+        Shipping=>crate::validation_transitions::shipping,
+        ShippingHistory=>crate::validation_transitions::shipping_history,
+        FactoryReply=>crate::validation_transitions::factory_reply,
+        Registration=>crate::validation_transitions::registration,
+        Mapping=>crate::validation_transitions::mapping,
     })
 }
 pub fn supported(rule:Validator)->bool{binding(rule).is_some()}
@@ -113,8 +121,8 @@ mod tests{
     fn every_requirement_has_an_explicit_binding_status(){
         let all:BTreeSet<_>=ALL.into_iter().collect();
         assert_eq!(all.len(),21);
-        assert_eq!(all.iter().filter(|r|supported(**r)).count(),11);
-        assert_eq!(all.iter().filter(|r|!supported(**r)).count(),10);
+        assert_eq!(all.iter().filter(|r|supported(**r)).count(),21);
+        assert_eq!(all.iter().filter(|r|!supported(**r)).count(),0);
     }
     #[test]
     fn no_op_still_executes_existing_basic_checks(){
@@ -130,15 +138,16 @@ mod tests{
         b["products"]=json!([{"id":"p","name":"P","categories":["a"]}]);
         let report=inspect(&a,&b);
         assert!(report.failures.iter().any(|f|f.rule==Category));
-        assert!(report.unavailable.contains(&Product));
+        assert!(report.checked.contains(&Product));
         assert!(!report.is_complete_and_valid());
     }
     #[test]
-    fn unavailable_price_requirements_never_pass(){
+    fn price_change_without_history_never_passes(){
         let mut a=state();a["products"]=json!([{"id":"p","variants":[{"id":"v","retail":1}]}]);
         let mut b=a.clone();b["products"][0]["variants"][0]["retail"]=json!(2);
         let report=inspect(&a,&b);
-        assert_eq!(report.unavailable,[Product,Price,PriceHistory].into_iter().collect());
+        assert!(report.unavailable.is_empty());
+        assert!(report.failures.iter().any(|f|f.rule==PriceHistory));
         assert!(!report.is_complete_and_valid());
     }
     #[test]

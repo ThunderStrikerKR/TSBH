@@ -22,7 +22,7 @@ fn model_names(product:&Value)->Vec<String>{
 fn visible(product:&Value)->bool{
     field(product,"deletedAt").is_empty()&&field(product,"supersededBy").is_empty()
 }
-fn alias_problem(record:&Value,aliases:&[Value],products:&[Value])->Vec<String>{
+pub(super) fn alias_problem(record:&Value,aliases:&[Value],products:&[Value])->Vec<String>{
     let target=products.iter().find(|p|field(p,"id")==field(record,"productId"));
     let key=model_key(field(record,"text"));
     let mut out=vec![];
