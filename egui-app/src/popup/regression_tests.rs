@@ -681,10 +681,10 @@ mod modal_input_routing_tests {
         let mut popup_layer=None;
         let mut popup_rect=Rect::NOTHING;
         let mut owner_body=Rect::NOTHING;
-        for _ in 0..4 {
+        for frame in 0..4 {
             let mut raw=egui::RawInput::default();
             raw.screen_rect=Some(work_area);
-            let _=ctx.run(raw,|ctx|{
+            let output=ctx.run(raw,|ctx|{
                 modal_backdrop(ctx,"popup-owner-regression-dim",true);
                 show_decision_window(ctx,"Popup owner","popup-owner-regression",work_area,|ui|{
                     let trigger=ui.button("Open popup");
@@ -695,13 +695,25 @@ mod modal_input_routing_tests {
                         popup_rect=response.rect;
                     });
                     owner_body=ui.allocate_exact_size(Vec2::new(300.0,180.0),Sense::hover()).0;
+                    // A real opaque background is intentionally painted by
+                    // the owner AFTER the popup is built. Layer sorting must
+                    // still place the menu caption above that background.
+                    ui.painter().rect_filled(owner_body,0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
                 });
             });
+            if frame>=1{
+                crate::ui_test_support::assert_painted_caption(&output,"Select option",popup_rect);
+            }
         }
         let popup_layer=popup_layer.expect("popup rendered");
         assert!(owner_body.intersects(popup_rect),"test must exercise overlapping layers");
-        let hit=owner_body.intersect(popup_rect).center();
-        assert_eq!(ctx.layer_id_at(hit),Some(popup_layer));
+        let overlap=owner_body.intersect(popup_rect);
+        assert!(overlap.is_positive());
+        for fraction in [0.25_f32,0.5,0.75]{
+            let hit=egui::pos2(overlap.left()+overlap.width()*fraction,overlap.center().y);
+            assert_eq!(ctx.layer_id_at(hit),Some(popup_layer),
+                "popup paint and input layer disagree at {hit:?}");
+        }
         assert!(ctx.memory(|m|m.allows_interaction(popup_layer)));
         assert_eq!(ctx.memory(|m|m.top_modal_layer()),
             Some(modal_window_layer("popup-owner-regression")));
