@@ -10930,6 +10930,16 @@ fn recognition_correction_audit_summary()->Result<serde_json::Value,String>{
 }
 
 fn main() -> eframe::Result<()> {
+    if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-learning-reset"){
+        if std::env::args_os().len()!=3 || !std::env::args_os().nth(2).is_some_and(|arg|arg=="--derived-only"){
+            eprintln!("[BANDO HUB] 파생 통계 초기화는 --derived-only 명시가 필요합니다.");std::process::exit(2);
+        }
+        match gateway::reset_recognition_learning(){
+            Ok(report)=>println!("{report}"),
+            Err(_)=>{eprintln!("[BANDO HUB] 학습 파생 통계 초기화 실패.");std::process::exit(2);}
+        }
+        return Ok(());
+    }
     if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-learning-integrity"){
         if std::env::args_os().len()!=2{std::process::exit(2);}
         match gateway::recognition_learning_integrity(){

@@ -105,6 +105,14 @@ fn existing(tx:&Transaction<'_>,scope:&str,id:&str)->Result<Vec<Fact>,String>{
 
 fn replace(tx:&Transaction<'_>,scope:&str,id:&str,new:&[Fact])->Result<bool,String>{
     let old=existing(tx,scope,id)?;
+    // A previously sealed contribution must be verified even on a source
+    // cache miss or inactive order. Never subtract corrupted derived facts.
+    let proof:Option<String>=tx.query_row("SELECT digest FROM recognition_learning_fact_proofs
+        WHERE scope=?1 AND feature_version=?2 AND order_id=?3",
+        params![scope,FEATURE_VERSION,id],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+    if let Some(proof)=proof{
+        if fact_proof(&old)?!=proof{return Err("기존 학습 기여 내용 손상".into());}
+    }
     if old==new{return Ok(false);}
     for (family,key,metric,candidate,n) in old{
         let changed=tx.execute("UPDATE recognition_learning_totals SET amount=amount-?7
@@ -287,6 +295,15 @@ pub(super) fn mark_pending(tx:&Transaction<'_>,scope:&str,id:&str)->Result<(),St
 /// decremented, the caller rolls back this revocation but keeps the pending
 /// marker committed separately; the scope is not eligible for activation.
 pub(super) fn revoke_pending(tx:&Transaction<'_>,scope:&str,id:&str)->Result<(),String>{
+    let old=existing(tx,scope,id)?;
+    if !old.is_empty(){
+        let proof:Option<String>=tx.query_row("SELECT digest FROM recognition_learning_fact_proofs
+            WHERE scope=?1 AND feature_version=?2 AND order_id=?3",
+            params![scope,FEATURE_VERSION,id],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+        if proof.as_deref()!=Some(fact_proof(&old)?.as_str()){
+            return Err("손상된 기여량은 안전하게 차감할 수 없습니다.".into());
+        }
+    }
     replace(tx,scope,id,&[])?;
     tx.execute("DELETE FROM recognition_learning_fingerprints WHERE scope=?1 AND feature_version=?2 AND order_id=?3",
         params![scope,FEATURE_VERSION,id]).map_err(|e|e.to_string())?;
@@ -330,6 +347,21 @@ pub(super) fn integrity(tx:&Transaction<'_>,scope:&str)->Result<Value,String>{
         "totalMismatchRows":mismatch,"pendingOrders":pending,
         "internallyConsistent":invalid==0&&mismatch==0&&pending==0,
         "fullHistoryReconciled":false,"automaticDecisionEnabled":false}))
+}
+
+/// Explicit last-resort recovery. Discard only reconstructible derived
+/// counts for the selected scope/version; keep source/audit records intact.
+/// Startup/periodic reconciliation will replay authoritative confirmations.
+pub(super) fn reset_derived(tx:&Transaction<'_>,scope:&str)->Result<Value,String>{
+    let mut removed=0usize;
+    for table in ["recognition_learning_fact_proofs","recognition_learning_fingerprints",
+        "recognition_learning_facts","recognition_learning_orders","recognition_learning_totals",
+        "recognition_learning_pending"]{
+        removed+=tx.execute(&format!("DELETE FROM {table} WHERE scope=?1 AND feature_version=?2"),
+            params![scope,FEATURE_VERSION]).map_err(|e|e.to_string())?;
+    }
+    Ok(json!({"status":"derived_reset","removedDerivedRows":removed,"featureVersion":FEATURE_VERSION,
+        "requiresSourceReplay":true,"fullHistoryReconciled":false,"automaticDecisionEnabled":false}))
 }
 
 /// Rebuild only this scope/version from its persisted per-order ledger.
@@ -482,6 +514,13 @@ mod recognition_learning_store_tests{
         assert_eq!(integrity(&tx,"db").unwrap()["invalidContributionOrders"],1);
         assert!(rebuild_totals(&tx,"db").is_err());
         assert!(synchronize(&tx,"db",&ids,&orders,|_|panic!("corrupt cache must not be trusted")).is_err());
+        assert!(revoke_pending(&tx,"db","a").is_err());
+        assert!(synchronize(&tx,"db",&ids,&[],|_|panic!("inactive")).is_err());
+        drop(tx);
+        let tx=c.transaction().unwrap();reset_derived(&tx,"db").unwrap();tx.commit().unwrap();
+        let tx=c.transaction().unwrap();
+        synchronize(&tx,"db",&ids,&orders,|_|Ok(report(3))).unwrap();
+        assert_eq!(integrity(&tx,"db").unwrap()["internallyConsistent"],true);tx.commit().unwrap();
     }
     #[test]
     fn pending_survives_revocation_and_reactivation_clears_it(){

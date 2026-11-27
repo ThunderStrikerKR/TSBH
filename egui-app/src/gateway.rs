@@ -1180,6 +1180,12 @@ pub(crate) fn recognition_learning_integrity()->Result<Value,String>{
     PreviewStore::recognition_learning_integrity()
 }
 
+pub(crate) fn reset_recognition_learning()->Result<Value,String>{
+    let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
+    if !mode.trim().eq_ignore_ascii_case("local"){return Err("학습 파생 통계 초기화는 로컬 DB에서만 지원합니다.".into());}
+    PreviewStore::reset_recognition_learning()
+}
+
 pub(crate) fn rebuild_recognition_learning()->Result<Value,String>{
     let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
     if !mode.trim().eq_ignore_ascii_case("local"){return Err("학습 통계 재구축은 로컬 DB에서만 지원합니다.".into());}
