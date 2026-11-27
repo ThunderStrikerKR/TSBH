@@ -51,3 +51,46 @@ pub(crate) fn reception_review_status(ui:&mut Ui,message:&str){
             .color(tone.text_color())).wrap());
     });
 }
+
+
+#[cfg(test)]
+mod shared_status_notice_rendered_geometry_tests{
+    use super::*;
+    use eframe::egui::{Vec2,Sense};
+    use crate::ui_test_support::{test_context,painted_text_rects,assert_rect_geometry,
+        assert_rect_inside,assert_geometry_value};
+
+    #[test]
+    fn management_feedback_is_centered_clipped_and_never_allocates_layout(){
+        let ctx=test_context();
+        let mut baseline=None;
+        for caption in [None,Some("조회 중"),Some("조회 결과 없음"),None]{
+            let mut measured=None;
+            let output=ctx.run(egui::RawInput::default(),|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    let viewport=ui.allocate_exact_size(Vec2::new(300.0,110.0),Sense::hover()).0;
+                    let cursor=ui.cursor();
+                    management_body_state_overlay(ui,viewport,caption);
+                    assert_eq!(ui.cursor(),cursor,"status overlay allocated a row");
+                    let next=ui.allocate_exact_size(Vec2::new(80.0,20.0),Sense::hover()).0;
+                    measured=Some((viewport,next));
+                });
+            });
+            let (viewport,next)=measured.expect("status overlay layout");
+            if let Some((old,old_next))=baseline{
+                assert_rect_geometry("status viewport",viewport,old,0.5);
+                assert_rect_geometry("following control",next,old_next,0.5);
+            }else{baseline=Some((viewport,next));}
+            if let Some(label)=caption{
+                let (ink,clip)=painted_text_rects(&output,label).into_iter().next().expect("status paint");
+                assert_rect_inside("status caption",ink,viewport,1.0);
+                assert_rect_geometry("status clip",clip,viewport,1.0);
+                assert_geometry_value("status","caption center x",ink.center().x,viewport.center().x,1.0);
+                assert_geometry_value("status","caption center y",ink.center().y,viewport.center().y,1.0);
+            }else{
+                assert!(painted_text_rects(&output,"조회 중").is_empty());
+                assert!(painted_text_rects(&output,"조회 결과 없음").is_empty());
+            }
+        }
+    }
+}
