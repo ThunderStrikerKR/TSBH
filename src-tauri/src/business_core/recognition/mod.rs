@@ -859,6 +859,14 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
     let mut candidate_trace=Vec::new();
     let mut candidate_trace_truncated=false;
     let mut item_candidate_trace=Vec::new();
+    let mut type_trace=Vec::new();
+    let mut type_trace_truncated=false;
+    let mut record_type=|line:usize,start:usize,end:usize,kind:&str,reason:&str|{
+        if !collect_candidate_trace{return;}
+        if type_trace.len()>=1024{type_trace_truncated=true;return;}
+        type_trace.push(json!({"line":line,"source":{"start":raw.get(..start).map(|s|s.encode_utf16().count()),
+            "end":raw.get(..end).map(|s|s.encode_utf16().count())},"kind":kind,"reasonCode":reason}));
+    };
     let phone = phone_regex();
     let person_label = recipient_label();
     // Direct translation of order-evidence.ts:140-170: parenthesized
@@ -882,8 +890,9 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
             .expect("sender prefix").is_match(text) {
             sender_section = true;
         }
-        if sender_section { continue; }
+        if sender_section { record_type(line.number,line.start,line.start+line.text.len(),"line","sender_section");continue; }
         if postcode::labelled_line(text).is_some() {
+            record_type(line.number,line.start,line.start+line.text.len(),"line","labelled_postcode");
             note_continuation=None;
             continue;
         }
@@ -897,7 +906,7 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
             note_continuation=None;
             continue;
         }
-        if is_money_or_header(text) { continue; }
+        if is_money_or_header(text) { record_type(line.number,line.start,line.start+line.text.len(),"line","money_or_header");continue; }
         // The TS recognizer extends a memo through subsequent non-field
         // lines in the same paragraph, stopping at any contact/address/item.
         if let Some(i)=note_continuation {
@@ -915,7 +924,7 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
                 events[i].end=line.start+line.text.len();
                 if !events[i].value.is_empty(){events[i].value.push('\n');}
                 events[i].value.push_str(text);
-                continue;
+                record_type(line.number,line.start,line.start+line.text.len(),"line","note_continuation");continue;
             }
             note_continuation=None;
         }
@@ -928,7 +937,7 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
                     value,"배송 요청사항 표제어");
                 note_continuation=Some(i);
             }
-            continue;
+            record_type(line.number,line.start,line.start+line.text.len(),"line","note_label");continue;
         }
 
         // order-evidence.ts:170-188: an indented building/floor line
@@ -946,7 +955,7 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
                     let at=line.text.find(text).unwrap_or(0);
                     add_match(&mut events,line,at,at+text.len(),"address",
                         text.to_owned(),"들여쓰기된 상세주소 연속 행");
-                    continue;
+                    record_type(line.number,line.start,line.start+line.text.len(),"line","address_continuation");continue;
                 }
             }
         }
@@ -984,6 +993,7 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
                 unlabelled_recipient_span(line.text,address,&phone,near_delivery,state,client_id)
             }
         });
+        if name_span.is_none(){record_type(line.number,line.start,line.start+line.text.len(),"name","no_accepted_name_span");}
         if let Some((begin,end))=name_span{
             add_match(&mut events,line,begin,end,"name",line.text[begin..end].to_owned(),
                 if explicit_name.is_some()||after_label{"명시적 수취인 이름"}
@@ -991,12 +1001,14 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
         }
         for c in phone.captures_iter(line.text) {
             let full = c.get(0).expect("phone match");
-            if name_span.is_some_and(|(a,b)|a<full.end()&&full.start()<b){continue;}
+            if name_span.is_some_and(|(a,b)|a<full.end()&&full.start()<b){
+                record_type(line.number,line.start+full.start(),line.start+full.end(),"contact","overlaps_name");continue;
+            }
             // Reject a phone-like substring embedded in a longer digit run.
             if (full.start() > 0 && line.text[..full.start()].chars().next_back()
                 .map_or(false, |v| v.is_ascii_digit()))
                 || line.text[full.end()..].chars().next().map_or(false, |v|v.is_ascii_digit()) {
-                continue;
+                record_type(line.number,line.start+full.start(),line.start+full.end(),"contact","embedded_digit_run");continue;
             }
             let value = format!("{}-{}-{}", &c[1], &c[2], &c[3]);
             let kind = if c[1].starts_with("01") { "mobile" } else { "phone" };
@@ -1006,20 +1018,22 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
         let contact_spans: Vec<(usize,usize)> = phone.find_iter(line.text)
             .map(|m|(m.start(),m.end())).collect();
         if address.is_none() && ts_semantics::only_contact_or_identity(line.text,&contact_spans) {
-            continue;
+            record_type(line.number,line.start,line.start+line.text.len(),"product","contact_or_identity_only");continue;
         }
         // A name-only field cannot create a phantom product or quantity,
         // even if the name itself looks like a registered model.
         if explicit_name.is_some() || name_span.is_some_and(|(a,_)|
             line.text[..a].trim().is_empty()) || (after_label && name_span.is_some()){
-            continue;
+            record_type(line.number,line.start,line.start+line.text.len(),"product","name_field_priority");continue;
         }
 
         // parser.ts::logicalLines gives the address the whole line unless
         // a recognized/quantity-qualified SKU precedes the address.
         // Never infer a product from an address's five-digit postal code.
         if let Some(begin)=address {
-            if !ts_semantics::model_before_address(&line.text[..begin],state) {continue;}
+            if !ts_semantics::model_before_address(&line.text[..begin],state) {
+                record_type(line.number,line.start,line.start+line.text.len(),"product","address_priority_without_model");continue;
+            }
         }
         let product_end=address.unwrap_or(line.text.len());
         let product_end=name_span.map_or(product_end,|(a,_)|a.min(product_end));
@@ -1031,7 +1045,7 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
         if trimmed.is_empty() || is_money_or_header(trimmed)
             || (trimmed.contains('|') && trimmed.split('|').any(|column|
                 matches!(column.trim(),"배송비"|"택배비"|"운임"))) {
-            continue;
+            record_type(line.number,line.start,line.start+line.text.len(),"product","empty_money_header_or_freight");continue;
         }
         // Exact TS parser.ts contact branch: a phone/identity row must not
         // create a product even when its digits match a generic model regex.
@@ -1044,11 +1058,15 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
         if ts_semantics::only_contact_or_identity(trimmed,&trim_phones)
             && quantity::extract(trimmed).is_empty()
             && decision.pointer("/match/kind").and_then(Value::as_str)==Some("UNKNOWN") {
-            continue;
+            record_type(line.number,line.start,line.start+line.text.len(),"product","unknown_contact_only");continue;
         }
-        if !product_signal(trimmed, &decision, state) { continue; }
+        if !product_signal(trimmed, &decision, state) {
+            record_type(line.number,line.start,line.start+line.text.len(),"product","no_product_signal");continue;
+        }
         // Require model/category evidence, not a value made solely from a date or contact.
-        if trimmed.contains("발주일") || trimmed.contains("발송일") { continue; }
+        if trimmed.contains("발주일") || trimmed.contains("발송일") {
+            record_type(line.number,line.start,line.start+line.text.len(),"product","document_date");continue;
+        }
         let skip_until = ts_semantics::table_product_prefix(trimmed);
         // Never synthesize a new string and then treat its indexes as offsets
         // into raw: UTF-8/UTF-16 source-evidence contract must be lossless.
@@ -1057,6 +1075,7 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
         let mut stages=Vec::new();
         let matched = model::decision_json(&model::decide_with_trace(skip_until,state,client_id,
             capture.then_some(&mut stages)));
+        let mut extraction_trace=quantity::QuantityTrace::default();
         let mut quantity_values = if trimmed.contains('|') {
             let model_end=matched.get("evidence").and_then(Value::as_object)
                 .and_then(|o|o.get("end")).and_then(Value::as_u64)
@@ -1064,9 +1083,10 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
             ts_semantics::table_quantity(trimmed,model_end).map_or_else(Vec::new,
                 |(value,start,end)|vec![quantity::Quantity{value,start,end}])
         } else {
-            quantity::for_product(skip_until,false,
+            quantity::for_product_with_trace(skip_until,false,
                 model::products(state).iter().any(|p|model::model_names(p).iter()
-                    .any(|name|model::find_term(skip_until,name,true).is_some())))
+                    .any(|name|model::find_term(skip_until,name,true).is_some())),
+                capture.then_some(&mut extraction_trace))
         };
         let quantity_before=if capture{Some(quantity_values.clone())}else{None};
         // parser.ts:537-552: a compound sale-unit phrase containing
@@ -1095,7 +1115,11 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
             candidate_trace.push(json!({"line":line.number,
                 "source":{"start":utf16(raw,line.start+offset),
                     "end":utf16(raw,line.start+offset+trimmed.len())},
-                "productStages":stages,"quantityBeforeSaleUnitFilter":encode(before),
+                "productStages":stages,"quantityExtraction":{"records":extraction_trace.records,
+                    "truncated":extraction_trace.truncated,
+                    "coordinateSystem":"matching_slice_utf16",
+                    "tablePath":trimmed.contains('|')},
+                "quantityBeforeSaleUnitFilter":encode(before),
                 "quantityAfterSaleUnitFilter":encode(&quantity_values),
                 "quantityTruncated":before.len()>128||quantity_values.len()>128,
                 "saleUnitFilterRemoved":before.len()>quantity_values.len()}));
@@ -1148,7 +1172,17 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
         if events.iter().any(|e| e.kind == "quantity" && e.line == line.number) { continue; }
         if is_money_or_header(line.text) { continue; }
         if product_hits.iter().any(|h| h.line == line.number) { continue; }
-        for q in quantity::extract(line.text) {
+        let capture=collect_candidate_trace&&candidate_trace.len()<64;
+        let mut extraction_trace=quantity::QuantityTrace::default();
+        let extracted=quantity::extract_with_trace(line.text,capture.then_some(&mut extraction_trace));
+        if collect_candidate_trace&&!capture{candidate_trace_truncated=true;}
+        if capture&&!extraction_trace.records.is_empty(){
+            candidate_trace.push(json!({"line":line.number,"source":{"start":utf16(raw,line.start),
+                "end":utf16(raw,line.start+line.text.len())},"quantityExtraction":{
+                "records":extraction_trace.records,"truncated":extraction_trace.truncated,
+                "coordinateSystem":"line_utf16","tablePath":false}}));
+        }
+        for q in extracted {
             // An independently scanned quantity must not reuse characters
             // already owned by a recognized address/name/contact/memo span.
             // Preserve separately positioned quantities in mixed-field rows.
@@ -1157,7 +1191,9 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
             let overlaps_field=events.iter().any(|e|
                 matches!(e.kind,"address"|"name"|"phone"|"mobile"|"note")
                     && e.start < end && start < e.end);
-            if overlaps_field { continue; }
+            if overlaps_field {
+                record_type(line.number,start,end,"quantity","overlaps_recipient_field");continue;
+            }
             add_match(&mut events,line,q.start,q.end,"quantity",q.value.to_string(),
                 "독립 수량 원문; 상품 연결은 별도 판정");
         }
@@ -1536,6 +1572,7 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
             "coverage":"product_stages_variant_selection_and_quantity_post_extraction",
             "truncated":candidate_trace_truncated,"decisions":candidate_trace,
             "itemDecisions":item_candidate_trace,
+            "typeGateRecords":type_trace,"typeGateRecordsTruncated":type_trace_truncated,
             "fullCandidateCoverage":false});
     }
     Ok(result)
