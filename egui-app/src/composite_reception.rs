@@ -1,4 +1,5 @@
 //! Shared reception forms, item and freight rows, actions and totals.
+use crate::ui_layout::SharedAllocationExt as _;
 use eframe::egui::{self,Align,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::ui_primitives::UiWidthPolicyExt;
 use crate::{theme,typography};
@@ -45,7 +46,7 @@ fn reception_keycap(ui:&mut Ui,key:&str){
     };
     let height=theme::RECEPTION_KEYCAP_HEIGHT;
     let depth=theme::RECEPTION_KEYCAP_DEPTH;
-    let (rect,_)=ui.allocate_exact_size(
+    let (rect,_)=ui.shared_allocate_exact_size(
         Vec2::new(width,height),Sense::hover()
     );
     let radius=theme::RECEPTION_KEYCAP_RADIUS;
@@ -161,7 +162,7 @@ pub fn reception_recipient_fields(
     let active=active.into();
 
     fn label_cell(ui: &mut Ui, text: &str, width: f32) -> Response {
-        let (rect, response) = ui.allocate_exact_size(
+        let (rect, response) = ui.shared_allocate_exact_size(
             Vec2::new(width, theme::INPUT_HEIGHT), Sense::hover(),
         );
         let galley = typography::field_label_galley(ui, text);
@@ -317,7 +318,7 @@ pub fn reception_item_row(
     let width=management_table_data_width(
         ui.available_width(),0.0,theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+action_width
     );
-    let (rect, _) = ui.allocate_exact_size(
+    let (rect, _) = ui.shared_allocate_exact_size(
         Vec2::new(width, theme::RECEPTION_ITEMS_ROW_HEIGHT), Sense::hover()
     );
     let columns = reception_item_columns(Rect::from_min_max(
@@ -474,13 +475,13 @@ pub fn reception_freight_row_controls(
     let stack_actions=freight_actions_need_second_row(ui.available_width());
     let mut draw_price_and_cod=|line:&mut Ui|{
         line.spacing_mut().item_spacing=Vec2::new(theme::SPACE_4,theme::SPACE_4);
-        line.allocate_ui_with_layout(
+        line.shared_allocate_ui_with_layout(
             Vec2::new(168.0,theme::INPUT_HEIGHT),
             Layout::left_to_right(Align::Center),
             |price|{
                 price.spacing_mut().item_spacing.x=theme::SPACE_4;
                 price.add_space(theme::SPACE_8);
-                let (label_rect,_)=price.allocate_exact_size(
+                let (label_rect,_)=price.shared_allocate_exact_size(
                     Vec2::new(40.0,theme::INPUT_HEIGHT),Sense::hover()
                 );
                 let galley=price.painter().layout_no_wrap(
@@ -597,7 +598,7 @@ pub fn reception_item_origin_action_editable(
 pub fn reception_total_footer(
     ui: &mut Ui, total: Option<i64>, count: Option<usize>, vat: &str,
 ) {
-    let (rect, _response) = ui.allocate_exact_size(
+    let (rect, _response) = ui.shared_allocate_exact_size(
         Vec2::new(ui.available_width(), theme::RECEPTION_TOTAL_HEIGHT),
         Sense::hover(),
     );
