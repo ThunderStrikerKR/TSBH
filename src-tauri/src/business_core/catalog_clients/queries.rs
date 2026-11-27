@@ -80,11 +80,15 @@ fn category_ids(state:&Value,major:&str,minor:&str)->HashSet<String>{
     }
     ids
 }
+// Query-only selector: distinct from the empty string (all brands).
+pub(crate) const UNASSIGNED_BRAND_FILTER:&str="filter:brand-unassigned";
 fn classified<'a>(state:&'a Value,major:&str,minor:&str,brand:&str)->Vec<&'a Value>{
     let ids=category_ids(state,major,minor);
     items(state,"products").iter().filter(|p|{
         field(p,"deletedAt").is_empty()&&field(p,"supersededBy").is_empty()&&
-        (brand.is_empty()||field(p,"brandId")==brand)&&
+        (brand.is_empty()||if brand==UNASSIGNED_BRAND_FILTER{
+            field(p,"brandId").trim().is_empty()
+        }else{field(p,"brandId")==brand})&&
         (major.is_empty()||items(p,"categories").iter().any(|category|
             category.as_str().is_some_and(|c|ids.contains(c))))
     }).collect()
@@ -350,6 +354,24 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
 }
 #[cfg(test)]
 mod tests{
+    #[test]
+    fn brand_filter_distinguishes_all_unassigned_and_registered(){
+        let state=serde_json::json!({"products":[
+            {"id":"null","name":"Stand","brandId":null,"categories":["c"]},
+            {"id":"absent","name":"Stand","categories":["c"]},
+            {"id":"empty","name":"Other","brandId":""},
+            {"id":"assigned","name":"Stand","brandId":"b","categories":["c"]},
+            {"id":"archived","name":"Stand","brandId":null,"deletedAt":"old"},
+            {"id":"demo","name":"Stand","brandId":null,"catalog":"DEMO"}
+        ],"brands":[{"id":"b","name":"BANDO"}],"categories":[{"id":"c","name":"Stand"}]});
+        let query=|brand:&str,search:&str|super::execute("management_products",
+            &serde_json::json!({"state":state,"brand":brand,"query":search})).unwrap();
+        assert_eq!(query("",""),serde_json::json!(["null","absent","empty","assigned"]));
+        assert_eq!(query(super::UNASSIGNED_BRAND_FILTER,""),serde_json::json!(["null","absent","empty"]));
+        assert_eq!(query(super::UNASSIGNED_BRAND_FILTER,"Stand"),serde_json::json!(["null","absent"]));
+        assert_eq!(query("b",""),serde_json::json!(["assigned"]));
+    }
+
     use super::*;
     #[test]
     fn customers_are_filtered_without_touching_historical_orders(){
