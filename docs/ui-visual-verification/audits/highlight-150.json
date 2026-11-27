@@ -16,8 +16,10 @@
     "egui-app/src/composite_client.rs",
     "egui-app/src/client_chooser.rs",
     "egui-app/src/composite_reception.rs",
-    "egui-app/src/main.rs"
+    "egui-app/src/main.rs",
+    "egui-app/src/ui_regressions.rs",
+    "egui-app/src/highlight/regression_tests.rs"
   ],
   "visualStatus": "NOT_VERIFIED",
-  "reason": "Windows 실화면 및 상태별 단일 외곽선, 선택/호버 동시 상태, 수량 증감 포커스, 카드 stripe 검증 증거 미확보."
+  "reason": "실제 egui headless FullOutput 도형 기반 자동 검사를 CI에 연결. 아직 CI 실행 결과 및 Windows 실제 스크린샷·GPU 픽셀 증거는 미확보."
 }

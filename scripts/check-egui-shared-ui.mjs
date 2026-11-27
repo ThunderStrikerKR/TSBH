@@ -1442,9 +1442,9 @@ const highlightContracts = {
     "paint_selection_outline":{"highlight :: paint_outline (":1},
     "paint_action_hover_corners":{"highlight :: action_hover (":1},
     "paint_action_hover_surface":{"highlight :: action_hover (":1},
-    "date_navigation_segmented_surface_with_state":{"highlight :: prioritized_stroke (":1,"highlight :: paint_parts (":1}},
+    "date_navigation_segmented_surface_with_state":{"highlight :: prioritized_stroke (":1,"highlight :: paint_parts (":1,"highlight :: segment_outline_rect (":1}},
   "button/mod.rs":{
-    "action_with_palette":{"highlight :: action_widget (":1},
+    "action_with_palette":{"highlight :: action_widget (":1,"highlight :: button_geometry (":1},
     "workflow_fixed_action":{"highlight :: fixed_action_surface (":1},
     "date_navigation_button_surface":{"highlight :: action_widget (":1},
     "dispatch_origin":{"highlight :: action_widget (":1},
@@ -1465,7 +1465,7 @@ const highlightContracts = {
   "composite_workflow.rs":{"workflow_shipment_row":{"highlight :: paint_parts (":1}},
   "composite_reception.rs":{
     "reception_recipient_emphasis":{"highlight :: field_background (":1},
-    "reception_item_row":{"highlight :: field_background (":1,"highlight :: field_outline (":1}},
+    "reception_item_row":{"highlight :: field_background (":1,"highlight :: field_outline (":1,"highlight :: item_cell_rect (":1}},
   "input/mod.rs":{
     "paint_required_input":{"highlight :: paint (":1},
     "reception_recipient_inline_cell_editor":{"highlight :: field_background (":1,"highlight :: field_outline (":1},
@@ -1475,7 +1475,9 @@ const highlightContracts = {
     "paint_active_background":{"highlight :: paint_fill (":1},
     "paint_active_outline":{"highlight :: paint_outline (":1},
     "block_shapes_with_states":{"highlight :: fill_shape (":1,"highlight :: outline_shape (":2},
-    "compact_block_rect":{"highlight :: source_block_rect (":1}},
+    "compact_block_rect":{"highlight :: source_block_rect (":1},
+    "separate_touching_blocks":{"highlight :: separate_source_blocks (":1},
+    "source_focused_block_rect":{"highlight :: focused_source_rect (":1}},
   "one_touch.rs":{
     "value_rect":{"highlight :: value_rect (":1},
     "background_shape":{"highlight :: fill_shape (":1},
@@ -1520,6 +1522,28 @@ export function auditHighlight(source,file,requireCalls=false){
         const key=fn+":"+pattern;
         counts.set(key,(counts.get(key)||0)+1);
       }
+    }
+    // The closed Rust Geometry enum rejects numeric and CornerRadius
+    // arguments at compile time. This lexical gate also diagnoses raw
+    // numeric/theme/constructor paths before compilation.
+    const geomArg={
+      paint:2,paint_parts:2,paint_fill:2,paint_outline:2,
+      fill_shape:1,outline_shape:1,action_hover:2,fixed_action_surface:2
+    };
+    if(v[i]==="highlight"&&v[i+1]==="::"&&Object.hasOwn(geomArg,v[i+2])&&v[i+3]==="("){
+      const args=[];let part=[],depth=0;
+      for(let k=i+4;k<endCall(i+3);k++){
+        const t=v[k];
+        if(t===","&&depth===0){args.push(part);part=[];continue;}
+        if(["(","[","{"].includes(t))depth++;
+        else if([")","]","}"].includes(t))depth--;
+        part.push(t);
+      }
+      args.push(part);
+      const geom=(args[geomArg[v[i+2]]]||[]).join(" ");
+      if(!/^(?:(?:crate :: )?highlight :: )?Geometry :: (?:Control|Navigation|Compact|Source|Shipment|TableRow|SortHeader|DateLeading|DateMiddle|DateTrailing|QuantityUp|QuantityDown|CountDecrease|CountIncrease)$/.test(geom)
+          &&geom!=="geometry")
+        flag(i,"highlight geometry must be an approved semantic Geometry, not a local radius");
     }
     if(nativeStateFields.has(v[i])&&v[i+1]==="="&&v[i-1]==="."){
       const context=v.slice(Math.max(0,i-12),i).join(" ");
@@ -1588,7 +1612,11 @@ function highlightSelfTest(){
   assert.equal(audit("fn show(){if hovered{painter.rect_filled(r,0.0,local_color);}}").length,1);
   assert.equal(audit("fn show(){ui.visuals_mut().widgets.hovered.bg_fill=local;}").length,1);
   assert.equal(audit("fn show(){painter.rect_filled(r,0.0,theme::PANEL);}").length,0);
-  assert.equal(audit("fn show(){crate::highlight::paint(ui,r,0.0,Role::Hover);}").length,0);
+  assert.equal(audit("fn show(){crate::highlight::paint(ui,r,crate::highlight::Geometry::TableRow,Role::Hover);}").length,0);
+  assert.equal(audit("fn show(){crate::highlight::paint(ui,r,0.0,Role::Hover);}").length,1);
+  assert.equal(audit("fn show(){crate::highlight::paint_outline(p,r,theme::CONTROL_RADIUS,role);}").length,1);
+  assert.equal(audit("fn show(){crate::highlight::fill_shape(r,CornerRadius::same(3),fill);}").length,1);
+  assert.equal(audit("fn show(){crate::highlight::paint_parts(p,r,geometry,fill,stroke);}").length,0);
   assert.equal(audit("/* painter.rect_filled(r,0.0,theme::BUTTON_HOVER_TINT); */ fn show(){}").length,0);
   assert.equal(audit("#[cfg(test)] mod tests {fn x(){painter.rect_filled(r,0.0,theme::BUTTON_HOVER_TINT);}}").length,0);
   assert.equal(audit("fn management_master_header_sort_hover(){painter.rect_filled(r,0.0,local);}","table/mod.rs").length,1);
@@ -1596,12 +1624,12 @@ function highlightSelfTest(){
   assert.equal(audit("fn management_dropdown_option_palette(){} fn other(){crate::highlight::dropdown_options(ui);}","dropdown/mod.rs",true).length,1);
   assert.equal(audit("fn management_dropdown_option_palette(){crate::highlight::dropdown_options(ui);crate::highlight::dropdown_options(ui);}","dropdown/mod.rs",true).length,1);
   assert.equal(audit("fn action_with_palette(){crate::highlight::action_widget(ui,fill,stroke,false);paint_button_hover(ui,r,6.0);}","button/mod.rs").length,1);
-  assert.equal(audit("fn workflow_fixed_action(){crate::highlight::fixed_action_surface(ui,r,6,fill,stroke,false,true);painter.rect_stroke(r,6,local,kind);}","button/mod.rs").length,1);
+  assert.equal(audit("fn workflow_fixed_action(){crate::highlight::fixed_action_surface(ui,r,crate::highlight::Geometry::Navigation,fill,stroke,false,true);painter.rect_stroke(r,6,local,kind);}","button/mod.rs").length,1);
   assert.equal(audit("fn management_dropdown_trigger_inner(){crate::highlight::action_widget(ui,fill,stroke,false);paint_button_hover(ui,r,6.0);}","dropdown/mod.rs").length,1);
   assert.equal(audit("fn show(){crate::one_touch::mark(ui,r);}","main.rs").length,1);
   assert.equal(audit("fn show(){crate::input::paint_required_input(ui,r);}","composite_reception.rs").length,1);
   assert.equal(audit("fn show(){crate::button::action_with_emphasis(ui,label,role,true,emphasis);}","main.rs").length,0);
-  console.log("EGUI_HIGHLIGHT_SELFTEST_PASS",18);
+  console.log("EGUI_HIGHLIGHT_SELFTEST_PASS",22);
 }
 
 

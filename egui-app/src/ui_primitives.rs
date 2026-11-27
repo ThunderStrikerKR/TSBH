@@ -191,7 +191,7 @@ pub(crate) fn date_navigation_segmented_surface_with_state<R>(
     if let Some(role)=base_role{
         crate::highlight::field_background(ui,outer,role,true);
     }else{
-        ui.painter().rect_filled(outer,theme::CONTROL_RADIUS as f32,theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill);
+        ui.painter().rect_filled(outer,crate::highlight::Geometry::Control.corners(),theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill);
     }
     // The parent has already allocated the complete frame. A scoped UI
     // would advance its cursor again using the children's expanded bounds.

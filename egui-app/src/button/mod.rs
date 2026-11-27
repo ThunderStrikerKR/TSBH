@@ -128,12 +128,7 @@ fn action_with_palette(
         ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl => 7.0,
         _ => 12.0,
     };
-    let radius = match role {
-        ButtonRole::Navigation | ButtonRole::ActiveNavigation |
-        ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => crate::highlight::NAVIGATION_RADIUS,
-        ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl => crate::highlight::COMPACT_RADIUS,
-        _ => crate::highlight::CONTROL_RADIUS,
-    };
+    let geometry=crate::highlight::button_geometry(role);
     // All light-filled actions (Primary and Emphasized) use regular-weight
     // captions app-wide. Selected tabs and destructive actions retain their
     // distinct typography; size, color, padding and behavior are unchanged.
@@ -152,7 +147,7 @@ fn action_with_palette(
         let mut button = egui::Button::new(
             typography::action_label(label, font_size, important, color)
         )
-            .corner_radius(CornerRadius::same(radius))
+            .corner_radius(geometry.corners())
             .min_size(Vec2::new(min_width, height));
         if effective_enabled{
             crate::highlight::action_widget(ui,fill,stroke,(light_surface,emphasis));
@@ -476,7 +471,7 @@ pub(crate) fn date_navigation_segment_button(
         let fill=theme::surface_palette(theme::SurfaceRole::NavigationSegment,theme::VisualState::enabled(enabled)).fill;
         let response=navigation_native_button(
             ui,Vec2::new(width,height),
-            egui::Button::new("").fill(fill).stroke(Stroke::NONE).corner_radius(0),
+            egui::Button::new("").fill(fill).stroke(Stroke::NONE).corner_radius(crate::highlight::Geometry::DateMiddle.corners()),
             Some(enabled)
         );
         let ink=theme::icon_ink(theme::IconRole::Navigation,theme::VisualState::pointer(enabled,response.hovered()));
@@ -532,7 +527,7 @@ pub(crate) fn date_navigation_button_surface(
     let effective_enabled=enabled && ui.is_enabled();
     let (fill,ink,stroke)=crate::button::field_action_palette(effective_enabled,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
     let response=ui.scope(|ui|{
-        let mut button=egui::Button::new("").corner_radius(crate::highlight::CONTROL_RADIUS);
+        let mut button=egui::Button::new("").corner_radius(crate::highlight::Geometry::Control.corners());
         if effective_enabled{
             crate::highlight::action_widget(ui,fill,stroke,false);
         }else{button=button.fill(fill).stroke(stroke);}
@@ -553,7 +548,7 @@ pub(crate) fn calendar_day(grid:&mut Ui,day:&str,width:f32,selected:bool,today:b
     let response=grid.scope(|ui|{
         crate::highlight::calendar_widget(ui,selected,today);
         ui.add_sized(egui::vec2(width,width),
-            egui::Button::new(typography::body(day)).corner_radius(crate::highlight::CONTROL_RADIUS))
+            egui::Button::new(typography::body(day)).corner_radius(crate::highlight::Geometry::Control.corners()))
     }).inner;
     if grid.is_enabled(){crate::floating_notice::remember_response(grid.ctx(),&response);}
     response
@@ -570,7 +565,7 @@ pub(crate) fn dispatch_origin(right:&mut Ui,label:&str,selected:bool,editable:bo
             label,typography::FONT_STANDARD_ACTION,false,
             if selected{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)}else{theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)}
         )).min_size(Vec2::new(42.0,theme::ACTION_STANDARD_HEIGHT))
-         .corner_radius(crate::highlight::CONTROL_RADIUS);
+         .corner_radius(crate::highlight::Geometry::Control.corners());
         if effective_enabled{crate::highlight::action_widget(ui,fill,stroke,(false,emphasis));}
         else{button=button.fill(fill).stroke(stroke);}
         ui.add_enabled(editable,button)

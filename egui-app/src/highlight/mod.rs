@@ -145,6 +145,14 @@ impl Geometry{
         }
     }
 }
+pub(crate) fn button_geometry(role:theme::ButtonRole)->Geometry{
+    use theme::ButtonRole::*;
+    match role{
+        Navigation|ActiveNavigation|ManagementTab|ActiveManagementTab=>Geometry::Navigation,
+        KakaoControl|ActiveKakaoControl=>Geometry::Compact,
+        _=>Geometry::Control,
+    }
+}
 pub(crate) fn item_cell_rect(rect:Rect)->Rect{
     rect.shrink2(egui::Vec2::splat(theme::SPACE_4))
 }
@@ -362,3 +370,7 @@ mod tests{
         });
     }
 }
+
+#[cfg(test)]
+#[path = "regression_tests.rs"]
+mod rendered_geometry_tests;

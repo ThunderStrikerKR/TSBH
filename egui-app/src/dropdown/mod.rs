@@ -104,7 +104,7 @@ fn management_dropdown_trigger_inner(
     let trigger=ui.scope(|ui|{
         let mut button=egui::Button::new("")
             .min_size(Vec2::new(width,height))
-            .corner_radius(egui::CornerRadius::same(crate::highlight::CONTROL_RADIUS));
+            .corner_radius(crate::highlight::Geometry::Control.corners());
         if interactive{
             crate::highlight::action_widget(ui,fill,stroke,(false,emphasis));
         }else{

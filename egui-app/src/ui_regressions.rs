@@ -2118,7 +2118,7 @@ mod shared_composite_control_contract_tests{
         assert!(!models.contains("crate::card::selectable_list_row("));
         assert!(include_str!("workflow_board_ui.rs").contains("crate::button::disclosure_at("));
         assert!(include_str!("order_history_manager.rs").contains("crate::button::disclosure_at("));
-        assert!(include_str!("composite_workflow.rs").contains("source_highlight::paint_active_outline("));
+        assert!(include_str!("composite_workflow.rs").contains("highlight::Geometry::Shipment"));
     }
 }
 
