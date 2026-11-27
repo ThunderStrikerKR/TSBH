@@ -1469,13 +1469,13 @@ impl PreviewStore {
         evaluate:impl Fn(&[Value])->Result<Value,String>)->Result<Value,String>{
         if let Some(performance)=input.get("combinedModelPerformance"){
             if ["blendModelRegistry","shadowEvaluation","combinedEvaluation","legacyScoreCalibration",
-                "shadowCandidateCalibration","blendWeightLearning","localChronologicalReplay"].iter().any(|k|input.get(*k).is_some()){
+                "shadowCandidateCalibration","blendWeightLearning","fieldBlendWeightLearning","localChronologicalReplay"].iter().any(|k|input.get(*k).is_some()){
                 return Err("전체 모델 평가 요청을 분리하세요.".into());
             }
             return Self::combined_model_performance(performance);
         }
         if let Some(registry)=input.get("blendModelRegistry"){
-            if ["shadowEvaluation","combinedEvaluation","legacyScoreCalibration","shadowCandidateCalibration","blendWeightLearning","localChronologicalReplay"]
+            if ["shadowEvaluation","combinedEvaluation","legacyScoreCalibration","shadowCandidateCalibration","blendWeightLearning","fieldBlendWeightLearning","localChronologicalReplay"]
                 .iter().any(|key|input.get(*key).is_some()){return Err("모델 관리와 평가 요청을 분리하세요.".into());}
             return Self::blend_model_registry(registry);
         }
@@ -1489,10 +1489,12 @@ impl PreviewStore {
         let calibration=input.get("legacyScoreCalibration");
         let shadow_calibration=input.get("shadowCandidateCalibration");
         let blend=input.get("blendWeightLearning");
-        if [evaluation,combined_evaluation,calibration,shadow_calibration,blend,input.get("localChronologicalReplay")].iter().filter(|v|v.is_some()).count()>1{
+        let field_blend=input.get("fieldBlendWeightLearning");
+        if [evaluation,combined_evaluation,calibration,shadow_calibration,blend,field_blend,input.get("localChronologicalReplay")].iter().filter(|v|v.is_some()).count()>1{
             return Err("평가와 재현 요청을 분리하세요.".into());
         }
-        let report=if let Some(config)=evaluation.or(combined_evaluation).or(calibration).or(shadow_calibration).or(blend).or_else(||input.get("localChronologicalReplay")){
+        let report=if let Some(config)=evaluation.or(combined_evaluation).or(calibration).or(shadow_calibration).or(blend).or(field_blend).or_else(||input.get("localChronologicalReplay")){
+            if field_blend.is_some()&&config["persistModel"]==true{return Err("필드 결합 모델은 독립 검증 전 저장·선택할 수 없습니다.".into());}
             if input.get("chronologicalValidation").is_some() || config.get("samples").is_some() ||
                 config.get("frozenModelId").is_some(){
                 return Err("로컬 재현에 외부 예측·정답·모델을 혼합할 수 없습니다.".into());
@@ -1519,7 +1521,7 @@ impl PreviewStore {
             let mut result=if combined_evaluation.is_some(){
                 let mut value=recognition_learning_store::combined_evaluation_report(&tx,&scope,&digests)?;
                 value["currentSourceDigestsVerified"]=json!(true);value
-            }else if evaluation.is_some()||calibration.is_some()||shadow_calibration.is_some()||blend.is_some(){
+            }else if evaluation.is_some()||calibration.is_some()||shadow_calibration.is_some()||blend.is_some()||field_blend.is_some(){
                 tx.commit().map_err(|e|e.to_string())?;
                 let mut value=evaluate(&orders)?;
                 tx=if persist{conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)}
