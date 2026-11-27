@@ -248,11 +248,68 @@ fn singleton(v:&Value)->Option<&str>{
     values[0].as_str().filter(|s|!s.trim().is_empty())
 }
 
-// A variant attached to a product source is not itself proof of a written
-// option. Accept a color correction only when a single product is on the
-// source line and a single written full color matches the audited target.
-// Other option forms are deliberately retained for review.
-fn verified_variant_color(units:&[u16],s:Span,rs:&Value,target:&Value)->bool{
+// Option evidence is separate from operational recognition. Only explicit
+// attributes from a single associated product line may support learning.
+#[derive(Default,PartialEq,Eq)]
+struct OptionFeatures{
+    color:Option<String>,
+    configuration:BTreeMap<&'static str,bool>,
+}
+fn option_features(text:&str)->Option<OptionFeatures>{
+    use std::sync::OnceLock;
+    static COLOR:OnceLock<regex::Regex>=OnceLock::new();
+    static CONFIG:OnceLock<regex::Regex>=OnceLock::new();
+    let colors=COLOR.get_or_init(||regex::Regex::new(concat!(
+        r"(?i)rose\s*gold|로즈골드|cosmo\s*black|코스모블랙|검정색|",
+        r"black|블랙|검정|white|화이트|흰색|brown|브라운|gray|grey|그레이|회색|",
+        r"chrome|크롬|gold|골드|silver|실버|red|레드|blue|블루|clear|클리어|frost|프로스트"
+    )).expect("option color proof"));
+    let boundary=|start:usize,end:usize|{
+        !text[..start].chars().next_back().is_some_and(char::is_alphabetic)
+            &&!text[end..].chars().next().is_some_and(char::is_alphabetic)
+    };
+    let mut found=BTreeSet::new();
+    for m in colors.find_iter(text){
+        if !boundary(m.start(),m.end()){continue;}
+        let compact=m.as_str().split_whitespace().collect::<Vec<_>>().join(" ");
+        let lower=compact.to_lowercase();
+        let color=match lower.as_str(){
+            "rosegold"=>"Rose Gold".to_owned(),
+            _=>super::model::norm_color(&compact),
+        };
+        found.insert(color);
+    }
+    if found.len()>1{return None;}
+    let mut features=OptionFeatures{color:found.into_iter().next(),configuration:BTreeMap::new()};
+    let configs=CONFIG.get_or_init(||regex::Regex::new(concat!(
+        r"(가방|바퀴)\s*(미포함|포함|미장착|장착|없음|있음)|",
+        r"(무\s*타공|비\s*타공|민\s*판|타\s*공)"
+    )).expect("configuration proof"));
+    for c in configs.captures_iter(text){
+        let m=c.get(0)?;
+        if !boundary(m.start(),m.end()){continue;}
+        let (key,value)=if let (Some(k),Some(v))=(c.get(1),c.get(2)){
+            (if k.as_str()=="가방"{"bag"}else{"wheel"},
+                matches!(v.as_str(),"포함"|"장착"|"있음"))
+        }else{
+            let v=c.get(3)?.as_str().split_whitespace().collect::<String>();
+            ("holes",v=="타공")
+        };
+        if features.configuration.insert(key,value).is_some_and(|old|old!=value){return None;}
+    }
+    Some(features)
+}
+fn option_target(item:&Value)->Option<OptionFeatures>{
+    let name=item["name"].as_str().unwrap_or("");
+    let mut features=option_features(name)?;
+    if let Some(color)=item["color"].as_str().filter(|c|!c.trim().is_empty()&&*c!="색상 미표기"){
+        let color=super::model::norm_color(color);
+        if features.color.as_ref().is_some_and(|c|c!=&color){return None;}
+        features.color=Some(color);
+    }
+    Some(features)
+}
+fn verified_variant(units:&[u16],s:Span,rs:&Value,target:&Value,prior:Option<&Value>)->bool{
     let start=units[..s.0].iter().rposition(|u|*u==10).map_or(0,|p|p+1);
     let end=s.1+units[s.1..].iter().position(|u|*u==10).unwrap_or(units.len()-s.1);
     let Ok(line)=String::from_utf16(&units[start..end])else{return false;};
@@ -260,13 +317,37 @@ fn verified_variant_color(units:&[u16],s:Span,rs:&Value,target:&Value)->bool{
         .filter(|source|source["field"]=="product"&&span(units,source)
             .is_some_and(|p|p.0>=start&&p.1<=end)).count();
     if products!=1{return false;}
-    let colors=["black","블랙","검정","검정색","white","화이트","흰색","brown","브라운",
-        "gray","grey","그레이","회색","chrome","크롬","gold","골드","rose gold","로즈골드",
-        "cosmo black","cosmoblack","코스모블랙","silver","실버","red","레드","blue","블루",
-        "clear","클리어","frost","프로스트"];
-    let found=colors.iter().filter(|word|super::model::find_term(&line,word,false).is_some())
-        .map(|word|super::model::norm_color(word)).collect::<BTreeSet<_>>();
-    found.len()==1&&target["color"].as_str().is_some_and(|c|found.contains(&super::model::norm_color(c)))
+    // A recipient/note on the same line may own the apparent option word.
+    if rows(rs).flat_map(|r|rows(&r["sources"])).any(|source|
+        span(units,source).is_some_and(|p|p.0<end&&p.1>start)){return false;}
+    let Some(mut written)=option_features(&line)else{return false;};
+    let (Ok(prefix),Ok(token))=(String::from_utf16(&units[start..s.0]),
+        String::from_utf16(&units[s.0..s.1]))else{return false;};
+    if let Some((color,(a,b)))=super::model::audit_attached_color(&line,target,(prefix.len(),prefix.len()+token.len())){
+        if written.color.as_ref().is_some_and(|c|c!=&color){return false;}
+        // A second abbreviation outside the proven model attachment is
+        // ambiguous. Never use the first match alone to decide.
+        let rest=format!("{} {}",&line[..a],&line[b..]);
+        if rest.split(|c:char|!c.is_ascii_alphabetic()).any(|v|
+            matches!(v.to_ascii_uppercase().as_str(),"B"|"BK"|"BR"|"W"|"G"|"C")){return false;}
+        written.color=Some(color);
+    }
+    let Some(selected)=option_target(target)else{return false;};
+    if written!=selected || written.color.is_none()&&written.configuration.is_empty(){return false;}
+    if let Some(prior)=prior{
+        let Some(previous)=option_target(prior)else{return false;};
+        // A different ID with the same explicitly proven attributes cannot
+        // be identified as a correction of those attributes.
+        if previous==selected{return false;}
+        // Unknown differences in the label cannot be justified by a color
+        // alone. Compare all slash-delimited non-attribute components.
+        let residual=|item:&Value|item["name"].as_str().unwrap_or("").split('/')
+            .map(str::trim).filter(|part|!part.is_empty()).filter(|part|
+                option_features(part).is_none_or(|v|v.color.is_none()&&v.configuration.is_empty()))
+            .map(str::to_owned).collect::<Vec<_>>();
+        if residual(prior)!=residual(target){return false;}
+    }
+    true
 }
 
 // A source position, rather than generated row IDs, joins the audit chain.
@@ -382,7 +463,8 @@ fn reconcile_field_audits(units:&[u16],events:&[&Value],candidates:&BTreeMap<Spa
                 &&target["productId"].as_str().is_some_and(|id|events.iter().all(|e|
                     field_state(units,&e["beforeRows"],s,"product").as_deref()==Some(id)
                     &&field_state(units,&e["afterRows"],s,"product").as_deref()==Some(id)))
-                &&verified_variant_color(units,s,&event["afterRows"],target),
+                &&unique_source_target(units,&event["beforeRows"],s).is_some_and(|(prior,_)|
+                    verified_variant(units,s,&event["afterRows"],target,Some(prior))),
             "quantity"=>target["quantityConfirmed"]==true
                 &&target["quantity"].as_i64().is_some_and(|q|q>0&&q.to_string()==final_value)
                 &&{
@@ -607,7 +689,7 @@ pub(super) fn compare(payload:&Value)->Result<Value,String>{
             let final_rows=&snapshot["recipients"];
             let mut items=rows(final_rows).flat_map(|r|rows(&r["items"]))
                 .filter(|i|rows(&i["sources"]).any(|src|src["field"]=="product"&&span(&units,src)==Some(position)));
-            if items.next().is_none_or(|item|!verified_variant_color(&units,position,final_rows,item))
+            if items.next().is_none_or(|item|!verified_variant(&units,position,final_rows,item,None))
                 || items.next().is_some(){status="unresolved_evidence";}
         }
         observations.push(json!({
