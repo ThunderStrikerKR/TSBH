@@ -1,4 +1,5 @@
 //! Shared card surfaces, measured layout and reusable card content profiles.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Color32,Frame,Layout,Rect,Stroke,Ui,UiBuilder,Vec2};
 use crate::{theme,typography};
@@ -293,7 +294,7 @@ pub(crate) fn management_summary_card_with_role_and_state(
         SummaryCardRole::Count=>theme::FREIGHT_SUMMARY_CARD_WIDTH,
         SummaryCardRole::Settlement=>theme::SETTLEMENT_KPI_CARD_WIDTH,
     };
-    ui.allocate_ui_with_layout(
+    ui.shared_allocate_ui_with_layout(
         egui::vec2(card_width,theme::FREIGHT_SUMMARY_CARD_HEIGHT),
         egui::Layout::top_down(egui::Align::Min),
         |slot|{
@@ -302,12 +303,12 @@ pub(crate) fn management_summary_card_with_role_and_state(
                 cell.spacing_mut().item_spacing.y=0.0;
                 let content_width=card_width-2.0*theme::FREIGHT_SUMMARY_PADDING_X
                     -2.0*theme::FRAME_STROKE_WIDTH;
-                let (number_row,number_response)=cell.allocate_exact_size(
+                let (number_row,number_response)=cell.shared_allocate_exact_size(
                     egui::vec2(content_width,theme::FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT),
                     egui::Sense::hover()
                 );
                 cell.add_space(theme::FREIGHT_SUMMARY_TEXT_GAP);
-                let (label_row,_)=cell.allocate_exact_size(
+                let (label_row,_)=cell.shared_allocate_exact_size(
                     egui::vec2(content_width,theme::FREIGHT_SUMMARY_LABEL_LINE_HEIGHT),
                     egui::Sense::hover()
                 );
@@ -448,7 +449,7 @@ pub(crate) fn reception_section_with_header(
         apply_height_policy(ui,policy,(minimum_height-height_inset).max(0.0));
         let body_item_spacing=theme::SPACING;
         ui.spacing_mut().item_spacing.y=0.0;
-        let _header=ui.allocate_ui_with_layout(
+        let _header=ui.shared_allocate_ui_with_layout(
             Vec2::new(ui.available_width(),theme::SECTION_HEADER_HEIGHT),
             Layout::left_to_right(Align::Center),|header|{
                 crate::ui_layout::reserve_min_height(header,theme::SECTION_HEADER_HEIGHT);
