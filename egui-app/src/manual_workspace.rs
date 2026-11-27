@@ -220,7 +220,7 @@ impl ManualAssignmentGesture{
 }
 
 fn manual_assignment_payload(
-    model:&Value,id:&str,target:&ManualCellTarget,pending:Option<&ManualCellTarget>
+    model:&Value,id:&str,target:&ManualCellTarget
 )->Result<Value,&'static str>{
     if model["assignments"].get(id).is_some(){
         return Err("이미 배정된 원문입니다. 먼저 연결을 해제하세요.");
@@ -228,10 +228,6 @@ fn manual_assignment_payload(
     let block=list(model,"blocks").iter().find(|b|text(b,"id")==id)
         .ok_or("원문 블록을 확인하세요.")?;
     let field=text(block,"field");
-    if !manual_cell_allowed(pending,target) ||
-        !manual_source_assignment_allowed(false,None,pending.and_then(|c|c.item.as_deref()),field){
-        return Err("선택한 상품의 수량을 먼저 확정하세요.");
-    }
     // A new product destination is UI-only. The native reducer receives a real
     // item ID only after the temporary model has created the row.
     if target.item.is_none() && target.field=="newProduct"{
@@ -263,12 +259,12 @@ fn manual_assignment_drop_hit(ui:&egui::Ui,rect:egui::Rect,pointer:Option<egui::
 
 /// Return every visible worksheet target that accepts this exact source block.
 /// The same payload validator is used again at drop time, so recommendations
-/// cannot drift from type, assignment, or pending-quantity business rules.
+/// cannot drift from type or assignment business rules.
 fn manual_assignment_recommendations(
-    model:&Value,id:&str,pending:Option<&ManualCellTarget>
+    model:&Value,id:&str
 )->Vec<ManualCellTarget>{
     manual_cell_targets(model).into_iter().filter(|target|
-        manual_assignment_payload(model,id,target,pending).is_ok()
+        manual_assignment_payload(model,id,target).is_ok()
     ).collect()
 }
 
@@ -370,30 +366,6 @@ fn model_has_pending_quantity(model:&Value)->bool{
     model_pending_quantity_count(model)>0
 }
 
-/// While a product has just been selected, React locks every other cell
-/// until its quantity is confirmed. Keep that lock tied to the exact cell.
-fn manual_cell_allowed(
-    pending:Option<&ManualCellTarget>,target:&ManualCellTarget
-)->bool{
-    pending.is_none_or(|cell|cell==target)
-}
-
-/// React's useBlock permits releasing an assignment on the same pending item,
-/// or assigning that item's quantity block. It rejects all other source moves.
-fn manual_source_assignment_allowed(
-    assigned:bool,
-    assigned_item:Option<&str>,
-    pending_item:Option<&str>,
-    source_field:&str,
-)->bool{
-    let Some(pending_item)=pending_item else{return true};
-    if assigned {
-        assigned_item==Some(pending_item)
-    }else{
-        source_field=="quantity"
-    }
-}
-
 fn push_manual_history(
     history:&mut Vec<ManualHistoryFrame>,frame:ManualHistoryFrame
 ){
@@ -424,14 +396,14 @@ fn manual_cell_targets(model:&Value)->Vec<ManualCellTarget>{
 
 /// Rendered worksheet geometry. Source-assignment destinations are kept
 /// separate: freight is keyboard-editable but is not a source drop target.
-fn manual_worksheet_cells(model:&Value,pending:Option<&ManualCellTarget>)
+fn manual_worksheet_cells(model:&Value)
     ->Vec<(ManualCellTarget,CellNavigationCell)>{
     let mut cells=Vec::new();
     for (shipment,row) in list(model,"rows").iter().enumerate(){
         let mut push=|item:Option<String>,field:&str,y:usize,x:usize|{
             let target=ManualCellTarget{row:shipment,item,field:field.into()};
             let order=cells.len();
-            let enabled=manual_cell_allowed(pending,&target);
+            let enabled=true;
             cells.push((target,CellNavigationCell{
                 id:order.to_string(),row:y,column:x,order,enabled
             }));
@@ -453,10 +425,9 @@ fn manual_worksheet_cells(model:&Value,pending:Option<&ManualCellTarget>)
     cells
 }
 fn manual_navigation_target(
-    model:&Value,current:&ManualCellTarget,key:CellNavigationKey,
-    pending:Option<&ManualCellTarget>
+    model:&Value,current:&ManualCellTarget,key:CellNavigationKey
 )->Option<ManualCellTarget>{
-    let entries=manual_worksheet_cells(model,pending);
+    let entries=manual_worksheet_cells(model);
     let (_,active)=entries.iter().find(|(target,_)|target==current)?;
     let cells=entries.iter().map(|(target,cell)|cell_navigation::ReceptionNavigationCell{
         cell,shipment:target.row,field:&target.field,has_item:target.item.is_some()
@@ -698,7 +669,7 @@ fn assign_new_manual_product(
         return Err("신규 품목을 확인하세요.".into());
     }
     let target=ManualCellTarget{row,item:None,field:"newProduct".into()};
-    manual_assignment_payload(model,id,&target,None)?;
+    manual_assignment_payload(model,id,&target)?;
     let added=rule(gateway,json!({
         "action":"add_manual_item","model":model,"order":payload["order"],
         "assignmentOrder":payload["assignmentOrder"],"recipientId":rid,"itemId":iid
@@ -1065,7 +1036,7 @@ struct ManualRenderData{
     spans:Vec<source_highlight::LinkedSpan>,
     assigned_ids:std::collections::HashSet<String>,
     pending_count:usize,
-    recommendations:std::cell::RefCell<Option<(String,Option<ManualCellTarget>,std::rc::Rc<Vec<ManualCellTarget>>)>>,
+    recommendations:std::cell::RefCell<Option<(String,std::rc::Rc<Vec<ManualCellTarget>>)>>,
 }
 impl ManualRenderData{
     fn new(raw:&str,model:&Value)->Self{
@@ -1076,14 +1047,14 @@ impl ManualRenderData{
         Self{model:model.clone(),spans,assigned_ids,pending_count:model_pending_quantity_count(model),
             recommendations:std::cell::RefCell::new(None)}
     }
-    fn recommendations(&self,source:&str,pending:Option<&ManualCellTarget>)
+    fn recommendations(&self,source:&str)
         ->std::rc::Rc<Vec<ManualCellTarget>>{
         let mut cached=self.recommendations.borrow_mut();
-        if let Some((id,target,rows))=cached.as_ref(){
-            if id==source && target.as_ref()==pending{return rows.clone();}
+        if let Some((id,rows))=cached.as_ref(){
+            if id==source{return rows.clone();}
         }
-        let rows=std::rc::Rc::new(manual_assignment_recommendations(&self.model,source,pending));
-        *cached=Some((source.to_owned(),pending.cloned(),rows.clone()));
+        let rows=std::rc::Rc::new(manual_assignment_recommendations(&self.model,source));
+        *cached=Some((source.to_owned(),rows.clone()));
         rows
     }
 }
@@ -1300,13 +1271,7 @@ impl ManualWorkspace {
     fn busy(&self)->bool {self.receiver.is_some()}
 
     fn open_item_detail(&mut self,rid:&str,iid:&str,ctx:&Context){
-        let resolving_drop=self.selected_item.as_deref()==Some(iid)
-            && self.model.as_ref().is_some_and(|model|
-                list(model,"rows").get(self.selected_recipient).is_some_and(|row|text(row,"id")==rid)
-                    && unresolved_assigned_product_source(model,rid,iid).is_some()
-            );
-        if self.busy() || self.nested_modal_window_id().is_some() ||
-            (self.pending_quantity_cell().is_some() && !resolving_drop)
+        if self.busy() || self.nested_modal_window_id().is_some()
             || self.edit_text!=self.current_value(){return;}
         let Some(item)=self.model.as_ref().and_then(|model|
             list(model,"rows").iter().find(|row|text(row,"id")==rid)
@@ -1415,7 +1380,7 @@ impl ManualWorkspace {
                 if let Some(target)=self.pending_select_after_apply.take(){
                     let click_at=self.pending_click_at.take();
                     let valid=self.model.as_ref().is_some_and(|model|
-                        manual_worksheet_cells(model,None).iter().any(|(cell,meta)|cell==&target && meta.enabled)
+                        manual_worksheet_cells(model).iter().any(|(cell,meta)|cell==&target && meta.enabled)
                     );
                     if valid {
                         self.select_cell(target.row,target.item,&target.field);
@@ -1490,14 +1455,6 @@ impl ManualWorkspace {
             self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
             return;
         }
-        let target=ManualCellTarget{
-            row,item:item.clone(),field:field.to_owned()
-        };
-        let pending=self.pending_quantity_cell();
-        if !manual_cell_allowed(pending.as_ref(),&target) {
-            self.error=Some("선택한 상품의 수량을 먼저 확정하세요.".into());
-            return;
-        }
         self.selected_recipient=row;
         self.selected_item=item;
         self.selected_field=field.to_owned();
@@ -1561,9 +1518,8 @@ impl ManualWorkspace {
             row:self.selected_recipient,item:self.selected_item.clone(),
             field:self.selected_field.clone()
         };
-        let pending=self.pending_quantity_cell();
         let Some(target)=manual_navigation_target(
-            model,&current,navigation,pending.as_ref()
+            model,&current,navigation
         ) else{
             if navigation.commits_at_boundary(){
                 self.active_editor_id=None;
@@ -1572,29 +1528,6 @@ impl ManualWorkspace {
             return;
         };
         self.select_cell(target.row,target.item,&target.field);
-    }
-
-    fn selected_quantity_pending(&self)->bool{
-        let Some(model)=self.model.as_ref() else{return false};
-        let Some(item_id)=self.selected_item.as_deref() else{return false};
-        list(model,"rows").get(self.selected_recipient)
-            .and_then(|row|list(row,"items").iter().find(|item|
-                text(item,"id")==item_id
-            ))
-            .is_some_and(item_quantity_pending)
-    }
-
-    fn pending_quantity_cell(&self)->Option<ManualCellTarget>{
-        if !self.selected_quantity_pending() ||
-            !matches!(self.last_action.as_deref(),
-                Some("set_manual_product"|"assign_manual_block"|"assign_new_manual_product"|"resolve_dropped_manual_product")) {
-            return None;
-        }
-        Some(ManualCellTarget{
-            row:self.selected_recipient,
-            item:self.selected_item.clone(),
-            field:"quantity".into(),
-        })
     }
 
     fn current_value(&self)->String {
@@ -1709,15 +1642,13 @@ impl ManualWorkspace {
         let current=ManualCellTarget{
             row:self.selected_recipient,item:self.selected_item.clone(),field:self.selected_field.clone()
         };
-        // A pending quantity is validated before leaving. Determine whether
-        // an arrow has a destination after that validation, not before it.
-        let pending=self.pending_quantity_cell();
-        let after_validation=if self.selected_field=="quantity"{None}else{pending.as_ref()};
+        // Unchanged empty quantities can remain pending while navigating.
         let has_target=self.model.as_ref().is_some_and(|model|
-            manual_navigation_target(model,&current,navigation,after_validation).is_some());
+            manual_navigation_target(model,&current,navigation).is_some());
         if !has_target && !navigation.commits_at_boundary(){return;}
         let needs_commit=self.edit_text!=self.current_value() ||
-            self.selected_field=="quantity";
+            (self.selected_field=="quantity" && navigation.commits_at_boundary()
+                && self.edit_text.trim().parse::<i64>().is_ok_and(|q|q>0));
         if needs_commit{
             *submit_direct=true;
             self.pending_select_after_apply=None;
@@ -1758,11 +1689,6 @@ impl ManualWorkspace {
             return;
         }
         if self.busy(){return;}
-        if self.pending_quantity_cell().is_some(){
-            self.row_count_text=current.to_string();
-            self.error=Some("수량을 확정하거나 상품 선택을 취소하세요.".into());
-            return;
-        }
         if self.edit_text!=self.current_value(){
             self.row_count_text=current.to_string();
             self.error=Some("현재 셀의 입력을 먼저 확정하세요.".into());
@@ -1904,7 +1830,7 @@ impl ManualWorkspace {
                     "action":"manual_quantity_status","model":model.clone()
                 }))?;
                 if quantity.get("pending").and_then(Value::as_bool)==Some(true) {
-                    return Err("선택한 상품의 수량을 먼저 확정하세요.".into());
+                    return Err("수량이 확정되지 않은 상품의 수량을 확인하세요.".into());
                 }
                 let applied=rule(service.as_ref(),json!({
                     "action":"apply_manual","order":order.clone(),
@@ -2092,8 +2018,6 @@ impl ManualWorkspace {
                                 .count();
                             (rows.len(),unassigned)
                         }).unwrap_or((0,0));
-                    let header_pending_quantity_active=
-                        self.pending_quantity_cell().is_some();
                     let mut count_resize_requested=false;
                     let (close_clicked,())=workspace.header_with_toolbar(
                         workspace_title,"닫기",
@@ -2117,7 +2041,6 @@ impl ManualWorkspace {
                                     crate::ui_primitives::form_field_label(right,"건");
                                     let current_count=header_row_count;
                                     let can_resize=header_has_model && !header_busy
-                                        && !header_pending_quantity_active
                                         && self.edit_text==self.current_value();
                                     let count_control_id=
                                         right.make_persistent_id("manual-shipment-count");
@@ -2185,7 +2108,7 @@ impl ManualWorkspace {
                         self.reset_pending || self.confirm_apply || self.confirm_discard {
                         workspace.disable();
                     }
-                    let Some((busy,pending_quantity_active,has_pending_quantity))=workspace.body_region(|ui|{
+                    let Some((busy,has_pending_quantity))=workspace.body_region(|ui|{
                         let Some(data)=render_data.as_ref() else {return None};
                         let model=&data.model;
                         let quote_index=self.view_quote.as_ref().map(crate::indexed_quote);
@@ -2194,11 +2117,9 @@ impl ManualWorkspace {
                         let assignments=model.get("assignments").unwrap_or(&Value::Null);
                         let assigned_source_ids=&data.assigned_ids;
                         let busy=self.busy();
-                        let pending_quantity_cell=self.pending_quantity_cell();
                         let mut drag_recommendations=self.assignment_gesture.active_source()
-                            .map(|source|data.recommendations(source,pending_quantity_cell.as_ref()))
+                            .map(|source|data.recommendations(source))
                             .unwrap_or_default();
-                        let pending_quantity_active=pending_quantity_cell.is_some();
                         let pending_quantity_count=data.pending_count;
                         let has_pending_quantity=pending_quantity_count>0;
                         // The status/count toolbar is part of the shared modal
@@ -2262,7 +2183,7 @@ impl ManualWorkspace {
                                                         // Recommend valid cells on the initial press frame,
                                                         // even while the pointer remains completely still.
                                                         drag_recommendations=data.recommendations(
-                                                            &id,pending_quantity_cell.as_ref()
+                                                            &id
                                                         );
                                                     }
                                                 }
@@ -2290,7 +2211,7 @@ impl ManualWorkspace {
                                         crate::ui_layout::reserve_min_height(panel,height.max(0.0));
                                         crate::ui_layout::apply_spacing_role(panel,crate::ui_layout::SpacingRole::WorkflowDetail);
                                         if count_resize_requested {panel.disable();}
-                                        let can_switch=!busy && !pending_quantity_active
+                                        let can_switch=!busy
                                             && !count_resize_requested;
                                         let can_mutate=can_switch &&
                                             self.edit_text==self.current_value();
@@ -2406,24 +2327,13 @@ impl ManualWorkspace {
                                                     }
                                                     sheet.add_space(crate::ui_layout::RECEPTION_STACKED_CARD_GAP);
                                                     let mut header_add_item=false;
-                                                    let mut header_rollback=false;
-                                                    let rollback_pending=self.selected_quantity_pending()
-                                                        && matches!(self.last_action.as_deref(),
-                                                            Some("set_manual_product"|"assign_manual_block"|"assign_new_manual_product"|"resolve_dropped_manual_product"));
-                                                    let rollback_enabled=!busy && self.edit_text==self.current_value();
                                                     crate::card::reception_section_with_header(
                                                         sheet,"품목 및 운임",theme::MANUAL_ITEMS_CARD_MIN_HEIGHT,
                                                         |header|{
-                                                            if rollback_pending{
-                                                                header_rollback=crate::button::reception_item_header_action(
-                                                                    header,true,rollback_enabled
+                                                            header_add_item=
+                                                                crate::button::reception_item_header_action(
+                                                                    header,false,can_mutate
                                                                 ).clicked();
-                                                            }else{
-                                                                header_add_item=
-                                                                    crate::button::reception_item_header_action(
-                                                                        header,false,can_mutate
-                                                                    ).clicked();
-                                                            }
                                                         },|items_ui|{
                                                             crate::ui_layout::reception_worksheet_items_body(items_ui);
                                                             crate::table::inline(items_ui,crate::table::InlineHeader::Reception{editable:true},|items_ui|{
@@ -2469,20 +2379,6 @@ impl ManualWorkspace {
                                                                     ("unitPrice",cells.amount,&keys[2])
                                                                 ]{
                                                                     let target=ManualCellTarget{row:index,item:Some(item_id.to_owned()),field:field.to_owned()};
-                                                                    // The common row is hover-only during a quantity lock.
-                                                                    // Upgrade just the unresolved product cell, never the
-                                                                    // quantity, amount, or remove controls on that row.
-                                                                    let resolving_drop=field=="product" && !busy && !count_resize_requested
-                                                                        && self.selected_recipient==index
-                                                                        && self.selected_item.as_deref()==Some(item_id)
-                                                                        && unresolved_assigned_product_source(model,rid,item_id).is_some()
-                                                                        && self.edit_text==self.current_value()
-                                                                        && self.assignment_gesture.source.is_none()
-                                                                        && !items_ui.input(|input|input.modifiers.shift);
-                                                                    let response=if resolving_drop && !can_switch{
-                                                                        response.interact(egui::Sense::click())
-                                                                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                                                    }else{response};
                                                                     let recommended=drag_recommendations.contains(&target);
                                                                     let hovered=recommended &&
                                                                         manual_assignment_drop_hit(items_ui,response.rect,drag_pointer);
@@ -2528,7 +2424,7 @@ impl ManualWorkspace {
                                                                         if field=="product"{
                                                                             let assignment_requested=self.assignment_gesture.source.is_some()
                                                                                 || items_ui.input(|input|input.modifiers.shift);
-                                                                            match item_editor::product_click_intent(response.clicked(),can_switch || resolving_drop,assignment_requested){
+                                                                            match item_editor::product_click_intent(response.clicked(),can_switch,assignment_requested){
                                                                                 ProductClickIntent::OpenDetail=>{
                                                                                     lookup=Some((rid.to_owned(),item_id.to_owned()));
                                                                                 }
@@ -2601,7 +2497,6 @@ impl ManualWorkspace {
                                                                 }
                                                                 paint_manual_assignment_recommendation(items_ui,response.rect,hovered);
                                                             }
-                                                            // Pending assignment rollback lives in the fixed header action.
                                                             });
                                                             crate::ui_layout::reception_items_to_freight_gap(items_ui);
                                                             let code=if text(row,"freightCode")=="020"{
@@ -2683,9 +2578,7 @@ impl ManualWorkspace {
                                                             }
                                                         }
                                                     );
-                                                    if header_rollback{
-                                                        self.undo();
-                                                    }else if header_add_item {
+                                                    if header_add_item {
                                                         add_product=Some(rid.to_owned());
                                                     }
                                                 }
@@ -2709,14 +2602,14 @@ impl ManualWorkspace {
                             crate::ui_layout::workspace_pane(ui,viewport_width,content_height,false,
                                 |outer|draw_columns(outer));
                         }
-                        Some((busy,pending_quantity_active,has_pending_quantity))
+                        Some((busy,has_pending_quantity))
                     }) else{return;};
                     let input_settled=self.edit_text==self.current_value();
                     workspace.footer(|left|{
                             // Reset is a destructive worksheet operation with its
                             // existing confirmation, not a toolbar filter.
                             if crate::button::action(left,"초기화",ButtonRole::Danger,
-                                !busy && !pending_quantity_active && input_settled
+                                !busy && input_settled
                             ).clicked(){
                                 if input_settled {
                                     self.reset_pending=true;
@@ -2756,12 +2649,8 @@ impl ManualWorkspace {
                 assignment=self.assignment_gesture.finish_drag(drop_target);
             }else if let Some(id)=source_clicked{
                 let assigned=self.model.as_ref().and_then(|m|m["assignments"].get(&id));
-                if let Some(cell)=assigned{
-                    let pending=self.pending_quantity_cell();
-                    if manual_source_assignment_allowed(true,cell.get("itemId").and_then(Value::as_str),
-                        pending.as_ref().and_then(|c|c.item.as_deref()),text(cell,"field")){
-                        chosen=Some(("release_manual_block".into(),json!({"id":id,"clear":true})));
-                    }else{self.error=Some("선택한 상품의 수량을 먼저 확정하세요.".into());}
+                if assigned.is_some(){
+                    chosen=Some(("release_manual_block".into(),json!({"id":id,"clear":true})));
                     self.assignment_gesture.clear();
                 }else{
                     assignment=self.assignment_gesture.source_click(id);
@@ -2770,9 +2659,8 @@ impl ManualWorkspace {
                 assignment=self.assignment_gesture.cell_click(target);
             }
             if let Some((id,target))=assignment{
-                let pending=self.pending_quantity_cell();
                 let payload=self.model.as_ref().ok_or("수동 분류 모델이 없습니다.")
-                    .and_then(|m|manual_assignment_payload(m,&id,&target,pending.as_ref()));
+                    .and_then(|m|manual_assignment_payload(m,&id,&target));
                 match payload{
                     Ok(mut payload)=>{
                         if target.item.is_none() && target.field=="newProduct"{
@@ -3254,7 +3142,7 @@ mod manual_assignment_gesture_tests{
         let (id,cell)=gesture.source_click("block".into()).expect("cell-first assignment");
         let model=json!({"rows":[{"id":"r","items":[]}],
             "blocks":[{"id":"block","field":"name","text":"김가상"}],"assignments":{}});
-        let payload=manual_assignment_payload(&model,&id,&cell,None).unwrap();
+        let payload=manual_assignment_payload(&model,&id,&cell).unwrap();
         let gateway=crate::gateway::LocalGateway;
         let result=rule(&gateway,json!({"action":"assign_manual_block",
             "model":model,"assignmentOrder":[],"id":payload["id"],"cell":payload["cell"]}))
@@ -3299,18 +3187,16 @@ mod manual_assignment_gesture_tests{
     }
 
     #[test]
-    fn all_gestures_share_type_and_pending_quantity_guards(){
+    fn all_gestures_share_type_and_duplicate_assignment_guards(){
         let model=json!({"rows":[{"id":"r","items":[{"id":"i"}]}],
             "blocks":[{"id":"block","field":"name"}],"assignments":{}});
-        assert_eq!(manual_assignment_payload(&model,"block",&target(),None).unwrap(),
+        assert_eq!(manual_assignment_payload(&model,"block",&target()).unwrap(),
             json!({"id":"block","cell":{"recipientId":"r","field":"name"}}));
         let wrong=ManualCellTarget{row:0,item:None,field:"address".into()};
-        assert!(manual_assignment_payload(&model,"block",&wrong,None).is_err());
-        let pending=ManualCellTarget{row:0,item:Some("i".into()),field:"quantity".into()};
-        assert!(manual_assignment_payload(&model,"block",&target(),Some(&pending)).is_err());
+        assert!(manual_assignment_payload(&model,"block",&wrong).is_err());
         let mut assigned=model.clone();
         assigned["assignments"]["block"]=json!({"recipientId":"r","field":"name"});
-        assert!(manual_assignment_payload(&assigned,"block",&target(),None).is_err());
+        assert!(manual_assignment_payload(&assigned,"block",&target()).is_err());
     }
 
     #[test]
@@ -3359,17 +3245,15 @@ mod manual_assignment_gesture_tests{
                 {"id":"q","field":"quantity","text":"2개"}],"assignments":{}
         });
         let target=ManualCellTarget{row:0,item:None,field:"newProduct".into()};
-        assert!(manual_assignment_recommendations(&model,"p",None).contains(&target));
-        assert_eq!(manual_assignment_payload(&model,"p",&target,None).unwrap(),
+        assert!(manual_assignment_recommendations(&model,"p").contains(&target));
+        assert_eq!(manual_assignment_payload(&model,"p",&target).unwrap(),
             json!({"id":"p","recipientId":"r1"}));
-        assert!(!manual_assignment_recommendations(&model,"q",None).contains(&target));
-        assert!(manual_assignment_payload(&model,"q",&target,None).is_err());
-        let pending=ManualCellTarget{row:1,item:Some("i2".into()),field:"quantity".into()};
-        assert!(manual_assignment_payload(&model,"p",&target,Some(&pending)).is_err());
-        assert!(manual_assignment_recommendations(&model,"p",None)
+        assert!(!manual_assignment_recommendations(&model,"q").contains(&target));
+        assert!(manual_assignment_payload(&model,"q",&target).is_err());
+        assert!(manual_assignment_recommendations(&model,"p")
             .contains(&ManualCellTarget{row:1,item:None,field:"newProduct".into()}));
         model["assignments"]["p"]=json!({"recipientId":"r2","itemId":"i2","field":"product"});
-        assert!(manual_assignment_payload(&model,"p",&target,None).is_err());
+        assert!(manual_assignment_payload(&model,"p",&target).is_err());
     }
 
     #[test]
@@ -3381,20 +3265,20 @@ mod manual_assignment_gesture_tests{
         let mut gesture=ManualAssignmentGesture::default();
         assert!(gesture.source_click("p".into()).is_none());
         assert_eq!(gesture.active_source(),Some("p"));
-        let clicked=manual_assignment_recommendations(&model,gesture.active_source().unwrap(),None);
+        let clicked=manual_assignment_recommendations(&model,gesture.active_source().unwrap());
         assert!(clicked.contains(&target));
         let (id,cell)=gesture.cell_click(target.clone()).expect("new product click assignment");
-        let click_payload=manual_assignment_payload(&model,&id,&cell,None).unwrap();
+        let click_payload=manual_assignment_payload(&model,&id,&cell).unwrap();
         gesture.start_drag("p".into(),None,320.0);
         gesture.mark_drag_moved();
         assert_eq!(gesture.active_source(),Some("p"));
-        let dragged=manual_assignment_recommendations(&model,gesture.active_source().unwrap(),None);
+        let dragged=manual_assignment_recommendations(&model,gesture.active_source().unwrap());
         assert_eq!(clicked,dragged);
         let (id,cell)=gesture.finish_drag(Some(target.clone())).unwrap();
-        assert_eq!(manual_assignment_payload(&model,&id,&cell,None).unwrap(),click_payload);
+        assert_eq!(manual_assignment_payload(&model,&id,&cell).unwrap(),click_payload);
         assert!(gesture.active_source().is_none());
         assert!(gesture.source_click("q".into()).is_none());
-        assert!(!manual_assignment_recommendations(&model,gesture.active_source().unwrap(),None)
+        assert!(!manual_assignment_recommendations(&model,gesture.active_source().unwrap())
             .contains(&target));
     }
 
@@ -3412,30 +3296,26 @@ mod manual_assignment_gesture_tests{
             ],
             "assignments":{}
         });
-        let names=manual_assignment_recommendations(&model,"name",None);
+        let names=manual_assignment_recommendations(&model,"name");
         assert_eq!(names.len(),2);
         assert!(names.iter().all(|cell|cell.field=="name" && cell.item.is_none()));
         assert!(names.contains(&ManualCellTarget{row:0,item:None,field:"name".into()}));
         assert!(names.contains(&ManualCellTarget{row:1,item:None,field:"name".into()}));
 
-        let products=manual_assignment_recommendations(&model,"product",None);
+        let products=manual_assignment_recommendations(&model,"product");
         assert_eq!(products.len(),4);
         assert_eq!(products.iter().filter(|cell|cell.field=="product" && cell.item.is_some()).count(),2);
         assert_eq!(products.iter().filter(|cell|cell.field=="newProduct" && cell.item.is_none()).count(),2);
-        let quantities=manual_assignment_recommendations(&model,"quantity",None);
+        let quantities=manual_assignment_recommendations(&model,"quantity");
         assert_eq!(quantities.len(),2);
         assert!(quantities.iter().all(|cell|cell.field=="quantity" && cell.item.is_some()));
 
         let wrong=ManualCellTarget{row:0,item:None,field:"address".into()};
         assert!(!names.contains(&wrong));
-        let pending=ManualCellTarget{row:0,item:Some("i1".into()),field:"quantity".into()};
-        assert_eq!(manual_assignment_recommendations(&model,"quantity",Some(&pending)),
-            vec![pending.clone()]);
-        assert!(manual_assignment_recommendations(&model,"product",Some(&pending)).is_empty());
 
         let mut assigned=model.clone();
         assigned["assignments"]["name"]=json!({"recipientId":"r1","field":"name"});
-        assert!(manual_assignment_recommendations(&assigned,"name",None).is_empty());
+        assert!(manual_assignment_recommendations(&assigned,"name").is_empty());
     }
 }
 
@@ -3523,7 +3403,7 @@ mod manual_workspace_modal_routing_tests {
             {"id":"r1","items":[{"id":"i1"},{"id":"i2"}]},
             {"id":"r2","items":[{"id":"i3"}]}
         ]});
-        let cells=manual_worksheet_cells(&model,None);
+        let cells=manual_worksheet_cells(&model);
         let keys=cells.iter().map(|(cell,_)|(
             cell.row,cell.item.as_deref(),cell.field.as_str()
         )).collect::<Vec<_>>();
@@ -3550,7 +3430,7 @@ mod manual_workspace_modal_routing_tests {
             row:0,item:Some("i2".into()),field:"quantity".into()
         };
         let move_to=|from:&ManualCellTarget,key|
-            manual_navigation_target(&model,from,key,None);
+            manual_navigation_target(&model,from,key);
         assert_eq!(move_to(&recipient,CellNavigationKey::Down),
             Some(ManualCellTarget{field:"mobile".into(),..recipient.clone()}));
         assert_eq!(move_to(&recipient,CellNavigationKey::Up),
@@ -3599,11 +3479,8 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(move_to(&freight,CellNavigationKey::Down),Some(next_name.clone()));
         assert_eq!(move_to(&next_name,CellNavigationKey::Up),Some(freight));
         let collect=json!({"rows":[{"id":"r1","items":[],"freightCode":"020"}]});
-        assert_eq!(manual_navigation_target(&collect,&last_recipient_field,CellNavigationKey::Down,None),None);
-        let pending=Some(&product);
-        assert_eq!(manual_navigation_target(
-            &model,&product,CellNavigationKey::Down,pending
-        ),None,"unconfirmed quantity must still block leaving its cell");
+        assert_eq!(manual_navigation_target(&collect,&last_recipient_field,CellNavigationKey::Down),None);
+        assert!(manual_navigation_target(&model,&product,CellNavigationKey::Down).is_some());
     }
 
     #[test]
@@ -4139,53 +4016,26 @@ mod manual_pending_interaction_tests {
     use super::*;
 
     #[test]
-    fn pending_quantity_locks_other_cells_but_keeps_its_own_cell_editable(){
-        let pending=ManualCellTarget{
-            row:1,item:Some("item-2".into()),field:"quantity".into()
-        };
-        let same=ManualCellTarget{
-            row:1,item:Some("item-2".into()),field:"quantity".into()
-        };
-        let other_field=ManualCellTarget{
-            row:1,item:Some("item-2".into()),field:"product".into()
-        };
-        let other_item=ManualCellTarget{
-            row:1,item:Some("item-3".into()),field:"quantity".into()
-        };
-        let other_recipient=ManualCellTarget{
-            row:0,item:Some("item-2".into()),field:"quantity".into()
-        };
-        assert!(manual_cell_allowed(Some(&pending),&same));
-        assert!(!manual_cell_allowed(Some(&pending),&other_field));
-        assert!(!manual_cell_allowed(Some(&pending),&other_item));
-        assert!(!manual_cell_allowed(Some(&pending),&other_recipient));
-        assert!(manual_cell_allowed(None,&other_field));
-    }
-
-    #[test]
-    fn source_assignment_guard_matches_react_use_block_contract(){
-        // No active product/quantity hand-off: any valid block can be used.
-        assert!(manual_source_assignment_allowed(false,None,None,"product"));
-        assert!(manual_source_assignment_allowed(true,Some("item-1"),None,"name"));
-
-        // An already assigned block on the same pending item may be released.
-        assert!(manual_source_assignment_allowed(
-            true,Some("item-1"),Some("item-1"),"product"
-        ));
-        // A block owned by another item or recipient must not be released.
-        assert!(!manual_source_assignment_allowed(
-            true,Some("item-2"),Some("item-1"),"product"
-        ));
-        assert!(!manual_source_assignment_allowed(
-            true,None,Some("item-1"),"name"
-        ));
-        // Only the matching quantity evidence can complete the pending item.
-        assert!(manual_source_assignment_allowed(
-            false,None,Some("item-1"),"quantity"
-        ));
-        assert!(!manual_source_assignment_allowed(
-            false,None,Some("item-1"),"product"
-        ));
+    fn pending_quantities_leave_other_shipments_and_items_available(){
+        let model=json!({"rows":[
+            {"id":"r1","items":[{"id":"i1","productId":"p1","quantity":null,"quantityConfirmed":false},
+                {"id":"i2","productId":"p2","quantity":null,"quantityConfirmed":false}]},
+            {"id":"r2","items":[]}],
+            "blocks":[{"id":"p","field":"product"},{"id":"q","field":"quantity"},{"id":"n","field":"name"}],
+            "assignments":{}});
+        assert_eq!(model_pending_quantity_count(&model),2);
+        assert!(manual_worksheet_cells(&model).iter().all(|(_,cell)|cell.enabled));
+        for row in [0,1]{
+            let target=ManualCellTarget{row,item:None,field:"newProduct".into()};
+            assert!(manual_assignment_payload(&model,"p",&target).is_ok());
+        }
+        for item in ["i1","i2"]{
+            let target=ManualCellTarget{row:0,item:Some(item.into()),field:"quantity".into()};
+            assert!(manual_assignment_payload(&model,"q",&target).is_ok());
+        }
+        let other=ManualCellTarget{row:1,item:None,field:"name".into()};
+        assert!(manual_assignment_payload(&model,"n",&other).is_ok());
+        assert!(model_has_pending_quantity(&model));
     }
 
     #[test]
@@ -4677,12 +4527,12 @@ mod manual_render_cache_tests{
     fn manual_render_recommendations_reuse_only_same_input(){
         let model=json!({"rows":[],"blocks":[],"assignments":{}});
         let first=ManualRenderData::new("",&model);
-        let a=first.recommendations("a",None);
-        let b=first.recommendations("a",None);
+        let a=first.recommendations("a");
+        let b=first.recommendations("a");
         assert!(std::rc::Rc::ptr_eq(&a,&b));
-        let c=first.recommendations("b",None);
+        let c=first.recommendations("b");
         assert!(!std::rc::Rc::ptr_eq(&b,&c));
         let edited=ManualRenderData::new("",&model);
-        assert!(!std::rc::Rc::ptr_eq(&c,&edited.recommendations("b",None)));
+        assert!(!std::rc::Rc::ptr_eq(&c,&edited.recommendations("b")));
     }
 }
