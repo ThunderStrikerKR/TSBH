@@ -422,6 +422,38 @@ impl<'a,'s> ProductSearch<'a,'s>{
         self.decisions.entry(text).or_insert_with(||model::decision_json(&model::decide(text,state,client)))
     }
 }
+// Split only independently bounded, explicitly labelled delivery records.
+ // Ordinary punctuation in a name, address or memo is not a boundary.
+fn split_recipient_records<'a>(lines:Vec<Line<'a>>,label:&Regex,phone:&Regex)->Vec<Line<'a>>{
+    let mut out=Vec::with_capacity(lines.len());
+    for line in lines{
+        if !line.text.contains([';','；'])||line.text.contains('|'){
+            out.push(line);continue;
+        }
+        let mut ranges=Vec::new();let mut start=0;
+        for (offset,c) in line.text.char_indices(){
+            if matches!(c,';'|'；'){
+                ranges.push((start,offset));start=offset+c.len_utf8();
+            }
+        }
+        ranges.push((start,line.text.len()));
+        let valid=ranges.len()<=16&&ranges.iter().all(|&(a,b)|{
+            let t=&line.text[a..b];
+            label.find(t).is_some_and(|m|m.as_str().contains([':', '：']))&&
+                explicit_recipient_span(t,label,phone).is_some_and(|(x,y)|{
+                    // Require distinct delivery evidence outside the name.
+                    x<y&&delivery_boundary(&t[y..],phone)
+                })
+        });
+        if valid{
+            for (a,b) in ranges{
+                out.push(Line{text:&line.text[a..b],start:line.start+a,
+                    number:line.number,paragraph:line.paragraph});
+            }
+        }else{out.push(line);}
+    }
+    out
+}
 fn unlabelled_recipient_span<'a>(
     line:&'a str,address:Option<usize>,phone:&Regex,near_delivery:bool,search:&mut ProductSearch<'a,'_>
 )->Option<(usize,usize)>{
@@ -834,12 +866,12 @@ struct ExtractedDocument<'a>{
 }
 fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->ExtractedDocument<'a>{
     let client_id = client_id(client);
-    let lines = physical_lines(raw);
+    let phone = phone_regex();
+    let person_label = recipient_label();
+    let lines=split_recipient_records(physical_lines(raw),&person_label,&phone);
     let geometry=SourceGeometry::new(raw);
     let mut events: Vec<Evidence> = Vec::new();
     let mut product_hits: Vec<ProductHit> = Vec::new();
-    let phone = phone_regex();
-    let person_label = recipient_label();
     // Direct translation of order-evidence.ts:140-170: parenthesized
     // delivery requests and note continuation remain separate evidence.
     let note_label = Regex::new(
@@ -1137,7 +1169,7 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     let mut anchors: Vec<usize> = events.iter().enumerate()
         .filter_map(|(i,e)| (e.kind == "name").then_some(i)).collect();
     anchors.sort_by_key(|i| events[*i].start);
-    anchors.dedup_by_key(|i| events[*i].line);
+    anchors.dedup_by_key(|i| (events[*i].start,events[*i].end));
     if anchors.is_empty() {
         anchors = events.iter().enumerate()
             .filter_map(|(i,e)| (e.kind=="address").then_some(i)).collect();
@@ -1163,7 +1195,7 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
         let kind = e.kind;
         if kind=="address" {
             if let Some((line_index,line))=lines.iter().enumerate()
-                .find(|(_,line)|line.number==e.line){
+                .find(|(_,line)|line.number==e.line&&line.start<=e.start&&e.start<line.start+line.text.len()){
                 let prefix=&raw[line.start..e.start];
                 if let Some(code)=postcode::before_address(prefix){
                     postcodes[row_index].insert(code.to_owned());
@@ -1825,6 +1857,23 @@ mod tests {
         assert_eq!(recipients.len(),1);
         assert_eq!(recipients[0]["mobile"],"010-1234-5678");
         assert_eq!(recipients[0]["phone"],"010-3456-7890");
+    }
+    #[test]
+    fn explicit_recipient_records_keep_distinct_original_offsets(){
+        let raw="수취인: 김가상 010-0000-0001; 수취인: 박가상 010-0000-0002";
+        let parts=split_recipient_records(physical_lines(raw),&recipient_label(),&phone_regex());
+        assert_eq!(parts.len(),2);
+        assert!(parts.iter().all(|p|p.number==0&&p.paragraph==0&&
+            &raw[p.start..p.start+p.text.len()]==p.text));
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let rows=result["recipients"].as_array().unwrap();
+        assert_eq!(rows.len(),2);
+        assert_eq!(rows[0]["name"],"김가상");
+        assert_eq!(rows[0]["mobile"],"010-0000-0001");
+        assert_eq!(rows[1]["name"],"박가상");
+        assert_eq!(rows[1]["mobile"],"010-0000-0002");
+        assert_eq!(split_recipient_records(physical_lines("수취인: 김가상; 박가상"),&recipient_label(),&phone_regex()).len(),1);
+        assert_eq!(split_recipient_records(physical_lines("메모: 문 앞; 연락 부탁"),&recipient_label(),&phone_regex()).len(),1);
     }
     #[test]
     fn product_search_reuses_exact_slices_without_merging_distinct_candidates(){
