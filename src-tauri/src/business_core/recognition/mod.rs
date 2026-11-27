@@ -237,12 +237,19 @@ struct InterveningLines {
     blank_lines: usize,
     max_consecutive_blank_lines: usize,
 }
-fn intervening_lines(raw: &str, earlier: usize, later: usize) -> InterveningLines {
-    let mut result = InterveningLines::default();
-    if later <= earlier + 1 { return result; }
-    let mut current_blank_run = 0usize;
-    for line in raw.split('\n').skip(earlier + 1).take(later - earlier - 1) {
-        if line.trim().is_empty() {
+// One document-wide index. The normal recognition path reads it instead
+// of repeatedly splitting the original text for each owner candidate.
+struct SourceGeometry { blank: Vec<bool> }
+impl SourceGeometry {
+    fn new(raw:&str)->Self {
+        Self{blank:raw.split('\n').map(|line|line.trim().is_empty()).collect()}
+    }
+    fn between(&self,earlier:usize,later:usize)->InterveningLines {
+        let mut result=InterveningLines::default();
+        if later<=earlier.saturating_add(1){return result;}
+        let mut current_blank_run=0usize;
+        for &blank in self.blank.iter().skip(earlier.saturating_add(1)).take(later-earlier-1){
+        if blank {
             result.blank_lines += 1;
             current_blank_run += 1;
             result.max_consecutive_blank_lines =
@@ -252,7 +259,12 @@ fn intervening_lines(raw: &str, earlier: usize, later: usize) -> InterveningLine
             current_blank_run = 0;
         }
     }
-    result
+        result
+    }
+}
+#[cfg(test)]
+fn intervening_lines(raw:&str,earlier:usize,later:usize)->InterveningLines{
+    SourceGeometry::new(raw).between(earlier,later)
 }
 fn phone_regex() -> Regex {
     Regex::new(r"(?i)(0(?:50\d|1[016789]|2|[3-6]\d|70|80))[\s().-]*(\d{3,4})[\s().-]*(\d{4})")
@@ -547,7 +559,7 @@ fn owner_index(anchors: &[usize], events: &[Evidence], offset: usize) -> usize {
 // to that next recipient when the preceding name is in another paragraph.
 // Distances are supporting evidence only: they never create recipients.
 fn recipient_owner_index(
-    anchors: &[usize], events: &[Evidence], evidence_index: usize, raw: &str
+    anchors: &[usize], events: &[Evidence], evidence_index: usize, geometry: &SourceGeometry
 ) -> usize {
     let candidate=&events[evidence_index];
     let previous=owner_index(anchors,events,candidate.start);
@@ -578,8 +590,8 @@ fn recipient_owner_index(
     if !previous_has_delivery {return previous;}
     // A separating line containing only spaces/tabs counts as a block
     // boundary too. This is a conservative overlay on the existing gates.
-    let previous_gap=intervening_lines(raw,preceding.line,candidate.line);
-    let following_gap=intervening_lines(raw,candidate.line,following.line);
+    let previous_gap=geometry.between(preceding.line,candidate.line);
+    let following_gap=geometry.between(candidate.line,following.line);
     if following_gap.blank_lines>0 {return previous;}
     let next_distance=following.line.saturating_sub(candidate.line);
     if next_distance>3 {return previous;}
@@ -797,6 +809,7 @@ fn dated_dispatch_instruction(text:&str)->bool{
 fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, String> {
     let client_id = client_id(client);
     let lines = physical_lines(raw);
+    let geometry=SourceGeometry::new(raw);
     let mut events: Vec<Evidence> = Vec::new();
     let mut product_hits: Vec<ProductHit> = Vec::new();
     let phone = phone_regex();
@@ -808,6 +821,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     ).expect("note");
     let mut note_continuation: Option<usize>=None;
     let mut sender_section = false;
+    let mut sender_lines=HashSet::new();
     for (line_index,line) in lines.iter().enumerate() {
         let text = line.text.trim();
         let explicit_name=explicit_recipient_span(line.text,&person_label,&phone);
@@ -822,7 +836,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             .expect("sender prefix").is_match(text) {
             sender_section = true;
         }
-        if sender_section { continue; }
+        if sender_section { sender_lines.insert(line.number); continue; }
         if postcode::labelled_line(text).is_some() {
             note_continuation=None;
             continue;
@@ -992,7 +1006,9 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         let skip_until = ts_semantics::table_product_prefix(trimmed);
         // Never synthesize a new string and then treat its indexes as offsets
         // into raw: UTF-8/UTF-16 source-evidence contract must be lossless.
-        let matched = model::decision_json(&model::decide(skip_until,state,client_id));
+        let matched = if skip_until==trimmed{decision}else{
+            model::decision_json(&model::decide(skip_until,state,client_id))
+        };
         let mut quantity_values = if trimmed.contains('|') {
             let model_end=matched.get("evidence").and_then(Value::as_object)
                 .and_then(|o|o.get("end")).and_then(Value::as_u64)
@@ -1067,6 +1083,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     }
     // A generic quantity line is evidence but cannot itself prove which SKU was ordered.
     for line in &lines {
+        if sender_lines.contains(&line.number){continue;}
         if events.iter().any(|e| e.kind == "quantity" && e.line == line.number) { continue; }
         if is_money_or_header(line.text) { continue; }
         if product_hits.iter().any(|h| h.line == line.number) { continue; }
@@ -1108,7 +1125,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     let mut postcodes=vec![HashSet::<String>::new();recipients.len()];
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
-        let row_index = recipient_owner_index(&anchors,&events,index,raw);
+        let row_index = recipient_owner_index(&anchors,&events,index,&geometry);
         let rid = recipients[row_index]["id"].as_str().unwrap_or("").to_owned();
         let e = &events[index];
         let kind = e.kind;
@@ -1207,19 +1224,24 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             //   explicitly per-recipient ('각각'/'씩') source quantity
             // - a common document total must never be multiplied
             let selected_qty = if hit.common {
-                events.iter().enumerate().find_map(|(qi,e)|
+                let mut local=events.iter().enumerate().filter_map(|(qi,e)|
                     (e.kind=="quantity" && e.item_id.is_none()
                         && !hit.quantities.contains(&qi)
                         && !product_hits.iter().any(|p|p.line==e.line)
-                        && owner_index(&anchors,&events,e.start)==idx).then_some(qi)
-                ).or_else(||(hit.each && hit.quantities.len()==1)
-                    .then(||hit.quantities[0]))
+                        && owner_index(&anchors,&events,e.start)==idx).then_some(qi));
+                match (local.next(),local.next()){
+                    (Some(q),None)=>Some(q),
+                    (Some(_),Some(_))=>None,
+                    (None,_) if hit.each&&hit.quantities.len()==1=>Some(hit.quantities[0]),
+                    _=>None,
+                }
             } else if hit.quantities.len()==1 {
                 Some(hit.quantities[0])
             } else {None};
-            let unique = selected_qty.is_some();
             let quantity_value = selected_qty
-                .and_then(|i|events[i].value.parse::<i64>().ok());
+                .and_then(|i|events[i].value.parse::<i64>().ok()).filter(|q|*q>0);
+            let unique=quantity_value.is_some();
+            let selected_qty=selected_qty.filter(|_|unique);
             let chosen = hit.decision.get("productId").and_then(Value::as_str)
                 .filter(|s| !s.is_empty());
             let decision_name=hit.decision.get("name").and_then(Value::as_str)
@@ -1372,7 +1394,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             let item_idx = pending[0];
             let rid = recipients[idx]["id"].as_str().unwrap_or("").to_owned();
             let id = recipients[idx]["items"][item_idx]["id"].as_str().unwrap_or("").to_owned();
-            if let Ok(value) = events[q].value.parse::<i64>() {
+            if let Some(value) = events[q].value.parse::<i64>().ok().filter(|q|*q>0) {
                 recipients[idx]["items"][item_idx]["quantity"]=json!(value);
                 recipients[idx]["items"][item_idx]["quantityConfirmed"]=json!(true);
                 if let Some(issues) = recipients[idx]["items"][item_idx]["issues"].as_array_mut() {
@@ -1771,6 +1793,13 @@ mod tests {
         assert_eq!(recipients.len(),1);
         assert_eq!(recipients[0]["mobile"],"010-1234-5678");
         assert_eq!(recipients[0]["phone"],"010-3456-7890");
+    }
+    #[test]
+    fn sender_quantity_does_not_become_recipient_evidence(){
+        let raw="김가상\n010-0000-0001\n709 1개\n송하인: 가상상호\n7개";
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        assert_eq!(result["recipients"][0]["items"][0]["quantity"],1);
+        assert!(!result["candidates"].as_array().unwrap().iter().any(|e|e["kind"]=="quantity"&&e["value"]=="7"));
     }
     #[test]
     fn content_blank_and_whitespace_only_lines_are_distinct_evidence() {
