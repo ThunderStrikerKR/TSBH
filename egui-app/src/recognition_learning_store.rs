@@ -662,6 +662,53 @@ mod recognition_learning_store_tests{
         assert_eq!(order_page(&c,"fixture","",16).unwrap(),vec!["a".to_owned(),"c".to_owned()]);
     }
     #[test]
+    fn support_reads_only_context_and_excludes_target_and_unverified_ledger(){
+        let mut c=conn();
+        let key=json!([1,"type","base",null,["address",[0,0,1,0,0]]]).to_string();
+        let other=json!([1,"type","base",null,["contact",[3,0,0,1,0]]]).to_string();
+        let ids=vec!["a".to_owned(),"b".to_owned(),"target".to_owned(),"other".to_owned()];
+        let orders=ids.iter().map(|id|json!({"id":id})).collect::<Vec<_>>();
+        let tx=c.transaction().unwrap();
+        synchronize(&tx,"db",&ids,&orders,|o|{
+            let mut r=report(if o["id"]=="target"{1000}else{1});
+            let mut counts=r["fieldStatistics"][0]["counts"].clone();
+            if o["id"]=="b"{
+                counts["weakCandidates"]=json!({});
+                counts["weakCandidateOrders"]=json!({});
+                counts["weakIndependentOrders"]=json!(0);
+                counts["weakUnchangedCount"]=json!(0);
+                counts["explicitCorrectionCount"]=json!(1);
+                counts["explicitCorrectionOrders"]=json!(1);
+                counts["explicitPositiveCandidates"]=json!({"name":1});
+                counts["explicitNegativeCandidates"]=json!({"address":1});
+                counts["explicitPositiveCandidateOrders"]=json!({"name":1});
+                counts["explicitNegativeCandidateOrders"]=json!({"address":1});
+            }
+            r["fieldStatistics"]=json!([]);
+            r["fieldContextStatistics"]=json!([{"key":if o["id"]=="other"{&other}else{&key},"counts":counts}]);
+            Ok(r)
+        }).unwrap();
+        tx.commit().unwrap();
+        let input=json!({"task":"type","contextKey":key,"targetOrderId":"target",
+            "candidates":["address","name"],"explicitToWeakRatio":3.0});
+        let tx=c.transaction().unwrap();
+        let result=assess_support(&tx,"db",&input).unwrap();
+        assert_eq!(result["contextOrders"],2);
+        assert_eq!(result["supportedOrders"],2);
+        assert_eq!(result["explicitOnlyOrders"],1);
+        assert!((result["candidates"][1]["supportShare"].as_f64().unwrap()-0.75).abs()<1e-9);
+        assert_eq!(result["candidates"][0]["explicitOppositionMass"],1.0);
+        assert_eq!(result["eligibleForAutomaticDecision"],false);
+        let mut invalid=input.clone();invalid["targetOrderId"]=Value::Null;
+        assert!(assess_support(&tx,"db",&invalid).is_err());
+        mark_pending(&tx,"db","a").unwrap();
+        assert!(assess_support(&tx,"db",&input).is_err());
+        clear_pending(&tx,"db","a").unwrap();
+        tx.execute("UPDATE recognition_learning_facts SET amount=2 WHERE order_id='a' AND metric='weakCandidates'",[]).unwrap();
+        assert!(assess_support(&tx,"db",&input).is_err());
+    }
+
+    #[test]
     fn failed_batch_rolls_back_all_deltas(){
         let mut c=conn();let ids=vec!["a".into(),"b".into()];let orders=vec![json!({"id":"a"}),json!({"id":"b"})];
         {let tx=c.transaction().unwrap();
