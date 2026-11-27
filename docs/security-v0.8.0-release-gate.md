@@ -20,10 +20,14 @@ The gate executes synthetic backup/restore regressions using the existing bando-
 
 1. OCR input integrity: offline verified input gate added; independently sourced inputs and approval still missing.
 2. OCR cache trust: exact inventory checks before copying, after staging, and after extracting the ZIP; synthetic tests added but not executed in the chat environment.
-3. Rust lock: --locked and tracked locks required; actual lockfiles not generated.
-4. Dependency scan: cargo-audit and pip-audit gate added; no scan result yet.
+3. Rust lock: --locked and tracked locks required; both genuine lockfile paths now present on security branch; locked fetch/audit results remain pending.
+4. Dependency scan: cargo-audit and pip-audit release gate plus read-only dependency audit CI added; no scan result yet.
 5. Git protection: sidecar ignore rules and redacted Gitleaks gate added; actual full-history scan not executed.
 6. Backup: synthetic regression gate added; actual test run and isolated production-backup restore not executed.
 7. Packaging: gated release build and extraction verification in code; Windows execution not performed.
 
 Release decision: BLOCKED until evidence is collected. Do not merge or publish on the basis of code changes alone.
+
+## Read-only dependency audit CI
+
+The security-dependency-audit workflow runs on this branch's pushes and its same-repository PR to main. It audits both committed Cargo locks independently after locked Windows-target fetch. OCR Python audit requires the committed, reviewed security/ocr/requirements.lock and never installs the OCR packages. A missing inventory, invalid lock, scanner failure or reported vulnerability fails the relevant job. The workflow does not publish releases, write to the repository or access production data. Scanner direct versions are pinned; pip-audit's own transitive installer dependencies are not yet hash-locked. Actual approved OCR runtime metadata audit and independent integrity approval remain mandatory at release time. No CI success is asserted until execution evidence is retrieved.
