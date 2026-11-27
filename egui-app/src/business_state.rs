@@ -251,7 +251,7 @@ pub fn load_export_metadata()->Result<Value,String>{
 
 enum ReadScope{Full,Catalog,ReceptionCatalog,Settings,Exports}
 
-fn load_projection(scope:ReadScope) -> Result<Value,String> {
+fn open_business_read_snapshot()->Result<Connection,String>{
     let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
         .filter(|p|!p.is_empty())
         .map(PathBuf::from)
@@ -275,6 +275,11 @@ fn load_projection(scope:ReadScope) -> Result<Value,String> {
         "SELECT version FROM core_schema WHERE key='business-core'",[],|r|r.get(0)
     ).map_err(|_|"운영 DB 스키마 버전을 확인하지 못했습니다.".to_owned())?;
     if version!=2 {return Err("지원되지 않는 운영 DB 스키마입니다. 아무 것도 저장하지 않았습니다.".into());}
+    Ok(conn)
+}
+
+fn load_projection(scope:ReadScope) -> Result<Value,String> {
+    let conn=open_business_read_snapshot()?;
     // Share the same app_state and catalog-hydration rules with Tauri.
     // Only the full business read needs order, recipient and item tables.
     let state=match scope{
@@ -316,9 +321,283 @@ fn load_projection(scope:ReadScope) -> Result<Value,String> {
 }
 
 
+/// Explicit diagnostic only. Fetch exactly the requested order IDs, not the
+/// full ledger or its live recipients/items. The frozen snapshot remains the
+/// sole authority for a historical recognition comparison.
+fn owner_snapshot_batch(conn:&Connection,ids:&[String])->Result<Vec<Value>,String>{
+    let unique=ids.iter().map(String::as_str)
+        .collect::<std::collections::BTreeSet<_>>();
+    if unique.is_empty()||ids.len()>250||unique.iter().any(|id|id.trim().is_empty()){
+        return Err("귀속 통계는 1~250개 주문 ID를 명시해야 합니다.".into());
+    }
+    let placeholders=vec!["?";unique.len()].join(",");
+    let sql=format!("SELECT id,confirmed_at,json_extract(payload,'$.deletedAt'),
+        json_extract(payload,'$.confirmationSnapshot') FROM core_orders
+        WHERE id IN ({placeholders}) ORDER BY id");
+    let mut stmt=conn.prepare(&sql).map_err(|e|e.to_string())?;
+    let records=stmt.query_map(rusqlite::params_from_iter(unique.iter().copied()),|r|
+        Ok((r.get::<_,String>(0)?,r.get::<_,Option<String>>(1)?,
+            r.get::<_,Option<String>>(2)?,r.get::<_,Option<String>>(3)?)))
+        .map_err(|e|e.to_string())?;
+    let mut orders=Vec::new();
+    let mut snapshot_bytes=0usize;
+    for row in records{
+        let (id,confirmed_at,deleted_at,snapshot)=row.map_err(|e|e.to_string())?;
+        snapshot_bytes=snapshot_bytes.saturating_add(snapshot.as_ref().map_or(0,String::len));
+        if snapshot_bytes>32*1024*1024{
+            return Err("확정 스냅샷 조회 한도 초과: 주문 범위를 줄여 다시 조회하세요.".into());
+        }
+        let snapshot:Value=match snapshot{
+            Some(s)=>serde_json::from_str(&s).map_err(|_|"확정 스냅샷 형식 오류")?,
+            None=>Value::Null
+        };
+        orders.push(serde_json::json!({
+            "id":id,"confirmedAt":confirmed_at,"deletedAt":deleted_at,
+            "confirmationSnapshot":snapshot
+        }));
+    }
+    Ok(orders)
+}
+// The original frozen confirmation is retained even after stage-one undo.
+ // Only currently active, fully stage-one-approved, non-archived shipments
+ // contribute a whole-order sample. A partly deleted/undone split order is
+ // excluded until all its live shipments are eligible again.
+fn attach_learning_lifecycle(conn:&Connection,orders:&mut [Value])->Result<(),String>{
+    // v2 keeps workflow groups and shipments in the physical app_state
+    // envelope. open_business_read_snapshot rejects other schema versions.
+    let valid:i64=conn.query_row("SELECT count(*) FROM app_state WHERE id=1
+        AND json_type(payload,'$.workflow.groups')='array'
+        AND json_type(payload,'$.workflow.shipments')='array'",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+    if valid!=1{return Err("학습 주문 업무 단계 자료 누락".into());}
+    let ids=orders.iter().map(|o|o["id"].as_str().ok_or("학습 주문 ID 누락"))
+        .collect::<Result<std::collections::BTreeSet<_>,_>>()?;
+    let mut eligibility=std::collections::BTreeMap::<String,bool>::new();
+    if !ids.is_empty(){
+        let placeholders=vec!["?";ids.len()].join(",");
+        let sql=format!("WITH groups AS (
+            SELECT json_extract(g.value,'$.id') AS id,
+              coalesce(json_extract(g.value,'$.deletedAt'),'') AS deleted
+            FROM app_state a,json_each(a.payload,'$.workflow.groups') g WHERE a.id=1),
+            shipments AS (
+            SELECT json_extract(s.value,'$.orderId') AS order_id,
+              json_extract(s.value,'$.groupId') AS group_id,
+              json_extract(s.value,'$.step') AS step
+            FROM app_state a,json_each(a.payload,'$.workflow.shipments') s
+            WHERE a.id=1 AND coalesce(json_extract(s.value,'$.legacyArchived'),0)=0)
+            SELECT s.order_id,MIN(CASE WHEN g.id IS NOT NULL AND g.deleted=''
+              AND typeof(s.step)='integer' AND s.step BETWEEN 1 AND 4 THEN 1 ELSE 0 END)
+            FROM shipments s LEFT JOIN groups g ON g.id=s.group_id
+            WHERE s.order_id IN ({placeholders}) GROUP BY s.order_id");
+        let mut stmt=conn.prepare(&sql).map_err(|e|e.to_string())?;
+        let rows=stmt.query_map(rusqlite::params_from_iter(ids.iter().copied()),|r|
+            Ok((r.get::<_,String>(0)?,r.get::<_,i64>(1)?))).map_err(|e|e.to_string())?;
+        for row in rows{let (id,active)=row.map_err(|e|e.to_string())?;eligibility.insert(id,active==1);}
+    }
+    drop(ids);
+    for order in orders{
+        let active=order["id"].as_str().and_then(|id|eligibility.get(id)).copied().unwrap_or(false);
+        order["learningActive"]=Value::Bool(active);
+    }
+    Ok(())
+}
+
+#[derive(Debug,PartialEq,Eq)]
+pub(crate) struct LearningSource{
+    pub active:bool,
+    pub audit_needed:bool,
+    pub digest:String,
+}
+pub(crate) type LearningSources=std::collections::BTreeMap<String,LearningSource>;
+
+/// Hash SQLite's borrowed text bytes before any serde JSON allocation.
+pub(crate) fn hash_learning_text(hash:&mut sha2::Sha256,value:rusqlite::types::ValueRef<'_>)->Result<usize,String>{
+    use sha2::Digest;
+    match value{
+        rusqlite::types::ValueRef::Null=>{hash.update([0]);Ok(0)}
+        rusqlite::types::ValueRef::Text(bytes)=>{
+            hash.update([1]);hash.update((bytes.len() as u64).to_le_bytes());hash.update(bytes);Ok(bytes.len())
+        }
+        _=>Err("학습 원본 SQLite 자료 유형 오류".into()),
+    }
+}
+
+fn learning_sources(conn:&Connection,ids:&[String])->Result<LearningSources,String>{
+    use sha2::{Digest,Sha256};
+    let unique=ids.iter().map(String::as_str).collect::<std::collections::BTreeSet<_>>();
+    if unique.is_empty()||ids.len()>250||unique.iter().any(|id|id.trim().is_empty()){
+        return Err("학습 조회는 1~250개 주문 ID를 명시해야 합니다.".into());
+    }
+    let placeholders=vec!["?";unique.len()].join(",");
+    let sql=format!("SELECT id,confirmed_at,json_extract(payload,'$.deletedAt'),
+        json_extract(payload,'$.confirmationSnapshot'),
+        coalesce(json_extract(payload,'$.confirmationSnapshot.recognitionBaseline.schemaVersion')=1,0)
+        FROM core_orders WHERE id IN ({placeholders}) ORDER BY id");
+    let mut stmt=conn.prepare(&sql).map_err(|e|e.to_string())?;
+    let mut rows=stmt.query(rusqlite::params_from_iter(unique.iter().copied())).map_err(|e|e.to_string())?;
+    let mut sources=LearningSources::new();
+    let mut metadata=Vec::new();
+    let mut bytes=0usize;
+    while let Some(row)=rows.next().map_err(|e|e.to_string())?{
+        let id:String=row.get(0).map_err(|e|e.to_string())?;
+        let deleted:Option<String>=row.get(2).map_err(|e|e.to_string())?;
+        let schema:i64=row.get(4).map_err(|e|e.to_string())?;
+        let mut hash=Sha256::new();hash.update(b"bando-business-learning-source-v1\0");
+        for col in 0..4{
+            bytes=bytes.saturating_add(hash_learning_text(&mut hash,row.get_ref(col).map_err(|e|e.to_string())?)?);
+            if bytes>32*1024*1024{return Err("학습 스냅샷 조회 한도 초과".into());}
+        }
+        metadata.push(serde_json::json!({"id":id}));
+        sources.insert(id,LearningSource{active:false,audit_needed:schema==1 &&
+            deleted.as_deref().is_none_or(str::is_empty),digest:format!("{:x}",hash.finalize())});
+    }
+    drop(rows);drop(stmt);
+    attach_learning_lifecycle(conn,&mut metadata)?;
+    for row in metadata{
+        let id=row["id"].as_str().ok_or("학습 주문 ID 누락")?;
+        let source=sources.get_mut(id).ok_or("학습 주문 연결 오류")?;
+        source.active=row["learningActive"]==true;
+        source.audit_needed&=source.active;
+    }
+    Ok(sources)
+}
+
+/// Select cache misses and decode only those, inside the SAME business
+/// snapshot as the raw fingerprints. The caller may hold an audit write
+/// transaction; this connection never writes to the business database.
+pub(crate) fn read_learning_inputs<T>(ids:&[String],
+    choose:impl FnOnce(&LearningSources)->Result<(Vec<String>,T),String>
+)->Result<(LearningSources,Vec<Value>,T),String>{
+    let conn=open_business_read_snapshot()?;
+    let result=learning_inputs_from_snapshot(&conn,ids,choose)?;
+    conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+    Ok(result)
+}
+
+// The caller owns the read transaction. Shared with isolated integration tests.
+pub(crate) fn learning_inputs_from_snapshot<T>(conn:&Connection,ids:&[String],
+    choose:impl FnOnce(&LearningSources)->Result<(Vec<String>,T),String>
+)->Result<(LearningSources,Vec<Value>,T),String>{
+    let sources=learning_sources(conn,ids)?;
+    let (misses,extra)=choose(&sources)?;
+    if misses.iter().any(|id|!sources.get(id).is_some_and(|s|s.active)){
+        return Err("학습 캐시 미스 범위 오류".into());
+    }
+    let mut orders=if misses.is_empty(){Vec::new()}else{owner_snapshot_batch(conn,&misses)?};
+    for order in &mut orders{order["learningActive"]=Value::Bool(true);}
+    if orders.len()!=misses.len(){return Err("학습 캐시 미스 주문 누락".into());}
+    Ok((sources,orders,extra))
+}
+
+pub(crate) fn read_learning_sources(ids:&[String])->Result<LearningSources,String>{
+    let conn=open_business_read_snapshot()?;
+    let sources=learning_sources(&conn,ids)?;
+    conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+    Ok(sources)
+}
+
+pub(crate) fn learning_order_page(after:&str,limit:usize)->Result<Vec<String>,String>{
+    if !(1..=25).contains(&limit){return Err("학습 주문 페이지 범위 오류".into());}
+    let conn=open_business_read_snapshot()?;
+    let result={
+        let mut stmt=conn.prepare("SELECT id FROM core_orders WHERE id>?1
+            AND json_extract(payload,'$.confirmationSnapshot.recognitionBaseline.schemaVersion')=1
+            ORDER BY id LIMIT ?2").map_err(|e|e.to_string())?;
+        let rows=stmt.query_map(rusqlite::params![after,limit as i64],|r|r.get::<_,String>(0))
+            .map_err(|e|e.to_string())?;
+        rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?
+    };
+    conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+    Ok(result)
+}
+
+pub(crate) fn read_owner_snapshots(ids:&[String])->Result<Vec<Value>,String>{
+    let conn=open_business_read_snapshot()?;
+    let orders=owner_snapshot_batch(&conn,ids)?;
+    conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+    // Release the SQLite snapshot before CPU comparison and aggregation.
+    Ok(orders)
+}
+
+
 #[cfg(test)]
 mod auto_database_location_tests {
     use super::*;
+    #[test]
+    fn learning_raw_snapshot_digest_tracks_content_and_approval(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT NOT NULL);
+            CREATE TABLE core_orders(id TEXT PRIMARY KEY,confirmed_at TEXT,payload TEXT)").unwrap();
+        let mut workflow=serde_json::json!({"workflow":{"groups":[{"id":"g"}],
+            "shipments":[{"orderId":"a","groupId":"g","step":1}]}});
+        conn.execute("INSERT INTO app_state VALUES(1,?1)",[workflow.to_string()]).unwrap();
+        let mut order=serde_json::json!({"confirmationSnapshot":{"raw":"a",
+            "recognitionBaseline":{"schemaVersion":1}}});
+        conn.execute("INSERT INTO core_orders VALUES('a','t',?1)",[order.to_string()]).unwrap();
+        let ids=vec!["a".into()];let first=learning_sources(&conn,&ids).unwrap();
+        assert!(first["a"].active&&first["a"].audit_needed);
+        assert_eq!(learning_sources(&conn,&ids).unwrap(),first);
+        order["confirmationSnapshot"]["raw"]=serde_json::json!("b");
+        conn.execute("UPDATE core_orders SET payload=?1",[order.to_string()]).unwrap();
+        let changed=learning_sources(&conn,&ids).unwrap();
+        assert_ne!(changed["a"].digest,first["a"].digest);
+        workflow["workflow"]["shipments"][0]["step"]=serde_json::json!(0);
+        conn.execute("UPDATE app_state SET payload=?1",[workflow.to_string()]).unwrap();
+        let inactive=learning_sources(&conn,&ids).unwrap();
+        assert_eq!(inactive["a"].digest,changed["a"].digest);
+        assert!(!inactive["a"].active&&!inactive["a"].audit_needed);
+        assert_ne!(inactive,changed);
+    }
+    #[test]
+    fn learning_lifecycle_excludes_cancelled_deleted_and_partial_orders(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT NOT NULL)").unwrap();
+        let mut state=serde_json::json!({"workflow":{"groups":[{"id":"g"},{"id":"h"}],
+            "shipments":[{"orderId":"a","groupId":"g","step":1},
+                {"orderId":"a","groupId":"h","step":2},
+                {"orderId":"b","groupId":"g","step":0},
+                {"orderId":"c","groupId":"missing","step":2},
+                {"orderId":"d","groupId":"g","step":0,"legacyArchived":true}]}});
+        conn.execute("INSERT INTO app_state VALUES(1,?1)",[state.to_string()]).unwrap();
+        let mut orders=vec![serde_json::json!({"id":"a"}),serde_json::json!({"id":"b"}),
+            serde_json::json!({"id":"c"}),serde_json::json!({"id":"d"})];
+        attach_learning_lifecycle(&conn,&mut orders).unwrap();
+        assert_eq!(orders.iter().map(|o|o["learningActive"].as_bool().unwrap()).collect::<Vec<_>>(),
+            vec![true,false,false,false]);
+        state["workflow"]["groups"][1]["deletedAt"]=serde_json::json!("t");
+        conn.execute("UPDATE app_state SET payload=?1",[state.to_string()]).unwrap();
+        attach_learning_lifecycle(&conn,&mut orders).unwrap();
+        assert_eq!(orders[0]["learningActive"],false);
+        state["workflow"]["groups"][1]["deletedAt"]=Value::Null;
+        state["workflow"]["shipments"][1]["step"]=serde_json::json!(0);
+        conn.execute("UPDATE app_state SET payload=?1",[state.to_string()]).unwrap();
+        attach_learning_lifecycle(&conn,&mut orders).unwrap();
+        assert_eq!(orders[0]["learningActive"],false);
+        state["workflow"]["shipments"][1]["step"]=serde_json::json!(1);
+        conn.execute("UPDATE app_state SET payload=?1",[state.to_string()]).unwrap();
+        attach_learning_lifecycle(&conn,&mut orders).unwrap();
+        assert_eq!(orders[0]["learningActive"],true);
+    }
+    #[test]
+    fn owner_snapshot_batch_reads_only_requested_frozen_snapshots(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE core_orders(
+            id TEXT PRIMARY KEY,confirmed_at TEXT,payload TEXT NOT NULL
+        );").unwrap();
+        for id in ["a","b"]{
+            let payload=serde_json::json!({
+                "raw":"live raw not needed","confirmationSnapshot":{"at":"t","raw":id}
+            });
+            conn.execute("INSERT INTO core_orders VALUES (?1,'t',?2)",
+                rusqlite::params![id,payload.to_string()]).unwrap();
+        }
+        conn.execute_batch("PRAGMA query_only=ON;").unwrap();
+        let orders=owner_snapshot_batch(&conn,&["b".into(),"b".into()]).unwrap();
+        assert_eq!(orders.len(),1);
+        assert_eq!(orders[0]["id"],"b");
+        assert_eq!(orders[0]["confirmationSnapshot"]["raw"],"b");
+        assert!(orders[0].get("raw").is_none());
+        assert!(owner_snapshot_batch(&conn,&[]).is_err());
+    }
     #[test]
     fn resolves_only_the_existing_operating_database(){
         let root=std::path::Path::new("roaming-root");

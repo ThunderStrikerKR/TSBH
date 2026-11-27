@@ -1147,7 +1147,37 @@ struct BandoEgui {
     analysis_pending: bool,
     analysis_due_at: Option<Instant>,
     analysis_running_key: Option<(String,String,String)>,
-    analysis_receiver: Option<Receiver<(u64, Result<reception_service::ReceptionAnalysis, String>)>>,
+    analysis_receiver: Option<Receiver<(u64, Result<reception_service::ReceptionAnalysis, String>, Option<InitialAnalysisTiming>, Option<serde_json::Value>)>>,
+}
+
+// Worker-local times, never reconstructed from confirmation or restore.
+type InitialAnalysisTiming=(chrono::DateTime<chrono::Utc>,chrono::DateTime<chrono::Utc>);
+
+fn preserve_first_recognition(item:&mut WorkingReception,raw:&str,mut evidence:serde_json::Value,
+    timing:Option<InitialAnalysisTiming>,shadow:Option<serde_json::Value>){
+    if item.raw!=raw || raw.trim().is_empty(){return;}
+    if item.analysis_raw.as_deref()==Some(raw) && item.analysis_evidence.is_some(){
+        // Legacy evidence is deliberately NOT assigned a new prediction time.
+        return;
+    }
+    if let Some(object)=evidence.as_object_mut(){
+        // Never accept provenance metadata supplied by a recognition response.
+        object.remove("initialPredictionCapture");
+        if let Some((started,completed))=timing.filter(|(a,b)|a<=b){
+            object.insert("initialPredictionCapture".into(),serde_json::json!({
+                "schemaVersion":1,"origin":"native_reception_worker",
+                "orderId":item.id,"orderType":item.order_type,
+                "analysisStartedAt":started.to_rfc3339(),
+                "analysisCompletedAt":completed.to_rfc3339(),
+                "clientBuildVersion":env!("CARGO_PKG_VERSION"),
+                "predictionKind":"legacy_recognition",
+                "learningSupportEvaluated":shadow.as_ref().is_some_and(|v|v["status"]=="captured_shadow_support"),
+                "learningShadow":shadow,
+                "frozenModelVerified":false
+            }));
+        }
+    }
+    item.analysis_evidence=Some(evidence);
 }
 
 impl Default for BandoEgui {
@@ -4534,13 +4564,27 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let manual_receipt=association.filter(|draft|
             draft.manual_model.is_some()
         ).cloned();
+        let first_target=association.filter(|draft|draft.raw==source &&
+            (draft.analysis_raw.as_deref()!=Some(source.as_str())||draft.analysis_evidence.is_none()))
+            .map(|draft|draft.id.clone());
         let (sender, receiver) = mpsc::channel();
         self.analysis_receiver = Some(receiver);
         std::thread::spawn(move || {
+            let record_timing=manual_receipt.is_none() && manual_client_id.is_none();
+            let mut timing=None;
+            let mut shadow=None;
             let result=(|| -> Result<reception_service::ReceptionAnalysis,String> {
+                let started=chrono::Utc::now();
                 let mut analysis=reception_service::analyze_raw(
                     gateway.as_ref(), &source, windows, active_chat_handle, manual_client_id
                 )?;
+                let completed=chrono::Utc::now();
+                if record_timing{
+                    timing=Some((started,completed));
+                    if let Some(id)=first_target.as_deref(){
+                        shadow=gateway.capture_recognition_learning(id,&source,&analysis.recognition);
+                    }
+                }
                 if let Some(row)=manual_receipt {
                     // Reapply employee-confirmed assignments through Rust,
                     // not a fresh UI parser. The source must still be exact.
@@ -4575,7 +4619,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
                 Ok(analysis)
             })();
-            let _ = sender.send((request, result));
+            let _ = sender.send((request, result, timing, shadow));
             context.request_repaint();
         });
     }
@@ -4778,7 +4822,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.analysis_error = Some("발주서 분석이 중단되었습니다.".to_owned());
             return;
         }
-        if let Some(Ok((request, result))) = complete {
+        if let Some(Ok((request, result, timing, shadow))) = complete {
             self.analysis_receiver = None;
             let started=self.analysis_running_key.take();
             let is_current=started.as_ref().is_some_and(|(id,raw,kind)|
@@ -4800,6 +4844,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             match result {
                 Ok(mut analysis) => {
                     let original_evidence=analysis.recognition.clone();
+                    // Keep the trace only in immutable first-analysis evidence.
+                    // The display projection must not retain a second copy.
+                    if let Some(view)=analysis.recognition.as_object_mut(){
+                        view.remove("recipientOwnerTrace");
+                    }
                     if let Some(order_id)=self.active_id.as_deref(){
                         if let Err(error)=analysis.scope_display(order_id,&self.raw_source){
                             self.analysis=None;
@@ -4818,12 +4867,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             // An employee-corrected manual model can be
                             // projected onto the new read result. The immutable
                             // first recognition is kept separately for audit.
-                            let first_for_source=item.analysis_raw.as_deref()
-                                !=Some(self.raw_source.as_str())
-                                || item.analysis_evidence.is_none();
-                            if first_for_source {
-                                item.analysis_evidence=Some(original_evidence);
-                            }
+                            preserve_first_recognition(item,&self.raw_source,original_evidence,timing,shadow);
                             item.analysis_raw = Some(self.raw_source.clone());
                             item.client_match = Some(analysis.client_match.clone());
                             if item.client_selection.as_deref()==Some("MANUAL") &&
@@ -9162,7 +9206,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     prepared.client_id!=target_id{
                     return Err("거래처·상품·운임 기준 또는 계산 결과가 변경되었습니다. 거래처를 다시 선택해 최신 금액을 확인하세요.".into());
                 }
-                let order=prepared.order
+                let mut order=prepared.order
                     .ok_or("확정할 주문 정보를 확인할 수 없습니다.")?;
                 if order.get("id").and_then(serde_json::Value::as_str)
                         !=Some(source.id.as_str()) ||
@@ -9174,6 +9218,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         !=Some(source.order_type.as_str()){
                     return Err("최종 주문 데이터가 현재 미확정 발주서와 일치하지 않습니다.".into());
                 }
+                native_order_change::attach_recognition_baseline(&mut order,&source);
                 let args=serde_json::json!({
                     "groupId":worker_group_id,
                     "draft":order
@@ -10924,6 +10969,128 @@ fn recognition_correction_audit_summary()->Result<serde_json::Value,String>{
 }
 
 fn main() -> eframe::Result<()> {
+    if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-learning-support"){
+        let result=(||->Result<serde_json::Value,String>{
+            if std::env::args_os().len()!=3{return Err("학습 지지도 JSON 인수 하나 필요".into());}
+            let arg=std::env::args_os().nth(2).and_then(|a|a.into_string().ok()).ok_or("학습 지지도 인수 오류")?;
+            if arg.len()>64*1024{return Err("학습 지지도 인수 한도 초과".into());}
+            let input=serde_json::from_str(&arg).map_err(|_|"학습 지지도 JSON 오류")?;
+            gateway::recognition_learning_support(&input)
+        })();
+        match result{
+            Ok(report)=>println!("{report}"),
+            Err(_)=>{eprintln!("[BANDO HUB] 학습 지지도 조회 실패: 검증된 학습 저장소와 입력 규격을 확인하세요.");std::process::exit(2);}
+        }
+        return Ok(());
+    }
+    if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-learning-reset"){
+        if std::env::args_os().len()!=3 || !std::env::args_os().nth(2).is_some_and(|arg|arg=="--derived-only"){
+            eprintln!("[BANDO HUB] 파생 통계 초기화는 --derived-only 명시가 필요합니다.");std::process::exit(2);
+        }
+        match gateway::reset_recognition_learning(){
+            Ok(report)=>println!("{report}"),
+            Err(_)=>{eprintln!("[BANDO HUB] 학습 파생 통계 초기화 실패.");std::process::exit(2);}
+        }
+        return Ok(());
+    }
+    if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-learning-integrity"){
+        if std::env::args_os().len()!=2{std::process::exit(2);}
+        match gateway::recognition_learning_integrity(){
+            Ok(report)=>{
+                println!("{report}");
+                if report["internallyConsistent"]!=true{std::process::exit(2);}
+            }
+            Err(_)=>{eprintln!("[BANDO HUB] 학습 무결성 검증 실패.");std::process::exit(2);}
+        }
+        return Ok(());
+    }
+    if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-learning-rebuild"){
+        if std::env::args_os().len()!=2{eprintln!("[BANDO HUB] 학습 통계 재구축은 추가 인수를 받지 않습니다.");std::process::exit(2);}
+        match gateway::rebuild_recognition_learning(){
+            Ok(report)=>println!("{report}"),
+            Err(_)=>{eprintln!("[BANDO HUB] 학습 통계 재구축 실패.");std::process::exit(2);}
+        }
+        return Ok(());
+    }
+    if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-learning-sync"){
+        let result=(||->Result<serde_json::Value,String>{
+            let ids=std::env::args_os().skip(2).map(|arg|
+                arg.into_string().map_err(|_|"주문 ID 형식 오류".to_owned())
+            ).collect::<Result<Vec<_>,_>>()?;
+            gateway::sync_recognition_learning(&ids)
+        })();
+        match result{
+            Ok(report)=>println!("{report}"),
+            Err(_)=>{eprintln!("[BANDO HUB] 학습 통계 저장 실패. 기존 DB 연결과 주문 범위를 확인하세요.");std::process::exit(2);}
+        }
+        return Ok(());
+    }
+    if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-owner-statistics"){
+        let result=(||->Result<serde_json::Value,String>{
+            let ids=std::env::args_os().skip(2).map(|arg|
+                arg.into_string().map_err(|_|"주문 ID 형식 오류".to_owned())
+            ).collect::<Result<Vec<_>,_>>()?;
+            let mut report=gateway::read_recognition_owner_statistics(&ids)?;
+            // Do not print raw data, IDs or client-scoped context keys.
+            if let Some(records)=report["statistics"].as_array_mut(){
+                for record in records{
+                    let level=record["key"].as_str().and_then(|key|
+                        serde_json::from_str::<serde_json::Value>(key).ok())
+                        .and_then(|parts|parts[2].as_str().map(str::to_owned));
+                    if let Some(object)=record.as_object_mut(){
+                        object.remove("key");
+                        object.insert("contextLevel".into(),serde_json::json!(level));
+                    }
+                }
+            }
+            // Field context keys include initial catalog/client IDs. Keep
+            // the keys and candidate-level IDs internal to the diagnostic.
+            if let Some(records)=report["fieldContextStatistics"].as_array_mut(){
+                for record in records{
+                    let parts=record["key"].as_str().and_then(|key|
+                        serde_json::from_str::<serde_json::Value>(key).ok());
+                    if let Some(object)=record.as_object_mut(){
+                        object.remove("key");
+                        object.insert("task".into(),parts.as_ref().map(|p|p[1].clone()).unwrap_or_default());
+                        object.insert("contextLevel".into(),parts.as_ref().map(|p|p[2].clone()).unwrap_or_default());
+                    }
+                    if matches!(record["task"].as_str(),Some("product"|"variant")){
+                        if let Some(counts)=record["counts"].as_object_mut(){
+                            for key in ["weakCandidates","explicitPositiveCandidates",
+                                "explicitNegativeCandidates","weakCandidateOrders",
+                                "explicitPositiveCandidateOrders","explicitNegativeCandidateOrders"]{
+                                counts.remove(key);
+                            }
+                        }
+                    }
+                }
+            }
+            // Keep candidate-level catalog IDs internal to the diagnostic
+            // result. The CLI's existing no-ID output contract is unchanged.
+            if let Some(records)=report["fieldStatistics"].as_array_mut(){
+                for record in records{
+                    if matches!(record["task"].as_str(),Some("product"|"variant")){
+                        if let Some(counts)=record["counts"].as_object_mut(){
+                            for key in ["weakCandidates","explicitPositiveCandidates",
+                                "explicitNegativeCandidates","weakCandidateOrders",
+                                "explicitPositiveCandidateOrders","explicitNegativeCandidateOrders"]{
+                                counts.remove(key);
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(report)
+        })();
+        match result{
+            Ok(report)=>println!("{report}"),
+            Err(_)=>{
+                eprintln!("[BANDO HUB] 귀속 통계 검증 실패. 명시한 기존 DB 연결과 주문 ID를 확인하세요.");
+                std::process::exit(2);
+            }
+        }
+        return Ok(());
+    }
     if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-correction-audit"){
         match recognition_correction_audit_summary(){
             Ok(summary)=>println!("{summary}"),
@@ -10965,6 +11132,9 @@ fn main() -> eframe::Result<()> {
             std::process::exit(2);
         }
     };
+    // Start only for a validated local business connection. The worker has
+    // no UI state and never changes recognition decisions or business rows.
+    gateway::start_recognition_learning_worker();
     // Both the taskbar icon and the static left wordmark derive from the
     // original Tauri icon, not a re-created/re-designed logo.
     let existing_icon = match eframe::icon_data::from_png_bytes(
@@ -11478,6 +11648,49 @@ mod reception_workflow_admission_integration_tests {
             chosen_client_name:None,directory_count:0,
             linked_spans:Vec::new(),
         }
+    }
+
+    #[test]
+    fn first_prediction_capture_survives_reanalysis_and_confirmation_without_fabricating_legacy_time(){
+        use chrono::{DateTime,Utc};
+        let time=|s:&str|DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc);
+        let first=(time("2026-11-27T00:00:00Z"),time("2026-11-27T00:00:01Z"));
+        let later=(time("2026-11-27T00:01:00Z"),time("2026-11-27T00:01:01Z"));
+        let mut row=draft("synthetic");
+        let raw=row.raw.clone();
+        let evidence=serde_json::json!({"recipients":[],"candidates":[],"unassigned":[],
+            "initialPredictionCapture":{"origin":"untrusted"}});
+        preserve_first_recognition(&mut row,&raw,evidence.clone(),Some(first.clone()),None);
+        row.analysis_raw=Some(raw.clone());
+        let stored=row.analysis_evidence.clone().unwrap();
+        assert_eq!(stored["initialPredictionCapture"]["orderId"],"synthetic");
+        assert_eq!(stored["initialPredictionCapture"]["analysisStartedAt"],"2026-11-27T00:00:00+00:00");
+        assert_eq!(stored["initialPredictionCapture"]["learningSupportEvaluated"],false);
+        preserve_first_recognition(&mut row,&raw,serde_json::json!({"recipients":[1]}),Some(later.clone()),None);
+        assert_eq!(row.analysis_evidence.as_ref(),Some(&stored));
+        let mut order=serde_json::json!({"id":row.id,"raw":raw});
+        native_order_change::attach_recognition_baseline(&mut order,&row);
+        assert_eq!(order["recognitionBaseline"]["initialAnalysis"],stored);
+        preserve_first_recognition(&mut row,"other",evidence.clone(),Some(later.clone()),None);
+        assert_eq!(row.analysis_evidence.as_ref(),Some(&stored));
+        row.raw="changed".into();
+        preserve_first_recognition(&mut row,"changed",evidence.clone(),Some(later.clone()),None);
+        assert_eq!(row.analysis_evidence.as_ref().unwrap()["initialPredictionCapture"]["analysisStartedAt"],
+            "2026-11-27T00:01:00+00:00");
+        let mut legacy=draft("legacy");
+        legacy.analysis_raw=Some(legacy.raw.clone());
+        legacy.analysis_evidence=Some(serde_json::json!({"recipients":[]}));
+        let raw=legacy.raw.clone();
+        preserve_first_recognition(&mut legacy,&raw,evidence.clone(),Some(later.clone()),None);
+        assert!(legacy.analysis_evidence.as_ref().unwrap().get("initialPredictionCapture").is_none());
+        let mut manual=draft("manual");
+        let raw=manual.raw.clone();
+        preserve_first_recognition(&mut manual,&raw,evidence.clone(),None,None);
+        assert!(manual.analysis_evidence.as_ref().unwrap().get("initialPredictionCapture").is_none());
+        let mut reversed=draft("reversed");
+        let raw=reversed.raw.clone();
+        preserve_first_recognition(&mut reversed,&raw,evidence,Some((later.1,first.0)),None);
+        assert!(reversed.analysis_evidence.as_ref().unwrap().get("initialPredictionCapture").is_none());
     }
 
     #[test]

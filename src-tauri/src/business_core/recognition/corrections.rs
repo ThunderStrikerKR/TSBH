@@ -94,6 +94,11 @@ fn unique_model(raw:&str,item:&Value)->Option<(usize,usize)>{
     }
     if spans.len()==1{spans.into_iter().next()}else{None}
 }
+// Verify the corrected registered model against the exact original span.
+// A new alias or externally substituted product requires separate review.
+pub(super) fn product_source_matches(raw:&str,item:&Value,start:usize,end:usize)->bool{
+    unique_model(raw,item).is_some_and(|(a,b)|utf16(raw,a)==start&&utf16(raw,b)==end)
+}
 fn direct_span(raw:&str,after:&Value,cell:&Value,value:&Value)->Option<(usize,usize)>{
     match text(cell,"field"){
         "product"=>unique_model(raw,target(after,cell)?),

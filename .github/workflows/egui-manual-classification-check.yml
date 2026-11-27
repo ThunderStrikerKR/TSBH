@@ -65,6 +65,13 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml reception_edit_audit_tests -- --nocapture
       - name: Verify source-grounded correction candidate extraction
         run: cargo test --manifest-path egui-app/Cargo.toml recognition::corrections::tests -- --nocapture
+      - name: Verify immutable first-recognition handoff and observation comparison
+        run: |
+          cargo test --manifest-path egui-app/Cargo.toml dealer_selection_without_manual_edits_uses_complete_native_quote -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml recognition::observations::tests -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml recognition::learning_context::tests -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml owner_trace_ -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml owner_snapshot_batch_reads_only_requested_frozen_snapshots -- --nocapture
       - name: Verify content-fitted manual popup and Reception source-pane geometry
         run: cargo test --manifest-path egui-app/Cargo.toml manual_workspace_layout_tests -- --nocapture
       - name: Verify the unified date-selector count control geometry and single-recipient 1/1 header
@@ -149,6 +156,18 @@ jobs:
           cargo test --manifest-path egui-app/Cargo.toml reception_product_ellipsis_respects_width_and_korean_boundaries -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml quote_identity_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml recognition_learning_store_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml recognition_support_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml learning_raw_ -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml learning_two_database_disk_replay -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml learning_lifecycle_excludes_cancelled_deleted_and_partial_orders -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml recognition_learning_lifecycle_tests -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml cell_navigation:: -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

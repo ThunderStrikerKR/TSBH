@@ -130,6 +130,8 @@ pub trait BandoGateway: Send + Sync {
     /// This method does not persist or mutate anything.
     fn load_catalog(&self) -> Result<Value, String>;
     fn load_reception_catalog(&self)->Result<Value,String>{self.load_catalog()}
+    // Optional shadow-only prediction. Test/remote adapters never touch local DB.
+    fn capture_recognition_learning(&self,_order:&str,_raw:&str,_first:&Value)->Option<Value>{None}
     /// Client management uses only the authoritative Tauri v2 business DB.
     /// Upsert/archive requires explicit write authorization; no egui shadow DB.
     fn load_client_master(&self) -> Result<Value, String> {
@@ -321,6 +323,18 @@ fn read_reception_metadata(conn:&rusqlite::Connection,known:Option<u64>)
 pub struct LocalGateway;
 
 impl BandoGateway for LocalGateway {
+    fn capture_recognition_learning(&self,order:&str,raw:&str,first:&Value)->Option<Value>{
+        if crate::business_state::authorized_business_write_path().is_err(){return None;}
+        let result=(||->Result<Value,String>{
+            let contexts=recognition::execute("project_owner_contexts",
+                serde_json::json!({"raw":raw,"initialAnalysis":first}))?;
+            PreviewStore::capture_owner_learning(order,&contexts)
+        })();
+        Some(result.unwrap_or_else(|_|serde_json::json!({
+            "status":"unavailable","reason":"unverified_or_unavailable_ledger",
+            "decisionChanged":false,"calibratedProbability":null
+        })))
+    }
 
     fn reception_metadata(&self,known:Option<u64>)
         ->Result<(Option<u64>,Option<ReceptionMetadata>),String>{
@@ -916,6 +930,12 @@ impl BandoGateway for LocalGateway {
         // projection verification. A concurrent update cannot be mistaken
         // for a failed commit after the employee's own write succeeded.
         checkpoint("write_verify_commit");
+        if matches!(action,"advance_group"|"undo_group"|"delete_group"|"restore_group"){
+            let ids=learning_lifecycle_order_ids(&verified,&args);
+            if !ids.is_empty(){
+                if let Some(sender)=LEARNING_WORKER.get(){let _=sender.try_send(ids);}
+            }
+        }
         Ok(verified)
     }
     // The egui intake is a local autosaved draft, NOT a separate
@@ -1036,6 +1056,160 @@ pub(crate) fn read_recognition_correction_page(query:&Value)->Result<Value,Strin
     }
     Ok(serde_json::json!({"eventCount":events.len(),"legacyEventCount":legacy,
         "candidates":candidates,"nextCursor":page["nextCursor"]}))
+}
+
+/// Developer diagnostic: a bounded selected-order snapshot read, never
+/// called from reception analysis or rendering. No write or model activation.
+pub(crate) fn read_recognition_owner_statistics(ids:&[String])->Result<Value,String>{
+    let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
+    if !mode.trim().eq_ignore_ascii_case("local"){
+        return Err("귀속 학습 검증은 로컬 DB에서만 지원합니다.".into());
+    }
+    let mut orders=crate::business_state::read_owner_snapshots(ids)?;
+    let audit_ids=orders.iter().filter(|order|
+        order["confirmationSnapshot"]["recognitionBaseline"]["schemaVersion"]==1 &&
+        !order["deletedAt"].as_str().is_some_and(|v|!v.trim().is_empty()))
+        .map(|order|order["id"].as_str().map(str::to_owned).ok_or("확정 주문 ID 누락"))
+        .collect::<Result<Vec<_>,_>>()?;
+    let mut audit=if audit_ids.is_empty(){std::collections::BTreeMap::new()}
+        else{PreviewStore::read_reception_audit_batch(&audit_ids)?};
+    // The two DBs have independent transactions. Bracket the audit read by
+    // two identical frozen business snapshots, rejecting concurrent changes.
+    // This is an optimistic consistency check, not a cross-DB atomic commit.
+    if crate::business_state::read_owner_snapshots(ids)?!=orders{
+        return Err("감사 조회 중 확정 주문이 변경되었습니다. 다시 조회하세요.".into());
+    }
+    for order in &mut orders{
+        let id=order["id"].as_str().ok_or("확정 주문 ID 누락")?;
+        if let Some(events)=audit.remove(id){order["recognitionAuditEvents"]=serde_json::json!(events);}
+    }
+    let requested=ids.iter().collect::<std::collections::BTreeSet<_>>().len();
+    let missing=requested.saturating_sub(orders.len());
+    let mut summary=recognition::execute("summarize_owner_statistics",
+        serde_json::json!({"orders":orders}))?;
+    summary["requestedUniqueOrders"]=serde_json::json!(requested);
+    summary["notFoundOrders"]=serde_json::json!(missing);
+    Ok(summary)
+}
+
+// In-process wakeups are advisory. A bounded, repeated reconciliation scan
+// repairs lost wakeups, crashes after the business commit and other writers.
+static LEARNING_WORKER:std::sync::OnceLock<std::sync::mpsc::SyncSender<Vec<String>>>=std::sync::OnceLock::new();
+
+fn learning_lifecycle_order_ids(state:&Value,args:&Value)->Vec<String>{
+    let group=args["groupId"].as_str();
+    let mut ids=std::collections::BTreeSet::new();
+    if let Some(id)=args["draft"]["id"].as_str().filter(|id|!id.is_empty()){ids.insert(id.to_owned());}
+    if let Some(shipments)=state["workflow"]["shipments"].as_array(){
+        for ship in shipments{
+            if group.is_some()&&ship["groupId"].as_str()==group{
+                if let Some(id)=ship["orderId"].as_str().filter(|id|!id.is_empty()){ids.insert(id.to_owned());}
+            }
+        }
+    }
+    ids.into_iter().collect()
+}
+
+#[cfg(test)]
+mod recognition_learning_lifecycle_tests{
+    use super::*;
+    #[test]
+    fn affected_orders_include_deleted_group_members_and_deduplicate_split_shipments(){
+        let state=serde_json::json!({"workflow":{"groups":[{"id":"g","deletedAt":"t"}],
+            "shipments":[{"groupId":"g","orderId":"a"},{"groupId":"g","orderId":"a"},
+                {"groupId":"g","orderId":"b"},{"groupId":"h","orderId":"c"}]}});
+        assert_eq!(learning_lifecycle_order_ids(&state,&serde_json::json!({"groupId":"g"})),
+            vec!["a".to_owned(),"b".to_owned()]);
+        assert_eq!(learning_lifecycle_order_ids(&state,&serde_json::json!({"groupId":"new","draft":{"id":"d"}})),
+            vec!["d".to_owned()]);
+        assert!(learning_lifecycle_order_ids(&state,&serde_json::json!({})).is_empty());
+    }
+}
+
+pub(crate) fn start_recognition_learning_worker(){
+    if LEARNING_WORKER.get().is_some() ||
+        !std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into()).trim().eq_ignore_ascii_case("local") ||
+        crate::business_state::authorized_business_write_path().is_err(){return;}
+    let (sender,receiver)=std::sync::mpsc::sync_channel::<Vec<String>>(64);
+    if LEARNING_WORKER.set(sender).is_err(){return;}
+    std::thread::spawn(move||{
+        use std::time::{Duration,Instant};
+        let mut cursor=String::new();
+        let mut next_scan=Instant::now();
+        loop{
+            match receiver.recv_timeout(Duration::from_secs(2)){
+                Ok(ids)=>{
+                    for chunk in ids.chunks(16){
+                        if sync_recognition_learning(chunk).is_err(){
+                            eprintln!("[BANDO HUB] 학습 통계 갱신 지연: 정기 재동기화 대상입니다.");
+                        }
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)=>{},
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected)=>break,
+            }
+            if Instant::now()<next_scan{continue;}
+            match PreviewStore::recognition_learning_page(&cursor,16){
+                Ok(ids) if ids.is_empty()=>{
+                    cursor.clear();
+                    next_scan=Instant::now()+Duration::from_secs(60);
+                }
+                Ok(ids)=>{
+                    // One oversized or damaged order must not prevent other
+                    // independent samples from being reconciled.
+                    if sync_recognition_learning(&ids).is_err(){
+                        for id in &ids{
+                            if sync_recognition_learning(std::slice::from_ref(id)).is_err(){
+                                if PreviewStore::quarantine_recognition_learning(id).is_err(){
+                                    eprintln!("[BANDO HUB] 학습 기여 격리 실패: 저장소 무결성 검증 필요.");
+                                }else{
+                                    eprintln!("[BANDO HUB] 학습 근거 격리: 이후 순회에서 재검증합니다.");
+                                }
+                            }
+                        }
+                    }
+                    cursor=ids.last().cloned().unwrap_or_default();
+                    next_scan=Instant::now()+Duration::from_secs(2);
+                }
+                Err(_)=>{
+                    eprintln!("[BANDO HUB] 학습 원장 조회 지연: 다시 검증합니다.");
+                    next_scan=Instant::now()+Duration::from_secs(60);
+                }
+            }
+        }
+    });
+}
+
+/// Explicit developer maintenance, never called during analysis or UI rendering.
+pub(crate) fn sync_recognition_learning(ids:&[String])->Result<Value,String>{
+    let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
+    if !mode.trim().eq_ignore_ascii_case("local"){return Err("학습 통계 저장은 로컬 DB에서만 지원합니다.".into());}
+    PreviewStore::sync_recognition_learning(ids,|order|recognition::execute(
+        "summarize_owner_statistics",serde_json::json!({"orders":[order]})))
+}
+
+pub(crate) fn recognition_learning_support(input:&Value)->Result<Value,String>{
+    let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
+    if !mode.trim().eq_ignore_ascii_case("local"){return Err("학습 지지도는 로컬 DB에서만 조회합니다.".into());}
+    PreviewStore::recognition_learning_support(input)
+}
+
+pub(crate) fn recognition_learning_integrity()->Result<Value,String>{
+    let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
+    if !mode.trim().eq_ignore_ascii_case("local"){return Err("학습 무결성 검증은 로컬 DB에서만 지원합니다.".into());}
+    PreviewStore::recognition_learning_integrity()
+}
+
+pub(crate) fn reset_recognition_learning()->Result<Value,String>{
+    let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
+    if !mode.trim().eq_ignore_ascii_case("local"){return Err("학습 파생 통계 초기화는 로컬 DB에서만 지원합니다.".into());}
+    PreviewStore::reset_recognition_learning()
+}
+
+pub(crate) fn rebuild_recognition_learning()->Result<Value,String>{
+    let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
+    if !mode.trim().eq_ignore_ascii_case("local"){return Err("학습 통계 재구축은 로컬 DB에서만 지원합니다.".into());}
+    PreviewStore::rebuild_recognition_learning()
 }
 
 pub fn from_environment() -> Result<Arc<dyn BandoGateway>, String> {

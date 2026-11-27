@@ -6,6 +6,9 @@ use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde_json::{json, Value};
 use std::{collections::HashSet, fs, path::PathBuf, time::Duration};
 
+#[path="recognition_learning_store.rs"]
+mod recognition_learning_store;
+
 const SIGNATURE: &str = "bando-hub-egui-preview-v1";
 const SOURCE_LIMIT_BYTES: usize = 2 * 1024 * 1024;
 
@@ -633,7 +636,7 @@ impl PreviewStore {
         // A saved audit is never deleted when an employee deletes the draft.
         for receipt in &source.drafts {
             for event in &receipt.edit_history {
-                tx.execute(
+                let inserted=tx.execute(
                     "INSERT OR IGNORE INTO reception_edit_audit
                      (id,order_id,source_raw,initial_analysis_json,
                       before_rows_json,after_rows_json,recorded_at,context_json)
@@ -649,6 +652,22 @@ impl PreviewStore {
                         event.get("context").filter(|v|!v.is_null()).map(Value::to_string)
                     ],
                 ).map_err(|e|format!("수취인/품목 수정 감사 이력 저장 실패: {e}"))?;
+                if inserted==0{
+                    // Re-saving an identical immutable event is idempotent.
+                    // A conflicting UUID must not be silently accepted.
+                    let identical:i64=tx.query_row(
+                        "SELECT count(*) FROM reception_edit_audit WHERE
+                         id=?1 AND order_id=?2 AND source_raw=?3 AND initial_analysis_json=?4
+                         AND before_rows_json=?5 AND after_rows_json=?6 AND recorded_at=?7
+                         AND context_json IS ?8",
+                        params![event["id"].as_str().unwrap_or(""),receipt.id.as_str(),
+                            event["sourceRaw"].as_str().unwrap_or(""),event["initialAnalysis"].to_string(),
+                            event["beforeRows"].to_string(),event["afterRows"].to_string(),
+                            event["at"].as_str().unwrap_or(""),
+                            event.get("context").filter(|v|!v.is_null()).map(Value::to_string)],
+                        |r|r.get(0)).map_err(|e|e.to_string())?;
+                    if identical!=1{return Err("동일 정정 감사 ID에 상충된 기록이 있습니다.".into());}
+                }
             }
         }
         tx.commit().map_err(|e| format!("egui 접수 목록 저장 확정 실패: {e}"))?;
@@ -801,19 +820,368 @@ impl PreviewStore {
     }
 
     // Read the existing isolated audit DB without initializing or migrating it.
-    pub(crate) fn read_reception_audit_page(query:&Value)->Result<Value,String>{
+    fn open_reception_audit_snapshot()->Result<Connection,String>{
         let path=Self::directory()?.join("egui-preview.sqlite3");
         let conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e|format!("정정 이력 읽기 실패: {e}"))?;
         conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
+        conn.execute_batch("PRAGMA query_only=ON; BEGIN DEFERRED TRANSACTION;")
+            .map_err(|e|e.to_string())?;
         let signature:String=conn.query_row(
             "SELECT value FROM preview_meta WHERE key='signature'",[],|r|r.get(0))
             .map_err(|e|e.to_string())?;
         if signature!=SIGNATURE{return Err("egui 전용 DB 식별자가 다릅니다.".into());}
-        query_reception_audit_page(&conn,query)
+        Ok(conn)
+    }
+    pub(crate) fn read_reception_audit_page(query:&Value)->Result<Value,String>{
+        let conn=Self::open_reception_audit_snapshot()?;
+        let result=query_reception_audit_page(&conn,query)?;
+        conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+        Ok(result)
+    }
+
+    /// All selected orders and pages come from one read-only audit snapshot.
+    pub(crate) fn read_reception_audit_batch(ids:&[String])->Result<std::collections::BTreeMap<String,Vec<Value>>,String>{
+        let conn=Self::open_reception_audit_snapshot()?;
+        let result=query_reception_audit_batch(&conn,ids)?;
+        conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+        Ok(result)
+    }
+
+    fn learning_connection()->Result<(Connection,PathBuf,String),String>{
+        use sha2::{Digest,Sha256};
+        let business=crate::business_state::authorized_business_write_path()?.canonicalize()
+            .map_err(|_|"업무 DB 식별 실패")?;
+        // Scope by the canonical bound DB, not a potentially shared order ID.
+        let scope=format!("{:x}",Sha256::digest(business.as_os_str().as_encoded_bytes()));
+        let path=Self::directory()?.join("egui-preview.sqlite3");
+        let conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
+            .map_err(|_|"기존 정정 이력 DB 연결 실패")?;
+        conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
+        conn.execute_batch("PRAGMA foreign_keys=ON").map_err(|e|e.to_string())?;
+        let signature:String=conn.query_row("SELECT value FROM preview_meta WHERE key='signature'",[],|r|r.get(0))
+            .map_err(|e|e.to_string())?;
+        if signature!=SIGNATURE{return Err("egui 전용 DB 식별자가 다릅니다.".into());}
+        Ok((conn,business,scope))
+    }
+
+    /// Explicit selected-order synchronization. Lock the existing audit DB
+    /// before reading either source; the business DB is still read-only.
+    pub(crate) fn sync_recognition_learning(ids:&[String],
+        summarize:impl Fn(&Value)->Result<Value,String>)->Result<Value,String>{
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        recognition_learning_store::prepare(&tx)?;
+        let (frozen,orders,digests)=crate::business_state::read_learning_inputs(ids,|sources|
+            select_learning_changes(&tx,&scope,sources))?;
+        let report=apply_learning_changes(&tx,&scope,ids,&frozen,orders,&digests,summarize)?;
+        if crate::business_state::read_learning_sources(ids)?!=frozen ||
+            crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("학습 갱신 중 확정 주문 또는 업무 DB가 변경되었습니다.".into());
+        }
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(report)
+    }
+
+    /// Recovery includes ledger-only IDs, so physically removed orders are
+    /// reconciled as well as new or changed frozen confirmations.
+    pub(crate) fn recognition_learning_page(after:&str,limit:usize)->Result<Vec<String>,String>{
+        let (conn,_,scope)=Self::learning_connection()?;
+        recognition_learning_store::prepare(&conn)?;
+        let stored=recognition_learning_store::order_page(&conn,&scope,after,limit)?;
+        let business=crate::business_state::learning_order_page(after,limit)?;
+        let combined=stored.into_iter().chain(business).collect::<std::collections::BTreeSet<_>>();
+        Ok(combined.into_iter().take(limit).collect())
+    }
+
+    pub(crate) fn quarantine_recognition_learning(id:&str)->Result<(),String>{
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        recognition_learning_store::prepare(&tx)?;
+        recognition_learning_store::mark_pending(&tx,&scope,id)?;
+        tx.commit().map_err(|e|e.to_string())?;
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        recognition_learning_store::revoke_pending(&tx,&scope,id)?;
+        if crate::business_state::authorized_business_write_path()?.canonicalize()
+            .map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("학습 격리 중 업무 DB가 변경되었습니다.".into());
+        }
+        tx.commit().map_err(|e|e.to_string())
+    }
+
+    pub(crate) fn capture_owner_learning(target:&str,projection:&Value)->Result<Value,String>{
+        use sha2::{Digest,Sha256};
+        use std::collections::{BTreeMap,BTreeSet};
+        // Diagnostic ratio only; not an automatic classification policy.
+        const RATIO:f64=3.0;
+        let entries=projection["entries"].as_array().ok_or("귀속 문맥 목록 누락")?;
+        if entries.is_empty(){return Ok(json!({"status":"no_eligible_context","decisionChanged":false,
+            "calibratedProbability":null}));}
+        if entries.len()>16{return Err("실시간 학습 관측 한도 초과".into());}
+        let mut keys=BTreeSet::new();
+        let mut locations=Vec::new();
+        for entry in entries{
+            let source=&entry["source"];
+            let start=source["start"].as_u64().ok_or("귀속 위치 오류")?;
+            let end=source["end"].as_u64().filter(|end|*end>start).ok_or("귀속 위치 오류")?;
+            let mut local=Vec::new();
+            for c in entry["contexts"].as_array().ok_or("귀속 문맥 오류")?{
+                let key=c["key"].as_str().ok_or("귀속 문맥 키 누락")?.to_owned();
+                keys.insert(key.clone());local.push(key);
+            }
+            locations.push(json!({"start":start,"end":end,"contextKeys":local}));
+        }
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
+        let ids=recognition_learning_store::owner_capture_ids(&tx,&scope,target,&keys)?;
+        let (frozen,digests)=if ids.is_empty(){(BTreeMap::new(),BTreeMap::new())}else{
+            let (frozen,_,digests)=crate::business_state::read_learning_inputs(&ids,|sources|{
+                let (misses,digests)=select_learning_changes(&tx,&scope,sources)?;
+                if !misses.is_empty()||digests.len()!=ids.len(){
+                    return Err("실시간 학습 원본 동기화 필요".into());
+                }
+                Ok((Vec::new(),digests))
+            })?;
+            (frozen,digests)
+        };
+        let mut results=Vec::new();
+        for key in &keys{
+            let report=recognition_learning_store::assess_support(&tx,&scope,&json!({
+                "task":"recipient_ownership","contextKey":key,"targetOrderId":target,
+                "candidates":["previous","next"],"explicitToWeakRatio":RATIO}))?;
+            // Only compact predictive sufficient statistics are persisted,
+            // not the correction-validation report or source documents.
+            results.push(json!({"contextKey":key,"supportVersion":report["supportVersion"],
+                "featureVersion":report["featureVersion"],"contributionVersion":report["contributionVersion"],
+                "contextOrders":report["contextOrders"],"supportedOrders":report["supportedOrders"],
+                "totalSupportMass":report["totalSupportMass"],"weightEffectiveOrders":report["weightEffectiveOrders"],
+                "outsideCandidateSupportMass":report["outsideCandidateSupportMass"],
+                "candidates":report["candidates"],"calibratedProbability":null}));
+        }
+        if (!ids.is_empty()&&crate::business_state::read_learning_sources(&ids)?!=frozen) ||
+            crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("실시간 학습 조회 중 원본 변경".into());
+        }
+        let mut hash=Sha256::new();
+        hash.update(serde_json::to_vec(&json!(["owner-shadow-v1",scope,target,RATIO,digests,results]))
+            .map_err(|_|"실시간 학습 모델 지문 오류")?);
+        let model=format!("shadow-{:x}",hash.finalize());
+        let result=json!({"status":"captured_shadow_support","task":"recipient_ownership",
+            "modelId":model,"capturedAt":chrono::Utc::now().to_rfc3339(),
+            "explicitToWeakRatio":RATIO,"verifiedSourceOrders":ids.len(),"locations":locations,
+            "contexts":results,"sourceDigestsMatched":true,"fullHistoryReconciled":false,
+            "calibratedProbability":null,"eligibleForAutomaticDecision":false,"decisionChanged":false});
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(result)
+    }
+
+    pub(crate) fn recognition_learning_support(input:&Value)->Result<Value,String>{
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
+        // Diagnostic only: no preparation/migration or writes on this path.
+        let report=if let Some(config)=input.get("localChronologicalReplay"){
+            if input.get("chronologicalValidation").is_some() || config.get("samples").is_some() ||
+                config.get("frozenModelId").is_some(){
+                return Err("로컬 재현에 외부 예측·정답·모델을 혼합할 수 없습니다.".into());
+            }
+            let ids=config["orderIds"].as_array().filter(|v|!v.is_empty()&&v.len()<=250)
+                .ok_or("로컬 재현은 1~250개 주문 ID를 명시해야 합니다.")?
+                .iter().map(|id|id.as_str().filter(|s|!s.trim().is_empty()&&s.len()<=1024)
+                    .map(str::to_owned).ok_or("재현 주문 ID 오류".to_owned()))
+                .collect::<Result<Vec<_>,_>>()?;
+            if ids.iter().collect::<std::collections::BTreeSet<_>>().len()!=ids.len(){
+                return Err("재현 주문 ID 중복".into());
+            }
+            let (frozen,mut orders,digests)=crate::business_state::read_learning_inputs(&ids,|sources|{
+                let (misses,digests)=select_learning_changes(&tx,&scope,sources)?;
+                if !misses.is_empty(){return Err("원본과 불일치하는 학습 주문을 먼저 동기화하세요.".into());}
+                let active=sources.iter().filter(|(_,s)|s.active).map(|(id,_)|id.clone()).collect();
+                Ok((active,digests))
+            })?;
+            let audit_ids=orders.iter().filter_map(|o|o["id"].as_str())
+                .filter(|id|frozen.get(*id).is_some_and(|s|s.audit_needed)).map(str::to_owned).collect::<Vec<_>>();
+            let mut audit=if audit_ids.is_empty(){std::collections::BTreeMap::new()}
+                else{query_reception_audit_batch(&tx,&audit_ids)?};
+            for order in &mut orders{
+                let id=order["id"].as_str().ok_or("재현 주문 ID 누락")?;
+                if let Some(events)=audit.remove(id){order["recognitionAuditEvents"]=json!(events);}
+            }
+            let mut result=recognition_learning_store::assess_local_replay(&tx,&scope,input,&orders,&digests)?;
+            if crate::business_state::read_learning_sources(&ids)?!=frozen{
+                return Err("로컬 재현 중 확정 주문이 변경되었습니다.".into());
+            }
+            result["requestedOrders"]=json!(ids.len());
+            result["missingOrInactiveSourceOrders"]=json!(ids.len()-orders.len());
+            result
+        }else{recognition_learning_store::assess_support(&tx,&scope,input)?};
+        if crate::business_state::authorized_business_write_path()?.canonicalize()
+            .map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("학습 지지도 조회 중 업무 DB가 변경되었습니다.".into());
+        }
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(report)
+    }
+
+    pub(crate) fn recognition_learning_integrity()->Result<Value,String>{
+        let (mut conn,_,scope)=Self::learning_connection()?;
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        recognition_learning_store::prepare(&tx)?;
+        let report=recognition_learning_store::integrity(&tx,&scope)?;
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(report)
+    }
+
+    pub(crate) fn reset_recognition_learning()->Result<Value,String>{
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        recognition_learning_store::prepare(&tx)?;
+        let report=recognition_learning_store::reset_derived(&tx,&scope)?;
+        if crate::business_state::authorized_business_write_path()?.canonicalize()
+            .map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("학습 초기화 중 업무 DB가 변경되었습니다.".into());
+        }
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(report)
+    }
+
+    pub(crate) fn rebuild_recognition_learning()->Result<Value,String>{
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        recognition_learning_store::prepare(&tx)?;
+        let report=recognition_learning_store::rebuild_totals(&tx,&scope)?;
+        if crate::business_state::authorized_business_write_path()?.canonicalize()
+            .map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("학습 재구축 중 업무 DB가 변경되었습니다.".into());
+        }
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(report)
     }
 
     pub fn path(&self) -> &std::path::Path { &self.path }
+}
+
+/// Read exact stored audit bytes through the existing order/time index.
+ /// No serde parse, string copies, or event JSON construction on cache hits.
+type LearningDigests=std::collections::BTreeMap<String,String>;
+fn select_learning_changes(tx:&rusqlite::Transaction<'_>,scope:&str,
+    sources:&crate::business_state::LearningSources)->Result<(Vec<String>,LearningDigests),String>{
+    use sha2::{Digest,Sha256};
+    let audit_ids=sources.iter().filter(|(_,source)|source.audit_needed)
+        .map(|(id,_)|id.clone()).collect::<Vec<_>>();
+    let audit=if audit_ids.is_empty(){std::collections::BTreeMap::new()}
+        else{query_learning_audit_digests(tx,&audit_ids)?};
+    let mut misses=Vec::new();
+    let mut digests=std::collections::BTreeMap::new();
+    for (id,source) in sources.iter().filter(|(_,source)|source.active){
+        let mut hash=Sha256::new();hash.update(b"bando-learning-raw-input-v2\0");
+        hash.update(source.digest.as_bytes());
+        if source.audit_needed{
+            hash.update([1]);
+            hash.update(audit.get(id).ok_or("학습 감사 지문 누락")?.as_bytes());
+        }else{hash.update([0]);}
+        let digest=format!("{:x}",hash.finalize());
+        if recognition_learning_store::cached_count(tx,scope,id,&digest)?.is_none(){
+            misses.push(id.clone());
+        }
+        digests.insert(id.clone(),digest);
+    }
+    Ok((misses,digests))
+}
+
+fn apply_learning_changes(tx:&rusqlite::Transaction<'_>,scope:&str,ids:&[String],
+    frozen:&crate::business_state::LearningSources,mut orders:Vec<Value>,digests:&LearningDigests,
+    summarize:impl Fn(&Value)->Result<Value,String>)->Result<Value,String>{
+    let audit_ids=orders.iter().filter_map(|order|order["id"].as_str())
+        .filter(|id|frozen.get(*id).is_some_and(|source|source.audit_needed))
+        .map(str::to_owned).collect::<Vec<_>>();
+    let mut audit=if audit_ids.is_empty(){std::collections::BTreeMap::new()}
+        else{query_reception_audit_batch(tx,&audit_ids)?};
+    for order in &mut orders{
+        let id=order["id"].as_str().ok_or("확정 주문 ID 누락")?;
+        if let Some(events)=audit.remove(id){order["recognitionAuditEvents"]=json!(events);}
+    }
+    let mut report=recognition_learning_store::synchronize_with_digests(tx,scope,ids,digests,&orders,summarize)?;
+    report["decodedOrders"]=json!(orders.len());
+    let requested=ids.iter().collect::<std::collections::BTreeSet<_>>().len();
+    report["missingSelectedOrders"]=json!(requested.saturating_sub(frozen.len()));
+    report["inactiveSelectedOrders"]=json!(frozen.values().filter(|source|!source.active).count());
+    Ok(report)
+}
+
+fn query_learning_audit_digests(conn:&Connection,ids:&[String])->Result<std::collections::BTreeMap<String,String>,String>{
+    use sha2::{Digest,Sha256};
+    let unique=ids.iter().collect::<std::collections::BTreeSet<_>>();
+    if unique.len()>250||unique.iter().any(|id|id.trim().is_empty()){
+        return Err("감사 지문 조회 범위 오류".into());
+    }
+    let has_context:i64=conn.query_row(
+        "SELECT count(*) FROM pragma_table_info('reception_edit_audit') WHERE name='context_json'",
+        [],|r|r.get(0)).map_err(|e|e.to_string())?;
+    let context=if has_context==1{"context_json"}else{"NULL"};
+    let sql=format!("SELECT id,order_id,source_raw,initial_analysis_json,before_rows_json,
+        after_rows_json,recorded_at,{context} FROM reception_edit_audit
+        WHERE order_id=?1 ORDER BY recorded_at,id");
+    let mut stmt=conn.prepare(&sql).map_err(|e|e.to_string())?;
+    let mut out=std::collections::BTreeMap::new();
+    let mut total_rows=0usize;let mut total_bytes=0usize;
+    for id in unique{
+        let mut hash=Sha256::new();hash.update(b"bando-audit-learning-source-v1\0");
+        let mut rows=stmt.query(params![id]).map_err(|e|e.to_string())?;
+        let mut count=0usize;
+        while let Some(row)=rows.next().map_err(|e|e.to_string())?{
+            count+=1;total_rows+=1;
+            if count>1000||total_rows>4000{return Err("감사 지문 조회 건수 한도 초과".into());}
+            for col in 0..8{
+                total_bytes=total_bytes.saturating_add(crate::business_state::hash_learning_text(
+                    &mut hash,row.get_ref(col).map_err(|e|e.to_string())?)?);
+                if total_bytes>32*1024*1024{return Err("감사 지문 조회 용량 한도 초과".into());}
+            }
+        }
+        hash.update((count as u64).to_le_bytes());
+        out.insert(id.clone(),format!("{:x}",hash.finalize()));
+    }
+    Ok(out)
+}
+
+fn query_reception_audit_batch(conn:&Connection,ids:&[String])->Result<std::collections::BTreeMap<String,Vec<Value>>,String>{
+    let unique=ids.iter().collect::<std::collections::BTreeSet<_>>();
+    if unique.len()>250||unique.iter().any(|id|id.trim().is_empty()){
+        return Err("감사 조회 주문 범위 오류".into());
+    }
+    let mut out=std::collections::BTreeMap::new();
+    let mut total_rows=0i64;
+    let mut total_bytes=0i64;
+    let has_context:i64=conn.query_row(
+        "SELECT count(*) FROM pragma_table_info('reception_edit_audit') WHERE name='context_json'",
+        [],|r|r.get(0)).map_err(|e|e.to_string())?;
+    let context=if has_context==1{"coalesce(length(CAST(context_json AS BLOB)),0)"}else{"0"};
+    let sql=format!("SELECT count(*),coalesce(sum(length(CAST(source_raw AS BLOB))+
+        length(CAST(initial_analysis_json AS BLOB))+length(CAST(before_rows_json AS BLOB))+
+        length(CAST(after_rows_json AS BLOB))+{context}),0)
+        FROM reception_edit_audit WHERE order_id=?1");
+    for id in unique{
+        let (count,bytes):(i64,i64)=conn.query_row(&sql,params![id],|r|Ok((r.get(0)?,r.get(1)?)))
+            .map_err(|e|e.to_string())?;
+        total_rows=total_rows.saturating_add(count);
+        total_bytes=total_bytes.saturating_add(bytes);
+        if count>1000||total_rows>4000||total_bytes>32*1024*1024{
+            return Err("정정 감사 조회 한도 초과: 주문 범위를 줄여 다시 조회하세요.".into());
+        }
+        let mut events=Vec::new();
+        let mut cursor=Value::Null;
+        loop{
+            let page=query_reception_audit_page(conn,&json!({"orderId":id,"limit":250,"cursor":cursor}))?;
+            let batch=page["events"].as_array().ok_or("정정 감사 조회 결과 오류")?;
+            events.extend(batch.iter().cloned());
+            let next=page["nextCursor"].clone();
+            if next.is_null(){break;}
+            if batch.is_empty()||next==cursor{return Err("정정 감사 조회 커서가 진행되지 않습니다.".into());}
+            cursor=next;
+        }
+        if events.len() as i64!=count{return Err("정정 감사 조회 건수 불일치".into());}
+        out.insert(id.clone(),events);
+    }
+    Ok(out)
 }
 
 // Stable keyset paging: no unbounded loading and no write on the audit path.
@@ -1158,6 +1526,115 @@ mod ocr_layout_tests {
 #[cfg(test)]
 mod reception_edit_audit_tests {
     use super::*;
+
+    #[test]
+    fn learning_two_database_disk_replay_uses_real_snapshot_and_audit_paths(){
+        struct Fixture(std::path::PathBuf);
+        impl Drop for Fixture{fn drop(&mut self){let _=std::fs::remove_dir_all(&self.0);}}
+        let fixture=Fixture(std::env::temp_dir().join(format!("bando-learning-integration-{}",uuid::Uuid::new_v4())));
+        std::fs::create_dir(&fixture.0).unwrap();
+        let business_path=fixture.0.join("business.sqlite3");
+        let audit_path=fixture.0.join("audit.sqlite3");
+        let business=Connection::open(&business_path).unwrap();
+        business.execute_batch("CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);
+            CREATE TABLE core_orders(id TEXT PRIMARY KEY,confirmed_at TEXT,payload TEXT);").unwrap();
+        let workflow=json!({"workflow":{"groups":[{"id":"g"}],"shipments":[{"orderId":"a","groupId":"g","step":1}]}});
+        business.execute("INSERT INTO app_state VALUES(1,?1)",[workflow.to_string()]).unwrap();
+        let order=json!({"confirmationSnapshot":{"raw":"raw","recognitionBaseline":{"schemaVersion":1,"auditEventIds":["e"]}}});
+        business.execute("INSERT INTO core_orders VALUES('a','t',?1)",[order.to_string()]).unwrap();
+        let audit=Connection::open(&audit_path).unwrap();
+        audit.execute_batch("PRAGMA foreign_keys=ON;CREATE TABLE reception_edit_audit(id TEXT PRIMARY KEY,order_id TEXT,
+            source_raw TEXT,initial_analysis_json TEXT,before_rows_json TEXT,after_rows_json TEXT,recorded_at TEXT,context_json TEXT);
+            INSERT INTO reception_edit_audit VALUES('e','a','raw','{}','[]','[]','t',NULL);").unwrap();
+        recognition_learning_store::prepare(&audit).unwrap();
+        drop(audit);drop(business);
+
+        // Synthetic count projection only. The actual SQL snapshot, cache,
+        // audit reading and delta application are the production functions.
+        let replay=|summarize:fn(&Value)->Result<Value,String>|->Value{
+            let business=Connection::open_with_flags(&business_path,OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+            business.execute_batch("PRAGMA query_only=ON;BEGIN").unwrap();
+            let mut audit=Connection::open(&audit_path).unwrap();
+            audit.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+            let tx=audit.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).unwrap();
+            let ids=vec!["a".to_owned()];
+            let (frozen,orders,digests)=crate::business_state::learning_inputs_from_snapshot(&business,&ids,|sources|
+                select_learning_changes(&tx,"fixture",sources)).unwrap();
+            let report=apply_learning_changes(&tx,"fixture",&ids,&frozen,orders,&digests,summarize).unwrap();
+            business.execute_batch("COMMIT").unwrap();tx.commit().unwrap();report
+        };
+        fn summarize(order:&Value)->Result<Value,String>{
+            let valid=order["recognitionAuditEvents"].as_array().is_some_and(|events|events.len()==1);
+            Ok(json!({"featureVersion":1,"uniqueOrders":1,"status":"diagnostic_only",
+                "eligibleForDurableLearning":false,"auditCoverage":{"verifiedManifestOrders":if valid{1}else{0}},
+                "statistics":[],"fieldContextStatistics":[],"fieldStatistics":[{"task":"type","counts":{
+                "observationCount":1,"independentOrders":1,"weakIndependentOrders":1,
+                "weakUnchangedCount":1,"explicitCorrectionCount":0,"explicitCorrectionOrders":0,
+                "pendingCorrectionCount":0,"unresolvedCount":0,"eligibleForAutomaticDecision":false,
+                "weakCandidates":{"address":1},"weakCandidateOrders":{"address":1},
+                "explicitPositiveCandidates":{},"explicitNegativeCandidates":{},
+                "explicitPositiveCandidateOrders":{},"explicitNegativeCandidateOrders":{}}}]}))
+        }
+        assert_eq!(replay(summarize)["storedContributingOrders"],1);
+        assert_eq!(replay(|_|panic!("unchanged order must not decode"))["decodedOrders"],0);
+        let audit=Connection::open(&audit_path).unwrap();
+        audit.execute("DELETE FROM reception_edit_audit WHERE id='e'",[]).unwrap();drop(audit);
+        let revoked=replay(summarize);assert_eq!(revoked["decodedOrders"],1);
+        assert_eq!(revoked["storedContributingOrders"],0);
+        let business=Connection::open(&business_path).unwrap();
+        business.execute("DELETE FROM core_orders WHERE id='a'",[]).unwrap();drop(business);
+        assert_eq!(replay(|_|panic!("missing order"))["missingSelectedOrders"],1);
+        let mut audit=Connection::open(&audit_path).unwrap();
+        audit.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+        let tx=audit.transaction().unwrap();
+        assert_eq!(recognition_learning_store::integrity(&tx,"fixture").unwrap()["internallyConsistent"],true);
+        assert!(recognition_learning_store::order_page(&tx,"fixture","",16).unwrap().is_empty());
+        tx.commit().unwrap();
+    }
+    #[test]
+    fn learning_raw_audit_digest_detects_same_id_edits_missing_rows_and_null(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE reception_edit_audit(id TEXT PRIMARY KEY,order_id TEXT,
+            source_raw TEXT,initial_analysis_json TEXT,before_rows_json TEXT,after_rows_json TEXT,
+            recorded_at TEXT,context_json TEXT)").unwrap();
+        let ids=vec!["a".into()];
+        let empty=query_learning_audit_digests(&conn,&ids).unwrap();
+        conn.execute("INSERT INTO reception_edit_audit VALUES('e','a','raw','{}','[]','[]','t',NULL)",[]).unwrap();
+        let first=query_learning_audit_digests(&conn,&ids).unwrap();
+        assert_ne!(first,empty);
+        assert_eq!(first,query_learning_audit_digests(&conn,&ids).unwrap());
+        conn.execute("UPDATE reception_edit_audit SET after_rows_json='[1]' WHERE id='e'",[]).unwrap();
+        let edited=query_learning_audit_digests(&conn,&ids).unwrap();
+        assert_ne!(edited,first);
+        conn.execute("UPDATE reception_edit_audit SET context_json='null' WHERE id='e'",[]).unwrap();
+        assert_ne!(query_learning_audit_digests(&conn,&ids).unwrap(),edited);
+        conn.execute("INSERT INTO reception_edit_audit VALUES('unrelated','b','x','{}','[]','[]','t',NULL)",[]).unwrap();
+        conn.execute("DELETE FROM reception_edit_audit WHERE id='e'",[]).unwrap();
+        assert_eq!(query_learning_audit_digests(&conn,&ids).unwrap(),empty);
+    }
+    #[test]
+    fn audit_batch_reads_complete_selected_pages_and_rejects_oversized_history(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE reception_edit_audit(
+            id TEXT PRIMARY KEY,order_id TEXT,source_raw TEXT,initial_analysis_json TEXT,
+            before_rows_json TEXT,after_rows_json TEXT,recorded_at TEXT,context_json TEXT);").unwrap();
+        for i in 0..251{
+            conn.execute("INSERT INTO reception_edit_audit VALUES (?1,'o','709','{}','[]','[]','t',NULL)",
+                params![format!("e{i:04}")]).unwrap();
+        }
+        conn.execute("INSERT INTO reception_edit_audit VALUES ('other','other','709','{}','[]','[]','t',NULL)",[]).unwrap();
+        let batch=query_reception_audit_batch(&conn,&["o".into(),"o".into(),"empty".into()]).unwrap();
+        assert_eq!(batch.len(),2);
+        assert_eq!(batch["o"].len(),251);
+        assert_eq!(batch["o"][250]["id"],"e0250");
+        assert!(batch["empty"].is_empty());
+        assert!(!batch.contains_key("other"));
+        for i in 251..1001{
+            conn.execute("INSERT INTO reception_edit_audit VALUES (?1,'o','709','{}','[]','[]','t',NULL)",
+                params![format!("e{i:04}")]).unwrap();
+        }
+        assert!(query_reception_audit_batch(&conn,&["o".into()]).is_err());
+    }
 
     #[test]
     fn correction_query_pages_and_filters_without_inventing_legacy_context(){

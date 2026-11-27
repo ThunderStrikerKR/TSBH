@@ -257,6 +257,7 @@ pub fn analyze_raw(
     }));
     let mut analysis = gateway.execute(ReadOperation::AnalyzeOrder, json!({
         "raw": raw, "state": &state, "client": recognition_client,
+        "collectOwnerTrace":true,
     }))?;
     // Record the inputs used by THIS analysis. A later pricing/catalog
     // revision cannot be substituted for a missing historical revision.

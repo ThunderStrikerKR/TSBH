@@ -383,7 +383,9 @@ mod management_async_layout_contract_tests {
         assert!(!rendered.contains("management_list_strip_frame().show(panel,|empty|"));
         let settlement=include_str!("daily_settlement_manager.rs");
         assert!(settlement.contains("let values=["));
-        assert!(settlement.contains("for (name,value) in ["));
+        assert!(settlement.contains("for (index,(name,value)) in ["));
+        assert!(settlement.contains("].into_iter().zip(values.iter()).enumerate(){"));
+        assert!(settlement.contains("kpi(strip,name,value,state);"));
         let model_groups=include_str!("model_group_manager.rs");
         assert!(!model_groups.contains("if self.dirty(){\n                                crate::ui_primitives::soft_divider(right);"));
         let aliases=include_str!("alias_manager.rs");
@@ -433,8 +435,9 @@ mod management_async_behavior_regression_tests {
         // Verify the actual dispatch and selected workbook kind, not the
         // retired single-argument product-only signature.
         assert_eq!(menu.matches("let client=self.client;").count(),2);
-        assert!(menu.contains("self.start(menu.ctx(),move||export_file(native.as_ref(),client));"));
-        assert!(menu.contains("self.start(menu.ctx(),move||preview_file(native.as_ref(),client));"));
+        assert!(menu.contains("self.start(ctx,move||export_file(native.as_ref(),client));"));
+        assert!(menu.contains("self.start(ctx,move||preview_file(native.as_ref(),client));"));
+        assert_eq!(menu.matches("menu.workbook_action(").count(),2);
     }
 
     #[test]
@@ -448,7 +451,7 @@ mod management_async_behavior_regression_tests {
         assert!(!settlement.contains("결산 자료 확인 중"));
 
         let model_groups=include_str!("model_group_manager.rs");
-        assert!(model_groups.contains("writable&&!busy&&self.dirty()"));
+        assert!(model_groups.contains("writable&&!busy&&!nested&&self.dirty()"));
         assert!(model_groups.contains("workspace.header(title,\"닫기\""));
 
         let aliases=include_str!("alias_manager.rs");
@@ -2628,9 +2631,15 @@ mod shared_composite_layout_contract_tests{
             include_str!("excel_manager.rs"),include_str!("order_history_manager.rs")]{
             assert!(source.contains("crate::ui_layout::management_toolbar_slot("));
         }
-        for source in [include_str!("product_manager.rs"),include_str!("freight_manager.rs"),include_str!("excel_manager.rs")]{
-            assert!(source.contains("crate::table::control_cell("));
+        for (name,source) in [("product",include_str!("product_manager.rs")),("excel",include_str!("excel_manager.rs"))]{
+            assert!(source.contains("crate::table::control_cell("),"{name} control cell owner");
         }
+        let freight=include_str!("freight_manager.rs");
+        // Freight management uses direct editable row hits and registry
+        // action slots after removal of the redundant edit buttons.
+        assert!(freight.contains("crate::table::editable_cell_hit("));
+        assert!(freight.contains("crate::table::registry_actions("));
+        assert!(freight.contains("crate::table::fixed_row("));
         assert!(client.contains("crate::popup::modal_form_pair("));
         assert!(include_str!("automatic_message_manager.rs").contains("crate::ui_layout::workspace_pane("));
         assert!(include_str!("manual_workspace.rs").contains("crate::ui_layout::workspace_pane("));
