@@ -467,6 +467,16 @@ fn unidentified_product_caption(issue:&Value,recognition:&Value)->Option<String>
     if product.is_empty(){return None;}
     Some(format!("{} \"{product}\" 제품 선택 필요",if who.is_empty(){"수취인"}else{who}))
 }
+// Korean particles follow the displayed source/model, not its quotation mark.
+fn final_consonant(value:&str)->Option<u32>{
+    let c=value.trim().chars().last()?;
+    let n=c as u32;
+    if (0xac00..=0xd7a3).contains(&n){return Some((n-0xac00)%28);}
+    match c {
+        '0'=>Some(21),'1'|'7'|'8'=>Some(8),'3'=>Some(16),'6'=>Some(1),
+        '2'|'4'|'5'|'9'=>Some(0),_=>None,
+    }
+}
 fn inherited_message_groups(issues:&[Value],indices:&[usize],recognition:&Value)
     ->Vec<(String,Vec<usize>)>{
     let mut groups:Vec<(Option<(String,String)>,Vec<usize>)>=Vec::new();
@@ -486,7 +496,11 @@ fn inherited_message_groups(issues:&[Value],indices:&[usize],recognition:&Value)
         let deliveries=members.iter().map(|&i|text(&issues[i],"recipientId"))
             .filter(|id|!id.is_empty()).collect::<std::collections::HashSet<_>>().len();
         let caption=match key{
-            Some((term,model))=>format!("'{term}'를 {model}로 잠정 적용 (배송 {deliveries}건)"),
+            Some((term,model))=>{
+                let object=if final_consonant(&term).unwrap_or(0)==0{"를"}else{"을"};
+                let direction=if matches!(final_consonant(&model),None|Some(0|8)){"로"}else{"으로"};
+                format!("'{term}'{object} {model}{direction} 잠정 적용 (배송 {deliveries}건)")
+            },
             None=>format!("공통 상품 자동 적용 / {}개 항목",members.len()),
         };
         (caption,members)
@@ -691,7 +705,7 @@ mod tests {
             json!({"recipientId":"c","itemId":"i4"}),json!({"recipientId":"c","itemId":"i5"})];
         let groups=inherited_message_groups(&issues,&[0,1,2,3,4],&recognition);
         assert_eq!(groups,vec![("'보면대'를 709로 잠정 적용 (배송 3건)".into(),vec![0,1,2,3]),
-            ("'보면대'를 710로 잠정 적용 (배송 1건)".into(),vec![4])]);
+            ("'보면대'를 710으로 잠정 적용 (배송 1건)".into(),vec![4])]);
     }
     #[test]
     fn fixed_model_shortcut_prefers_visible_recipient_and_requires_item_identity(){
