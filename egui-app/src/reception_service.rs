@@ -255,9 +255,26 @@ pub fn analyze_raw(
     let recognition_client = selected.map(|client| json!({
         "id": text(client, "id"),
     }));
-    let analysis = gateway.execute(ReadOperation::AnalyzeOrder, json!({
+    let mut analysis = gateway.execute(ReadOperation::AnalyzeOrder, json!({
         "raw": raw, "state": &state, "client": recognition_client,
     }))?;
+    // Record the inputs used by THIS analysis. A later pricing/catalog
+    // revision cannot be substituted for a missing historical revision.
+    let catalog_revision=state.get("revision").filter(|value|
+        value.is_u64() || value.as_str().is_some_and(|s|!s.trim().is_empty()));
+    let client_id=selected.map(|client|text(client,"id"));
+    let client_basis=if manual_client_id.as_deref().is_some_and(|id|client_id==Some(id)){
+        "MANUAL"
+    }else if selected.is_some(){"AUTO"}else{"NONE"};
+    let context=json!({
+        "analyzerLabel":"rust.analyze_order",
+        "appVersionAtAnalysis":env!("CARGO_PKG_VERSION"),
+        "catalogRevision":catalog_revision,
+        "clientId":client_id,
+        "clientBasis":client_basis
+    });
+    analysis.as_object_mut().ok_or("발주서 분석 결과 형식이 잘못되었습니다.")?
+        .insert("recognitionContext".into(),context);
     let linked_spans=source_highlight::collect(raw,&analysis);
     let reference = recipients(&analysis).iter()
         .map(|recipient| recipient_reference(gateway, recipient, &state))
