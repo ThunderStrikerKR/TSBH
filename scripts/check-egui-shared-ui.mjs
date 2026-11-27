@@ -94,7 +94,6 @@ const tableContracts = {
   "client_manager.rs:show_page":{show:1,fixed_rows_snapshot:1,row_scope:1,management_row:1,management_client_header:1},
   "client_chooser.rs:show":{show:1,fixed_rows:1,row_scope:1,management_row:1,management_client_header:1},
   "alias_manager.rs:show_page":{registry_table:1,registry_cell:1,registry_actions:1},
-  "alias_manager.rs:show_dialogs":{registry_table:1,registry_cell:1,registry_actions:1},
   "brand_manager.rs:show_page":{registry_table:1,registry_cell:1,registry_actions:1},
   "model_group_manager.rs:show_page":{registry_table:1,registry_cell:1,registry_actions:1},
   "model_group_manager.rs:show_editor":{registry_table:1,registry_cell:1,registry_actions:1},
