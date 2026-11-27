@@ -54,7 +54,7 @@ const MIN_WIDTH: f32 = theme::ORDER_HISTORY_TABLE_MIN_WIDTH;
 // date/calendar, next, all dates]. The search stays outside this right slot.
 // The group is measured from the real control sizes, not the previously
 // over-reserved 940pt strip; this keeps all controls right-aligned.
-const HISTORY_DATE_FIELD_WIDTH:f32=106.0;
+
 const HISTORY_DATE_BASIS_WIDTH:f32=theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH;
 const RANGE_CONTROLS_WIDTH:f32=704.0;
 const RANGE_COMPACT_START_WIDTH:f32=390.0;
@@ -98,13 +98,9 @@ fn memo_last_updated_label(raw:&str)->String{
             .format("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_else(||"기록 없음".to_owned())
 }
+#[cfg(test)]
 fn move_date(value:&str,step:i64)->String{
-    let fallback=seoul_today();
-    let base=if value.is_empty(){fallback.as_str()}else{value};
-    NaiveDate::parse_from_str(base,"%Y-%m-%d").ok()
-        .and_then(|date|date.checked_add_signed(Days::days(step)))
-        .map(|date|date.format("%Y-%m-%d").to_string())
-        .unwrap_or_else(||value.to_owned())
+    crate::navigation::range_move_date(value,step)
 }
 fn model_label(raw:&str)->String{
     let name=raw.trim_start_matches("[가상]").trim_start();
@@ -706,78 +702,6 @@ pub(crate) fn date_range_error(from:&str,to:&str)->Option<&'static str>{
 /// This differs from the former broken Ui::put approach: the child Ui owns
 /// one normal, sequential left-to-right layout; the parent cursor advances
 /// only for its explicitly reserved 36pt rectangle.
-fn range_date_picker_rtl(
-    ui:&mut Ui,all_dates:bool,date:&mut String,month:&mut NaiveDate,
-    id:&'static str
-)->bool{
-    const PREV:f32=theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
-    const NEXT:f32=theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
-    const CALENDAR:f32=theme::MANAGEMENT_DATE_CALENDAR_BUTTON_WIDTH;
-    const GROUP_WIDTH:f32=PREV+HISTORY_DATE_FIELD_WIDTH+NEXT
-        +CALENDAR+2.0*theme::FRAME_STROKE_WIDTH;
-    const INNER_HEIGHT:f32=theme::ACTION_STANDARD_HEIGHT;
-    let mut changed=false;
-    crate::navigation::management_date_group(ui,id,GROUP_WIDTH,|row,inner|{
-            let prev=crate::button::management_date_segment(
-                row,"‹",PREV,crate::button::ManagementDateSegmentEdge::Leading
-            )
-                ;
-            if prev.clicked(){
-                crate::floating_notice::action_rect(row.ctx(),"history.date",prev.rect);
-                *date=move_date(date,-1);
-                changed=true;
-            }
-            let edit=crate::input::management_date_text_field(
-                row,date,HISTORY_DATE_FIELD_WIDTH,INNER_HEIGHT,
-                if all_dates{"전체"}else{"YYYY-MM-DD"}
-            );
-            crate::floating_notice::sized_text_caret(
-                row,"history.date",&edit,date,
-                typography::data_value_font(
-                    typography::DataValueKind::Date,
-                    typography::DataValueContext::Form
-                ),
-                true,2.0
-            );
-            changed|=edit.changed();
-            let next=crate::button::management_date_segment(
-                row,"›",NEXT,crate::button::ManagementDateSegmentEdge::Middle
-            )
-                ;
-            debug_assert!((prev.rect.width()-next.rect.width()).abs()<0.01);
-            if next.clicked(){
-                crate::floating_notice::action_rect(row.ctx(),"history.date",next.rect);
-                *date=move_date(date,1);
-                changed=true;
-            }
-            let trigger=crate::button::management_date_segment(
-                row,"📅",CALENDAR,crate::button::ManagementDateSegmentEdge::Trailing
-            )
-                ;
-            if trigger.clicked(){
-                let day=NaiveDate::parse_from_str(date,"%Y-%m-%d")
-                    .unwrap_or_else(|_|NaiveDate::parse_from_str(
-                        &seoul_today(),"%Y-%m-%d").expect("valid today"));
-                *month=month_start(day);
-            }
-            if let Some(day)=crate::navigation::date_calendar(
-                &trigger,month,date,id
-            ){
-                crate::floating_notice::action_rect(row.ctx(),"history.date",trigger.rect);
-                *date=day.format("%Y-%m-%d").to_string();
-                changed=true;
-            }
-            for x in [prev.rect.right(),edit.rect.right(),next.rect.right()]{
-                row.painter().line_segment(
-                    [egui::pos2(x,inner.top()+4.0),
-                     egui::pos2(x,inner.bottom()-4.0)],
-                    Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-                );
-            }
-        }
-    );
-    changed
-}
 /// Date-basis selection uses the same split-chevron trigger as the
 /// Shipping Group Assignment selectors. The values and menu remain unchanged.
 fn history_basis_dropdown(ui:&mut Ui,basis:&mut HistoryDateBasis)->bool{
@@ -802,7 +726,7 @@ fn history_date_range_start(
 )->bool{
     let mut changed=history_basis_dropdown(ui,basis);
     let all_dates=from.is_empty()&&to.is_empty();
-    changed|=range_date_picker_rtl(
+    changed|=crate::navigation::range_date_picker(
         ui,all_dates,from,from_month,"order-history-date-from-calendar"
     );
     changed
@@ -815,7 +739,7 @@ fn history_date_range_end(
     // with the same external 8pt gaps as every other date control.
     crate::navigation::date_range_separator(ui);
     let all_dates=from.is_empty()&&to.is_empty();
-    let mut changed=range_date_picker_rtl(
+    let mut changed=crate::navigation::range_date_picker(
         ui,all_dates,to,to_month,"order-history-date-to-calendar"
     );
     if crate::button::action(ui,"기간 전체",theme::ButtonRole::Standard,
@@ -824,69 +748,6 @@ fn history_date_range_end(
     }
     changed
 }
-/// Excel export history reuses the approved Order History calendar,
-/// date field, chevrons, date separator and all-dates action. Unlike order
-/// history it has only one date basis: the Excel file's creation date.
-pub(crate) const EXCEL_EXPORT_DATE_CONTROLS_WIDTH:f32=536.0;
-
-pub(crate) fn excel_export_date_controls(
-    ui:&mut Ui,from:&mut String,to:&mut String,
-    from_month:&mut NaiveDate,to_month:&mut NaiveDate,compact:bool
-)->bool{
-    let mut changed=false;
-    crate::navigation::apply_management_date_control_spacing(ui);
-    if compact{
-        let (first,second)=crate::navigation::compact_date_range_rows(ui,f32::INFINITY,f32::INFINITY);
-        ui.scope_builder(UiBuilder::new().id_salt("excel-export-from-line")
-            .max_rect(first)
-            .layout(egui::Layout::left_to_right(Align::Center)
-                .with_main_align(Align::Max)),|line|{
-                line.apply_shared_width(crate::card::CardWidthPolicy::Fixed,first.width());
-                crate::navigation::apply_management_date_control_spacing(line);
-                let all_dates=from.is_empty()&&to.is_empty();
-                changed|=range_date_picker_rtl(line,all_dates,from,from_month,
-                    "excel-export-from-calendar");
-            });
-        ui.scope_builder(UiBuilder::new().id_salt("excel-export-to-line")
-            .max_rect(second)
-            .layout(egui::Layout::left_to_right(Align::Center)
-                .with_main_align(Align::Max)),|line|{
-                line.apply_shared_width(crate::card::CardWidthPolicy::Fixed,second.width());
-                crate::navigation::apply_management_date_control_spacing(line);
-                changed|=excel_export_date_end(line,from,to,to_month);
-            });
-    }else{
-        let all_dates=from.is_empty()&&to.is_empty();
-        changed|=range_date_picker_rtl(
-            ui,all_dates,from,from_month,"excel-export-from-calendar");
-        changed|=excel_export_date_end(ui,from,to,to_month);
-    }
-    if changed{
-        if let Ok(day)=NaiveDate::parse_from_str(from,"%Y-%m-%d"){
-            *from_month=month_start(day);
-        }
-        if let Ok(day)=NaiveDate::parse_from_str(to,"%Y-%m-%d"){
-            *to_month=month_start(day);
-        }
-    }
-    changed
-}
-
-fn excel_export_date_end(
-    ui:&mut Ui,from:&mut String,to:&mut String,to_month:&mut NaiveDate
-)->bool{
-    crate::navigation::date_range_separator(ui);
-    let all_dates=from.is_empty()&&to.is_empty();
-    let mut changed=range_date_picker_rtl(
-        ui,all_dates,to,to_month,"excel-export-to-calendar"
-    );
-    if crate::button::action(ui,"기간 전체",theme::ButtonRole::Standard,
-        !from.is_empty()||!to.is_empty()).clicked(){
-        from.clear();to.clear();changed=true;
-    }
-    changed
-}
-
 /// The date toolbar is drawn in a fixed LTR slot, positioned at the
 /// right-hand data-column edge by the page. Compact mode reserves
 /// two physical lines; it does not reverse the children in either line.

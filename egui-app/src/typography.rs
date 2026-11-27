@@ -1090,3 +1090,9 @@ mod management_table_type_roles_tests {
         assert_eq!(management_table_money_font(),numeric_editor_font());
     }
 }
+
+/// Proportional text roles for custom-painted text and caret measurements.
+pub fn metadata_font()->FontId{FontId::proportional(FONT_METADATA)}
+pub fn body_font()->FontId{FontId::proportional(FONT_BODY)}
+pub fn reception_source_font()->FontId{FontId::proportional(FONT_RECEPTION_SOURCE_TEXT)}
+pub fn ocr_review_font()->FontId{FontId::proportional(FONT_OCR_REVIEW_TEXT)}

@@ -2220,3 +2220,80 @@ mod inline_labeled_form_contract_tests{
         }
     }
 }
+
+#[cfg(test)]
+mod shared_composite_layout_contract_tests{
+    use super::*;
+    #[test]
+    fn migrated_screens_route_geometry_through_shared_owners(){
+        let client=include_str!("client_manager.rs");
+        let category=include_str!("category_manager.rs");
+        assert!(client.contains("crate::ui_layout::management_toolbar_pair("));
+        assert!(category.contains("crate::ui_layout::management_toolbar_pair("));
+        for source in [include_str!("product_manager.rs"),include_str!("freight_manager.rs"),
+            include_str!("excel_manager.rs"),include_str!("order_history_manager.rs")]{
+            assert!(source.contains("crate::ui_layout::management_toolbar_slot("));
+        }
+        for source in [include_str!("product_manager.rs"),include_str!("freight_manager.rs"),include_str!("excel_manager.rs")]{
+            assert!(source.contains("crate::table::control_cell("));
+        }
+        assert!(client.contains("crate::popup::modal_form_pair("));
+        assert!(include_str!("automatic_message_manager.rs").contains("crate::ui_layout::workspace_pane("));
+        assert!(include_str!("manual_workspace.rs").contains("crate::ui_layout::workspace_pane("));
+        assert!(include_str!("workflow_board_ui.rs").contains("crate::card::workflow_group_card("));
+        assert!(include_str!("excel_manager.rs").contains("crate::navigation::excel_export_date_controls("));
+        assert!(!include_str!("excel_manager.rs").contains("order_history_manager::excel_export_date_controls("));
+        assert!(include_str!("table/mod.rs").contains("crate::popup::TagChip::new("));
+        assert!(include_str!("review_panel.rs").contains("crate::button::collapsing_header("));
+    }
+    #[test]
+    fn toolbar_pair_uses_one_band_or_two_without_overlap(){
+        for width in [500.0,1000.0]{
+            let ctx=crate::ui_test_support::test_context();
+            let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(width,400.0));
+            let mut slots=Vec::new();
+            let _=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    crate::ui_layout::management_toolbar_pair(ui,crate::ui_layout::ToolbarPair{
+                        search_id:"test-search",actions_id:"test-actions",
+                        narrow_search_id:"test-search-narrow",narrow_actions_id:"test-actions-narrow",
+                        stack_width:700.0,search_max:280.0,actions_width:300.0,
+                        narrow_actions_first:false,actions_rtl:true,clip:true,
+                    },|slot,part|{
+                        slots.push((part,slot.max_rect()));
+                        slot.allocate_space(Vec2::new(10.0,crate::theme::INPUT_HEIGHT));
+                    });
+                });
+            });
+            assert_eq!(slots.len(),2);
+            let first=slots[0].1;
+            let second=slots[1].1;
+            assert!(!first.intersect(second).is_positive());
+            assert!((first.height()-theme::INPUT_HEIGHT).abs()<0.5);
+            assert!((second.height()-theme::INPUT_HEIGHT).abs()<0.5);
+            if width<700.0{
+                assert!(second.top()>=first.bottom()+theme::SPACE_8-0.5);
+                assert!((first.right()-second.right()).abs()<0.5);
+            }else{
+                assert!((first.center().y-second.center().y).abs()<0.5);
+                assert!(second.left()>=first.right()+theme::SPACE_12-0.5);
+            }
+        }
+    }
+    #[test]
+    fn compact_date_rows_and_price_cells_keep_approved_geometry(){
+        let ctx=crate::ui_test_support::test_context();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let (first,second)=crate::navigation::compact_date_range_rows(ui,390.0,350.0);
+                assert!((first.right()-second.right()).abs()<0.5);
+                assert!((second.top()-first.bottom()-theme::SPACE_8).abs()<0.5);
+                let cell=Rect::from_min_size(egui::pos2(20.0,100.0),Vec2::new(116.0,42.0));
+                let (editor,clip)=crate::table::money_editor_rects(cell,ui.clip_rect());
+                assert_eq!(editor.width(),112.0);
+                assert_eq!(editor.center().y,cell.center().y);
+                assert_eq!(clip,cell.intersect(ui.clip_rect()));
+            });
+        });
+    }
+}

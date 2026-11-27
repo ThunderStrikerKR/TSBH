@@ -374,7 +374,7 @@ impl ModelGroupManager {
                                     form.add_enabled_ui(writable&&!busy,|entry|{
                                         let edit=crate::input::flexible_text_field(entry,&mut self.new_name,width,"새 모델군 이름");
                                         crate::floating_notice::sized_text_caret(entry,"products.model.input",&edit,
-                                            &self.new_name,egui::FontId::proportional(typography::FONT_BODY),false,8.0);
+                                            &self.new_name,typography::body_font(),false,8.0);
                                     });
                                     if crate::button::action(form,"그룹 생성",theme::ButtonRole::Primary,writable&&!busy).clicked(){
                                         crate::floating_notice::dispatch_pointer(form.ctx(),"products.model");

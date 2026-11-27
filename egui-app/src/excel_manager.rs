@@ -906,7 +906,7 @@ impl ExcelManager{
             let toolbar_width=section.available_width().max(1.0);
             let has_actions=self.tab!=Tab::History;
             let history_tab=self.tab==Tab::History;
-            let history_range_width=order_history_manager::EXCEL_EXPORT_DATE_CONTROLS_WIDTH;
+            let history_range_width=crate::navigation::EXCEL_EXPORT_DATE_CONTROLS_WIDTH;
             let history_one_row=history_tab&&toolbar_width>=
                 theme::MANAGEMENT_SEARCH_MIN_WIDTH+theme::SPACE_12
                     +history_range_width;
@@ -975,7 +975,7 @@ impl ExcelManager{
                 crate::ui_layout::management_toolbar_slot(section,"excel-export-dates",
                     dates_rect,egui::Layout::left_to_right(Align::Center).with_main_align(Align::Max),
                     false,true,|dates|{
-                        if order_history_manager::excel_export_date_controls(
+                        if crate::navigation::excel_export_date_controls(
                             dates,&mut self.export_from_input,
                             &mut self.export_to_input,
                             &mut self.export_from_month,&mut self.export_to_month,

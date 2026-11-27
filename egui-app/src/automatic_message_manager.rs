@@ -648,10 +648,7 @@ impl AutomaticMessageManager {
         let mut save=false;
         ui.horizontal(|panes|{
             crate::ui_layout::apply_spacing_role(panes,crate::ui_layout::SpacingRole::SplitWorkspace);
-            panes.allocate_ui_with_layout(
-                Vec2::new(left_width,height),Layout::top_down(Align::Min),
-                |list|{
-                    crate::card::apply_width_policy(list,crate::card::CardWidthPolicy::Fixed,left_width);
+            crate::ui_layout::workspace_pane(panes,left_width,height,true,|list|{
                     crate::card::measured_management_section_card(list,|body|{
                         crate::card::fill_management_primary_card(body,card_min_height);
                         if self.section==Section::General{
@@ -660,10 +657,7 @@ impl AutomaticMessageManager {
                     });
                 }
             );
-            panes.allocate_ui_with_layout(
-                Vec2::new(right_width,height),Layout::top_down(Align::Min),
-                |editor|{
-                    crate::card::apply_width_policy(editor,crate::card::CardWidthPolicy::Fixed,right_width);
+            crate::ui_layout::workspace_pane(panes,right_width,height,true,|editor|{
                     crate::card::measured_management_section_card(editor,|body|{
                         crate::card::fill_management_primary_card(body,card_min_height);
                         crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)

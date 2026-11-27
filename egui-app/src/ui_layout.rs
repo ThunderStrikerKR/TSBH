@@ -393,7 +393,7 @@ pub(crate) fn management_toolbar_pair(ui:&mut Ui,policy:ToolbarPair,
             let (rect,_)=ui.allocate_exact_size(Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover());
             let (id,layout)=match part{
                 ToolbarPart::Search=>(policy.narrow_search_id,Layout::left_to_right(Align::Center)),
-                ToolbarPart::Actions=>(policy.narrow_actions_id,actions_layout),
+                ToolbarPart::Actions=>(policy.narrow_actions_id,actions_layout.clone()),
             };
             management_toolbar_slot(ui,id,rect,layout,policy.clip,false,|slot|draw(slot,part));
         }
@@ -405,4 +405,14 @@ pub(crate) fn management_toolbar_pair(ui:&mut Ui,policy:ToolbarPair,
         management_toolbar_slot(ui,policy.search_id,search,Layout::left_to_right(Align::Center),policy.clip,false,|slot|draw(slot,ToolbarPart::Search));
         management_toolbar_slot(ui,policy.actions_id,actions,actions_layout,policy.clip,false,|slot|draw(slot,ToolbarPart::Actions));
     }
+}
+
+/// Workspace pane allocation is independent of its card contents. Some
+/// reception panes intentionally fit their existing inner-width policy.
+pub(crate) fn workspace_pane<R>(ui:&mut Ui,width:f32,height:f32,fixed_width:bool,
+    draw:impl FnOnce(&mut Ui)->R)->R{
+    ui.allocate_ui_with_layout(Vec2::new(width,height),Layout::top_down(Align::Min),|pane|{
+        if fixed_width{pane.apply_shared_width(crate::card::CardWidthPolicy::Fixed,width);}
+        draw(pane)
+    }).inner
 }

@@ -2079,7 +2079,7 @@ impl FreightManager {
                 if available.width()>0.0 && available.height()>0.0 {
                     section.painter().with_clip_rect(available).text(
                         available.center(),egui::Align2::CENTER_CENTER,caption,
-                        egui::FontId::proportional(typography::FONT_METADATA),
+                        typography::metadata_font(),
                         theme::MUTED
                     );
                 }
@@ -2549,7 +2549,7 @@ fn freight_history_table<const N:usize>(
             if body.width()>0.0&&body.height()>0.0 {
                 ui.painter().with_clip_rect(body).text(
                     body.center(),egui::Align2::CENTER_CENTER,message,
-                    egui::FontId::proportional(typography::FONT_METADATA),
+                    typography::metadata_font(),
                     theme::MUTED,
                 );
             }

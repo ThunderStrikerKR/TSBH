@@ -295,7 +295,7 @@ fn paint_manual_source_drag_preview(
     // block's position match the original source document exactly.
     let assigned_ids=std::collections::HashSet::new();
     let style=source_highlight::manual_source_block_style(span,active,&assigned_ids);
-    let font=egui::FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT);
+    let font=typography::reception_source_font();
     let mut job=egui::text::LayoutJob::default();
     job.wrap.max_width=layout_width.max(1.0);
     if span.start>0 {
@@ -2128,10 +2128,7 @@ impl ManualWorkspace {
                                 let source_width=manual_source_panel_width(
                                     reception_source_width,width
                                 );
-                                ui.allocate_ui_with_layout(
-                                egui::vec2(source_width,height),
-                                egui::Layout::top_down(egui::Align::Min),
-                                |source_ui|{
+                                crate::ui_layout::workspace_pane(ui,source_width,height,false,|source_ui|{
                                     crate::card::reception_section_with_header(
                                         source_ui,"발주 원문",
                                         height,|_|{},|body|{
@@ -2178,10 +2175,8 @@ impl ManualWorkspace {
                             );
                             }
 
-                            ui.allocate_ui_with_layout(
-                                egui::vec2(ui.available_width(),height),
-                                egui::Layout::top_down(egui::Align::Min),
-                                |sheet_ui|{
+                            let sheet_width=ui.available_width();
+                            crate::ui_layout::workspace_pane(ui,sheet_width,height,false,|sheet_ui|{
                                     // Share Reception's actual card renderer, field
                                     // geometry and product/freight controls. Do not
                                     // imitate their layout with a manual Grid.
@@ -2569,11 +2564,8 @@ impl ManualWorkspace {
                             // No ancestor ScrollArea at full width: preserve the
                             // fixed modal body height without creating a hover-only
                             // horizontal scrollbar over already-fitted columns.
-                            ui.allocate_ui_with_layout(
-                                egui::vec2(viewport_width,content_height),
-                                egui::Layout::top_down(egui::Align::Min),
-                                |outer|draw_columns(outer)
-                            );
+                            crate::ui_layout::workspace_pane(ui,viewport_width,content_height,false,
+                                |outer|draw_columns(outer));
                         }
                         Some((busy,pending_quantity_active,has_pending_quantity))
                     }) else{return;};

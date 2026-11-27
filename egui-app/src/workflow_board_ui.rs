@@ -259,31 +259,8 @@ impl BoardUi{
 /// An order group is one full-width card with a 38pt identification band,
 /// a 1pt divider, and a 43pt actions band. The two surfaces meet at the
 /// outer border: there is no nested card or stray horizontal inset.
-fn workflow_card<R>(
-    ui:&mut Ui,selected:bool,preview:bool,body:impl FnOnce(&mut Ui)->R
-)->R{
-    let outer=ui.available_width();
-    let frame=crate::card::workflow_group_card_frame(selected||preview);
-    let response=frame.show(ui,|card|{
-        // The 42pt upper/lower bands and 1pt divider own all vertical
-        // spacing. No additional automatic gap between the compact rows.
-        crate::ui_layout::apply_spacing_role(card,crate::ui_layout::SpacingRole::ExplicitVertical);
-        let width=crate::card::inner_width_for_insets(outer,0.0,0.0,theme::SOFT_DIVIDER_WIDTH,0.0,0.0);
-        crate::card::apply_width_policy(card,crate::card::CardWidthPolicy::FillAvailable,width);
-        body(card)
-    });
-    if selected || preview{
-        let r=response.response.rect;
-        ui.painter().rect_filled(
-            Rect::from_min_max(
-                Pos2::new(r.left(),r.top()+theme::SOFT_DIVIDER_WIDTH),
-                Pos2::new(r.left()+theme::WORKFLOW_SELECTED_STRIPE,
-                    r.bottom()-theme::SOFT_DIVIDER_WIDTH),
-            ),
-            0.0,if preview{source_highlight::ACTIVE_BORDER}else{theme::WORKFLOW_SELECTED_BORDER}
-        );
-    }
-    response.inner
+fn workflow_card<R>(ui:&mut Ui,selected:bool,preview:bool,body:impl FnOnce(&mut Ui)->R)->R{
+    crate::card::workflow_group_card(ui,selected,preview,body)
 }
 /// Reserve the common 6pt left and right inset for BOTH compact rows.
 /// Their horizontal inset matches the 6pt vertical control clearance.
@@ -367,7 +344,7 @@ fn workflow_compact_rows(ui:&mut Ui)->(Rect,Rect){
     );
     let (upper,divider,lower)=workflow_compact_band_rects(card);
     let divider=workflow_row_content(divider);
-    ui.painter().rect_filled(divider,0.0,theme::WORKFLOW_CARD_BORDER);
+    crate::card::paint_workflow_band_divider(ui,divider);
     // The enclosing rounded card owns both bands' background.
     (upper,lower)
 }

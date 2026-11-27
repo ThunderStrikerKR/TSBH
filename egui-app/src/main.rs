@@ -5511,9 +5511,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 &mut review.edited_text,
                                 true,
                                 text_view_rect.size(),
-                                egui::FontId::proportional(
-                                    typography::FONT_OCR_REVIEW_TEXT
-                                ),
+                                typography::ocr_review_font(),
                                 false,
                                 egui::Margin::same(theme::SPACE_12 as i8),
                                 1
@@ -6428,8 +6426,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         let job=source_highlight::layout(
                             buffer.as_str(),&spans,
                             selected_id.as_deref(),active.as_ref(),width,
-                            egui::FontId::proportional(
-                                typography::FONT_RECEPTION_SOURCE_TEXT),
+                            typography::reception_source_font(),
                             theme::TEXT
                         );
                         layout_ui.fonts_mut(|fonts|fonts.layout_job(job))
@@ -6545,8 +6542,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         let job=source_highlight::layout(
                             buffer.as_str(),&spans,
                             selected_id,active.as_ref(),width,
-                            egui::FontId::proportional(
-                                typography::FONT_RECEPTION_SOURCE_TEXT),
+                            typography::reception_source_font(),
                             theme::TEXT
                         );
                         layout_ui.fonts_mut(|fonts|fonts.layout_job(job))
@@ -6882,9 +6878,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             let job=source_highlight::layout(
                                 buffer.as_str(),&spans,
                                 selected_id.as_deref(),active_link.as_ref(),
-                                width,egui::FontId::proportional(
-                                    typography::FONT_RECEPTION_SOURCE_TEXT
-                                ),theme::TEXT,
+                                width,typography::reception_source_font(),theme::TEXT,
                             );
                             lay_ui.fonts_mut(|fonts|fonts.layout_job(job))
                         };

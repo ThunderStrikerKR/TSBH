@@ -548,3 +548,35 @@ pub(crate) fn paint_reception_client_summary_surface(ui:&Ui,rect:Rect){
 
 #[cfg(test)]
 mod regression_tests;
+
+pub(crate) fn workflow_group_card<R>(
+    ui:&mut Ui,selected:bool,preview:bool,body:impl FnOnce(&mut Ui)->R
+)->R{
+    let outer=ui.available_width();
+    let frame=workflow_group_card_frame(selected||preview);
+    let response=frame.show(ui,|card|{
+        // The 42pt upper/lower bands and 1pt divider own all vertical
+        // spacing. No additional automatic gap between the compact rows.
+        crate::ui_layout::apply_spacing_role(card,crate::ui_layout::SpacingRole::ExplicitVertical);
+        let width=crate::card::inner_width_for_insets(outer,0.0,0.0,theme::SOFT_DIVIDER_WIDTH,0.0,0.0);
+        crate::card::apply_width_policy(card,crate::card::CardWidthPolicy::FillAvailable,width);
+        body(card)
+    });
+    if selected || preview{
+        let r=response.response.rect;
+        ui.painter().rect_filled(
+            Rect::from_min_max(
+                egui::Pos2::new(r.left(),r.top()+theme::SOFT_DIVIDER_WIDTH),
+                egui::Pos2::new(r.left()+theme::WORKFLOW_SELECTED_STRIPE,
+                    r.bottom()-theme::SOFT_DIVIDER_WIDTH),
+            ),
+            0.0,if preview{crate::source_highlight::ACTIVE_BORDER}else{theme::WORKFLOW_SELECTED_BORDER}
+        );
+    }
+    response.inner
+}
+
+/// Divider inside the existing workflow card band, not an extra frame.
+pub(crate) fn paint_workflow_band_divider(ui:&Ui,rect:Rect){
+    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).rect_filled(rect,0.0,theme::WORKFLOW_CARD_BORDER);
+}
