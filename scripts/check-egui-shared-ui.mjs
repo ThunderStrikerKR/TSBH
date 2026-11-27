@@ -716,7 +716,7 @@ export function auditCardWidths(source,file){
     used.set(key,count);
     if(count>(widthWriteAllowances.get(key)||0)){
       hits.push({line:tokens[i].line,rule:"raw UI width write: "+call+
-        "; use ui_primitives::apply_width_policy / shared card or viewport geometry"});
+        "; use ui_layout::geometry::apply_width_policy / shared card or viewport geometry"});
     }
   }
   return hits;
@@ -729,7 +729,7 @@ function cardWidthSelfTest(){
     ["fn show(){egui::Ui::set_width(ui,w);}",1],
     ["fn show(){let write=Ui::set_width;}",1],
     ["fn show(){ui.r#set_width(w);}",1],
-    ["fn show(){crate::ui_primitives::apply_width_policy(ui,CardWidthPolicy::FillAvailable,w);}",0],
+    ["fn show(){crate::ui_layout::geometry::apply_width_policy(ui,CardWidthPolicy::FillAvailable,w);}",0],
     ["fn show(){scroll_area(axes).max_width(w);}",0],
     ['fn show(){/* ui.set_width(w); */ let s="ui.set_width(w)";}',0],
     ["#[cfg(test)] mod tests{fn t(){ui.set_width(w);}} fn show(){}",0],
@@ -1675,6 +1675,8 @@ function colorOwnershipSelfTest(){
 // Lock reviewed private implementation boundaries, independently of caller counts.
 // A test-only declaration disappears from productionTokens by design.
 const internalUiFunctions={
+  "ui_layout.rs":["reception_items_body","paint_dock_axis_line","reception_fixed_viewport"],
+  "ui_layout/geometry.rs":["aligned_extent","aligned_allocation_size"],
   "checkbox/mod.rs":["management_table_checkbox_rect"],
   "scrollbar/mod.rs":["management_single_list_scroll_height_geometry","management_scroll_style"],
   "highlight/mod.rs":["action_surface"],
@@ -1697,7 +1699,8 @@ function forwardingContractViolations(source,file){
   const code=productionTokens(source).map(t=>t.v).join(" ");
   const hits=[];
   const paths=[
-    /\bcard :: (?:CardWidthPolicy|UiWidthPolicyExt|apply_width_policy)\b/,
+    /\b(?:card|ui_primitives) :: (?:CardWidthPolicy|UiWidthPolicyExt|apply_width_policy)\b/,
+    /\bui_layout :: (?:aligned_rect|AlignedUiBuilderExt|SharedAllocationExt|SharedUiClipExt|SharedPainterClipExt|set_fixed_height|reserve_min_height|reserve_min_size)\b/,
     /\bui_primitives :: (?:button_hover_palette|highlight_painter|paint_action_hover_corners|paint_action_hover_surface)\b/,
     /\btypography :: numeric_editor_font\b/,
     /\bbutton :: paint_button_hover_corners\b/,
@@ -1705,13 +1708,18 @@ function forwardingContractViolations(source,file){
   for(const path of paths)if(path.test(code))hits.push("obsolete forwarding route: "+code.match(path)[0]);
   if(file==="card/mod.rs"&&/\bpub(?: \( [^)]* \))? use crate :: ui_primitives :: \{[^}]*\b(?:CardWidthPolicy|UiWidthPolicyExt|apply_width_policy)\b/.test(code))
     hits.push("card must not re-export primitive width policy");
+  if(["ui_layout.rs","ui_primitives.rs"].includes(file)&&/\bpub(?: \( [^)]* \))? use (?:crate :: ui_layout :: )?geometry ::/.test(code))
+    hits.push("geometry policy must not be re-exported");
   if(file==="ui_primitives.rs"&&/\bpub(?: \( [^)]* \))? use crate :: highlight :: (?:button_hover_palette|painter)\b/.test(code))
     hits.push("UI primitives must not re-export highlight internals");
   return hits;
 }
 function forwardingContractSelfTest(){
   assert.equal(forwardingContractViolations("use crate::card::UiWidthPolicyExt;","screen.rs").length,1);
-  assert.equal(forwardingContractViolations("use crate::ui_primitives::UiWidthPolicyExt;","screen.rs").length,0);
+  assert.equal(forwardingContractViolations("use crate::ui_primitives::UiWidthPolicyExt;","screen.rs").length,1);
+  assert.equal(forwardingContractViolations("use crate::ui_layout::SharedAllocationExt;","screen.rs").length,1);
+  assert.equal(forwardingContractViolations("use crate::ui_layout::geometry::UiWidthPolicyExt;","screen.rs").length,0);
+  assert.equal(forwardingContractViolations("pub(crate) use geometry::{aligned_rect};","ui_layout.rs").length,1);
   assert.equal(forwardingContractViolations("pub(crate) use crate::ui_primitives::{CardWidthPolicy,UiWidthPolicyExt,apply_width_policy};","card/mod.rs").length,1);
   assert.equal(forwardingContractViolations("pub(crate) use crate::highlight::painter as highlight_painter;","ui_primitives.rs").length,1);
   assert.equal(forwardingContractViolations("fn show(){crate::typography::numeric_editor_font();}","screen.rs").length,1);
