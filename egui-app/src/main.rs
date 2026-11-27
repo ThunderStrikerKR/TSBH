@@ -1938,9 +1938,15 @@ impl BandoEgui {
         // React precedence: a hovered native stage is above pending-card
         // preview, while the committed selection remains below both.
         let pinned=self.pending_stage_target();
-        if pinned.is_none() && self.workflow_ui.active_preview().is_some(){return None;}
-        let preview=pinned.or_else(||self.workflow_ui.pending_preview())?.clone();
-        if self.active_id.as_deref()==Some(preview.order_id.as_str()){return None;}
+        if pinned.is_none() && self.workflow_ui.active_preview().is_some(){
+            self.pending_review_panel.clear();return None;
+        }
+        let Some(preview)=pinned.or_else(||self.workflow_ui.pending_preview()).cloned()else{
+            self.pending_review_panel.clear();return None;
+        };
+        if self.active_id.as_deref()==Some(preview.order_id.as_str()){
+            self.pending_review_panel.clear();return None;
+        }
         let draft=self.drafts.iter().find(|row|row.id==preview.order_id)?;
         let previous=self.pending_display.as_ref().map(Arc::clone);
         let display=Self::pending_projection(&mut self.pending_display,draft)?;
