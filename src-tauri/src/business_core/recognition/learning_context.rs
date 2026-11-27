@@ -31,9 +31,9 @@ fn event_index(units:&[u16],first:&Value)->Vec<Event>{
 // recipient assignments nor transaction/client history enters this index.
 #[derive(Default)]
 pub(super) struct OwnerOrderEvidence{
-    paragraphs:BTreeMap<u64,(Vec<&'static str>,[i8;2])>,
+    paragraphs:BTreeMap<u64,(Vec<&'static str>,[i8;3])>,
     shapes:BTreeMap<Vec<&'static str>,usize>,
-    totals:[[usize;2];2],
+    totals:[[usize;2];3],
 }
 impl OwnerOrderEvidence{
     pub(super) fn new<'a>(source:impl IntoIterator<Item=(&'a str,u64,usize,usize)>)->Self{
@@ -49,14 +49,14 @@ impl OwnerOrderEvidence{
             let mut names=roles.iter().enumerate().filter(|(_,r)|**r=="name");
             let Some((name,_))=names.next()else{continue;};
             if names.next().is_some(){continue;}
-            let mut direction=[0i8;2];
-            for (slot,field) in ["address","contact"].into_iter().enumerate(){
+            let mut direction=[0i8;3];
+            for (slot,field) in ["address","contact","product"].into_iter().enumerate(){
                 let before=roles[..name].contains(&field);
                 let after=roles[name+1..].contains(&field);
                 direction[slot]=match (before,after){(true,false)=>-1,(false,true)=>1,_=>0};
                 if direction[slot]!=0{out.totals[slot][if direction[slot]>0{1}else{0}]+=1;}
             }
-            if direction==[0,0]{continue;}
+            if direction==[0,0,0]{continue;}
             // Collapse adjacent equal roles (e.g. multiple contacts) without
             // treating quantities, raw strings or distances as votes.
             let mut shape=roles;
@@ -67,7 +67,7 @@ impl OwnerOrderEvidence{
         out
     }
     pub(super) fn votes(&self,kind:&str,excluded:[u64;3])->[usize;2]{
-        let slot=match role(kind){Some("address")=>0,Some("contact")=>1,_=>return [0,0]};
+        let slot=match role(kind){Some("address")=>0,Some("contact")=>1,Some("product")=>2,_=>return [0,0]};
         let mut votes=self.totals[slot];
         for (i,p) in excluded.iter().enumerate(){
             if excluded[..i].contains(p){continue;}
@@ -679,6 +679,7 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
         result["documentFeatures"]["ownerOrderEvidence"]=json!({
             "addressBeforeAfter":order.votes("address",[u64::MAX;3]),
             "contactBeforeAfter":order.votes("phone",[u64::MAX;3]),
+            "productBeforeAfter":order.votes("product",[u64::MAX;3]),
             "status":"diagnostic_only"});
     }
     // Optional offline comparison. Ordinary context projection remains unchanged.
@@ -1084,6 +1085,12 @@ mod tests{
         assert_eq!(index.repeated_shape_count(0,[0,1,2]),2);
         assert_eq!(index.repeated_shape_count(5,[0,1,2]),0);
         assert_eq!(index.votes("product",[0,1,2]),[0,0]);
+        let products=OwnerOrderEvidence::new([
+            ("product",0,0,1),("name",0,2,3),
+            ("name",1,4,5),("product",1,6,7),
+            ("name",2,8,9),("product",2,10,11)]);
+        assert_eq!(products.votes("product",[0,0,0]),[0,2]);
+        assert_eq!(products.votes("product",[1,2,2]),[1,0]);
     }
     #[test]
     fn document_pattern_candidate_preserves_order_and_ignores_item_count(){
