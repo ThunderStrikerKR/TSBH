@@ -5,17 +5,16 @@ use chrono::Utc;
 use rusqlite::{Connection,TransactionBehavior};
 use rust_xlsxwriter::{Format,Workbook};
 use sha2::{Digest,Sha256};
-use std::{collections::HashMap,fs,io::{Cursor,Read,Write},path::{Path,PathBuf},sync::{Mutex,atomic::{AtomicBool,Ordering}},time::{Duration,Instant}};
+use std::{collections::HashMap,fs,io::{Cursor,Read,Write},path::{Path,PathBuf},sync::{OnceLock,mpsc::{self,SyncSender,Receiver,RecvTimeoutError},atomic::{AtomicBool,Ordering}},time::{Duration,Instant}};
 use uuid::Uuid;
 
 fn err(e:impl std::fmt::Display)->String{e.to_string()}
-const INTERVAL:Duration=Duration::from_secs(5);
-const RECONCILE:Duration=Duration::from_secs(60);
-static BUSY:AtomicBool=AtomicBool::new(false);
-static LAST:Mutex<Option<Instant>>=Mutex::new(None);
-static LAST_RECONCILE:Mutex<Option<Instant>>=Mutex::new(None);
-struct Busy;
-impl Drop for Busy{fn drop(&mut self){BUSY.store(false,Ordering::Release);}}
+// Routine publication is event-driven. This slower safety sweep also
+// recovers missed notifications, external DB changes and damaged files.
+const RECONCILE:Duration=Duration::from_secs(15*60);
+const WORKER_ERROR_RETRY:Duration=Duration::from_secs(60);
+static WORKER:OnceLock<Option<SyncSender<()>>>=OnceLock::new();
+static RECONCILE_REQUESTED:AtomicBool=AtomicBool::new(false);
 
 fn encode(rows:&[Vec<String>],reply:bool)->Result<Vec<u8>,String>{
     let columns=if reply{17}else{16};
@@ -206,7 +205,7 @@ fn clean_stale_temps(conn:&mut Connection,min_age:Duration)->Result<(),String>{
     }
     Ok(())
 }
-fn run(reconcile:bool)->Result<(),String>{
+fn run(reconcile:bool)->Result<Option<Duration>,String>{
     let (mut conn,base)=crate::factory_reply_inbox::open_db()?;
     if reconcile{
         let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(err)?;
@@ -223,23 +222,58 @@ fn run(reconcile:bool)->Result<(),String>{
     let now=Utc::now().timestamp();
     for job in jobs::jobs(&conn,now,false)?.into_iter().take(16){
         if let Err(e)=publish(&mut conn,&job,&base){
-            jobs::mark_failed(&conn,&job,now,&e)?;
+            jobs::mark_failed(&conn,&job,Utc::now().timestamp(),&e)?;
         }
     }
-    Ok(())
+    let now=Utc::now().timestamp();
+    Ok(jobs::next_due(&conn)?.map(|due|Duration::from_secs(due.saturating_sub(now).max(0) as u64)))
 }
-pub fn poll(ctx:&eframe::egui::Context){
-    if cfg!(test)||std::env::var("BANDO_EGUI_ENABLE_EXCEL_WRITE").ok().as_deref()!=Some("1"){return}
-    ctx.request_repaint_after(INTERVAL);
-    let Ok(mut last)=LAST.lock()else{return};
-    if last.is_some_and(|t|t.elapsed()<INTERVAL)||BUSY.swap(true,Ordering::AcqRel){return}
-    *last=Some(Instant::now());drop(last);
-    let reconcile=if let Ok(mut t)=LAST_RECONCILE.lock(){
-        let due=t.is_none_or(|v|v.elapsed()>=RECONCILE);
-        if due{*t=Some(Instant::now());}due
-    }else{false};
-    let _=spawn_worker(ctx,move||{let _busy=Busy;if let Err(e)=run(reconcile){eprintln!("Excel aggregate: {e}");}});
+/// Start once on the first application frame, not once per poll interval.
+pub fn start(){
+    if cfg!(test){return}
+    WORKER.get_or_init(||{
+        if !crate::excel_service::writable(){return None}
+        let (tx,rx)=mpsc::sync_channel(1);
+        match std::thread::Builder::new().name("bando-excel-aggregate".into()).spawn(move||worker_loop(rx)){
+            Ok(_)=>Some(tx),Err(e)=>{eprintln!("Excel aggregate worker: {e}");None}
+        }
+    });
 }
+/// Only call after a successful business commit. The channel is a wake-up
+/// hint; the transactional SQLite reservation remains authoritative.
+pub(crate) fn notify(reconcile:bool){
+    if cfg!(test){return}
+    if reconcile{RECONCILE_REQUESTED.store(true,Ordering::Release);}
+    if let Some(Some(tx))=WORKER.get(){let _=tx.try_send(());}
+}
+fn worker_loop(rx:Receiver<()>){
+    let mut reconcile_due=Instant::now();
+    let mut retry_reconcile=false;
+    loop{
+        let requested=RECONCILE_REQUESTED.swap(false,Ordering::AcqRel);
+        let reconcile=retry_reconcile||Instant::now()>=reconcile_due||requested;
+        let retry=match run(reconcile){
+            Ok(next)=>{
+                retry_reconcile=false;
+                if reconcile{reconcile_due=Instant::now()+RECONCILE;}
+                next
+            },
+            Err(e)=>{
+                eprintln!("Excel aggregate: {e}");
+                retry_reconcile=reconcile;
+                if reconcile{reconcile_due=Instant::now()+WORKER_ERROR_RETRY;}
+                Some(WORKER_ERROR_RETRY)
+            }
+        };
+        let until_reconcile=reconcile_due.saturating_duration_since(Instant::now());
+        let timeout=retry.map_or(until_reconcile,|d|d.min(until_reconcile));
+        match rx.recv_timeout(timeout){
+            Ok(())|Err(RecvTimeoutError::Timeout)=>{},
+            Err(RecvTimeoutError::Disconnected)=>break,
+        }
+    }
+}
+#[cfg(test)]
 fn spawn_worker(ctx:&eframe::egui::Context,work:impl FnOnce()+Send+'static)->std::thread::JoinHandle<()>{
     let ctx=ctx.clone();
     std::thread::spawn(move||{work();ctx.request_repaint();})

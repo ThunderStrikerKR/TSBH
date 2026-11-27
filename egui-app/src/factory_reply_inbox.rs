@@ -150,6 +150,7 @@ fn import(conn:&mut Connection,base:&Path,dir:&Path,path:&Path,bytes:&[u8],rev:u
         if read_bounded(path)?!=bytes{return Err("회신 파일이 변경됐습니다.".into())}
         Ok(preserve(base,bytes)?.to_string_lossy().into_owned())
     })?;
+    if result["applied"].as_u64().unwrap_or(0)>0{crate::excel_aggregate::notify(false);}
     let warning=excel_service::archive_reply_workbook(&result["next"],bytes).err();
     Ok(json!({"duplicate":false,"applied":result["applied"],"held":result["held"],"archiveWarning":warning}))
 }
@@ -174,7 +175,9 @@ fn approve_with_db(conn:&mut Connection,base:&Path,review:Value)->Result<Value,S
     if let Some(path)=aggregate_target(conn,&day)?{payload["aggregateTargetPath"]=json!(path);}
     payload["freightAt"]=json!(at);payload["freightEventIds"]=json!(ids(1));
     payload["replyEventIds"]=json!(ids(1));
-    bando_data_access::update_v2_factory_correction_snapshot(conn,revision,&payload)
+    let result=bando_data_access::update_v2_factory_correction_snapshot(conn,revision,&payload)?;
+    crate::excel_aggregate::notify(false);
+    Ok(result)
 }
 #[derive(Clone)]
 struct Seen{stamp:(u64,SystemTime),observations:u8,done:bool}

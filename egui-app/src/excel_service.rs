@@ -180,6 +180,7 @@ pub fn create(origin:&str,ids:&[String])->Result<Value,String>{
         let mut next=result["next"].clone();
         next["revision"]=json!(revision);
         let commit=bando_data_access::write_v2_export_with_aggregate(&mut db,next,revision,&date,origin,aggregate)?;
+        crate::excel_aggregate::notify(false);
         let new_rev=commit["revision"].as_u64().ok_or("출력 이력 revision 누락")?;
         drop(db);
         let fresh=business_state::load()?;

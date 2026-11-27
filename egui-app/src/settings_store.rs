@@ -254,8 +254,12 @@ pub fn patch(changes:Value,expected:Value)->Result<Value,String>{
         return Err("모델군은 운영 상품 DB에서만 저장할 수 있습니다.".into());
     }
     if changes.as_object().is_some_and(Map::is_empty){return load();}
-    if using_business(){patch_business(changes,expected)}
-    else{patch_local(changes,expected)}
+    if using_business(){
+        let archive_changed=changes.get("excelDirectory").is_some();
+        let result=patch_business(changes,expected)?;
+        if archive_changed{crate::excel_aggregate::notify(true);}
+        Ok(result)
+    }else{patch_local(changes,expected)}
 }
 /// Audits, snapshots, full SQLite backup and protected restore are now
 /// executed inside this process through the EXACT Tauri backup engine moved
@@ -305,6 +309,7 @@ pub fn data(operation:&str,filename:Option<&str>)->Result<Value,String>{
             let file=filename.filter(|name|!name.is_empty())
                 .ok_or("복원할 백업 파일을 선택하세요.")?;
             bando_data_access::backup_service::restore_backup(&mut conn,base,file)?;
+            crate::excel_aggregate::notify(true);
             json!({"restored":true})
         },
         _=>unreachable!(),

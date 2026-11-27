@@ -62,6 +62,11 @@ pub fn jobs(conn:&Connection,now:i64,all:bool)->Result<Vec<Job>,String>{
         desired:r.get(3)?,saved:r.get(4)?,retries:r.get(5)?,hash:r.get(6)?})).map_err(err)?;
     iter.collect::<Result<Vec<_>,_>>().map_err(err)
 }
+/// The worker sleeps until the actual next durable retry, not a fixed poll.
+pub fn next_due(conn:&Connection)->Result<Option<i64>,String>{
+    conn.query_row("SELECT MIN(COALESCE(next_retry_at,0)) FROM excel_aggregate_jobs
+        WHERE desired_revision>saved_revision",[],|r|r.get(0)).map_err(err)
+}
 pub fn current(conn:&Connection,j:&Job)->Result<Option<Job>,String>{
     conn.query_row("SELECT business_date,origin,target_path,desired_revision,saved_revision,retry_count,file_hash
         FROM excel_aggregate_jobs WHERE business_date=?1 AND origin=?2 AND target_path=?3",params![j.date,j.origin,j.path],
@@ -226,6 +231,19 @@ mod tests{
     use super::*;
     use serde_json::json;
     fn root()->PathBuf{std::env::temp_dir().join("aggregate-fixture")}
+    #[test]
+    fn next_due_ignores_completed_and_tracks_actual_retry(){
+        let c=Connection::open_in_memory().unwrap();initialize(&c).unwrap();
+        assert_eq!(next_due(&c).unwrap(),None);
+        let p=target(&root(),"2026-11-27","STORE").unwrap();
+        enqueue(&c,"2026-11-27","STORE",p.to_str().unwrap(),1).unwrap();
+        assert_eq!(next_due(&c).unwrap(),Some(0));
+        let j=jobs(&c,100,false).unwrap().remove(0);
+        mark_failed(&c,&j,100,"locked").unwrap();
+        assert_eq!(next_due(&c).unwrap(),Some(105));
+        mark_saved(&c,&j,"hash").unwrap();
+        assert_eq!(next_due(&c).unwrap(),None);
+    }
     #[test]
     fn transaction_rollback_and_generation_coalescing(){
         let mut c=Connection::open_in_memory().unwrap();

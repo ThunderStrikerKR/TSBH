@@ -49,3 +49,6 @@ D01~D07 구현 검증용 PR #68. 아래는 T01~T50의 현재 테스트 연결 �
 운영 환경 실기 잔여: 실제 Excel 열림 상태, OS 권한 및 디스크 고갈, 전체 앱 UI 입력/프레임 시간, 실제 시계 자정 전환. 해시나 신뢰할 수 있는 원본 출력 행이 없는 과거 발송 이력은 임의 복원하지 않는다.
 
 실제 자식 프로세스 4개가 동일 SQLite 취합 버전을 동시에 발행하는 검증 및 다음 날 회신의 전날 파일 분리 검증을 추가했다. 모두 최신 CI 확인 대기.
+
+### Event-driven publication
+The five-second aggregate polling loop is removed. One resident worker is started once; committed exports, accepted replies, approvals, archive configuration and restore wake it. Durable retry deadlines control retry wakeups. A 15-minute safety reconciliation remains for missed events, external changes and file integrity. The factory inbox retains its existing five-second scan and stability checks. Tests: next_due_ignores_completed_and_tracks_actual_retry; event-driven wakeup test to be verified.
