@@ -691,15 +691,16 @@ fn compare_types(events:&[Event],order:&TypeOrderIndex,index:&ShadowIndex<'_>,s:
             g["kind"]=="quantity"&&g["reasonCode"]=="overlaps_recipient_field");
         let left=previous.map_or(0,|p|order.support(e.paragraph,p.role,r));
         let right=next.map_or(0,|n|order.support(e.paragraph,r,n.role));
+        let features=[left.min(8) as u8,right.min(8) as u8,0];
         let score=left.min(8)+right.min(8);
-        if !blocked{scores.push((candidate,score));}
-        candidates.push(json!({"candidate":candidate,"score":(!blocked).then_some(score),
+        scores.push(super::FieldWeightCandidate{id:candidate,features,blocked});
+        candidates.push(json!({"candidate":candidate,"id":candidate,"score":(!blocked).then_some(score),
+            "features":features,"blocked":blocked,
             "precedingOrderSupport":left,"followingOrderSupport":right,
             "blockedBySourceOverlap":blocked}));
     }
-    scores.sort_by(|a,b|b.1.cmp(&a.1));
-    let preferred=if scores.len()>=2&&scores[0].1>=2&&scores[0].1>=scores[1].1+2{
-        Some(scores[0].0)
+    let preferred=if scores.iter().filter(|c|!c.blocked).count()>=2{
+        super::field_weight_choice(&scores,[1,1,0],2)
     }else{None};
     json!({"status":"provisional_comparison","policyVersion":"type-order-candidate-v1",
         "baselineCandidate":baseline,"preferredCandidate":preferred,"candidates":candidates,
