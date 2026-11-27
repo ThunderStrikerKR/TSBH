@@ -416,3 +416,36 @@ pub(crate) fn workspace_pane<R>(ui:&mut Ui,width:f32,height:f32,fixed_width:bool
         draw(pane)
     }).inner
 }
+
+/// A shared tag editor: text stays in the input until the explicit Add action.
+pub(crate) struct TagBlockEdit{
+    pub changed:bool,
+    pub add:bool,
+    pub remove:Option<String>,
+}
+pub(crate) fn tag_block_editor(ui:&mut Ui,tags:&[String],input:&mut String,hint:&str)->TagBlockEdit{
+    let mut remove=None;
+    if !tags.is_empty(){
+        // Start-align fixed-height chips so the first sibling cannot be
+        // repositioned when a later sibling expands the wrapping row.
+        ui.scope_builder(egui::UiBuilder::new()
+            .layout(Layout::left_to_right(Align::Min).with_main_wrap(true)),|chips|{
+            apply_spacing_role(chips,SpacingRole::TagChips);
+            for tag in tags{
+                if crate::popup::removable_tag_chip(chips,tag).clicked(){
+                    remove=Some(tag.clone());
+                }
+            }
+        });
+    }
+    let (changed,add)=ui.horizontal(|entry|{
+        apply_spacing_role(entry,SpacingRole::Toolbar);
+        let width=(entry.available_width()-theme::INPUT_HEIGHT*2.5-theme::SPACE_8).max(60.0);
+        let response=crate::input::flexible_text_field(entry,input,width,hint);
+        let add=crate::button::action(entry,"추가",theme::ButtonRole::Standard,
+            !input.trim().is_empty()).clicked();
+        (response.changed(),add)
+    }).inner;
+    TagBlockEdit{changed,add,remove}
+}
+
