@@ -389,16 +389,33 @@ fn weak_recipient_hint(text: &str) -> bool {
     Regex::new(r"(?:학교|교회|성당|병원|학원|월드|도서관|회관|목사|선생님|님)$")
         .expect("weak recipient hint").is_match(text)
 }
-fn delivery_boundary(line:&str,phone:&Regex)->bool{
-    address_begin(line).is_some() || phone.is_match(line)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NameRequirement {
+    Structural,
+    ProductPrefix(usize),
+    NotProduct,
 }
-fn unlabelled_recipient_span(
-    line:&str,address:Option<usize>,phone:&Regex,near_delivery:bool,state:&Value,client_id:&str
-)->Option<(usize,usize)>{
-    let contact=phone.find(line).map(|m|m.start());
+#[derive(Clone, Copy, Debug)]
+struct NameProposal {
+    span:(usize,usize),
+    requirement:NameRequirement,
+}
+impl NameProposal{
+    fn probe<'a>(&self,line:&'a str)->Option<&'a str>{
+        match self.requirement{
+            NameRequirement::Structural=>None,
+            NameRequirement::ProductPrefix(end)=>Some(&line[..end]),
+            NameRequirement::NotProduct=>Some(&line[self.span.0..self.span.1]),
+        }
+    }
+}
+// Discover all plausible name boundaries without choosing a product or
+// discarding a name because its spelling is also a catalog term.
+fn recipient_proposals(line:&str,address:Option<usize>,contact:Option<usize>,
+    near_delivery:bool)->Vec<NameProposal>{
+    let mut proposals=Vec::new();
     let end=address.into_iter().chain(contact).min().unwrap_or(line.len());
     let prefix=&line[..end];
-    // The contact label and table's slash separator are field boundaries.
     let contact_label=Regex::new(r"(?i)(?:^|\s+)(?:연락처(?:\s*\([^)]*\))?|전화(?:번호)?|휴대(?:전화|폰)?|번호|TEL)\s*[:：]?\s*$")
         .expect("contact label before phone");
     let end=if contact==Some(end){
@@ -406,48 +423,172 @@ fn unlabelled_recipient_span(
     }else{end};
     let prefix=&line[..end];
     let bounded=address.is_some()||contact.is_some()||near_delivery;
-    // A real transcribed table contains product columns before the
-    // recipient remarks column. Do not treat bars inside names as columns.
-    if bounded && prefix.matches('|').count()>=4 {
-        let start=prefix.rfind('|')?+1;
-        let tail=prefix[start..].trim_end();
-        let tail=tail.strip_suffix('/').unwrap_or(tail);
-        let (a,b)=trim_span(line,start,start+tail.len())?;
-        if !other_recipient_field(&line[a..b]){return Some((a,b));}
-        return None;
+    if bounded&&prefix.matches('|').count()>=4{
+        if let Some(start)=prefix.rfind('|').map(|i|i+1){
+            let tail=prefix[start..].trim_end();
+            let tail=tail.strip_suffix('/').unwrap_or(tail);
+            if let Some((a,b))=trim_span(line,start,start+tail.len()){
+                if !other_recipient_field(&line[a..b]){
+                    proposals.push(NameProposal{span:(a,b),requirement:NameRequirement::Structural});
+                }
+            }
+        }
+        return proposals;
     }
-    // A known product followed by an explicit quantity is a separate field.
-    // Preserve the ENTIRE suffix, including company and English names.
     for q in quantity::extract(prefix).into_iter().rev(){
-        let before=&prefix[..q.end];
-        let decision=model::decision_json(&model::decide(before,state,client_id));
-        if !product_signal(before,&decision,state){continue;}
-        let tail=&prefix[q.end..];
-        let tail=tail.trim_start_matches(|c:char|c.is_whitespace()||c=='|'||c=='ㅣ');
+        let tail=prefix[q.end..].trim_start_matches(|c:char|c.is_whitespace()||c=='|'||c=='ㅣ');
         let a=q.end+prefix[q.end..].len()-tail.len();
-        let Some((a,b))=trim_span(line,a,end) else{continue};
+        let Some((a,b))=trim_span(line,a,end)else{continue;};
         let candidate=&line[a..b];
-        if other_recipient_field(candidate){continue;}
-        if bounded || weak_recipient_hint(candidate){
-            return Some((a,b));
+        if !other_recipient_field(candidate)&&(bounded||weak_recipient_hint(candidate)){
+            proposals.push(NameProposal{span:(a,b),requirement:NameRequirement::ProductPrefix(q.end)});
         }
     }
-    if address.is_some() || contact.is_some(){
-        let (a,b)=composite_name_before_address(prefix)?;
-        let candidate=&line[a..b];
-        // Address/phone prefixes with no product quantity must not promote
-        // a known model to a consignee. The explicit label path has priority.
-        let decision=model::decision_json(&model::decide(candidate,state,client_id));
-        if product_signal(candidate,&decision,state){return None;}
-        return Some((a,b));
+    let fallback=if address.is_some()||contact.is_some(){
+        composite_name_before_address(prefix)
+    }else{
+        trim_span(line,0,line.len()).filter(|&(a,b)|{
+            let candidate=&line[a..b];
+            !other_recipient_field(candidate)&&quantity::extract(candidate).is_empty()
+                &&(near_delivery||weak_recipient_hint(candidate))
+        })
+    };
+    if let Some(span)=fallback{
+        proposals.push(NameProposal{span,requirement:NameRequirement::NotProduct});
     }
-    let (a,b)=trim_span(line,0,line.len())?;
-    let candidate=&line[a..b];
-    if other_recipient_field(candidate) || !quantity::extract(candidate).is_empty(){return None;}
-    if !near_delivery && !weak_recipient_hint(candidate){return None;}
-    let decision=model::decision_json(&model::decide(candidate,state,client_id));
-    if product_signal(candidate,&decision,state){return None;}
-    Some((a,b))
+    proposals
+}
+// Bounded, document-local ownership of catalog hypotheses. An entry is
+// evaluated at most once while retained. On saturation the old exact
+// matcher is used for an uncached slice; no hypothesis is treated as false.
+enum ProductProbe<'s>{
+    Collected(model::ProductHypotheses<'s>),
+    Evaluated(Value),
+}
+struct ProductSearch<'a,'s>{
+    state:&'s Value,
+    client:&'s str,
+    probes:HashMap<&'a str,ProductProbe<'s>>,
+}
+impl<'a,'s> ProductSearch<'a,'s>{
+    fn new(state:&'s Value,client:&'s str)->Self{
+        Self{state,client,probes:HashMap::new()}
+    }
+    fn prepare(&mut self,text:&'a str){
+        if self.probes.len()<512&&!self.probes.contains_key(text){
+            self.probes.insert(text,ProductProbe::Collected(model::collect(text,self.state,self.client)));
+        }
+    }
+    fn decision(&mut self,text:&'a str)->Value{
+        self.prepare(text);
+        match self.probes.remove(text){
+            Some(ProductProbe::Evaluated(value))=>{
+                self.probes.insert(text,ProductProbe::Evaluated(value.clone()));
+                value
+            }
+            Some(ProductProbe::Collected(pool))=>{
+                let value=evaluate_product_probe(text,pool);
+                self.probes.insert(text,ProductProbe::Evaluated(value.clone()));
+                value
+            }
+            None=>evaluate_product_probe(text,model::collect(text,self.state,self.client)),
+        }
+    }
+}
+fn evaluate_product_probe(text:&str,pool:model::ProductHypotheses<'_>)->Value{
+    model::decision_json(&model::evaluate(text,pool))
+}
+// Legacy type policy is deliberately kept here until the common feature
+// classifier replaces it. This is projection, never candidate discovery.
+fn project_name<'a>(line:&'a str,proposals:&[NameProposal],search:&mut ProductSearch<'a,'_>)->Option<(usize,usize)>{
+    for proposal in proposals{
+        if let Some(probe)=proposal.probe(line){
+            let decision=search.decision(probe);
+            let product=product_signal(probe,&decision,search.state);
+            if product!=(matches!(proposal.requirement,NameRequirement::ProductPrefix(_))){continue;}
+        }
+        return Some(proposal.span);
+    }
+    None
+}
+#[derive(Debug)]
+struct ContactCandidate{
+    span:(usize,usize),
+    kind:&'static str,
+    value:String,
+}
+struct LineCandidates<'a>{
+    line:Line<'a>,
+    raw_address:Option<usize>,
+    address:Option<usize>,
+    explicit_name:Option<(usize,usize)>,
+    label_only:bool,
+    near_delivery:bool,
+    after_label:bool,
+    sender_section:bool,
+    names:Vec<NameProposal>,
+    contact_spans:Vec<(usize,usize)>,
+    contacts:Vec<ContactCandidate>,
+    quantities:Vec<quantity::Quantity>,
+}
+// All physical lines, including sender and unrecognized lines, survive
+// discovery. The old recipient projection may exclude them, but it no
+// longer determines which recipient proposals are discovered.
+fn collect_document<'a>(raw:&'a str,phone:&Regex,label:&Regex,
+    search:&mut ProductSearch<'a,'_>)->Vec<LineCandidates<'a>>{
+    let sender=Regex::new(r"^(?:보내는\s*(?:분|사람|곳)|송하인(?:명)?)\s*[:：]").expect("sender prefix");
+    let mut sender_section=false;
+    let mut rows=physical_lines(raw).into_iter().map(|line|{
+        let explicit_name=explicit_recipient_span(line.text,label,phone);
+        let raw_address=address_begin(line.text);
+        let address=if let Some((_,end))=explicit_name{
+            address_begin(&line.text[end..]).map(|a|end+a)
+        }else{raw_address};
+        sender_section|=sender.is_match(line.text.trim());
+        let mut contact_spans=Vec::new();
+        let mut contacts=Vec::new();
+        for c in phone.captures_iter(line.text){
+            let full=c.get(0).expect("phone match");
+            contact_spans.push((full.start(),full.end()));
+            if (full.start()>0&&line.text[..full.start()].chars().next_back().is_some_and(|v|v.is_ascii_digit()))
+                ||line.text[full.end()..].chars().next().is_some_and(|v|v.is_ascii_digit()){continue;}
+            contacts.push(ContactCandidate{span:(full.start(),full.end()),
+                kind:if c[1].starts_with("01"){"mobile"}else{"phone"},
+                value:format!("{}-{}-{}",&c[1],&c[2],&c[3])});
+        }
+        let label_only=label.find(line.text).is_some_and(|m|line.text[m.end()..].trim().is_empty());
+        let quantities=quantity::extract(line.text);
+        LineCandidates{line,raw_address,address,explicit_name,label_only,near_delivery:false,
+            after_label:false,sender_section,names:vec![],contact_spans,contacts,quantities}
+    }).collect::<Vec<_>>();
+    for i in 0..rows.len(){
+        let row=&rows[i];
+        let line=&row.line;
+        let near_delivery=rows.get(i+1).is_some_and(|next|
+            next.line.number<=line.number+2&&(next.raw_address.is_some()||!next.contact_spans.is_empty()))
+            ||(i>0&&line.number<=rows[i-1].line.number+2&&!rows[i-1].contact_spans.is_empty()
+                &&rows.get(i+1).is_none_or(|next|next.line.paragraph!=line.paragraph));
+        let after_label=i>0&&rows[i-1].label_only;
+        let text=line.text;
+        let names=if let Some(span)=row.explicit_name{
+            vec![NameProposal{span,requirement:NameRequirement::Structural}]
+        }else if after_label&&row.address.is_none()&&row.contact_spans.is_empty()&&!other_recipient_field(text.trim()){
+            trim_span(text,0,text.len()).into_iter().map(|span|NameProposal{span,requirement:NameRequirement::Structural}).collect()
+        }else{
+            recipient_proposals(text,row.address,row.contact_spans.first().map(|s|s.0),near_delivery)
+        };
+        // Do not scan the catalog for rows which the existing business
+        // projection cannot consume. Their lexical candidates remain.
+        if !row.sender_section&&!is_money_or_header(text.trim())&&postcode::labelled_line(text.trim()).is_none(){
+            for proposal in &names{
+                if let Some(probe)=proposal.probe(text){search.prepare(probe);}
+            }
+        }
+        rows[i].near_delivery=near_delivery;
+        rows[i].after_label=after_label;
+        rows[i].names=names;
+    }
+    rows
 }
 fn is_money_or_header(text: &str) -> bool { ts_semantics::ignored_document_line(text) }
 fn product_signal(text: &str, decision: &Value, _state: &Value) -> bool {
@@ -796,33 +937,25 @@ fn dated_dispatch_instruction(text:&str)->bool{
 }
 fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, String> {
     let client_id = client_id(client);
-    let lines = physical_lines(raw);
-    let mut events: Vec<Evidence> = Vec::new();
-    let mut product_hits: Vec<ProductHit> = Vec::new();
-    let phone = phone_regex();
-    let person_label = recipient_label();
+    let phone=phone_regex();
+    let person_label=recipient_label();
+    let mut search=ProductSearch::new(state,client_id);
+    let rows=collect_document(raw,&phone,&person_label,&mut search);
+    let mut events:Vec<Evidence>=Vec::new();
+    let mut product_hits:Vec<ProductHit>=Vec::new();
     // Direct translation of order-evidence.ts:140-170: parenthesized
     // delivery requests and note continuation remain separate evidence.
     let note_label = Regex::new(
         r"^\s*\(?(?:배송\s*)?(?:메세지|메시지|요청(?:사항)?|메모)(?:\s*[:：]\s*|\s+)(.*)$"
     ).expect("note");
     let mut note_continuation: Option<usize>=None;
-    let mut sender_section = false;
-    for (line_index,line) in lines.iter().enumerate() {
-        let text = line.text.trim();
-        let explicit_name=explicit_recipient_span(line.text,&person_label,&phone);
-        let near_delivery=lines.get(line_index+1).is_some_and(|next|
-            next.number<=line.number+2 && delivery_boundary(next.text,&phone)) ||
-            (line_index>0 && lines.get(line_index-1).is_some_and(|prev|
-                line.number<=prev.number+2 && phone.is_match(prev.text)) &&
-                lines.get(line_index+1).is_none_or(|next|next.paragraph!=line.paragraph));
-        let after_label=line_index>0 && lines.get(line_index-1).is_some_and(|prev|
-            person_label.find(prev.text).is_some_and(|m|prev.text[m.end()..].trim().is_empty()));
-        if Regex::new(r"^(?:보내는\s*(?:분|사람|곳)|송하인(?:명)?)\s*[:：]")
-            .expect("sender prefix").is_match(text) {
-            sender_section = true;
-        }
-        if sender_section { continue; }
+    for row in &rows{
+        let line=&row.line;
+        let text=line.text.trim();
+        let explicit_name=row.explicit_name;
+        let near_delivery=row.near_delivery;
+        let after_label=row.after_label;
+        if row.sender_section{continue;}
         if postcode::labelled_line(text).is_some() {
             note_continuation=None;
             continue;
@@ -843,14 +976,12 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         if let Some(i)=note_continuation {
             let field=person_label.is_match(line.text)
                 || note_label.is_match(line.text)
-                || address_begin(line.text).is_some()
-                || phone.is_match(line.text)
+                || row.raw_address.is_some()
+                || !row.contact_spans.is_empty()
                 || (near_delivery && !other_recipient_field(text))
                 || weak_recipient_hint(text)
-                || (quantity::extract(line.text).len()>0
-                    && model::category(line.text).is_some())
-                || product_signal(line.text,
-                    &model::decision_json(&model::decide(line.text,state,client_id)),state);
+                || (!row.quantities.is_empty()&&model::category(line.text).is_some())
+                || product_signal(line.text,&search.decision(line.text),state);
             if !field && line.paragraph==events[i].paragraph {
                 events[i].end=line.start+line.text.len();
                 if !events[i].value.is_empty(){events[i].value.push('\n');}
@@ -873,8 +1004,8 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
 
         // order-evidence.ts:170-188: an indented building/floor line
         // is continuation of the preceding address, never a new item.
-        if line.text.starts_with("  ") && address_begin(line.text).is_none()
-            && !phone.is_match(line.text)
+        if line.text.starts_with("  ") && row.raw_address.is_none()
+            && row.contact_spans.is_empty()
             && !weak_recipient_hint(text)
             && Regex::new(r"\d+\s*(?:층|호)").expect("address detail").is_match(text) {
             if let Some(previous)=events.iter().rev()
@@ -892,9 +1023,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         }
 
         // An address-shaped substring inside an explicit name is not an address.
-        let address = if let Some((_,end))=explicit_name{
-            address_begin(&line.text[end..]).map(|a|end+a)
-        }else{address_begin(line.text)};
+        let address=row.address;
         // parser.ts::parseLegacy masks complete phone numbers *before*
         // interpreting a mixed address/phone row. A phone is a distinct
         // contact field, not part of the recipient's delivery address.
@@ -916,36 +1045,19 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             }
         }
 
-        let name_span=explicit_name.or_else(||{
-            if after_label && address.is_none() && !phone.is_match(line.text) &&
-                !other_recipient_field(text){
-                trim_span(line.text,0,line.text.len())
-            }else{
-                unlabelled_recipient_span(line.text,address,&phone,near_delivery,state,client_id)
-            }
-        });
+        let name_span=project_name(line.text,&row.names,&mut search);
         if let Some((begin,end))=name_span{
             add_match(&mut events,line,begin,end,"name",line.text[begin..end].to_owned(),
                 if explicit_name.is_some()||after_label{"명시적 수취인 이름"}
                 else{"수취인 필드 경계에서 원문 전체 보존"});
         }
-        for c in phone.captures_iter(line.text) {
-            let full = c.get(0).expect("phone match");
-            if name_span.is_some_and(|(a,b)|a<full.end()&&full.start()<b){continue;}
-            // Reject a phone-like substring embedded in a longer digit run.
-            if (full.start() > 0 && line.text[..full.start()].chars().next_back()
-                .map_or(false, |v| v.is_ascii_digit()))
-                || line.text[full.end()..].chars().next().map_or(false, |v|v.is_ascii_digit()) {
-                continue;
-            }
-            let value = format!("{}-{}-{}", &c[1], &c[2], &c[3]);
-            let kind = if c[1].starts_with("01") { "mobile" } else { "phone" };
-            add_match(&mut events, line, full.start(),full.end(),kind,value,
-                "연락처 원문 구간");
+        for contact in &row.contacts{
+            let (a,b)=contact.span;
+            if name_span.is_some_and(|(start,end)|start<b&&a<end){continue;}
+            add_match(&mut events,line,a,b,contact.kind,contact.value.clone(),"연락처 원문 구간");
         }
-        let contact_spans: Vec<(usize,usize)> = phone.find_iter(line.text)
-            .map(|m|(m.start(),m.end())).collect();
-        if address.is_none() && ts_semantics::only_contact_or_identity(line.text,&contact_spans) {
+        let contact_spans=&row.contact_spans;
+        if address.is_none() && ts_semantics::only_contact_or_identity(line.text,contact_spans) {
             continue;
         }
         // A name-only field cannot create a phantom product or quantity,
@@ -977,7 +1089,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         // create a product even when its digits match a generic model regex.
         let trim_phones: Vec<(usize,usize)> = phone.find_iter(trimmed)
             .map(|m|(m.start(),m.end())).collect();
-        let decision = model::decision_json(&model::decide(trimmed,state,client_id));
+        let decision=search.decision(trimmed);
         // parser.ts::parseLegacy: a full contact may share the same physical
         // line with a valid product and quantity; filter contact-only rows,
         // not valid joint records such as "709 민판 한개 이가상 010-...".
@@ -992,7 +1104,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         let skip_until = ts_semantics::table_product_prefix(trimmed);
         // Never synthesize a new string and then treat its indexes as offsets
         // into raw: UTF-8/UTF-16 source-evidence contract must be lossless.
-        let matched = model::decision_json(&model::decide(skip_until,state,client_id));
+        let matched=search.decision(skip_until);
         let mut quantity_values = if trimmed.contains('|') {
             let model_end=matched.get("evidence").and_then(Value::as_object)
                 .and_then(|o|o.get("end")).and_then(Value::as_u64)
@@ -1066,11 +1178,12 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         }
     }
     // A generic quantity line is evidence but cannot itself prove which SKU was ordered.
-    for line in &lines {
+    for row in &rows{
+        let line=&row.line;
         if events.iter().any(|e| e.kind == "quantity" && e.line == line.number) { continue; }
         if is_money_or_header(line.text) { continue; }
         if product_hits.iter().any(|h| h.line == line.number) { continue; }
-        for q in quantity::extract(line.text) {
+        for q in &row.quantities{
             // An independently scanned quantity must not reuse characters
             // already owned by a recognized address/name/contact/memo span.
             // Preserve separately positioned quantities in mixed-field rows.
@@ -1576,6 +1689,25 @@ mod tests {
             {"id":"pgt","code":"GT-1","name":"GT-1 / 기타 스탠드","category":"기타",
              "origin":"FACTORY","active":true,"variants":[{"id":"vgt","color":"Black"}]}
         ],"aliases":[],"clients":[]})
+    }
+    #[test]
+    fn common_candidates_preserve_competing_types_before_selection(){
+        let state=state();
+        let raw="GT-1 010-1234-5678\n709 2개 김가상 010-2345-6789\n송하인: 가상상사\n010-3456-7890";
+        let mut search=ProductSearch::new(&state,"");
+        let rows=collect_document(raw,&phone_regex(),&recipient_label(),&mut search);
+        assert_eq!(rows.len(),4);
+        assert_eq!(&rows[0].line.text[rows[0].names[0].span.0..rows[0].names[0].span.1],"GT-1");
+        assert_eq!(rows[0].names[0].requirement,NameRequirement::NotProduct);
+        assert!(matches!(search.probes.get("GT-1"),Some(ProductProbe::Collected(_))));
+        assert!(search.probes.values().all(|p|matches!(p,ProductProbe::Collected(_))));
+        assert_eq!(rows[1].quantities[0].value,2);
+        assert!(rows[1].names.iter().any(|p|&rows[1].line.text[p.span.0..p.span.1]=="김가상"));
+        assert!(rows[3].sender_section);
+        assert_eq!(rows[3].contacts[0].value,"010-3456-7890");
+        assert!(rows.iter().all(|r|r.line.text==&raw[r.line.start..r.line.start+r.line.text.len()]));
+        assert_eq!(project_name(rows[0].line.text,&rows[0].names,&mut search),None);
+        assert!(matches!(search.probes.get("GT-1"),Some(ProductProbe::Evaluated(_))));
     }
     #[test]
     fn contract_rejects_incomplete_state() {

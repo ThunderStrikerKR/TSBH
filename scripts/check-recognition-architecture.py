@@ -17,7 +17,11 @@ ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "src-tauri/src/business_core/recognition"
 # Existing direct product decisions in the pre-feature extraction path.
 # The standalone match_products API in execute is not document extraction.
-LEGACY_BUDGET = {"mod.rs::analyze": 3, "mod.rs::unlabelled_recipient_span": 3}
+LEGACY_BUDGET = {
+    ("mod.rs::analyze", "search.decision"): 3,
+    ("mod.rs::project_name", "search.decision"): 1,
+    ("mod.rs::evaluate_product_probe", "model::evaluate"): 1,
+}
 FINAL_TESTS = (
     "common_candidates_preserve_competing_types_before_selection",
     "shared_document_features_are_built_once_and_reused_by_both_engines",
@@ -96,17 +100,18 @@ def audit(sources, final=False):
         if path == "model.rs":
             continue
         for name, body in functions(source).items():
-            count = call_count(body, "model::decide")
-            if not count:
-                continue
             scope = path + "::" + name
-            if scope == "mod.rs::execute" and count == 1:
-                continue
-            debt[scope] = count
-            if count > LEGACY_BUDGET.get(scope, 0):
-                errors.append("New early product decision path: " + scope)
-            if final:
-                errors.append("Unremoved legacy decision path: " + scope)
+            for call in ("model::decide", "search.decision", "model::evaluate"):
+                count = call_count(body, call)
+                if not count:
+                    continue
+                if scope == "mod.rs::execute" and call == "model::decide" and count == 1:
+                    continue
+                debt[scope + ":" + call] = count
+                if count > LEGACY_BUDGET.get((scope, call), 0):
+                    errors.append("New early product decision path: " + scope + ":" + call)
+                if final:
+                    errors.append("Unremoved legacy decision path: " + scope + ":" + call)
     return errors, debt
 
 
@@ -137,9 +142,9 @@ def verify_discovery(listed, ignored, final):
              if line.endswith(": test")}
     skipped = {line.removesuffix(": test") for line in ignored.splitlines()
                if line.endswith(": test")}
-    required = [CURRENT_TEST]
+    required = [CURRENT_TEST, "common_candidates_preserve_competing_types_before_selection"]
     if final:
-        required += list(FINAL_TESTS)
+        required = list(dict.fromkeys(required + list(FINAL_TESTS)))
     failures = []
     for name in required:
         matches = [test for test in tests if test == name or test.endswith("::" + name)]
