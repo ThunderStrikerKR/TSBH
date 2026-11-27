@@ -340,7 +340,13 @@ fn qualifiers(text: &str) -> HashSet<String> {
     }
     found
 }
+fn conflicting_qualifiers(proof:&HashSet<String>)->bool{
+    [("가방포함","가방미포함"),("바퀴포함","바퀴미포함"),
+        ("바퀴장착","바퀴미장착"),("타공상판","비타공상판"),("a타입","b타입")]
+        .into_iter().any(|(a,b)|proof.contains(a)&&proof.contains(b))
+}
 fn qualifies(p: &Value, proof: &HashSet<String>, verified: &HashSet<String>) -> bool {
+    if conflicting_qualifiers(proof){return false;}
     let mut named = qualifiers(str_field(p, "name"));
     match top(p, verified) {
         Some("PERFORATED") => { named.insert("타공상판".into()); },
@@ -402,8 +408,11 @@ fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
             .filter(|c| !c.is_whitespace()).count() == max);
     }
     if xs.len() > 1 && priority >= 2 {
-        let max = xs.iter().map(|e| option_score(text, e.p)).max().unwrap_or(0);
-        if max > 0 { xs.retain(|e| option_score(text, e.p) == max); }
+        let scored=xs.into_iter().map(|e|{
+            let score=option_score(text,e.p);(e,score)
+        }).collect::<Vec<_>>();
+        let max=scored.iter().map(|(_,score)|*score).max().unwrap_or(0);
+        xs=scored.into_iter().filter_map(|(e,score)|(score==max).then_some(e)).collect();
     }
     if priority == 1 && xs.len() > 1 { return vec![]; }
     xs
@@ -572,6 +581,7 @@ pub(super) fn decide_with_trace(text:&str,state:&Value,client_id:&str,mut trace:
     }
     trace_entries(&mut trace,"semantic_or_branded_fallback",&entries);
     let proof = qualifiers(text);
+    let qualifier_conflict=conflicting_qualifiers(&proof);
     entries.retain(|e| qualifies(e.p, &proof, &verified));
     trace_entries(&mut trace,"qualifier_filter",&entries);
     let code_entries = entries.clone();
@@ -633,10 +643,10 @@ pub(super) fn decide_with_trace(text:&str,state:&Value,client_id:&str,mut trace:
                 p, priority: 0, span: find_term(text, lead(p), true).unwrap_or((0,text.len()))
             }).collect::<Vec<_>>()
     } else if category_mismatch { exact.clone() } else { entries };
-    if alias_conflict || category_mismatch || broad || branded_category { chosen = None; }
+    if alias_conflict || category_mismatch || broad || branded_category || qualifier_conflict { chosen = None; }
     if broad { available.clear(); }
     if chosen.is_none() && available.len() == 1 && !alias_conflict
-        && !category_mismatch && !broad && !branded_category && color_matched.len() == 1 {
+        && !category_mismatch && !broad && !branded_category && !qualifier_conflict && color_matched.len() == 1 {
         chosen = available.first().cloned();
     }
     trace_entries(&mut trace,"final_available",&available);
@@ -694,7 +704,8 @@ pub(super) fn decide_with_trace(text:&str,state:&Value,client_id:&str,mut trace:
         out.push(json!({"stage":"final_decision","selectedProductId":product_id,
             "selectedVariantId":variant_id,"aliasConflict":alias_conflict,
             "categoryMismatch":category_mismatch,"broadCategory":broad,
-            "brandedCategory":branded_category,"ambiguous":ambiguous,"reasonCode":kind}));
+            "brandedCategory":branded_category,"ambiguous":ambiguous,
+            "explicitQualifierConflict":qualifier_conflict,"reasonCode":kind}));
     }
     let span = chosen.as_ref().map(|e|e.span)
         .or_else(|| available.first().map(|e|e.span));
@@ -750,6 +761,15 @@ mod option_boundary_tests {
         assert_eq!(qualifiers("709 무타공").contains("비타공상판"),true);
     }
 
+    #[test]
+    fn conflicting_explicit_qualifiers_cannot_qualify_any_product(){
+        let proof=qualifiers("가방 포함 / 가방 미포함");
+        assert!(conflicting_qualifiers(&proof));
+        let p=json!({"name":"가방 포함 / 가방 미포함"});
+        assert!(!qualifies(&p,&proof,&HashSet::new()));
+        assert!(!conflicting_qualifiers(&qualifiers("가방 미포함 / 바퀴 장착")));
+        assert!(conflicting_qualifiers(&qualifiers("A 타입 / B 타입")));
+    }
     #[test]
     fn b_type_is_not_black_but_true_color_abbreviations_remain_valid() {
         let state:Value=serde_json::from_str(include_str!(
