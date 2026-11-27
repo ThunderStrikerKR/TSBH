@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "round-170-settings-review",
+  "screen": "설정 / 접수 확인할 내용",
+  "files": [
+    "egui-app/src/settings_view.rs",
+    "egui-app/src/review_panel.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "patchCommits": [
+    "22b97f566405ec3bd233f51fa1202ac02354777e",
+    "9fda3ff1b13d5fde00394729429cba059864c58c",
+    "1f7306b2948ab19f0bb09bd25cfdbfad69d6e378"
+  ],
+  "reason": "170차 레이아웃 및 버전 표시 코드 반영. 동일 소스 Windows 빌드 실화면 및 실제 동작 증거 미확보. 배포 승인 아님.",
+  "releaseDecision": "NOT_APPROVED"
+}
