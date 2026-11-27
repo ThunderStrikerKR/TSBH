@@ -1,4 +1,5 @@
 //! Shared client summaries, tier badges and client rows.
+use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Ui,Vec2};
 use crate::{theme,typography};
 use crate::ui_primitives::{text_exceeds_rect,overflow_region_tooltip};
@@ -241,7 +242,7 @@ pub fn reception_client_summary_card_editable(
     ui.scope_builder(
         egui::UiBuilder::new()
             .id_salt("source-client-card-action")
-            .max_rect(button_rect)
+            .aligned_max_rect(button_rect)
             .layout(Layout::left_to_right(Align::Center)),
         |buttons|{
             buttons.set_clip_rect(clip);
