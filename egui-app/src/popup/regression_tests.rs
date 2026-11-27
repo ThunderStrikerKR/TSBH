@@ -684,9 +684,11 @@ mod modal_input_routing_tests {
         // Mount the owner before opening its menu. Native Area sizing and
         // fade-in are distinct from foreground occlusion; measure the
         // settled menu on three consecutive raises with explicit time.
+        let mut visible_checks=0;
         for frame in 0..7 {
             popup_layer=None;
             popup_rect=Rect::NOTHING;
+            let mut menu_state=None;
             let mut raw=egui::RawInput::default();
             raw.screen_rect=Some(work_area);
             raw.time=Some(f64::from(frame)*0.2);
@@ -694,10 +696,11 @@ mod modal_input_routing_tests {
                 modal_backdrop(ctx,"popup-owner-regression-dim",true);
                 show_decision_window(ctx,"Popup owner","popup-owner-regression",work_area,|ui|{
                     let trigger=ui.button("Open popup");
-                    if frame>=2{
+                    if frame==2{
                         egui::Popup::open_id(ctx,egui::Popup::default_response_id(&trigger));
                     }
                     let _=crate::overlay::show_menu(&trigger,None,|menu|{
+                        menu_state=Some((menu.is_sizing_pass(),menu.is_visible(),menu.clip_rect()));
                         let response=menu.button("Select option");
                         popup_layer=Some(response.layer_id);
                         popup_rect=response.rect;
@@ -709,10 +712,23 @@ mod modal_input_routing_tests {
                     ui.painter().rect_filled(owner_body,0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
                 });
             });
-            if frame>=4{
+            if frame>=2{
+                let (sizing,visible,clip)=menu_state.expect("open popup must execute its content");
+                let text=crate::ui_test_support::painted_text_rects(&output,"Select option");
+                eprintln!("popup frame={frame} sizing={sizing} visible={visible} widget={popup_rect:?} clip={clip:?} painted={text:?} owner={owner_body:?}");
+                // The first native Area sizing pass is deliberately invisible.
+                // After sizing, absence of text is not an acceptable result.
+                if sizing{
+                    assert_eq!(frame,2,"popup must not repeatedly return to sizing");
+                    assert!(!visible,"native sizing UI must be invisible");
+                    continue;
+                }
+                assert!(visible,"non-sizing popup UI must be visible");
                 let layer=popup_layer.expect("settled popup must render on each raise");
                 assert!(popup_rect.is_positive()&&owner_body.intersects(popup_rect));
+                assert!(!text.is_empty(),"non-sizing popup emitted no text paint");
                 crate::ui_test_support::assert_painted_caption(&output,"Select option",popup_rect);
+                visible_checks+=1;
                 let overlap=owner_body.intersect(popup_rect);
                 for fraction in [0.25_f32,0.5,0.75]{
                     let hit=egui::pos2(overlap.left()+overlap.width()*fraction,overlap.center().y);
@@ -720,6 +736,7 @@ mod modal_input_routing_tests {
                 }
             }
         }
+        assert!(visible_checks>=3,"must verify at least three actual visible popup frames");
         let popup_layer=popup_layer.expect("popup rendered");
         assert!(owner_body.intersects(popup_rect),"test must exercise overlapping layers");
         let overlap=owner_body.intersect(popup_rect);
