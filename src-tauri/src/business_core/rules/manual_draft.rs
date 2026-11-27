@@ -239,9 +239,26 @@ fn assign(payload:&Value)->Result<Value,String>{
     let block=rows(field(model,"blocks")).iter().find(|b|str_field(b,"id")==id)
         .ok_or("원문 블록을 확인하세요.")?;
     let cell=req(payload,"cell")?;
+    let has_item=cell.get("itemId").is_some_and(|v|!v.is_null());
+    let target_field=str_field(cell,"field");
+    let value=str_field(block,"text");
+    // The original recognition type is advisory. Only the target's
+    // supported field and value syntax constrain an explicit assignment.
+    if (has_item && !["product","quantity"].contains(&target_field)) ||
+        (!has_item && !["name","address","mobile","phone","note"].contains(&target_field)){
+        return Err("원문을 배정할 수 없는 입력 셀입니다.".into());
+    }
+    if has_item && target_field=="quantity"{
+        let parsed=super::manual_classification::apply(&json!({
+            "action":"parse_manual_quantity","value":value
+        }))?;
+        if field(&parsed,"quantity").is_null(){
+            return Err("원문에서 유효한 수량을 확인할 수 없습니다.".into());
+        }
+    }
     let mut call=payload.clone();
     set(&mut call,"cell",cell.clone())?;
-    let next=if cell.get("itemId").is_some_and(|v|!v.is_null()){
+    let next=if has_item{
         set_item(&call,str_field(block,"text"))?
     }else{
         super::manual_classification::apply(&json!({"action":"set_manual_recipient_field",
@@ -348,6 +365,37 @@ mod tests{
         assert_eq!(item["sources"],json!([{"start":0,"end":6}]));
         assert!(next["model"]["assignments"].get("product").is_none());
         assert!(next["model"]["assignments"].get("quantity").is_some());
+    }
+
+    #[test]
+    fn cross_type_assignment_preserves_original_type_and_validates_target_value(){
+        let model=json!({"rows":[{"id":"r","name":"","items":[
+            {"id":"i","name":"상품","quantity":null,"quantityConfirmed":false}
+        ]}],"blocks":[
+            {"id":"0:2","text":"2개","field":"product"},
+            {"id":"3:6","text":"김가상","field":"address"},
+            {"id":"7:10","text":"서울시","field":"product"}
+        ],"assignments":{}});
+        let result=assign(&json!({"model":model,"id":"0:2","assignmentOrder":[],
+            "cell":{"recipientId":"r","itemId":"i","field":"quantity"}})).unwrap();
+        assert_eq!(result["model"]["rows"][0]["items"][0]["quantity"],2);
+        assert_eq!(result["model"]["blocks"][0]["field"],"product");
+        assert_eq!(result["model"]["assignments"]["0:2"]["field"],"quantity");
+        let named=assign(&json!({"model":result["model"],"id":"3:6",
+            "assignmentOrder":result["assignmentOrder"],
+            "cell":{"recipientId":"r","field":"name"}})).unwrap();
+        assert_eq!(named["model"]["rows"][0]["name"],"김가상");
+        assert_eq!(named["model"]["blocks"][1]["field"],"address");
+        assert_eq!(named["model"]["assignments"]["3:6"]["field"],"name");
+        let invalid=json!({"model":named["model"],"id":"7:10",
+            "assignmentOrder":named["assignmentOrder"],
+            "cell":{"recipientId":"r","itemId":"i","field":"quantity"}});
+        assert!(assign(&invalid).is_err());
+        assert_eq!(invalid["model"]["rows"][0]["items"][0]["quantity"],2);
+        assert!(invalid["model"]["assignments"].get("7:10").is_none());
+        let mut unsupported=invalid.clone();
+        unsupported["cell"]["field"]=json!("unitPrice");
+        assert!(assign(&unsupported).is_err());
     }
 
     #[test]fn blocks_reject_duplicate_binding(){
