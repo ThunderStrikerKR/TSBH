@@ -1273,7 +1273,7 @@ impl ProductManager {
                     category_dropdown::category_dropdown(
                         filter,&category_nodes,&mut self.category,
                         theme::PRODUCT_CATEGORY_FILTER_TRIGGER_WIDTH,
-                        "전체 카테고리",true,true
+                        "전체 카테고리",true,true,false
                     );
                     if self.category!=before_category{
                         if self.has_pending_prices(){
@@ -1956,7 +1956,7 @@ impl ProductManager {
                 let width=input.available_width().max(1.0);
                 category_dropdown::category_dropdown(
                     input,category_nodes,&mut category_id,width,
-                    "카테고리 미지정",true,true
+                    "카테고리 미지정",true,true,true
                 );
             });
             if category_id!=before{
@@ -1977,7 +1977,8 @@ impl ProductManager {
                 let width=input.available_width().max(1.0);
                 let brand_choices=brand_search_choices(brands,"브랜드 미지정");
                 crate::dropdown::management_searchable_dropdown(
-                    input,label,width,true,
+                    input,crate::dropdown::DropdownCaption::new(label,
+                        !brands.iter().any(|b|!brand_id.is_empty()&&field(b,"id")==brand_id)),width,true,
                     &mut brand_id,&brand_choices,"브랜드 검색"
                 );
             });
@@ -2213,7 +2214,8 @@ impl ProductManager {
                                         group_ui.add_enabled_ui(editable&&!busy,|input|{
                                             let width=input.available_width().max(1.0);
                                             crate::dropdown::management_dropdown(
-                                                input,label,width,true,|choices|{
+                                                input,crate::dropdown::DropdownCaption::new(label,
+                                                    !groups.iter().any(|g|!group.is_empty()&&field(g,"id")==group)),width,true,|choices|{
                                                     crate::dropdown::management_dropdown_option(
                                                         choices,&mut group,String::new(),"미지정");
                                                     for row in &groups{

@@ -1442,11 +1442,11 @@ impl FreightManager {
                         }
                         crate::dropdown::management_dropdown(
                             bulk,
-                            match bulk_group.as_deref(){
+                            crate::dropdown::DropdownCaption::new(match bulk_group.as_deref(){
                                 None=>"배송 그룹 선택",
                                 Some("")=>"미지정으로 변경",
                                 Some(id)=>group_name(groups,id),
-                            },
+                            },bulk_group.is_none()),
                             theme::FREIGHT_BULK_GROUP_WIDTH,
                             enabled,|menu|{
                                 crate::dropdown::management_dropdown_option(
@@ -1595,9 +1595,9 @@ impl FreightManager {
                                 control.apply_shared_width(crate::card::CardWidthPolicy::Fixed,selector_rect.width());
                                 crate::dropdown::management_dropdown(
                                     control,
-                                    if current.is_empty() {
+                                    crate::dropdown::DropdownCaption::new(if current.is_empty() {
                                         "그룹 선택"
-                                    }else{group_name(groups,&current)},
+                                    }else{group_name(groups,&current)},current.is_empty()),
                                     selector_rect.width(),enabled,|menu|{
                                         crate::dropdown::management_dropdown_option(
                                             menu,&mut current,String::new(),"그룹 선택"

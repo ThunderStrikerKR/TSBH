@@ -123,7 +123,7 @@ mod management_dropdown_unification_tests {
     #[test]
     fn searchable_dropdown_keeps_shared_trigger_and_one_line_options(){
         let source=include_str!("../dropdown/mod.rs");
-        let block=source.split("fn management_searchable_dropdown(").nth(1).unwrap()
+        let block=source.split("fn management_searchable_dropdown<").nth(1).unwrap()
             .split("/// All menu options").next().unwrap();
         for required in [
             "management_dropdown_trigger(",

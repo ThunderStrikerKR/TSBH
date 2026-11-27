@@ -2,7 +2,23 @@
 use eframe::egui::{self,Color32,Rect,Response,Stroke,Ui,Vec2};
 use crate::card::UiWidthPolicyExt;
 use crate::{theme,typography};
-use crate::input::management_search_field;
+use crate::input::{management_search_field,INPUT_PLACEHOLDER_COLOR};
+
+/// Caption state is supplied by the selection owner, not inferred from text.
+#[derive(Clone,Copy)]
+pub(crate) struct DropdownCaption<'a>{
+    label:&'a str,
+    placeholder:bool,
+}
+impl<'a> DropdownCaption<'a>{
+    pub(crate) fn new(label:&'a str,placeholder:bool)->Self{Self{label,placeholder}}
+}
+impl<'a> From<&'a str> for DropdownCaption<'a>{
+    fn from(label:&'a str)->Self{Self::new(label,false)}
+}
+impl<'a> From<&'a String> for DropdownCaption<'a>{
+    fn from(label:&'a String)->Self{Self::new(label.as_str(),false)}
+}
 use crate::scrollbar::{scroll_area,ScrollAxes};
 use crate::ui_primitives::{management_body_state_inline,text_exceeds_rect,overflow_tooltip,ManagementChevronDirection,paint_management_chevron_with_color};
 
@@ -28,11 +44,12 @@ fn management_dropdown_option_palette(ui:&mut Ui){
 /// right-hand chevron, 1pt outline, 6pt corner radius. This replaces native
 /// ComboBox triggers where management screens need the same visual language.
 /// The caller retains its existing option values and change handling.
-pub(crate) fn management_dropdown(
-    ui:&mut Ui,label:&str,width:f32,enabled:bool,
+pub(crate) fn management_dropdown<'a>(
+    ui:&mut Ui,label:impl Into<DropdownCaption<'a>>,width:f32,enabled:bool,
     options:impl FnOnce(&mut Ui)
 )->Response {
-    management_dropdown_inner(ui,label,label,width,enabled,false,None,None,options)
+    let label=label.into();
+    management_dropdown_inner(ui,label.label,label.label,width,enabled,false,None,None,label.placeholder,options)
 }
 /// Same management dropdown master, with an optional colored status mark.
 /// This only changes the glyph painting; popup placement, hover and row
@@ -42,7 +59,7 @@ pub(crate) fn management_status_dropdown(
     status_color:Color32,options:impl FnOnce(&mut Ui)
 )->Response {
     management_dropdown_inner(
-        ui,label,label,width,enabled,false,Some(status_color),None,options
+        ui,label,label,width,enabled,false,Some(status_color),None,false,options
     )
 }
 
@@ -52,37 +69,38 @@ pub(crate) fn management_dropdown_compact(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,
     options:impl FnOnce(&mut Ui)
 )->Response {
-    management_dropdown_inner(ui,label,label,width,enabled,true,None,None,options)
+    management_dropdown_inner(ui,label,label,width,enabled,true,None,None,false,options)
 }
 
 /// A mixed label keeps the common trigger, menu, selection and overflow
 /// behavior. Callers supply semantic value spans, never a local painter.
 pub(crate) fn management_dropdown_values(
-    ui:&mut Ui,label:&egui::text::LayoutJob,width:f32,enabled:bool,
+    ui:&mut Ui,label:&egui::text::LayoutJob,width:f32,enabled:bool,placeholder:bool,
     options:impl FnOnce(&mut Ui)
 )->Response{
-    management_dropdown_inner(ui,&label.text,&label.text,width,enabled,false,None,Some(label),options)
+    management_dropdown_inner(ui,&label.text,&label.text,width,enabled,false,None,Some(label),placeholder,options)
 }
 
 /// Shared 34pt management trigger; the hierarchical category popup and
 /// ordinary selectors must use the SAME paint, chevron and hover geometry.
-pub(crate) fn management_dropdown_trigger(
-    ui:&mut Ui,label:&str,width:f32,enabled:bool,
+pub(crate) fn management_dropdown_trigger<'a>(
+    ui:&mut Ui,label:impl Into<DropdownCaption<'a>>,width:f32,enabled:bool,
     indicator:Option<Color32>,
 )->Response {
-    management_dropdown_trigger_full_label(ui,label,label,width,enabled,indicator)
+    let label=label.into();
+    management_dropdown_trigger_full_label(ui,label.label,label.label,width,enabled,indicator,label.placeholder)
 }
 
 pub(crate) fn management_dropdown_trigger_full_label(
     ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
-    indicator:Option<Color32>,
+    indicator:Option<Color32>,placeholder:bool,
 )->Response {
-    management_dropdown_trigger_inner(ui,label,full_label,width,enabled,indicator,None)
+    management_dropdown_trigger_inner(ui,label,full_label,width,enabled,indicator,None,placeholder)
 }
 
 fn management_dropdown_trigger_inner(
     ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
-    indicator:Option<Color32>,values:Option<&egui::text::LayoutJob>,
+    indicator:Option<Color32>,values:Option<&egui::text::LayoutJob>,placeholder:bool,
 )->Response {
     // Keep exact toolbar/cell width without stretching the subsequent action
     // or exceeding a narrow selector slot.
@@ -107,7 +125,8 @@ fn management_dropdown_trigger_inner(
     crate::ui_test_support::record_component_geometry("dropdown",rect,ui.clip_rect(),Some(height));
     let painter=ui.painter().with_clip_rect(rect);
     let arrow_left=rect.right()-30.0;
-    let caption_ink=if interactive{indicator.unwrap_or(ink)}else{ink};
+    let caption_ink=if placeholder{INPUT_PLACEHOLDER_COLOR}
+        else if interactive{indicator.unwrap_or(ink)}else{ink};
     let caption=if let Some(values)=values{
         ui.fonts_mut(|fonts|fonts.layout_job(typography::dropdown_value_job(values,false,caption_ink)))
     }else{
@@ -166,12 +185,12 @@ fn configure_option_rows(ui:&mut Ui){
 
 fn management_dropdown_inner(
     ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
-    compact:bool,indicator:Option<Color32>,values:Option<&egui::text::LayoutJob>,
+    compact:bool,indicator:Option<Color32>,values:Option<&egui::text::LayoutJob>,placeholder:bool,
     options:impl FnOnce(&mut Ui)
 )->Response {
     let width=width.min(ui.available_width()).max(1.0);
     let trigger=management_dropdown_trigger_inner(
-        ui,label,full_label,width,enabled,indicator,values
+        ui,label,full_label,width,enabled,indicator,values,placeholder
     );
     crate::overlay::show_menu(&trigger,None,|menu|{
             // Every selectable row reports its parent trigger, never its
@@ -224,8 +243,8 @@ fn management_search_choice_matches(
 /// palette, selection semantics, 28pt option rows, click-to-close and toast
 /// anchor all remain shared; only a 36pt search field is added above the
 /// internally scrolling choices. Search never changes the selected value.
-pub(crate) fn management_searchable_dropdown(
-    ui:&mut Ui,label:&str,width:f32,enabled:bool,
+pub(crate) fn management_searchable_dropdown<'a>(
+    ui:&mut Ui,label:impl Into<DropdownCaption<'a>>,width:f32,enabled:bool,
     current:&mut String,options:&[ManagementSearchChoice],hint:&str,
 )->Response{
     let trigger=management_dropdown_trigger(ui,label,width,enabled,None);

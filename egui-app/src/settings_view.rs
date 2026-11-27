@@ -137,7 +137,8 @@ fn recommendation_picker(ui:&mut Ui,draft:&mut Value,key:&str,label:&str){
         .map(account_display).unwrap_or_else(||"계좌 선택".to_owned());
     crate::popup::modal_labeled_row_with_width(ui,label,theme::MODAL_FORM_WIDE_LABEL_WIDTH,|line|{
     crate::dropdown::management_dropdown(
-        line,&preview,
+        line,crate::dropdown::DropdownCaption::new(&preview,
+            selected.is_empty()||!options.iter().any(|account|field(account,"id")==selected)),
         line.available_width().min(theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH),
         true,|choices|{
             crate::dropdown::management_dropdown_option(

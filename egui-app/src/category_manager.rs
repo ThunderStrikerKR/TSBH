@@ -1012,7 +1012,7 @@ impl CategoryManager {
                                                     .min(theme::CATEGORY_PATH_PICKER_WIDTH).max(1.0);
                                                 category_dropdown::category_dropdown(
                                                     line,&picker_nodes,&mut self.target,
-                                                    picker_width,"상위 분류 선택",true,false
+                                                    picker_width,"상위 분류 선택",true,false,true
                                                 );
                                             }
                                         );

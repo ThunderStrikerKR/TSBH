@@ -467,19 +467,20 @@ pub(crate) fn sweep_popup_states(ctx:&Context,now:std::time::Instant){
 /// navigation and a fixed, explicitly committed category ID.
 pub fn category_dropdown(
     ui:&mut Ui,nodes:&[CategoryNode],selected:&mut String,
-    width:f32,empty_label:&str,enabled:bool,allow_empty:bool
+    width:f32,empty_label:&str,enabled:bool,allow_empty:bool,empty_is_placeholder:bool
 )->Response{
     let index=tree_index(nodes);
     let full=if selected.is_empty(){empty_label.to_owned()}else{
         full_name(&index,&chain(&index,selected))
     };
+    let placeholder=full.is_empty()||(selected.is_empty()&&empty_is_placeholder);
     let full=if full.is_empty(){empty_label.to_owned()}else{full};
     let visible=typography::fit_category_path(
         ui,&full,(width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING).max(1.0),
         typography::CategoryPathFont::Body
     );
     let mut trigger=crate::dropdown::management_dropdown_trigger_full_label(
-        ui,&visible,&full,width,enabled,None
+        ui,&visible,&full,width,enabled,None,placeholder
     );
     let state_id:Id=trigger.id.with("hierarchical-category-explorer");
     let ctx:Context=ui.ctx().clone();

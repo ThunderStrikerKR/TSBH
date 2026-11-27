@@ -9570,7 +9570,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     crate::popup::modal_labeled_row_with_width(ui,"다시 묶을 대상",112.0,|line|{
                                         crate::dropdown::management_dropdown_values(
                                             line,&caption,
-                                            line.available_width().max(1.0),!applying,|list|{
+                                            line.available_width().max(1.0),!applying,
+                                            !targets.iter().any(|g|g.id==target),|list|{
                                                 crate::dropdown::management_dropdown_option(
                                                     list,&mut target,String::new(),"대상 선택");
                                                 for other in &targets{

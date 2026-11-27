@@ -655,7 +655,8 @@ impl ClientManager {
         client_form_row(ui,"주 사용 입금계좌",|value|{
             let width=value.available_width();
             crate::dropdown::management_dropdown(
-                value,selected_label,width,true,|menu|{
+                value,crate::dropdown::DropdownCaption::new(selected_label,
+                    selected.is_empty()||!choices.iter().any(|(id,_)|id==&selected)),width,true,|menu|{
                     for (id,label) in &choices {
                         crate::dropdown::management_dropdown_option(
                             menu,&mut next_selected,id.clone(),label
@@ -715,10 +716,11 @@ impl ClientManager {
             }
             ui.horizontal(|row|{
                 crate::dropdown::management_dropdown(
-                    row,variants.iter()
+                    row,crate::dropdown::DropdownCaption::new(variants.iter()
                         .find(|(id,_)|id==&self.exception_id)
                         .map(|(_,label)|label.as_str())
                         .unwrap_or("예외 품목 / 색상 선택"),
+                        !variants.iter().any(|(id,_)|id==&self.exception_id)),
                     theme::MANAGEMENT_SEARCH_MIN_WIDTH,true,|ui|{
                         for (id,label) in &variants {
                             crate::dropdown::management_dropdown_option(
