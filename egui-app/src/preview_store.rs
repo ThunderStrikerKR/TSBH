@@ -963,7 +963,7 @@ impl PreviewStore {
             return Err("실시간 학습 조회 중 원본 변경".into());
         }
         let mut hash=Sha256::new();
-        hash.update(serde_json::to_vec(&json!(["owner-shadow-v1",scope,target,RATIO,digests,results]))
+        hash.update(serde_json::to_vec(&json!(["owner-shadow-v1",scope,RATIO,digests,results]))
             .map_err(|_|"실시간 학습 모델 지문 오류")?);
         let model=format!("shadow-{:x}",hash.finalize());
         let result=json!({"status":"captured_shadow_support","task":"recipient_ownership",

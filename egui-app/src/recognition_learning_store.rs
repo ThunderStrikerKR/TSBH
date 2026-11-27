@@ -736,6 +736,27 @@ mod recognition_learning_store_tests{
     }
 
     #[test]
+    fn owner_capture_only_reads_requested_contexts_excludes_target_and_blocks_pending(){
+        let mut c=conn();
+        let tx=c.transaction().unwrap();
+        let ids=vec!["a".to_owned(),"target".to_owned(),"other".to_owned()];
+        let orders=ids.iter().map(|id|json!({"id":id})).collect::<Vec<_>>();
+        synchronize(&tx,"db",&ids,&orders,|o|{
+            let mut r=report(1);
+            let counts=r["fieldStatistics"][0]["counts"].clone();
+            r["fieldStatistics"]=json!([]);
+            r["statistics"]=json!([{"key":if o["id"]=="other"{"other"}else{"wanted"},"counts":counts}]);
+            Ok(r)
+        }).unwrap();
+        let keys=BTreeSet::from(["wanted".to_owned()]);
+        assert_eq!(owner_capture_ids(&tx,"db","target",&keys).unwrap(),vec!["a".to_owned()]);
+        assert!(owner_capture_ids(&tx,"different","target",&keys).unwrap().is_empty());
+        let excessive=(0..9).map(|n|n.to_string()).collect::<BTreeSet<_>>();
+        assert!(owner_capture_ids(&tx,"db","target",&excessive).is_err());
+        mark_pending(&tx,"db","a").unwrap();
+        assert!(owner_capture_ids(&tx,"db","target",&keys).is_err());
+    }
+    #[test]
     fn local_replay_uses_only_pre_cutoff_current_verified_training_orders(){
         let mut c=conn();
         let key=json!([1,"type","base",null,["address",[0,0,1,0,0]]]).to_string();

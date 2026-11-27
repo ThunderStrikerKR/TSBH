@@ -11660,12 +11660,16 @@ mod reception_workflow_admission_integration_tests {
         let raw=row.raw.clone();
         let evidence=serde_json::json!({"recipients":[],"candidates":[],"unassigned":[],
             "initialPredictionCapture":{"origin":"untrusted"}});
-        preserve_first_recognition(&mut row,&raw,evidence.clone(),Some(first.clone()),None);
+        let shadow=serde_json::json!({"status":"captured_shadow_support","modelId":"shadow-test",
+            "calibratedProbability":null,"contexts":[{"candidates":[{"candidate":"previous","supportShare":0.75}]}]});
+        preserve_first_recognition(&mut row,&raw,evidence.clone(),Some(first.clone()),Some(shadow.clone()));
         row.analysis_raw=Some(raw.clone());
         let stored=row.analysis_evidence.clone().unwrap();
         assert_eq!(stored["initialPredictionCapture"]["orderId"],"synthetic");
         assert_eq!(stored["initialPredictionCapture"]["analysisStartedAt"],"2026-11-27T00:00:00+00:00");
-        assert_eq!(stored["initialPredictionCapture"]["learningSupportEvaluated"],false);
+        assert_eq!(stored["initialPredictionCapture"]["learningSupportEvaluated"],true);
+        assert_eq!(stored["initialPredictionCapture"]["learningShadow"],shadow);
+        assert_eq!(stored["initialPredictionCapture"]["frozenModelVerified"],false);
         preserve_first_recognition(&mut row,&raw,serde_json::json!({"recipients":[1]}),Some(later.clone()),None);
         assert_eq!(row.analysis_evidence.as_ref(),Some(&stored));
         let mut order=serde_json::json!({"id":row.id,"raw":raw});
