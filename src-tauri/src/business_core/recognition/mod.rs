@@ -944,12 +944,16 @@ fn field_weight_samples(v:&Value)->Result<Vec<FieldWeightSample<'_>>,String>{
     }
     Ok(out)
 }
-fn field_weight_metrics(samples:&[FieldWeightSample<'_>],profile:Option<([i32;3],i32)>)->Value{
+fn field_weight_prediction<'a>(task:&str,candidates:&[FieldWeightCandidate<'a>],weights:[i32;3],margin:i32)->&'a str{
+    if task=="type"&&candidates.iter().filter(|c|!c.blocked).count()<2{return "abstain";}
+    field_weight_choice(candidates,weights,margin).unwrap_or("abstain")
+}
+fn field_weight_metrics(task:&str,samples:&[FieldWeightSample<'_>],profile:Option<([i32;3],i32)>)->Value{
     let mut patterns=std::collections::BTreeMap::<&str,(usize,usize)>::new();
     let mut orders=std::collections::BTreeMap::<&str,(usize,usize)>::new();
     let mut correct=0;let mut absent=0;let mut abstain=0;
     for s in samples{
-        let prediction=profile.map_or(s.legacy,|(w,m)|field_weight_choice(&s.candidates,w,m).unwrap_or("abstain"));
+        let prediction=profile.map_or(s.legacy,|(w,m)|field_weight_prediction(task,&s.candidates,w,m));
         let ok=if prediction==s.expected{1}else{0};
         correct+=ok;
         if prediction=="abstain"{abstain+=1;}
@@ -969,19 +973,19 @@ fn evaluate_field_weights(payload:&Value)->Result<Value,String>{
     let patterns=fit.iter().map(|s|s.pattern).collect::<HashSet<_>>();
     let unseen=holdout.iter().filter(|s|!patterns.contains(s.pattern)).collect::<Vec<_>>();
     let unseen_count=unseen.iter().map(|s|s.order).collect::<HashSet<_>>().len();
-    let mut best=([1,1,0],2);
+    let mut best=if task=="type"{([1,1,0],2)}else{([1,1,1],4)};
     let objective=|m:&Value|0.5*m["microAccuracy"].as_f64().unwrap_or(0.0)+0.5*m["macroPatternAccuracy"].as_f64().unwrap_or(0.0);
-    let mut score=objective(&field_weight_metrics(&fit,Some(best)));
+    let mut score=objective(&field_weight_metrics(task,&fit,Some(best)));
     for a in [0,1,2]{for b in [0,1,2]{for c in [0,1,2]{for m in [2,4,6]{
         if a+b+c==0{continue;}
         let profile=([a,b,c],m);
-        let next=objective(&field_weight_metrics(&fit,Some(profile)));
+        let next=objective(&field_weight_metrics(task,&fit,Some(profile)));
         if next>score+1e-12{best=profile;score=next;}
     }}}}
-    let unseen_correct=unseen.iter().filter(|s|field_weight_choice(&s.candidates,best.0,best.1).unwrap_or("abstain")==s.expected).count();
+    let unseen_correct=unseen.iter().filter(|s|field_weight_prediction(task,&s.candidates,best.0,best.1)==s.expected).count();
     Ok(json!({"task":task,"status":"offline_comparison_only","profile":{"weights":best.0,"margin":best.1},
-        "fit":{"legacy":field_weight_metrics(&fit,None),"selected":field_weight_metrics(&fit,Some(best))},
-        "holdout":{"legacy":field_weight_metrics(&holdout,None),"selected":field_weight_metrics(&holdout,Some(best))},
+        "fit":{"legacy":field_weight_metrics(task,&fit,None),"selected":field_weight_metrics(task,&fit,Some(best))},
+        "holdout":{"legacy":field_weight_metrics(task,&holdout,None),"selected":field_weight_metrics(task,&holdout,Some(best))},
         "unseenPatterns":{"independentOrders":unseen_count,"correct":unseen_correct,"total":unseen.len()},
         "labelProvenanceVerified":false,"productionAuthorized":false}))
 }
@@ -1980,7 +1984,19 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
                     }).collect::<Vec<_>>();
                     let quantity_candidates=hit.quantities.iter().take(128).map(|qi|{
                         let q=&events[*qi];
-                        json!({"start":utf16(raw,q.start),"end":utf16(raw,q.end),
+                        let product=&events[hit.evidence];
+                        let relation=SourceRelation::between(product.line as u64,product.paragraph as u64,q.line as u64,q.paragraph as u64);
+                        let char_gap=if product.end<=q.start{raw[product.end..q.start].chars().count()}
+                            else if q.end<=product.start{raw[q.end..product.start].chars().count()}else{0};
+                        let features=[if relation.same_paragraph{8}else{0},
+                            (8/(1+relation.distance().min(8))) as u8,(8/(1+char_gap.min(8))) as u8];
+                        let overlap=product.start<q.end&&q.start<product.end;
+                        let blocked=overlap||q.value.parse::<i64>().ok().is_none_or(|n|n<=0)||
+                            (hit.common&&(!hit.each||hit.quantities.len()!=1))||
+                            (q.item_id.is_some()&&!(hit.common&&hit.each&&hit.quantities.len()==1));
+                        let start=utf16(raw,q.start);let end=utf16(raw,q.end);
+                        json!({"start":start,"end":end,"id":format!("{start}:{end}"),
+                            "features":features,"blocked":blocked,
                             "value":q.value,"selected":selected_qty==Some(*qi),
                             "reasonCode":if selected_qty==Some(*qi){"selected"}
                                 else if hit.common&&!hit.each{"common_total_not_per_recipient"}
@@ -1993,6 +2009,8 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
                         "variantCount":variant_count,"variantTruncated":variant_count>128,
                         "variants":options,"quantityCandidates":quantity_candidates,
                         "quantityTruncated":hit.quantities.len()>128,
+                        "quantityLinkFeaturePolicy":"quantity-link-geometry-v1",
+                        "quantityLinkCoverage":"same_hit_candidates_only",
                         "selectedQuantity":item["quantity"],"quantityConfirmed":item["quantityConfirmed"]}));
                 }else{candidate_trace_truncated=true;}
             }
