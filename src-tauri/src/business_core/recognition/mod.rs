@@ -787,7 +787,7 @@ fn recipient_owner_index(
     }
     // Keep existing ownership inside the preceding named person's paragraph.
     // This protects multiple phone numbers for the same recipient.
-    let (previous_line,_,previous_paragraph)=features.relation(events,anchors[previous],evidence_index);
+    let (_,_,previous_paragraph)=features.relation(events,anchors[previous],evidence_index);
     let (next_line,_,next_paragraph)=features.relation(events,evidence_index,next_anchor_index);
     if previous_paragraph || !next_paragraph {
         return previous;
@@ -801,7 +801,6 @@ fn recipient_owner_index(
     if !previous_has_delivery {return previous;}
     // A separating line containing only spaces/tabs counts as a block
     // boundary too. This is a conservative overlay on the existing gates.
-    let previous_gap=geometry.between(preceding.line,candidate.line);
     let following_gap=geometry.between(candidate.line,following.line);
     if following_gap.blank_lines>0 {return previous;}
     let next_distance=next_line.max(0) as usize;
@@ -812,17 +811,11 @@ fn recipient_owner_index(
     if matches!(candidate.kind,"phone"|"mobile") && !has_nearby_address {
         return previous;
     }
-    let preceding_distance=previous_line.max(0) as usize;
-    let previous_score=(if preceding.paragraph==candidate.paragraph {80usize} else {0})
-        + 20usize.saturating_sub(preceding_distance.saturating_mul(5));
-    // Blank-line and content-line evidence are distinct. Their bounded
-    // adjustment must not override paragraph identity or address support.
-    let following_score=(80usize
-        + 20usize.saturating_sub(next_distance.saturating_mul(5))
-        + if has_nearby_address {20} else {0}
-        + previous_gap.blank_lines.min(2)*5)
-        .saturating_sub(following_gap.content_lines.min(2)*5);
-    if following_score >= previous_score+30 {previous+1} else {previous}
+    // Legacy equivalence: after the gates above, previous_score <= 20,
+    // following_score >= 80 + 5 - 10 = 75, and required margin = 30.
+    // The comparison was always true. Retain the existing decision as a
+    // deterministic fallback, not as a purported calibrated weight.
+    previous+1
 }
 /// Original TypeScript resolvePrice for the recognition Item shape.
 /// The separate pricing migration remains authoritative for business rules.
@@ -1746,13 +1739,23 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
             row["addressParts"] = parts;
         }
     }
+    // Keep the current ownership policy until independently measured
+    // alternatives are validated. Build the eligible detached-quantity
+    // groups once; mutable assignments are checked when consumed.
+    let product_lines:HashSet<_>=product_hits.iter().map(|h|h.line).collect();
+    let mut detached=vec![Vec::<usize>::new();recipients.len()];
+    for (i,e) in events.iter().enumerate(){
+        if e.kind=="quantity"&&!product_lines.contains(&e.line){
+            detached[owner_index(anchors,&events,e.start)].push(i);
+        }
+    }
     let has_leading = anchors.first().map_or(false, |a| product_hits.iter().any(|h|
         !h.common && events[h.evidence].start < events[*a].start));
     for hit in &product_hits {
         let anchor_index = owner_index(anchors,&events,events[hit.evidence].start);
         let owner = if has_leading && !anchors.is_empty() {
-            anchors.iter().position(|a| events[*a].start > events[hit.evidence].start)
-                .unwrap_or(anchors.len()-1)
+            anchors.partition_point(|a|events[*a].start<=events[hit.evidence].start)
+                .min(anchors.len()-1)
         } else { anchor_index };
         let attach_to: Vec<usize> = if hit.common {
             (0..recipients.len()).filter(|idx| recipients[*idx]["items"]
@@ -1768,11 +1771,8 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
             //   explicitly per-recipient ('각각'/'씩') source quantity
             // - a common document total must never be multiplied
             let selected_qty = if hit.common {
-                let mut local=events.iter().enumerate().filter_map(|(qi,e)|
-                    (e.kind=="quantity" && e.item_id.is_none()
-                        && !hit.quantities.contains(&qi)
-                        && !product_hits.iter().any(|p|p.line==e.line)
-                        && owner_index(anchors,&events,e.start)==idx).then_some(qi));
+                let mut local=detached[idx].iter().copied().filter(|&qi|
+                    events[qi].item_id.is_none()&&!hit.quantities.contains(&qi));
                 match (local.next(),local.next()){
                     (Some(q),None)=>Some(q),
                     (Some(_),Some(_))=>None,
@@ -1940,11 +1940,8 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     // A detached quantity is attachable only when exactly one item and one quantity
     // are unresolved within the same recipient. Otherwise it stays visible as evidence.
     for idx in 0..recipients.len() {
-        let standalone: Vec<usize> = events.iter().enumerate().filter_map(|(i,e)|
-            (e.kind=="quantity" && e.item_id.is_none()
-                && owner_index(anchors,&events,e.start)==idx
-                && !product_hits.iter().any(|h| h.line==e.line)).then_some(i)
-        ).collect();
+        let standalone:Vec<usize>=detached[idx].iter().copied()
+            .filter(|&i|events[i].item_id.is_none()).collect();
         let pending: Vec<usize> = recipients[idx]["items"].as_array().expect("items")
             .iter().enumerate().filter_map(|(i,it)|it["quantity"].is_null().then_some(i)).collect();
         if standalone.len()==1 && pending.len()==1 {
@@ -2323,6 +2320,24 @@ mod tests {
         assert_eq!(recipients[1]["mobile"],"010-2345-6789");
         assert!(recipients[0]["address"].as_str().unwrap().contains("월드컵로 20"));
         assert!(recipients[1]["address"].as_str().unwrap().contains("불정로 6"));
+    }
+    #[test]
+    fn legacy_owner_margin_cannot_change_decision_after_existing_gates(){
+        for prev_distance in 0usize..=30{
+            for next_distance in 0usize..=3{
+                for prior_blank in 0usize..=5{
+                    for content in 0usize..=next_distance.saturating_sub(1){
+                        for nearby in [false,true]{
+                            let previous=20usize.saturating_sub(prev_distance.saturating_mul(5));
+                            let following=(80+20usize.saturating_sub(next_distance*5)
+                                +if nearby{20}else{0}+prior_blank.min(2)*5)
+                                .saturating_sub(content.min(2)*5);
+                            assert!(following>=previous+30);
+                        }
+                    }
+                }
+            }
+        }
     }
     #[test]
     fn address_and_phone_before_next_name_use_new_paragraph_and_proximity(){
