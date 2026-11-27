@@ -23,7 +23,41 @@ jobs:
         with:
           workspaces: egui-app -> target
       - name: Synthetic performance and equivalence checks
-        run: cargo test --manifest-path egui-app/Cargo.toml performance_ -- --nocapture
+        shell: pwsh
+        run: |
+          # A Cargo filter matching no tests can still return exit code zero.
+          # Require all four P08-07 regression tests before accepting this job.
+          $listed = cargo test --manifest-path egui-app/Cargo.toml performance_ -- --list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $expected = @(
+            'performance_shared_context_benchmark',
+            'performance_incremental_facts_preserve_unchanged_rows',
+            'performance_combined_confirmation_shares_exact_comparison',
+            'performance_shadow_grid_matches_reference_losses'
+          )
+          foreach ($test in $expected) {
+            $pattern = '(^|::)' + [regex]::Escape($test) + ': test      - name: Recognition support and learning ledger regression
+        run: |
+          cargo test --manifest-path egui-app/Cargo.toml recognition_support_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml recognition_learning_store_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: First analysis and correction regressions
+        run: |
+          cargo test --manifest-path egui-app/Cargo.toml recognition::observations::tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml recognition::learning_context::tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml learning_lifecycle_excludes_cancelled_deleted_and_partial_orders -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            $matchesFound = @($listed | Where-Object { $_ -match $pattern })
+            if ($matchesFound.Count -ne 1) {
+              throw "Expected exactly one performance regression test: $test; found $($matchesFound.Count)"
+            }
+          }
+          cargo test --manifest-path egui-app/Cargo.toml performance_ -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Recognition support and learning ledger regression
         run: |
           cargo test --manifest-path egui-app/Cargo.toml recognition_support_tests -- --nocapture
