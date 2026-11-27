@@ -499,17 +499,20 @@ def main():
     api_contract_self_test()
     failures = []
     checked = 0
+    checked_owners = set()
+    required_owners = set(API_CONTRACT) | {"ui_layout.rs"}
     for path in sorted(ROOT.rglob("*.rs")):
         name = path.relative_to(ROOT).as_posix()
         source = path.read_text(encoding="utf-8-sig")
         if path.name in {"ui_regressions.rs", "ui_test_support.rs", "tests.rs"} or path.stem.endswith("_tests") or re.search(r"#!\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]", source):
             continue
         checked += 1
+        if name in required_owners:
+            checked_owners.add(name)
         failures.extend(f"{name}:{line}: {rule}" for line, rule in violations(name, source))
         failures.extend(f"{name}:{line}: {rule}" for line, rule in api_contract_violations(name, source))
-    for required in (*API_CONTRACT, "ui_layout.rs"):
-        if not (ROOT / required).is_file():
-            failures.append(f"{required}:1: required API contract owner missing")
+    for required in sorted(required_owners - checked_owners):
+        failures.append(f"{required}:1: required API contract owner missing or excluded from production")
     for finding in failures:
         print(finding, file=sys.stderr)
     print(f"egui explicit placement ownership: {checked} Rust files, {len(failures)} violation(s)")
