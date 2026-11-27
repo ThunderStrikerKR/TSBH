@@ -550,15 +550,7 @@ pub fn management_table_money_font()->FontId {
     data_value_font(DataValueKind::Money,DataValueContext::Table)
 }
 
-/// Order-history shipment details use the same table font with true
-/// measured wrapping. The row height is derived from THIS galley, so a long
-/// product list never overlaps the next shipment.
-pub fn freight_table_wrapped_galley(
-    ui:&egui::Ui,text:&str,max_width:f32,
-)->std::sync::Arc<egui::Galley>{
-    freight_table_wrapped_galley_with_color(ui,text,max_width,TEXT)
-}
-/// Same history detail layout, with an optional linked-selection ink.
+/// Order-history shipment details use measured wrapping and an explicit ink.
 pub fn freight_table_wrapped_galley_with_color(
     ui:&egui::Ui,text:&str,max_width:f32,color:Color32,
 )->std::sync::Arc<egui::Galley>{

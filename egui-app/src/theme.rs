@@ -101,17 +101,10 @@ pub const CATEGORY_EXPLORER_SEPARATOR_WIDTH:f32=12.0;
 pub const CATEGORY_EXPLORER_BACK_WIDTH:f32=108.0;
 pub const CATEGORY_EXPLORER_ANCESTOR_INK:Color32=MUTED;
 pub const CATEGORY_EXPLORER_SEPARATOR_INK:Color32=Color32::from_gray(110);
-pub const CATEGORY_EXPLORER_ROOT_WIDTH:f32=48.0;
 pub const CATEGORY_EXPLORER_OMITTED_WIDTH:f32=36.0;
 pub const CATEGORY_EXPLORER_APPLY_WIDTH:f32=70.0;
 pub const CATEGORY_EXPLORER_APPLIED_BG:Color32=ORANGE_EMPHASIS_BG;
 pub const CATEGORY_EXPLORER_APPLIED_BORDER:Color32=SELECTED_ORDER;
-// The current exploration point is plain bright text, never a filled badge.
-pub const CATEGORY_EXPLORER_CURRENT_BG:Color32=Color32::TRANSPARENT;
-pub const CATEGORY_EXPLORER_CURRENT_BORDER:Color32=Color32::TRANSPARENT;
-// Darker than the generic 185/153 grey text, without obscuring navigation.
-// Applied categories remain orange; current exploration stays bright.
-pub const CATEGORY_EXPLORER_ANCESTOR_TEXT:Color32=Color32::from_rgb(112,112,112);
 // React workflow.css and receipt-layout.css amber palette; paint only.
 pub const SELECTED_ORDER: Color32 = Color32::from_rgb(245, 158, 11); // #F59E0B
 pub const ORANGE_EMPHASIS_BG: Color32 = Color32::from_rgb(59, 43, 27); // #3B2B1B
@@ -202,7 +195,6 @@ pub const WORKFLOW_DETAIL_ROW_BG: Color32 = PANEL;
 pub const WORKFLOW_DETAIL_ROW_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_DETAIL_ROW_PADDING_X: f32 = SPACE_12;
 pub const WORKFLOW_DETAIL_NAME_WIDTH: f32 = 102.0;
-pub const WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT: f32 = 32.0;
 // History recipient-detail blocks are independent of workflow product chips.
 // Keep their existing 4pt corner radius even when workflow chips are removed.
 pub const ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS: f32 = 4.0;
@@ -460,8 +452,6 @@ pub const MANUAL_SHEET_MIN_WIDTH: f32 = 440.0;
 pub const MANUAL_COLUMN_GAP: f32 = SPACE_12;
 pub const RECEPTION_ITEMS_TO_FREIGHT_GAP: f32 = SPACE_12;
 pub const MANUAL_ITEMS_CARD_MIN_HEIGHT: f32 = 340.0 + (RECEPTION_ITEMS_TO_FREIGHT_GAP - SPACE_8);
-pub const MANUAL_SEARCH_DIALOG_WIDTH: f32 = MODAL_DEFAULT_MAX_WIDTH;
-pub const MANUAL_SEARCH_RESULTS_HEIGHT: f32 = 420.0;
 // Shared native modal/table roles. Manual source and spreadsheet-like rows
 // inherit these values instead of locally painted one-off geometry.
 // Popup chrome uses the same neutral surface hierarchy as the Freight
@@ -537,11 +527,8 @@ pub const CATEGORY_PATH_PICKER_TEXT_PADDING:f32 = 32.0;
 // Reserve the right-side change-location action when painting a category
 // ancestor path in the editable category detail pane.
 pub const CATEGORY_PARENT_ACTION_RESERVE_WIDTH:f32 = 128.0;
-// React product-admin-redesign.css: fixed 460pt group list / 52pt rows,
-// with an independently scrolling editor and fixed action footer.
+// Group list width remains independently configurable; rows and footer use shared components.
 pub const FAMILY_LIST_WIDTH:f32 = 460.0;
-pub const FAMILY_ROW_HEIGHT:f32 = 52.0;
-pub const FAMILY_FOOTER_HEIGHT:f32 = 68.0;
 pub const MANAGEMENT_TABLE_HEADER_HEIGHT: f32 = 36.0;
 /// The bottom 2pt stroke is painted inside the fixed 36pt header,
 /// so its text centers in the remaining 34pt, never below the baseline.
@@ -549,7 +536,6 @@ pub const MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT:f32=2.0;
 /// Single source of truth for compact, single-line data rows across management,
 /// reception, catalog trees and manual entry. Two-line rows are a different role.
 pub const MANAGEMENT_COMPACT_ROW_HEIGHT: f32 = 42.0;
-pub const MANAGEMENT_TABLE_ROW_HEIGHT: f32 = 58.0;
 // Product table: a full-width, single-line record per product. The six
 // columns are identical in browse and edit mode; contextual Save/Cancel
 // controls float over the list instead of widening its three price columns.

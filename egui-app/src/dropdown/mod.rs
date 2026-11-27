@@ -33,13 +33,6 @@ pub(crate) fn management_dropdown(
 )->Response {
     management_dropdown_inner(ui,label,label,width,enabled,false,None,None,options)
 }
-/// Pre-fitted category paths retain the original text as the single tooltip.
-pub(crate) fn management_dropdown_full_label(
-    ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
-    options:impl FnOnce(&mut Ui)
-)->Response{
-    management_dropdown_inner(ui,label,full_label,width,enabled,false,None,None,options)
-}
 /// Same management dropdown master, with an optional colored status mark.
 /// This only changes the glyph painting; popup placement, hover and row
 /// selection remain owned by the shared management dropdown.
