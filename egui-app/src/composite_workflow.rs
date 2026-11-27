@@ -1,4 +1,5 @@
 //! Shared workflow card and shipment detail presentation.
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use eframe::egui::{self,Color32,Rect,Response,Sense,Ui,Vec2};
 use crate::{theme,typography,source_highlight};
@@ -26,7 +27,7 @@ pub fn workflow_compact_money(
     if emphasis{crate::one_touch::background(ui,highlight);}
     let clip=price_ink.intersect(ui.clip_rect());
     let clipped=text_exceeds_rect(galley.size(),clip);
-    ui.painter().with_clip_rect(clip).galley(pos,galley,color);
+    ui.painter().with_shared_clip(clip).galley(pos,galley,color);
     if emphasis{crate::one_touch::outline(ui,highlight);}
     clipped
 }
