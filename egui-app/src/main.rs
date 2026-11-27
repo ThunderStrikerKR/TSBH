@@ -1063,6 +1063,7 @@ struct BandoEgui {
     reception_metadata_revision:Option<u64>,
     reception_metadata_ready:bool,
     freight_manager: Option<freight_manager::FreightManager>,
+    reception_rate_editor:Option<freight_manager::ReceptionRateEditor>,
     order_history_manager: Option<order_history_manager::OrderHistoryManager>,
     daily_settlement_manager: Option<daily_settlement_manager::DailySettlementManager>,
     excel_manager: Option<excel_manager::ExcelManager>,
@@ -1202,6 +1203,7 @@ impl BandoEgui {
             reception_metadata_revision:None,
             reception_metadata_ready:false,
             freight_manager: None,
+            reception_rate_editor:None,
             order_history_manager: None,
             daily_settlement_manager: None,
             excel_manager: None,
@@ -1289,7 +1291,7 @@ impl BandoEgui {
         if self.vat_change.is_some(){active.push(ReceptionJob::VatEdit);}
         if self.working_sync.is_some(){active.push(ReceptionJob::WorkingSync);}
         if self.manual_workspace.is_some(){active.push(ReceptionJob::ManualWorkspace);}
-        if self.item_editor.is_some() || self.product_picker.is_some(){active.push(ReceptionJob::ItemDialog);}
+        if self.item_editor.is_some() || self.product_picker.is_some() || self.reception_rate_editor.is_some(){active.push(ReceptionJob::ItemDialog);}
         // A changed cell is uncommitted employee input. A clean, unchanged
         // editor may be dismissed by navigation or an approved draft delete;
         // other actions keep their existing edit-focus protection.
@@ -3133,6 +3135,18 @@ impl BandoEgui {
 
     /// React StaffChecks routing: navigate to the exact recipient/item
     /// rather than opening an unrelated manual screen or creating UI rules.
+    fn open_reception_rate(&mut self,target:serde_json::Value,ctx:&egui::Context){
+        if self.reception_modal_open() || !self.gateway.shipping_write_enabled(){return;}
+        if let JobAdmission::Conflict(blocker)=self.reception_job_admission(ReceptionJob::ItemDialog,false){
+            self.reception_job_conflict(ReceptionJob::ItemDialog,blocker);
+            return;
+        }
+        self.workflow_ui.stop_preview();
+        self.reception_rate_editor=Some(freight_manager::ReceptionRateEditor::new(
+            Arc::clone(&self.gateway),ctx.clone(),target));
+        ctx.request_repaint();
+    }
+
     fn handle_review_action(
         &mut self,action:review_panel::Action,ctx:&egui::Context
     ){
@@ -3151,6 +3165,10 @@ impl BandoEgui {
             }
         }
         match action{
+            review_panel::Action::OpenFreightRate(target)=>{
+                self.open_reception_rate(target,ctx);
+                return;
+            }
             review_panel::Action::ChooseClient(id)=>{
                 self.select_client_candidate(&id,ctx);
                 return;
@@ -5794,7 +5812,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 ButtonRole::Navigation
                             };
                             if crate::button::action(bar, page.label(), role,
-                                page==self.page || (self.confirmed_cell.is_none() && self.confirmed_modal_target.is_none())
+                                page==self.page || (self.confirmed_cell.is_none() && self.confirmed_modal_target.is_none() && self.reception_rate_editor.is_none())
                             ).clicked() {
                                 // Price cells must commit/cancel before leaving,
                                 // and a product modal must not be discarded by nav.
@@ -6096,7 +6114,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.client_chooser.is_some() || self.manual_workspace.is_some() ||
             self.edit_history_open || self.workflow_dialog.is_some() ||
             self.vat_dialog.is_some() || self.item_editor.is_some() ||
-            self.product_picker.is_some()
+            self.product_picker.is_some() || self.reception_rate_editor.is_some()
     }
 
     fn reception(&mut self, ctx: &egui::Context) {
@@ -7454,6 +7472,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let mut confirmed_navigation_request:Option<(InlineTarget,CellNavigationKey)>=None;
             let mut review_edit:Option<(workflow_board_ui::Selection,InlineTarget)>=None;
             let mut review_product:Option<(String,serde_json::Value)>=None;
+            let mut review_rate_target:Option<serde_json::Value>=None;
             let mut confirmed_validation_approval:Option<(String,serde_json::Value,bool)>=None;
             let mut confirmed_customer_inquiry:Option<(String,serde_json::Value,bool)>=None;
             let mut renotice_approval:Option<(serde_json::Value,bool)>=None;
@@ -7553,12 +7572,18 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             if crate::button::review_action(content,review_panel::notice::FREIGHT_ACTION,theme::ButtonRole::Standard,enabled).clicked(){
                                                 workflow_freight_open=Some((target.id.clone(),origin,String::new(),None,true));
                                             }
+                                            if let Some(rate)=review_panel::notice::show_freight_rate_actions(content,issue,
+                                                enabled&&confirmed_editable&&self.gateway.shipping_write_enabled()&&self.workflow_ui.active_preview().is_none()){
+                                                review_rate_target=Some(rate);
+                                            }
                                         }
                                         if let Some(instruction)=review_panel::issue_instruction(issue){
                                             content.add(egui::Label::new(typography::review_detail(instruction,tone)).wrap());
                                         }
                                         if issue["severity"].as_str()!=Some("INFO"){
-                                            if let Some(hint)=review_panel::pricing_registration_hint(
+                                            if review_panel::notice::has_freight_rate_targets(issue){
+                                                content.add(egui::Label::new(typography::review_detail("운임 기준을 등록하거나 이번 배송 건의 운임을 직접 입력하세요.",tone)).wrap());
+                                            }else if let Some(hint)=review_panel::pricing_registration_hint(
                                                 issue["kind"].as_str().unwrap_or("")
                                             ){
                                                 content.add(egui::Label::new(typography::review_detail(hint,tone)).wrap());
@@ -7920,7 +7945,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.workflow_freight_next_selection=None;
             }
             // Destination click wins over the previous editor's blur.
-            else if let Some((selection,target))=review_edit{
+            else if let Some(target)=review_rate_target{
+                self.open_reception_rate(target,ui.ctx());
+            }else if let Some((selection,target))=review_edit{
                 self.switch_confirmed_editor(selection,target,None,false,ui.ctx());
             }else if let Some((target_id,item))=review_product{
                 if let Some(target_ship)=group.shipments.iter().find(|s|s.id==target_id){
@@ -8306,7 +8333,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             &&self.vat_dialog.is_none()
                             &&self.client_change.is_none()
                             &&self.working_sync.is_none()
-                            &&self.workflow_ui.pending_preview().is_none();
+                            &&self.workflow_ui.pending_preview().is_none()&&self.reception_rate_editor.is_none();
                         let other_ready=other_ready && !self.active_confirmation_locked() && !self.active_delete_locked();
                         let can_act=other_ready && self.inline_change.is_none();
                         let client_can_act=other_ready && (self.inline_change.is_none() ||
@@ -10407,6 +10434,7 @@ impl eframe::App for BandoEgui {
             self.workflow_dialog=None;
             self.client_manager=None;
             self.freight_manager=None;
+            self.reception_rate_editor=None;
             self.order_history_manager=None;
             self.client_chooser=None;
             self.item_editor=None;
@@ -10525,6 +10553,22 @@ impl eframe::App for BandoEgui {
             self.show_vat_settings(ctx,work_area);
             self.show_edit_history(ctx,work_area);
             self.show_workflow_dialog(ctx,work_area);
+            if let Some(result)=self.reception_rate_editor.as_mut().and_then(|editor|editor.show(ctx,work_area)){
+                self.reception_rate_editor=None;
+                if result{
+                    // Use the native workflow freight projection after the
+                    // verified master save, without switching reception.
+                    self.reception_metadata_read.cancel();
+                    self.reception_metadata_last_probe=None;
+                    self.workflow_read.cancel();
+                    self.workflow_read.require();
+                    self.workflow_last_fetch=None;
+                    self.review_panel.clear();
+                    if let Some(manager)=self.freight_manager.as_mut(){manager.refresh(ctx.clone());}
+                    if self.active_id.is_some(){self.start_pricing_basis_check(ctx);}
+                }
+                ctx.request_repaint();
+            }
         } else if self.page==Page::Excel {
             if let Some(excel)=self.excel_manager.as_mut(){excel.show_reply_review(ctx,work_area);}
         } else if self.page==Page::History {

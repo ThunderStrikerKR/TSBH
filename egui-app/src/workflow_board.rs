@@ -428,7 +428,27 @@ fn project_state(gateway:&dyn BandoGateway,state:&Value,scope:Option<&HashSet<St
                 ),
                 Err(error)=>(None,None,Some(error),None,Vec::new(),None),
             };
-        let issues=workflow_review_entries(native,&display_shipments);
+        let mut issues=workflow_review_entries(native,&display_shipments);
+        for issue in &mut issues{
+            if text(issue,"kind")!="FREIGHT"{continue;}
+            let mut targets=Vec::new();
+            for ship in &display_shipments{
+                if ship.order_id!=text(issue,"orderId")||ship.recipient_id!=text(issue,"recipientId")||
+                    ship.transferred||ship.collect||ship.freight_editing_blocked{continue;}
+                let origins=["FACTORY","STORE"].into_iter().filter(|origin|
+                    ship.display_charges.get(*origin).is_some_and(|charge|charge.is_none())
+                ).collect::<Vec<_>>();
+                if origins.is_empty(){continue;}
+                for target in crate::review_panel::notice::freight_rate_targets(state,&ship.recipient,&origins,None){
+                    if !targets.iter().any(|old:&Value|if text(&target,"groupId").is_empty(){
+                        old["productId"]==target["productId"]
+                    }else{old["groupId"]==target["groupId"]}){
+                        targets.push(target);
+                    }
+                }
+            }
+            issue["freightRateTargets"]=json!(targets);
+        }
         groups.push(GroupRow{
             id:group_id.to_owned(),
             created_at:text(group,"createdAt").to_owned(),

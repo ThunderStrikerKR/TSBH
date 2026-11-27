@@ -68,6 +68,7 @@ pub enum Action {
     Navigate{kind:String,recipient_id:String,item_id:Option<String>,
         link_key:Option<String>},
     ChooseClient(String),
+    OpenFreightRate(Value),
     Candidate{recipient_id:String,field:String,value:String},
     ApproveOne{recipient_id:String,item_id:String},
     CancelApproval{recipient_id:String,item_id:String},
@@ -184,8 +185,8 @@ impl ReviewPanel {
                     // Sale status requires the live catalog; do not infer it
                     // from a previously recognized product label.
                     if let Ok(catalog)=gateway.load_catalog(){request["state"]=catalog;}
-                    let response=gateway.execute(ReadOperation::OrderIssuesWithActions,request)?;
-                    let issues=response.get("issues").and_then(Value::as_array)
+                    let response=gateway.execute(ReadOperation::OrderIssuesWithActions,request.clone())?;
+                    let mut issues=response.get("issues").and_then(Value::as_array)
                         .cloned().ok_or("확인할 내용을 불러오지 못했습니다.")?;
                     let message=if render_message{(||->Result<String,String>{
                         let settings=gateway.load_settings()?;
@@ -197,6 +198,18 @@ impl ReviewPanel {
                         rendered["requestText"].as_str().map(str::to_owned)
                             .ok_or_else(||"문의 메시지 생성 결과를 확인할 수 없습니다.".into())
                     })()}else{Ok(String::new())};
+                    if gateway.shipping_write_enabled(){
+                        for issue in &mut issues{
+                            if text(issue,"kind")!="FREIGHT"{continue;}
+                            let rid=text(issue,"recipientId");
+                            if let Some(recipient)=order["recipients"].as_array().and_then(|rows|
+                                rows.iter().find(|row|text(row,"id")==rid)){
+                                let targets=notice::freight_rate_targets(&request["state"],recipient,&[],
+                                    issue["itemId"].as_str().filter(|id|!id.is_empty()));
+                                issue["freightRateTargets"]=json!(targets);
+                            }
+                        }
+                    }
                     Ok((issues,message))
             });
         }
@@ -597,6 +610,9 @@ fn issue_card(
                         link_key:link_key.map(str::to_owned)
                     });
                 }
+                if let Some(target)=notice::show_freight_rate_actions(buttons,issue,enabled){
+                    *selected=Some(Action::OpenFreightRate(target));
+                }
             });
             if let Some(cancel)=show_validation_approval_action(cell,issue,enabled){
                 *selected=Some(Action::ValidationApproval{recipient_id:rid.to_owned(),
@@ -612,7 +628,9 @@ fn issue_card(
                 if model_action{
                     cell.add(egui::Label::new(typography::review_detail(MODEL_RESOLUTION_GUIDANCE,tone)).wrap());
                 }
-                if let Some(hint)=pricing_registration_hint(kind){
+                if notice::has_freight_rate_targets(issue){
+                    cell.add(egui::Label::new(typography::review_detail("운임 기준을 등록하거나 이번 배송 건의 운임을 직접 입력하세요.",tone)).wrap());
+                }else if let Some(hint)=pricing_registration_hint(kind){
                     cell.add(egui::Label::new(typography::review_detail(hint,tone)).wrap());
                 }
             }

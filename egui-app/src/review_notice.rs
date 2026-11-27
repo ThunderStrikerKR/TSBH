@@ -8,6 +8,73 @@ fn text<'a>(row:&'a Value,key:&str)->&'a str {
     row.get(key).and_then(Value::as_str).unwrap_or("")
 }
 
+
+pub(crate) fn freight_rate_targets(state:&Value,recipient:&Value,origins:&[&str],item_id:Option<&str>)->Vec<Value>{
+    let Some(products)=state["products"].as_array() else{return Vec::new()};
+    let Some(items)=recipient["items"].as_array() else{return Vec::new()};
+    let mut targets=Vec::new();
+    let mut seen=std::collections::HashSet::new();
+    for item in items{
+        if item_id.is_some_and(|id|text(item,"id")!=id) ||
+            (!origins.is_empty()&&!origins.contains(&text(item,"origin"))){continue;}
+        let pid=text(item,"productId");
+        if pid.is_empty(){continue;}
+        let Some(product)=products.iter().find(|p|text(p,"id")==pid&&
+            p["deletedAt"].is_null()&&p["active"]!=false&&p["supersededBy"].is_null())else{continue};
+        let gid=text(product,"shippingGroupId");
+        let name=if gid.is_empty(){text(product,"name")}else{
+            let Some(group)=state["shipping"]["groups"].as_array().and_then(|groups|
+                groups.iter().find(|g|text(g,"id")==gid&&g["deletedAt"].is_null()))else{continue};
+            text(group,"name")
+        };
+        if seen.insert((!gid.is_empty(),if gid.is_empty(){pid}else{gid})){
+            targets.push(json!({"productId":pid,"groupId":gid,"name":name}));
+        }
+    }
+    targets
+}
+
+pub(crate) fn show_freight_rate_actions(ui:&mut Ui,issue:&Value,enabled:bool)->Option<Value>{
+    if text(issue,"kind")!="FREIGHT"||text(issue,"severity")=="INFO"{return None;}
+    let targets=issue["freightRateTargets"].as_array()?;
+    let mut clicked=None;
+    for target in targets{
+        let caption=if text(target,"groupId").is_empty(){"상품 운임 설정"}else{"그룹 운임 설정"};
+        let name=text(target,"name");
+        let label=if name.is_empty(){caption.to_owned()}else{format!("{caption} ({name})")};
+        if crate::button::review_action(ui,&label,ButtonRole::Standard,enabled).clicked(){
+            clicked=Some(target.clone());
+        }
+    }
+    clicked
+}
+
+pub(crate) fn has_freight_rate_targets(issue:&Value)->bool{
+    issue["freightRateTargets"].as_array().is_some_and(|targets|!targets.is_empty())
+}
+
+#[cfg(test)]
+#[test]
+fn freight_rate_targets_deduplicate_groups_and_respect_origin_and_identity(){
+    let state=json!({"products":[
+        {"id":"p1","name":"A","shippingGroupId":"g"},
+        {"id":"p2","name":"B","shippingGroupId":"g"},
+        {"id":"p3","name":"C"},
+        {"id":"p4","name":"D","shippingGroupId":"missing"}
+    ],"shipping":{"groups":[{"id":"g","name":"그룹"}]}});
+    let recipient=json!({"items":[
+        {"id":"i1","productId":"p1","origin":"FACTORY"},
+        {"id":"i2","productId":"p2","origin":"FACTORY"},
+        {"id":"i3","productId":"p3","origin":"STORE"},
+        {"id":"i4","productId":"p4","origin":"FACTORY"}
+    ]});
+    let factory=freight_rate_targets(&state,&recipient,&["FACTORY"],None);
+    assert_eq!(factory,vec![json!({"productId":"p1","groupId":"g","name":"그룹"})]);
+    let store=freight_rate_targets(&state,&recipient,&["STORE"],None);
+    assert_eq!(store,vec![json!({"productId":"p3","groupId":"","name":"C"})]);
+    assert!(freight_rate_targets(&state,&recipient,&["FACTORY"],Some("i3")).is_empty());
+}
+
 pub(crate) const PRODUCT_ACTION:&str="상품 확인";
 pub(crate) const FREIGHT_ACTION:&str="운임 입력";
 pub(crate) const APPROVE_ACTION:&str="현재 정보 승인";

@@ -603,6 +603,67 @@ pub struct FreightManager {
     rate_search: String,
     history_sort: Option<HistorySort>,
 }
+/// Short-lived reception session; never shares an unsaved management-tab
+/// draft. The renderer and revision-checked writer are exactly the same.
+pub(crate) struct ReceptionRateEditor{
+    manager:FreightManager,
+    target:Value,
+    initialized:bool,
+}
+impl ReceptionRateEditor{
+    pub(crate) fn new(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,target:Value)->Self{
+        Self{manager:FreightManager::new(gateway,ctx),target,initialized:false}
+    }
+
+    /// None = open; Some(false) = cancelled; Some(true) = verified master save.
+    pub(crate) fn show(&mut self,ctx:&egui::Context,area:egui::Rect)->Option<bool>{
+        let manager=&mut self.manager;
+        let was_writing=manager.busy();
+        manager.poll(ctx.clone());
+        if self.initialized&&manager.rate_editor.is_none(){
+            return Some(manager.notice.is_some());
+        }
+        if !self.initialized&&manager.state.is_some()&&manager.error.is_none(){
+            self.initialized=true;
+            if let Err(error)=manager.open_reception_target(&self.target){
+                manager.error=Some(error);
+                self.initialized=false;
+            }
+        }
+        if manager.rate_editor.is_none(){
+            let mut close=false;
+            crate::popup::modal_backdrop(ctx,"freight-reception-loading-backdrop",false);
+            crate::popup::modal_window(ctx,"운임 기준 설정","freight-reception-loading",area)
+                .show(ctx,|modal|{
+                    crate::popup::modal_flow_workspace(modal,|workspace|{
+                        close=workspace.header("운임 기준 설정","닫기",true);
+                        workspace.body_region(|body|{
+                            body.add(egui::Label::new(typography::body(
+                                manager.error.as_deref().unwrap_or("운임 기준을 불러오는 중입니다.")
+                            )).wrap());
+                        });
+                    });
+                });
+            return if close{Some(false)}else{None};
+        }
+        let enabled=manager.gateway.shipping_write_enabled()&&!manager.refresh_job.required()&&!manager.busy();
+        let writing=manager.busy();
+        if was_writing&&!writing&&manager.error.is_some(){
+            if let Some(editor)=manager.rate_editor.as_mut(){editor.ask_discard=false;}
+        }
+        crate::floating_notice::sync(ctx,"freight.error","freight.action",
+            crate::floating_notice::Tone::Error,manager.error.as_deref());
+        let products=manager.state.as_ref().map(|state|rows(&state["products"]).iter()
+            .filter(|p|registered(p)).collect::<Vec<_>>()).unwrap_or_default();
+        let mut action=None;
+        let (close,_,_)=FreightManager::render_rate_editor(ctx,area,
+            manager.rate_editor.as_mut().expect("open rate editor"),&products,enabled,writing,false,&mut action);
+        if close{return Some(false);}
+        if let Some((kind,data))=action{manager.write(kind,data,ctx.clone());}
+        None
+    }
+}
+
 impl FreightManager {
     fn fetch(refresh:&mut crate::screen_refresh::ReadRefresh<(Value,Value)>,
         gateway:Arc<dyn BandoGateway>,ctx:egui::Context){
@@ -658,6 +719,39 @@ impl FreightManager {
             rate_search: String::new(),
             history_sort: None,
         }
+    }
+
+    /// The fresh master snapshot must match the button's product and group.
+    fn open_reception_target(&mut self,target:&Value)->Result<(),String>{
+        let state=self.state.as_ref().ok_or("운임 기준을 읽지 못했습니다.")?;
+        let projection=self.projection.as_ref().ok_or("운임 기준을 읽지 못했습니다.")?;
+        let pid=text(target,"productId");
+        let product=rows(&state["products"]).iter().find(|p|text(p,"id")==pid&&registered(p))
+            .ok_or("상품을 찾을 수 없습니다. 확인할 내용을 다시 확인하세요.")?;
+        let gid=text(product,"shippingGroupId");
+        if gid!=text(target,"groupId"){
+            return Err("배송 그룹 소속이 변경되었습니다. 확인할 내용을 다시 확인하세요.".into());
+        }
+        let editor=if gid.is_empty(){
+            let initial=if let Some(rule)=projection["productViews"][pid]["editableRule"].as_object(){
+                Value::Object(rule.clone())
+            }else{
+                let result=self.gateway.execute(ReadOperation::DefaultProductRule,
+                    json!({"action":"default_product_rule","versionId":"unsaved",
+                        "now":chrono::Utc::now().to_rfc3339()}))?;
+                result.get("rule").filter(|rule|rule.is_object()).cloned()
+                    .ok_or("기본 운임 기준을 읽지 못했습니다.")?
+            };
+            RateEditor::new_product(pid,text(product,"name"),&initial)
+        }else{
+            let group=rows(&state["shipping"]["groups"]).iter()
+                .find(|g|text(g,"id")==gid&&active(g)).ok_or("배송 그룹을 찾을 수 없습니다.")?;
+            let rule=projection["editableRules"].get(gid).filter(|rule|rule.is_object())
+                .ok_or("그룹 운임 기준을 읽지 못했습니다.")?;
+            RateEditor::new(gid,text(group,"name"),rule)
+        };
+        self.rate_editor=Some(editor);
+        Ok(())
     }
 
     fn pending_changes(&self)->serde_json::Map<String,Value>{
@@ -1162,87 +1256,11 @@ impl FreightManager {
             let mut close_basis=false;
             let confirmation_open=self.delete_target.is_some()||self.basis_target.is_some();
             if let Some(editor)=self.rate_editor.as_mut().filter(|_|!confirmation_open){
-                crate::popup::modal_backdrop(ctx,"freight-rate-backdrop",false);
-                let mut request_delete=false;
-                let mut request_basis=false;
-                let window=crate::popup::modal_window(ctx,
-                    if editor.product{"기본 운임 설정"}else{"배송 그룹 관리"},
-                    if editor.product{"freight-rate-modal"}else{"freight-group-rate-modal"},area);
-                // The product editor keeps its own compact window memory.
-                // The group editor uses the shared wide modal width, capped
-                // to the Kakao-safe area including the outer frame.
-                let window=if editor.product{window}else{
-                    let width=crate::popup::modal_wide_content_width(area.width());
-                    window.default_width(width).min_width(width).max_width(width)
-                };
-                window.show(ctx,|modal|{
-
-                        let title=if editor.product{
-                            "기본 운임 설정"
-                        }else{"배송 그룹 관리"};
-                        crate::popup::modal_flow_workspace(modal,|workspace|{
-                            if workspace.header(title,"닫기",!self.write_receiver.is_some()&&!editor.ask_discard
-                            ){
-                                if editor.dirty(){editor.ask_discard=true;}
-                                else{close_editor=true;}
-                            }
-                            workspace.scroll_region("freight-rate-editor-scroll",crate::popup::modal_editor_body_max_height(area.height()),|body|{
-                                if editor.product{
-                                    Self::rate_dialog(body,editor,enabled);
-                                }else{
-                                    let members=group_product_labels(&products);
-                                    let names=members.get(&editor.id).map(Vec::as_slice).unwrap_or(&[]);
-                                    Self::group_rate_dialog(body,editor,names,enabled);
-                                }
-                            });
-                            crate::floating_notice::sync(ctx,"freight.editor.validation","freight.action",
-                                crate::floating_notice::Tone::Validation,editor.error.as_deref());
-                            let group_editor=!editor.product;
-                            let clean=!editor.dirty();
-                            workspace.footer(
-                                |left|{
-                                    if group_editor{
-                                        request_delete=crate::button::action(left,"그룹 삭제",theme::ButtonRole::Danger,
-                                            enabled&&clean).clicked();
-                                    }
-                                },
-                                |right|{
-                                    if crate::button::action(right,if editor.product{"확인한 운임 저장"}else{"변경사항 저장"},
-                                        theme::ButtonRole::Primary,enabled&&editor.dirty()).clicked(){
-                                        crate::floating_notice::dispatch_pointer(ctx,"freight.action");
-                                        match editor.write_action(){
-                                            Ok(command)=>{editor.error=None;action=Some(command);}
-                                            Err(message)=>editor.error=Some(message),
-                                        }
-                                    }
-                                    if !editor.product{
-                                        request_basis=crate::button::action(right,"기준 변경",theme::ButtonRole::Standard,
-                                            enabled&&!editor.dirty()).clicked();
-                                    }
-                                }
-                            );
-                        });
-                    });
+                let (close,request_delete,request_basis)=Self::render_rate_editor(
+                    ctx,area,editor,&products,enabled,self.write_receiver.is_some(),true,&mut action);
+                close_editor=close;
                 if request_delete{self.delete_target=Some(editor.id.clone());}
                 if request_basis{self.basis_target=Some(Some(editor.id.clone()));}
-                if editor.ask_discard {
-                    crate::popup::modal_backdrop(ctx,"freight-discard-backdrop",true);
-                    match crate::popup::show_save_confirmation(
-                        ctx,area,"freight-discard-confirm","저장하지 않은 운임",
-                        "변경사항을 저장할까요?","저장하고 닫기",
-                        enabled,enabled&&editor.dirty()
-                    ){
-                        crate::popup::ChangeDecision::Cancel=>editor.ask_discard=false,
-                        crate::popup::ChangeDecision::Save=>{
-                            match editor.write_action(){
-                                Ok(command)=>{editor.error=None;action=Some(command);}
-                                Err(message)=>{editor.error=Some(message);editor.ask_discard=false;}
-                            }
-                        }
-                        crate::popup::ChangeDecision::Discard=>close_editor=true,
-                        crate::popup::ChangeDecision::Pending=>{}
-                    }
-                }
             }else if let Some(target)=self.basis_target.as_ref(){
                 let name=target.as_deref().map(|id|group_name(&groups,id));
                 crate::popup::modal_backdrop(ctx,"freight-basis-backdrop",false);
@@ -2181,8 +2199,95 @@ impl FreightManager {
         });
     }
 
-    fn group_rate_dialog(ui:&mut Ui,editor:&mut RateEditor,names:&[String],enabled:bool){
-        crate::popup::modal_named_text_field(ui,"배송 그룹명",&mut editor.name,"그룹 이름 입력",enabled);
+    fn render_rate_editor(ctx:&egui::Context,area:egui::Rect,editor:&mut RateEditor,
+        products:&[&Value],enabled:bool,writing:bool,allow_admin:bool,
+        action:&mut Option<(String,Value)>)->(bool,bool,bool){
+        let mut close_editor=false;
+                crate::popup::modal_backdrop(ctx,"freight-rate-backdrop",false);
+                let mut request_delete=false;
+                let mut request_basis=false;
+                let window=crate::popup::modal_window(ctx,
+                    if editor.product{"기본 운임 설정"}else{"배송 그룹 관리"},
+                    if editor.product{"freight-rate-modal"}else{"freight-group-rate-modal"},area);
+                // The product editor keeps its own compact window memory.
+                // The group editor uses the shared wide modal width, capped
+                // to the Kakao-safe area including the outer frame.
+                let window=if editor.product{window}else{
+                    let width=crate::popup::modal_wide_content_width(area.width());
+                    window.default_width(width).min_width(width).max_width(width)
+                };
+                window.show(ctx,|modal|{
+
+                        let title=if editor.product{
+                            "기본 운임 설정"
+                        }else{"배송 그룹 관리"};
+                        crate::popup::modal_flow_workspace(modal,|workspace|{
+                            if workspace.header(title,"닫기",!writing&&!editor.ask_discard
+                            ){
+                                if editor.dirty(){editor.ask_discard=true;}
+                                else{close_editor=true;}
+                            }
+                            workspace.scroll_region("freight-rate-editor-scroll",crate::popup::modal_editor_body_max_height(area.height()),|body|{
+                                if editor.product{
+                                    Self::rate_dialog(body,editor,enabled);
+                                }else{
+                                    let members=group_product_labels(products);
+                                    let names=members.get(&editor.id).map(Vec::as_slice).unwrap_or(&[]);
+                                    Self::group_rate_dialog(body,editor,names,enabled,allow_admin);
+                                }
+                            });
+                            crate::floating_notice::sync(ctx,"freight.editor.validation","freight.action",
+                                crate::floating_notice::Tone::Validation,editor.error.as_deref());
+                            let group_editor=!editor.product;
+                            let clean=!editor.dirty();
+                            workspace.footer(
+                                |left|{
+                                    if group_editor&&allow_admin{
+                                        request_delete=crate::button::action(left,"그룹 삭제",theme::ButtonRole::Danger,
+                                            enabled&&clean).clicked();
+                                    }
+                                },
+                                |right|{
+                                    if crate::button::action(right,if editor.product{"확인한 운임 저장"}else{"변경사항 저장"},
+                                        theme::ButtonRole::Primary,enabled&&editor.dirty()).clicked(){
+                                        crate::floating_notice::dispatch_pointer(ctx,"freight.action");
+                                        match editor.write_action(){
+                                            Ok(command)=>{editor.error=None;*action=Some(command);}
+                                            Err(message)=>editor.error=Some(message),
+                                        }
+                                    }
+                                    if !editor.product&&allow_admin{
+                                        request_basis=crate::button::action(right,"기준 변경",theme::ButtonRole::Standard,
+                                            enabled&&!editor.dirty()).clicked();
+                                    }
+                                }
+                            );
+                        });
+                    });
+                if editor.ask_discard {
+                    crate::popup::modal_backdrop(ctx,"freight-discard-backdrop",true);
+                    match crate::popup::show_save_confirmation(
+                        ctx,area,"freight-discard-confirm","저장하지 않은 운임",
+                        "변경사항을 저장할까요?","저장하고 닫기",
+                        enabled,enabled&&editor.dirty()
+                    ){
+                        crate::popup::ChangeDecision::Cancel=>editor.ask_discard=false,
+                        crate::popup::ChangeDecision::Save=>{
+                            match editor.write_action(){
+                                Ok(command)=>{editor.error=None;*action=Some(command);}
+                                Err(message)=>{editor.error=Some(message);editor.ask_discard=false;}
+                            }
+                        }
+                        crate::popup::ChangeDecision::Discard=>close_editor=true,
+                        crate::popup::ChangeDecision::Pending=>{}
+                    }
+                }
+
+        (close_editor,request_delete,request_basis)
+    }
+
+    fn group_rate_dialog(ui:&mut Ui,editor:&mut RateEditor,names:&[String],enabled:bool,allow_rename:bool){
+        crate::popup::modal_named_text_field(ui,"배송 그룹명",&mut editor.name,"그룹 이름 입력",enabled&&allow_rename);
         crate::popup::modal_body_pair(ui,editor,380.0,
             |left,editor|{
                 crate::popup::modal_master_body_section(left,"소속 상품",|list|{
