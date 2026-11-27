@@ -200,46 +200,35 @@ pub fn read_factory_reply(filename:&str,bytes:&[u8])->Result<Value,String>{
     }
     let mut book=open_book(bytes,10*1024*1024)?;
     let name=book.sheet_names().first().cloned().ok_or("회신 시트 누락")?;
-    // Reject a merged sheet before interpretation; formula errors in relevant
-    // columns are held per row, unrelated columns do not affect matching.
+    // Preserve the workbook's structural checks, not its choice of formulas.
     if !book.merge_cells_by_sheet_name(&name).map_err(|e|e.to_string())?.is_empty(){
         return Err("병합된 회신 셀은 허용되지 않습니다.".into());
     }
-    let formulas=book.worksheet_formula(&name).map_err(|e|e.to_string())?;
     let sheet=book.worksheet_range(&name).map_err(|e|e.to_string())?;
     let last=sheet.end().map(|(r,_)|r).unwrap_or(0);
     if last>1000{return Err("공장 회신 최대 1,000행".into())}
+    // Read number formats only when numeric waybills require a precision check.
+    // A cell's data type is not itself a reason to hold a reply.
+    let styles=if (1..=last).any(|r|numeric(sheet.get_value((r,16)).unwrap_or(&Data::Empty))){
+        Some(book.worksheet_style(&name).map_err(|e|e.to_string())?)
+    }else{None};
     let mut rows=Vec::new();
     for r in 1..=last{
-        let mut values=Vec::new();
-        let mut problems=Vec::new();
-        for (col,label) in [(0,"A"),(6,"G"),(16,"Q")]{
-            let v=sheet.get_value((r,col)).unwrap_or(&Data::Empty);
-            if formulas.get_value((r,col)).is_some_and(|s|!s.trim().is_empty()){
-                problems.push(format!("{label}열 수식"));
-            }
-            match text(v){Ok(s)=>values.push(s),Err(e)=>{problems.push(format!("{label}열 {e}"));values.push(String::new());}}
-        }
+        // Read saved values, including cached formula results. Never execute
+        // formulas or external links. Unreadable values become missing business
+        // fields and are handled by the existing name/freight/waybill checks.
+        let value=|col|text(sheet.get_value((r,col)).unwrap_or(&Data::Empty)).unwrap_or_default();
         let tracking_numeric=numeric(sheet.get_value((r,16)).unwrap_or(&Data::Empty));
-        // Calamine's cell value alone cannot prove that a numeric tracking
-        // cell had no leading-zero number format. Hold it rather than guess.
-        if tracking_numeric{problems.push("Q열 숫자형 운송장번호 원본 서식 확인 필요".into());}
-        // I is optional corroboration only. An unreadable product cell
-        // cannot block an otherwise uniquely named dispatch.
-        let goods=if formulas.get_value((r,8)).is_some_and(|s|!s.trim().is_empty()){
-            String::new()
-        }else{text(sheet.get_value((r,8)).unwrap_or(&Data::Empty)).unwrap_or_default()};
-        // Existing C/D/E are read only as optional notification evidence.
-        // Invalid, empty, or formula cells do not affect matching or import.
-        let evidence=|col|if formulas.get_value((r,col)).is_some_and(|s|!s.trim().is_empty()){
-            String::new()
-        }else{text(sheet.get_value((r,col)).unwrap_or(&Data::Empty)).unwrap_or_default()};
-        let mut row=json!({"row":r+1,"name":values[0],"goods":goods,
-            "address":evidence(2),"phone":evidence(3),"mobile":evidence(4),
-            "rawFreight":values[1],"tracking":values[2],
-            "trackingNumeric":tracking_numeric,"trackingNumberFormat":"",
+        let tracking_format=if tracking_numeric{
+            styles.as_ref().and_then(|styles|styles.get((r,16)))
+                .and_then(|style|style.number_format.as_ref())
+                .map(|format|format.format_code.as_str()).unwrap_or("General")
+        }else{""};
+        let row=json!({"row":r+1,"name":value(0),"goods":value(8),
+            "address":value(2),"phone":value(3),"mobile":value(4),
+            "rawFreight":value(6),"tracking":value(16),
+            "trackingNumeric":tracking_numeric,"trackingNumberFormat":tracking_format,
             "reservedJ":false,"extraAfterQ":false});
-        if !problems.is_empty(){row["sourceIssue"]=json!(format!("{}행: {}",r+1,problems.join("; ")));}
         rows.push(row);
     }
     Ok(json!({"id":format!("factory-reply-{:x}",Sha256::digest(bytes)),
