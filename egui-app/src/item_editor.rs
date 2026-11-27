@@ -388,23 +388,17 @@ impl ItemEditor{
             if remove && !cancel{result=Some(Event::Remove);}
         }
         if self.confirm_discard{
-            crate::popup::show_decision_window(ctx,"변경사항 확인","reception-item-discard-confirm",work_area,|ui|{
-                crate::popup::decision_workspace(ui,|decision|{
-                    if decision.header("변경사항 확인","돌아가기",true){
-                        self.confirm_discard=false;
-                    }
-                    decision.body(|ui|{
-                        ui.label("선택한 상품 변경사항을 버릴까요?");
-                    });
-                    decision.actions(|actions|{
-                        if crate::button::action(actions,"수정 내용 버리기",ButtonRole::Danger,true)
-                            .clicked(){
-                            self.confirm_discard=false;
-                            result=Some(Event::Closed);
-                        }
-                    });
-                });
-            });
+            match crate::popup::show_discard_confirmation(
+                ctx,work_area,"reception-item-discard-confirm","변경사항 확인",
+                "선택한 상품 변경사항을 버릴까요?","돌아가기","수정 내용 버리기",true
+            ){
+                crate::popup::ChangeDecision::Cancel=>self.confirm_discard=false,
+                crate::popup::ChangeDecision::Discard=>{
+                    self.confirm_discard=false;
+                    result=Some(Event::Closed);
+                }
+                _=>{}
+            }
         }
         result
     }
