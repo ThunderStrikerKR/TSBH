@@ -17,7 +17,14 @@ const SCALARS:[&str;7]=["observationCount","independentOrders","weakIndependentO
     "weakUnchangedCount","explicitCorrectionCount","explicitCorrectionOrders","pendingCorrectionCount"];
 const MAPS:[&str;6]=["weakCandidates","explicitPositiveCandidates","explicitNegativeCandidates",
     "weakCandidateOrders","explicitPositiveCandidateOrders","explicitNegativeCandidateOrders"];
-type Fact=(String,String,String,String,i64);
+pub(super) type Fact=(String,String,String,String,i64);
+// Only constructed by verification of the source fingerprint and fact proof.
+// The foreground caller retains it for a single audit read transaction.
+pub(super) struct VerifiedFacts(Vec<Fact>);
+impl VerifiedFacts{
+    pub(super) fn len(&self)->usize{self.0.len()}
+    fn as_slice(&self)->&[Fact]{&self.0}
+}
 
 pub(super) fn prepare(conn:&Connection)->Result<(),String>{
     conn.execute_batch("CREATE TABLE IF NOT EXISTS recognition_learning_meta(
@@ -177,17 +184,20 @@ fn fact_proof(facts:&[Fact])->Result<String,String>{
 }
 
 pub(super) fn cached_count(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str)->Result<Option<i64>,String>{
+    Ok(verified_facts(tx,scope,id,digest)?.map(|f|f.len() as i64))
+}
+pub(super) fn verified_facts(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str)->Result<Option<VerifiedFacts>,String>{
     let count:Option<i64>=tx.query_row("SELECT fact_count FROM recognition_learning_fingerprints
         WHERE scope=?1 AND feature_version=?2 AND order_id=?3 AND contribution_version=?4 AND fingerprint=?5",
         params![scope,FEATURE_VERSION,id,CONTRIBUTION_VERSION,digest],|r|r.get(0))
         .optional().map_err(|e|e.to_string())?;
     let Some(expected)=count else{return Ok(None);};
     // A missing ledger/facts row must not be hidden by a cached digest.
-    let (actual,has_order):(i64,i64)=tx.query_row("SELECT
-        (SELECT count(*) FROM recognition_learning_facts WHERE scope=?1 AND feature_version=?2 AND order_id=?3),
-        (SELECT count(*) FROM recognition_learning_orders WHERE scope=?1 AND feature_version=?2 AND order_id=?3)",
-        params![scope,FEATURE_VERSION,id],|r|Ok((r.get(0)?,r.get(1)?))).map_err(|e|e.to_string())?;
-    if expected!=actual || has_order!=i64::from(expected>0){
+    let has_order:i64=tx.query_row("SELECT count(*) FROM recognition_learning_orders
+        WHERE scope=?1 AND feature_version=?2 AND order_id=?3",
+        params![scope,FEATURE_VERSION,id],|r|r.get(0)).map_err(|e|e.to_string())?;
+    let facts=existing(tx,scope,id)?;
+    if expected!=facts.len() as i64 || has_order!=i64::from(expected>0){
         return Err("학습 지문과 기여 원장이 불일치합니다.".into());
     }
     let proof:Option<String>=tx.query_row("SELECT digest FROM recognition_learning_fact_proofs
@@ -196,10 +206,10 @@ pub(super) fn cached_count(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str)->
     // Earlier builds have no proof. Re-project from the authoritative
     // source rather than blessing the existing derived facts.
     let Some(proof)=proof else{return Ok(None);};
-    if fact_proof(&existing(tx,scope,id)?)?!=proof{
+    if fact_proof(&facts)?!=proof{
         return Err("학습 기여량 내용 지문 불일치".into());
     }
-    Ok(Some(expected))
+    Ok(Some(VerifiedFacts(facts)))
 }
 
 fn save_fingerprint(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str,facts:&[Fact])->Result<(),String>{
@@ -464,8 +474,8 @@ pub(super) fn assess_support(tx:&Transaction<'_>,scope:&str,input:&Value)->Resul
 }
 
 // Bound foreground shadow capture before reading and verifying any full facts.
-pub(super) fn shadow_capture_ids(tx:&Transaction<'_>,scope:&str,target:&str,keys:&BTreeSet<String>)
-    ->Result<Vec<String>,String>{
+pub(super) fn shadow_capture_contexts(tx:&Transaction<'_>,scope:&str,target:&str,keys:&BTreeSet<String>)
+    ->Result<BTreeMap<String,Vec<String>>,String>{
     if keys.is_empty()||keys.len()>32{return Err("실시간 학습 문맥 한도 오류".into());}
     let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending WHERE scope=?1 AND feature_version=?2",
         params![scope,FEATURE_VERSION],|r|r.get(0)).map_err(|e|e.to_string())?;
@@ -474,6 +484,7 @@ pub(super) fn shadow_capture_ids(tx:&Transaction<'_>,scope:&str,target:&str,keys
         WHERE scope=?1 AND feature_version=?2 AND family=?5 AND context_key=?3
         AND order_id<>?4 ORDER BY order_id LIMIT 251").map_err(|e|e.to_string())?;
     let mut ids=BTreeSet::new();
+    let mut contexts=BTreeMap::new();
     for key in keys{
         let context:Value=serde_json::from_str(key).map_err(|_|"실시간 문맥 키 오류")?;
         let family=match context[1].as_str(){
@@ -483,12 +494,24 @@ pub(super) fn shadow_capture_ids(tx:&Transaction<'_>,scope:&str,target:&str,keys
         };
         let rows=stmt.query_map(params![scope,FEATURE_VERSION,key,target,family],|r|r.get::<_,String>(0))
             .map_err(|e|e.to_string())?;
+        let mut members=Vec::new();
         for id in rows{
-            ids.insert(id.map_err(|e|e.to_string())?);
+            let id=id.map_err(|e|e.to_string())?;
+            ids.insert(id.clone());
             if ids.len()>250{return Err("실시간 학습 주문 한도 초과".into());}
+            members.push(id);
         }
+        contexts.insert(key.clone(),members);
     }
-    Ok(ids.into_iter().collect())
+    Ok(contexts)
+}
+#[cfg(test)]
+fn shadow_capture_ids(tx:&Transaction<'_>,scope:&str,target:&str,keys:&BTreeSet<String>)->Result<Vec<String>,String>{
+    Ok(shadow_capture_contexts(tx,scope,target,keys)?.into_values().flatten().collect::<BTreeSet<_>>().into_iter().collect())
+}
+pub(super) fn assess_verified_support(input:&Value,contexts:&BTreeMap<String,Vec<String>>,
+    facts:&BTreeMap<String,VerifiedFacts>)->Result<Value,String>{
+    recognition_support::assess_verified(input,contexts,facts)
 }
 
 pub(super) fn assess_local_replay(tx:&Transaction<'_>,scope:&str,input:&Value,

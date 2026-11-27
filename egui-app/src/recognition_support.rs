@@ -1,6 +1,6 @@
 //! P05 diagnostic evidence support. Order-normalized, not calibrated
 //! probabilities. No effect on parser decisions, no inferred candidate.
-use super::{cached_count,existing,Fact,FEATURE_VERSION,CONTRIBUTION_VERSION};
+use super::{cached_count,existing,verified_facts,VerifiedFacts,Fact,FEATURE_VERSION,CONTRIBUTION_VERSION};
 use rusqlite::{params,Transaction};
 use serde_json::{json,Value};
 use std::collections::{BTreeMap,BTreeSet};
@@ -593,18 +593,42 @@ pub(super) fn assess(tx:&Transaction<'_>,scope:&str,input:&Value)->Result<Value,
         let digest:String=tx.query_row("SELECT fingerprint FROM recognition_learning_fingerprints
             WHERE scope=?1 AND feature_version=?2 AND order_id=?3 AND contribution_version=?4",
             params![scope,FEATURE_VERSION,id,CONTRIBUTION_VERSION],|r|r.get(0)).map_err(|_|"검증된 학습 지문 누락")?;
-        if !matches!(cached_count(tx,scope,&id,&digest)?,Some(n) if n>0){
-            return Err("검증되지 않은 학습 기여량".into());
-        }
-        let facts=existing(tx,scope,&id)?;
+        let facts=verified_facts(tx,scope,&id,&digest)?.filter(|f|f.len()>0)
+            .ok_or("검증되지 않은 학습 기여량")?;
+        let facts=facts.as_slice();
         checked_facts=checked_facts.saturating_add(facts.len());
         if checked_facts>MAX_FACTS{return Err("학습 지지도 조회 기여량 한도 초과".into());}
-        result.add(Evidence::from_facts(&facts,family,key)?,&allowed,ratio)?;
+        result.add(Evidence::from_facts(facts,family,key)?,&allowed,ratio)?;
     }
-    let mut report=result.wire(&allowed,ratio);
+    finish_assessment(result,input,&allowed,ratio,key,target)
+}
+// All members came from the same transaction's context query and source
+// verification. No per-context SQL or hashing on this path.
+pub(super) fn assess_verified(input:&Value,contexts:&BTreeMap<String,Vec<String>>,
+    facts:&BTreeMap<String,VerifiedFacts>)->Result<Value,String>{
+    let (family,key,target,allowed,ratio)=request(input)?;
+    let ids=contexts.get(key).ok_or("검증된 문맥 목록 누락")?;
+    let mut result=Aggregate::default();let mut checked_facts=0usize;
+    let mut seen=BTreeSet::new();
+    for id in ids{
+        if id==target||!seen.insert(id){return Err("검증된 문맥 주문 범위 오류".into());}
+        let f=facts.get(id).filter(|f|f.len()>0).ok_or("검증된 기여량 누락")?;
+        checked_facts=checked_facts.saturating_add(f.len());
+        if checked_facts>MAX_FACTS||seen.len()>MAX_ORDERS{return Err("학습 지지도 조회 한도 초과".into());}
+        // Facts are sorted by (family,key,metric,candidate). Skip unrelated
+        // contexts without repeatedly scanning all facts of the order.
+        let slice=f.as_slice();
+        let start=slice.partition_point(|(f,k,_,_,_)|(f.as_str(),k.as_str())<(family,key));
+        let end=slice.partition_point(|(f,k,_,_,_)|(f.as_str(),k.as_str())<=(family,key));
+        result.add(Evidence::from_facts(&slice[start..end],family,key)?,&allowed,ratio)?;
+    }
+    finish_assessment(result,input,&allowed,ratio,key,target)
+}
+fn finish_assessment(result:Aggregate,input:&Value,allowed:&BTreeSet<String>,ratio:f64,key:&str,target:&str)->Result<Value,String>{
+    let mut report=result.wire(allowed,ratio);
     report["contextQuality"]=context_quality(&report);
     if let Some(validation)=input.get("chronologicalValidation"){
-        report["chronologicalCalibration"]=chronological_calibration(validation,&allowed,key,target,ratio)?;
+        report["chronologicalCalibration"]=chronological_calibration(validation,allowed,key,target,ratio)?;
     }
     Ok(report)
 }

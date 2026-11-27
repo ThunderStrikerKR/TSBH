@@ -962,22 +962,29 @@ impl PreviewStore {
         if queries.len()>32{return Err("실시간 학습 조회 한도 초과".into());}
         let (mut conn,business,scope)=Self::learning_connection()?;
         let tx=conn.transaction().map_err(|e|e.to_string())?;
-        let ids=recognition_learning_store::shadow_capture_ids(&tx,&scope,target,&keys)?;
-        let (frozen,digests)=if ids.is_empty(){(BTreeMap::new(),BTreeMap::new())}else{
-            let (frozen,_,digests)=crate::business_state::read_learning_inputs(&ids,|sources|{
-                let (misses,digests)=select_learning_changes(&tx,&scope,sources)?;
-                if !misses.is_empty()||digests.len()!=ids.len(){
-                    return Err("실시간 학습 원본 동기화 필요".into());
+        let members=recognition_learning_store::shadow_capture_contexts(&tx,&scope,target,&keys)?;
+        let ids=members.values().flatten().cloned().collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>();
+        let (frozen,digests,verified)=if ids.is_empty(){(BTreeMap::new(),BTreeMap::new(),BTreeMap::new())}else{
+            let (frozen,_,(digests,verified))=crate::business_state::read_learning_inputs(&ids,|sources|{
+                let digests=learning_source_digests(&tx,sources)?;
+                if digests.len()!=ids.len(){return Err("실시간 학습 원본 동기화 필요".into());}
+                let mut verified=BTreeMap::new();let mut fact_count=0usize;
+                for (id,digest) in &digests{
+                    let facts=recognition_learning_store::verified_facts(&tx,&scope,id,digest)?
+                        .filter(|f|f.len()>0).ok_or("실시간 학습 원본 동기화 필요")?;
+                    fact_count=fact_count.saturating_add(facts.len());
+                    if fact_count>2_000_000{return Err("실시간 검증 기여량 한도 초과".into());}
+                    verified.insert(id.clone(),facts);
                 }
-                Ok((Vec::new(),digests))
+                Ok((Vec::new(),(digests,verified)))
             })?;
-            (frozen,digests)
+            (frozen,digests,verified)
         };
         let mut results=Vec::new();
         for (task,key,candidates) in &queries{
-            let report=recognition_learning_store::assess_support(&tx,&scope,&json!({
+            let report=recognition_learning_store::assess_verified_support(&json!({
                 "task":task,"contextKey":key,"targetOrderId":target,
-                "candidates":candidates,"explicitToWeakRatio":RATIO}))?;
+                "candidates":candidates,"explicitToWeakRatio":RATIO}),&members,&verified)?;
             // Only compact predictive sufficient statistics are persisted,
             // not the correction-validation report or source documents.
             results.push(json!({"contextKey":key,"task":task,"candidateIds":candidates,
@@ -1742,12 +1749,20 @@ fn verify_blend_model_sources(tx:&rusqlite::Transaction<'_>,scope:&str,business:
 
 fn select_learning_changes(tx:&rusqlite::Transaction<'_>,scope:&str,
     sources:&crate::business_state::LearningSources)->Result<(Vec<String>,LearningDigests),String>{
+    let digests=learning_source_digests(tx,sources)?;
+    let mut misses=Vec::new();
+    for (id,digest) in &digests{
+        if recognition_learning_store::cached_count(tx,scope,id,digest)?.is_none(){misses.push(id.clone());}
+    }
+    Ok((misses,digests))
+}
+fn learning_source_digests(tx:&rusqlite::Transaction<'_>,
+    sources:&crate::business_state::LearningSources)->Result<LearningDigests,String>{
     use sha2::{Digest,Sha256};
     let audit_ids=sources.iter().filter(|(_,source)|source.audit_needed)
         .map(|(id,_)|id.clone()).collect::<Vec<_>>();
     let audit=if audit_ids.is_empty(){std::collections::BTreeMap::new()}
         else{query_learning_audit_digests(tx,&audit_ids)?};
-    let mut misses=Vec::new();
     let mut digests=std::collections::BTreeMap::new();
     for (id,source) in sources.iter().filter(|(_,source)|source.active){
         let mut hash=Sha256::new();hash.update(b"bando-learning-raw-input-v2\0");
@@ -1757,12 +1772,9 @@ fn select_learning_changes(tx:&rusqlite::Transaction<'_>,scope:&str,
             hash.update(audit.get(id).ok_or("학습 감사 지문 누락")?.as_bytes());
         }else{hash.update([0]);}
         let digest=format!("{:x}",hash.finalize());
-        if recognition_learning_store::cached_count(tx,scope,id,&digest)?.is_none(){
-            misses.push(id.clone());
-        }
         digests.insert(id.clone(),digest);
     }
-    Ok((misses,digests))
+    Ok(digests)
 }
 
 fn apply_learning_changes(tx:&rusqlite::Transaction<'_>,scope:&str,ids:&[String],
