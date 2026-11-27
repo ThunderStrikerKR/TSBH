@@ -444,6 +444,14 @@ fn selectable_order_product(product:&Value)->bool{
         && rows(&product["variants"]).len()==1
 }
 
+fn selectable_reference_product(
+    id:&str,eligible:Option<&std::collections::HashSet<String>>,
+    membership:&HashMap<String,String>,excluded:&std::collections::HashSet<String>,
+)->bool{
+    !id.is_empty() && eligible.is_none_or(|ids|ids.contains(id))
+        && !membership.contains_key(id) && !excluded.contains(id)
+}
+
 fn selected_product_snapshot(products:&[Value],selection:&Value)->Option<Value>{
     let id=field(selection,"productId");
     let variant_id=field(selection,"variantId");
@@ -458,6 +466,31 @@ fn selected_product_snapshot(products:&[Value],selection:&Value)->Option<Value>{
 mod selection_snapshot_tests{
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn reference_selection_keeps_product_membership_and_order_eligibility_separate(){
+        let eligible=std::collections::HashSet::from(["p1".to_owned(),"p2".to_owned(),"p3".to_owned()]);
+        let membership=HashMap::from([("p2".to_owned(),"other".to_owned())]);
+        let excluded=std::collections::HashSet::from(["p3".to_owned()]);
+        assert!(selectable_reference_product("p1",Some(&eligible),&membership,&excluded));
+        for id in ["p2","p3","p4",""]{
+            assert!(!selectable_reference_product(id,Some(&eligible),&membership,&excluded));
+        }
+        assert!(selectable_reference_product("p4",None,&HashMap::new(),&Default::default()));
+    }
+
+    #[test]
+    fn common_chooser_skips_page_anchor_and_is_used_by_catalog_editors(){
+        let products=include_str!("product_manager.rs");
+        let alias=include_str!("alias_manager.rs");
+        let family=include_str!("model_group_manager.rs");
+        let page=products.split("pub fn show_page(").nth(1).unwrap();
+        assert!(page.contains("if !selecting{crate::card::align_management_primary_card(ui,page_origin_y);}"));
+        for source in [alias,family]{
+            assert!(source.contains("ProductManager::new_reference_selection("));
+            assert!(source.contains(".show_selection_modal("));
+        }
+    }
 
     #[test]
     fn replacement_resolves_exact_independent_product_and_variant(){
@@ -1659,7 +1692,8 @@ impl ProductManager {
                                         if selecting{
                                             // Order engine accepts only independent sale units.
                                             let allowed=selection_ready && if self.reference_selection{
-                                                !product_id.is_empty() && !self.reference_membership.contains_key(product_id)
+                                                selectable_reference_product(product_id,self.reference_eligible.as_ref(),
+                                                    &self.reference_membership,&self.reference_excluded)
                                             }else{
                                                 selectable_order_product(product)
                                                     && selected_variant.is_some_and(|v|!field(v,"id").is_empty())
