@@ -1020,6 +1020,28 @@ pub(crate) fn field_visual(state:VisualState,enabled_ink:Color32)->(Color32,Colo
 mod shared_visual_role_contract_tests{
     use super::*;
     #[test]
+    fn checkbox_and_scroll_rail_roles_preserve_existing_visual_contract(){
+        let selected=checkbox_palette(true,VisualState::Selected).unwrap();
+        let hovered=checkbox_palette(true,VisualState::Hovered).unwrap();
+        assert_eq!(selected.fill,CHECKBOX_CHECKED_BG);
+        assert_eq!(selected.outline.color,SELECTED_ORDER);
+        assert_eq!(hovered.outline.color,SELECTION);
+        assert_eq!(selected.fill,hovered.fill);
+        assert_eq!(selected.mark,hovered.mark);
+        assert_eq!(selected.mark.color,CHECKBOX_CHECKED_MARK);
+        assert!(checkbox_palette(false,VisualState::Normal).is_none());
+        assert!(checkbox_palette(true,VisualState::Disabled).is_none());
+        let standard=scroll_rail_geometry(ScrollRailRole::Standard);
+        let table=scroll_rail_geometry(ScrollRailRole::Table);
+        assert_eq!(standard.width,10.0);
+        assert_eq!(standard.minimum_handle,44.0);
+        assert_eq!((standard.inner_margin,standard.outer_margin),(SPACE_4,SPACE_4));
+        assert_eq!(table.width,standard.width);
+        assert_eq!(table.minimum_handle,standard.minimum_handle);
+        assert_eq!((table.inner_margin,table.outer_margin),(0.0,0.0));
+    }
+
+    #[test]
     fn base_surfaces_preserve_approved_colors_and_borders(){
         for (role,fill,border) in [
             (SurfaceRole::Workspace,CANVAS,Color32::TRANSPARENT),
