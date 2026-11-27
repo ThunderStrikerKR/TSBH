@@ -1,4 +1,5 @@
 //! Modal presentation and geometry. Overlay owns window layers, input priority and lifetime.
+use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Frame,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::ui_primitives::UiWidthPolicyExt;
 use crate::{theme,typography};
@@ -101,7 +102,7 @@ pub(crate) fn modal_master_overlay_ui(parent:&mut Ui,bounds:Rect,id:&'static str
     let mut overlay=parent.new_child(
         egui::UiBuilder::new()
             .id_salt(id)
-            .max_rect(bounds)
+            .aligned_max_rect(bounds)
             .layout(Layout::top_down(Align::Min))
     );
     overlay.set_clip_rect(bounds.intersect(inherited_clip));
@@ -577,7 +578,7 @@ fn modal_master_header_content_in_rect(
     // truncate, but must never push the only exit outside the modal.
     let mut close_ui=ui.new_child(
         egui::UiBuilder::new().id_salt("modal-master-heading-close")
-            .max_rect(heading)
+            .aligned_max_rect(heading)
             .layout(Layout::right_to_left(Align::Center))
     );
     close_ui.set_clip_rect(heading_clip);
@@ -588,7 +589,7 @@ fn modal_master_header_content_in_rect(
         let title_rect=crate::ui_layout::aligned_rect(Rect::from_min_max(heading.min,egui::pos2(title_right,heading.bottom())));
         let mut title_ui=ui.new_child(
             egui::UiBuilder::new().id_salt("modal-master-heading-title")
-                .max_rect(title_rect)
+                .aligned_max_rect(title_rect)
                 .layout(Layout::left_to_right(Align::Center))
         );
         title_ui.set_clip_rect(title_rect.intersect(heading_clip));
@@ -599,7 +600,7 @@ fn modal_master_header_content_in_rect(
         let subtitle_clip=subtitle.intersect(ui.clip_rect());
         ui.scope_builder(
             egui::UiBuilder::new().id_salt("modal-master-description")
-                .max_rect(subtitle),
+                .aligned_max_rect(subtitle),
             |details|{
                 details.set_clip_rect(subtitle_clip);
                 details.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,subtitle.width());
@@ -684,7 +685,7 @@ pub(crate) fn modal_master_header_with_toolbar_in_rect<R>(
     let toolbar_rect=crate::ui_layout::aligned_rect(modal_master_header_toolbar_rect(rect,ppp));
     let mut toolbar_ui=ui.new_child(
         egui::UiBuilder::new().id_salt("modal-master-header-toolbar")
-            .max_rect(toolbar_rect)
+            .aligned_max_rect(toolbar_rect)
             .layout(Layout::left_to_right(Align::Center))
     );
     toolbar_ui.set_clip_rect(toolbar_rect.intersect(ui.clip_rect()));
@@ -720,7 +721,7 @@ pub(crate) fn modal_master_footer_in_rect(
     let clip=content.intersect(ui.clip_rect());
     ui.scope_builder(
         egui::UiBuilder::new().id_salt("modal-master-actions")
-            .max_rect(content)
+            .aligned_max_rect(content)
             .layout(Layout::right_to_left(Align::Center)),
         |footer|{
             footer.set_clip_rect(clip);
@@ -755,7 +756,7 @@ fn modal_action_row_measured<R>(
     let clip=area.intersect(ui.clip_rect());
     let response=ui.scope_builder(
         egui::UiBuilder::new().id_salt("modal-master-flow-actions")
-            .max_rect(area)
+            .aligned_max_rect(area)
             .layout(Layout::right_to_left(Align::Center)),
         |buttons|{
             buttons.set_clip_rect(clip);
