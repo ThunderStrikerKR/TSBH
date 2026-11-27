@@ -2025,8 +2025,11 @@ pub(super) fn compare_registered_models(payload:&Value)->Result<Value,String>{
     let a_time=date(&a["createdAt"]).ok_or("기존 모델 생성 시각 오류")?;
     let b_time=date(&b["createdAt"]).ok_or("신규 모델 생성 시각 오류")?;
     let am=&a["model"];let bm=&b["model"];
-    let cutoff=a_time.max(b_time).max(date(&am["availableAfter"]).ok_or("기존 모델 사용 시각 오류")?)
+    let mut cutoff=a_time.max(b_time).max(date(&am["availableAfter"]).ok_or("기존 모델 사용 시각 오류")?)
         .max(date(&bm["availableAfter"]).ok_or("신규 모델 사용 시각 오류")?);
+    if let Some(v)=payload.get("minimumPredictionAfter"){
+        cutoff=cutoff.max(date(v).ok_or("독립 평가 추가 시각 경계 오류")?);
+    }
     let as_of=date(&payload["evaluationAsOf"]).ok_or("독립 평가 시각 오류")?;
     if cutoff>=as_of||a["modelId"]==b["modelId"]||am["clientBuildVersion"]!=bm["clientBuildVersion"]{
         return Err("독립 평가 모델 또는 시각 불일치".into());

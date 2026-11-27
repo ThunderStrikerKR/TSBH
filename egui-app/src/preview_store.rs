@@ -1063,6 +1063,8 @@ impl PreviewStore {
             Some(id.to_owned())
         }else{None};
         set_selected_blend_model(&tx,&scope,next.as_deref())?;
+        prepare_blend_governance(&tx)?;
+        tx.execute("DELETE FROM recognition_blend_monitor WHERE scope=?1",[&scope]).map_err(|e|e.to_string())?;
         if crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
             return Err("모델 관리 중 업무 DB 변경".into());
         }
@@ -1235,16 +1237,24 @@ impl PreviewStore {
         if ids.iter().collect::<std::collections::BTreeSet<_>>().len()!=ids.len(){return Err("독립 평가 주문 중복".into());}
         let (mut conn,business,scope)=Self::learning_connection()?;
         let tx=conn.transaction().map_err(|e|e.to_string())?;
+        let report=Self::paired_blend_in_transaction(&tx,&scope,&business,a,b,&ids,None,evaluate)?;
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(report)
+    }
+
+    fn paired_blend_in_transaction(tx:&rusqlite::Transaction<'_>,scope:&str,business:&std::path::Path,
+        a:&str,b:&str,ids:&[String],minimum_after:Option<&str>,
+        evaluate:impl Fn(&Value)->Result<Value,String>)->Result<Value,String>{
         let load=|id:&str|->Result<Value,String>{
-            let model=read_registered_blend_model(&tx,&scope,id)?;
-            verify_blend_model_sources(&tx,&scope,&business,&model,None)?;
+            let model=read_registered_blend_model(tx,scope,id)?;
+            verify_blend_model_sources(tx,scope,business,&model,None)?;
             let created:String=tx.query_row("SELECT created_at FROM recognition_blend_models WHERE scope=?1 AND model_id=?2",
                 params![scope,id],|r|r.get(0)).map_err(|e|e.to_string())?;
             Ok(json!({"modelId":id,"createdAt":created,"model":model}))
         };
         let baseline=load(a)?;let candidate=load(b)?;
-        let (frozen,mut orders,digests)=crate::business_state::read_learning_inputs(&ids,|sources|{
-            let (misses,digests)=select_learning_changes(&tx,&scope,sources)?;
+        let (frozen,mut orders,digests)=crate::business_state::read_learning_inputs(ids,|sources|{
+            let (misses,digests)=select_learning_changes(tx,scope,sources)?;
             if !misses.is_empty(){return Err("독립 평가 원본 동기화 필요".into());}
             let active=sources.iter().filter(|(_,s)|s.active).map(|(id,_)|id.clone()).collect();
             Ok((active,digests))
@@ -1252,25 +1262,86 @@ impl PreviewStore {
         if orders.is_empty(){return Err("독립 평가 활성 주문 없음".into());}
         let audit_ids=orders.iter().filter_map(|o|o["id"].as_str()).filter(|id|frozen.get(*id).is_some_and(|s|s.audit_needed))
             .map(str::to_owned).collect::<Vec<_>>();
-        let mut audit=if audit_ids.is_empty(){std::collections::BTreeMap::new()}else{query_reception_audit_batch(&tx,&audit_ids)?};
+        let mut audit=if audit_ids.is_empty(){std::collections::BTreeMap::new()}else{query_reception_audit_batch(tx,&audit_ids)?};
         for order in &mut orders{
             let id=order["id"].as_str().ok_or("독립 평가 주문 ID 누락")?;
             if let Some(events)=audit.remove(id){order["recognitionAuditEvents"]=json!(events);}
         }
-        let mut report=evaluate(&json!({"orders":orders,"baseline":baseline,"candidate":candidate,
-            "evaluationAsOf":chrono::Utc::now().to_rfc3339()}))?;
-        if crate::business_state::read_learning_sources(&ids)?!=frozen||
-            crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
+        let mut payload=json!({"orders":orders,"baseline":baseline,"candidate":candidate,
+            "evaluationAsOf":chrono::Utc::now().to_rfc3339()});
+        if let Some(cutoff)=minimum_after{payload["minimumPredictionAfter"]=json!(cutoff);}
+        let mut report=evaluate(&payload)?;
+        if crate::business_state::read_learning_sources(ids)?!=frozen||
+            crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?.as_path()!=business{
             return Err("독립 평가 중 원본 변경".into());
         }
-        verify_blend_model_sources(&tx,&scope,&business,&baseline["model"],None)?;
-        verify_blend_model_sources(&tx,&scope,&business,&candidate["model"],None)?;
+        verify_blend_model_sources(tx,scope,business,&baseline["model"],None)?;
+        verify_blend_model_sources(tx,scope,business,&candidate["model"],None)?;
         report["requestedOrders"]=json!(ids.len());
         report["missingOrInactiveOrders"]=json!(ids.len()-digests.len());
         report["currentSourceDigestsVerified"]=json!(true);
         report["crossDatabaseAtomicSnapshot"]=json!(false);
-        tx.commit().map_err(|e|e.to_string())?;
         Ok(report)
+    }
+
+    /// Automatic selection is limited to diagnostic shadow models.
+    /// A manual selection is required to bootstrap the comparison baseline.
+    pub(crate) fn auto_govern_blend(evaluate:impl Fn(&Value)->Result<Value,String>+Copy)->Result<Value,String>{
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        let status=|s:&str|json!({"status":s,"policyVersion":1,"automaticChangeAuthorized":false,"decisionChanged":false});
+        if !blend_registry_exists(&tx)?{return Ok(status("no_registry"));}
+        let Some(current)=selected_blend_model(&tx,&scope)?else{return Ok(status("no_manual_baseline"));};
+        let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending WHERE scope=?1 AND feature_version=1",
+            [&scope],|r|r.get(0)).map_err(|e|e.to_string())?;
+        if pending!=0{return Ok(status("pending_reconciliation"));}
+        prepare_blend_governance(&tx)?;
+        let monitor:Option<(String,String,String)>=tx.query_row("SELECT previous_model,selected_model,selected_at
+            FROM recognition_blend_monitor WHERE scope=?1",[&scope],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))
+            .optional().map_err(|e|e.to_string())?;
+        if let Some((previous,selected,since))=monitor.filter(|(_,selected,_)|selected==&current){
+            let ids=governance_orders(&since,true)?;
+            if ids.len()<40{return Ok(status("waiting_for_post_selection_orders"));}
+            let report=Self::paired_blend_in_transaction(&tx,&scope,&business,&previous,&selected,&ids,Some(&since),evaluate)?;
+            let verdict=governance_verdict(&report);
+            if verdict=="rollback"{
+                // Both revisions and current evaluation inputs were verified
+                // within this transaction by the replay path.
+                record_blend_transition(&tx,&scope,&selected,&previous,"rollback",&report)?;
+                set_selected_blend_model(&tx,&scope,Some(&previous))?;
+                tx.execute("INSERT OR IGNORE INTO recognition_blend_blocked VALUES(?1,?2)",params![scope,selected])
+                    .map_err(|e|e.to_string())?;
+                tx.execute("DELETE FROM recognition_blend_monitor WHERE scope=?1",[&scope]).map_err(|e|e.to_string())?;
+                tx.commit().map_err(|e|e.to_string())?;
+                let mut v=status("shadow_model_rolled_back");v["selectedModelId"]=json!(previous);return Ok(v);
+            }
+            // Do not advance another model until current monitoring has
+            // enough covered evidence and is not deteriorating.
+            if !matches!(verdict,"promote"|"stable"){return Ok(status("monitoring_insufficient"));}
+        }
+        let current_created:String=tx.query_row("SELECT created_at FROM recognition_blend_models WHERE scope=?1 AND model_id=?2",
+            params![scope,current],|r|r.get(0)).map_err(|e|e.to_string())?;
+        let candidate:Option<(String,String)>=tx.query_row("SELECT m.model_id,m.created_at FROM recognition_blend_models m
+            WHERE m.scope=?1 AND julianday(m.created_at)>julianday(?2)
+            AND json_extract(m.payload,'$.generationKind')='automatic_candidate_v1'
+            AND json_extract(m.payload,'$.clientBuildVersion')=?3
+            AND NOT EXISTS(SELECT 1 FROM recognition_blend_blocked b WHERE b.scope=m.scope AND b.model_id=m.model_id)
+            ORDER BY julianday(m.created_at) DESC,m.model_id LIMIT 1",
+            params![scope,current_created,env!("CARGO_PKG_VERSION")],|r|Ok((r.get(0)?,r.get(1)?)))
+            .optional().map_err(|e|e.to_string())?;
+        let Some((candidate,created))=candidate else{return Ok(status("no_new_candidate"));};
+        let ids=governance_orders(&created,false)?;
+        if ids.len()<40{return Ok(status("waiting_for_independent_orders"));}
+        let report=Self::paired_blend_in_transaction(&tx,&scope,&business,&current,&candidate,&ids,Some(&created),evaluate)?;
+        if governance_verdict(&report)!="promote"{return Ok(status("candidate_not_approved"));}
+        record_blend_transition(&tx,&scope,&current,&candidate,"promote",&report)?;
+        set_selected_blend_model(&tx,&scope,Some(&candidate))?;
+        tx.execute("INSERT INTO recognition_blend_monitor VALUES(?1,?2,?3,?4)
+            ON CONFLICT(scope) DO UPDATE SET previous_model=excluded.previous_model,
+            selected_model=excluded.selected_model,selected_at=excluded.selected_at",
+            params![scope,current,candidate,chrono::Utc::now().to_rfc3339()]).map_err(|e|e.to_string())?;
+        tx.commit().map_err(|e|e.to_string())?;
+        let mut v=status("shadow_model_promoted");v["selectedModelId"]=json!(candidate);Ok(v)
     }
 
     pub(crate) fn recognition_learning_support(input:&Value,
@@ -1381,7 +1452,11 @@ impl PreviewStore {
         let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
         recognition_learning_store::prepare(&tx)?;
         let report=recognition_learning_store::reset_derived(&tx,&scope)?;
-        if blend_registry_exists(&tx)?{set_selected_blend_model(&tx,&scope,None)?;}
+        if blend_registry_exists(&tx)?{
+            set_selected_blend_model(&tx,&scope,None)?;
+            prepare_blend_governance(&tx)?;
+            tx.execute("DELETE FROM recognition_blend_monitor WHERE scope=?1",[&scope]).map_err(|e|e.to_string())?;
+        }
         if crate::business_state::authorized_business_write_path()?.canonicalize()
             .map_err(|_|"업무 DB 식별 실패")?!=business{
             return Err("학습 초기화 중 업무 DB가 변경되었습니다.".into());
@@ -1446,6 +1521,62 @@ fn auto_retrain_config(orders:&[Value],now:chrono::DateTime<chrono::FixedOffset>
         "evaluationAsOf":now.to_rfc3339(),"clientBuildVersion":build}))
 }
 
+fn prepare_blend_governance(conn:&Connection)->Result<(),String>{
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS recognition_blend_monitor(
+        scope TEXT PRIMARY KEY,previous_model TEXT NOT NULL,selected_model TEXT NOT NULL,selected_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS recognition_blend_blocked(scope TEXT NOT NULL,model_id TEXT NOT NULL,
+        PRIMARY KEY(scope,model_id));
+        CREATE TABLE IF NOT EXISTS recognition_blend_transitions(
+        id INTEGER PRIMARY KEY,scope TEXT NOT NULL,from_model TEXT NOT NULL,to_model TEXT NOT NULL,
+        action TEXT NOT NULL,occurred_at TEXT NOT NULL,policy_version INTEGER NOT NULL,evaluation TEXT NOT NULL);")
+        .map_err(|e|e.to_string())
+}
+fn record_blend_transition(conn:&Connection,scope:&str,from:&str,to:&str,action:&str,report:&Value)->Result<(),String>{
+    let encoded=serde_json::to_string(report).map_err(|_|"모델 교체 평가 직렬화 오류")?;
+    if encoded.len()>256*1024{return Err("모델 교체 평가 한도 초과".into());}
+    conn.execute("INSERT INTO recognition_blend_transitions(scope,from_model,to_model,action,occurred_at,policy_version,evaluation)
+        VALUES(?1,?2,?3,?4,?5,1,?6)",params![scope,from,to,action,chrono::Utc::now().to_rfc3339(),encoded])
+        .map_err(|e|e.to_string())?;
+    Ok(())
+}
+fn governance_orders(after:&str,recent:bool)->Result<Vec<String>,String>{
+    let conn=crate::business_state::open_business_read_snapshot()?;
+    let direction=if recent{"DESC"}else{"ASC"};
+    let sql=format!("SELECT id FROM core_orders WHERE coalesce(json_extract(payload,'$.deletedAt'),'')=''
+        AND json_extract(payload,'$.confirmationSnapshot.recognitionBaseline.schemaVersion')=1
+        AND json_extract(payload,'$.confirmationSnapshot.recognitionBaseline.initialAnalysis.initialPredictionCapture.clientBuildVersion')=?1
+        AND julianday(json_extract(payload,'$.confirmationSnapshot.recognitionBaseline.initialAnalysis.initialPredictionCapture.analysisStartedAt'))>julianday(?2)
+        AND julianday(confirmed_at) IS NOT NULL
+        ORDER BY julianday(json_extract(payload,'$.confirmationSnapshot.recognitionBaseline.initialAnalysis.initialPredictionCapture.analysisStartedAt')) {direction},id {direction} LIMIT 250");
+    let ids={
+        let mut stmt=conn.prepare(&sql).map_err(|e|e.to_string())?;
+        let rows=stmt.query_map(params![env!("CARGO_PKG_VERSION"),after],|r|r.get::<_,String>(0)).map_err(|e|e.to_string())?;
+        rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?
+    };
+    conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+    Ok(ids)
+}
+// Provisional engineering thresholds, not statistical certification.
+fn governance_verdict(report:&Value)->&'static str{
+    if report["status"]!="paired_model_replay_diagnostic_only"||report["currentSourceDigestsVerified"]!=true||
+        report["sameFrozenInputs"]!=true||report["missingOrInactiveOrders"]!=0{return "insufficient";}
+    let get=|label:&str,min:u64|->Option<(f64,f64,u64,u64)>{
+        let mut rows=report["groups"].as_array()?.iter().filter(|r|r["sourceKind"]=="all"&&r["legacyRoute"]=="all"&&
+            r["contextLevel"]=="all"&&r["labelKind"]==label);
+        let m=&rows.next()?["metrics"];
+        if rows.next().is_some()||m["pairedOrders"].as_u64()?<min||m["pairedCoverage"].as_f64()?<0.8{return None;}
+        let old=m["fallbackBaselineAgreement"].as_f64()?;let new=m["fallbackCandidateAgreement"].as_f64()?;
+        let paired=m["pairedDelta"].as_f64()?;
+        if ![old,new,paired].iter().all(|v|v.is_finite()){return None;}
+        Some((new-old,paired,m["baselineOnlyAgrees"].as_u64()?,m["candidateOnlyAgrees"].as_u64()?))
+    };
+    let Some((u,up,ul,uw))=get("unchanged_proxy",30)else{return "insufficient";};
+    let Some((c,cp,cl,cw))=get("explicit_correction",10)else{return "insufficient";};
+    if (u<=-0.02&&ul>=uw.saturating_add(3))||(c<=-0.10&&cl>=cw.saturating_add(3)){return "rollback";}
+    if u>=-1e-10&&up>=-1e-10&&c>=0.05-1e-10&&cp>=0.05-1e-10&&cw>=cl.saturating_add(3){return "promote";}
+    if u>=-1e-10&&up>=-1e-10&&c>=-1e-10&&cp>=-1e-10{return "stable";}
+    "insufficient"
+}
 fn blend_registry_exists(conn:&Connection)->Result<bool,String>{
     conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN
         ('recognition_blend_models','recognition_blend_selection')",[],|r|r.get::<_,i64>(0))
@@ -2008,6 +2139,23 @@ mod ocr_layout_tests {
 #[cfg(test)]
 mod reception_edit_audit_tests {
     use super::*;
+    #[test]
+    fn governance_never_promotes_on_missing_coverage_or_normal_case_regression(){
+        let group=|label:&str,n:u64,old:f64,new:f64,delta:f64,l:u64,w:u64|json!({
+            "sourceKind":"all","legacyRoute":"all","contextLevel":"all","labelKind":label,
+            "metrics":{"pairedOrders":n,"pairedCoverage":1.0,"fallbackBaselineAgreement":old,
+                "fallbackCandidateAgreement":new,"pairedDelta":delta,"baselineOnlyAgrees":l,"candidateOnlyAgrees":w}});
+        let mut r=json!({"status":"paired_model_replay_diagnostic_only","sameFrozenInputs":true,
+            "currentSourceDigestsVerified":true,"missingOrInactiveOrders":0,
+            "groups":[group("unchanged_proxy",30,1.0,1.0,0.0,0,0),group("explicit_correction",10,0.2,0.5,0.3,0,3)]});
+        assert_eq!(governance_verdict(&r),"promote");
+        r["groups"][0]["metrics"]["pairedCoverage"]=json!(0.5);
+        assert_eq!(governance_verdict(&r),"insufficient");
+        r["groups"][0]=group("unchanged_proxy",30,1.0,0.9,-0.1,3,0);
+        assert_eq!(governance_verdict(&r),"rollback");
+        r["groups"][0]=group("unchanged_proxy",30,1.0,0.99,-0.01,1,0);
+        assert_eq!(governance_verdict(&r),"insufficient");
+    }
     #[test]
     fn automatic_retrain_uses_distinct_time_windows_and_new_order_threshold(){
         let old=(0..60).map(|i|(format!("id-{i}"),"a".repeat(64))).collect::<LearningDigests>();

@@ -1176,6 +1176,11 @@ pub(crate) fn start_recognition_learning_worker(){
                     cursor.clear();
                     if Instant::now()>=next_retrain{
                         next_retrain=Instant::now()+Duration::from_secs(3600);
+                        // Review already-existing candidates before creating a newer one.
+                        if PreviewStore::auto_govern_blend(|payload|
+                            recognition::execute("compare_registered_models",payload.clone())).is_err(){
+                            eprintln!("[BANDO HUB] 그림자 모델 자동 교체 검증 보류.");
+                        }
                         if PreviewStore::auto_retrain_blend(|payload|
                             recognition::execute("learn_blend_weights",payload.clone())).is_err(){
                             eprintln!("[BANDO HUB] 결합 모델 자동 재학습 보류: 다음 주기에 재검증합니다.");
@@ -1223,6 +1228,12 @@ pub(crate) fn sync_recognition_learning(ids:&[String])->Result<Value,String>{
 pub(crate) fn recognition_learning_support(input:&Value)->Result<Value,String>{
     let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
     if !mode.trim().eq_ignore_ascii_case("local"){return Err("학습 지지도는 로컬 DB에서만 조회합니다.".into());}
+    if let Some(config)=input.get("autoBlendGovernance"){
+        if input.as_object().is_none_or(|o|o.len()!=1)||config.as_object().is_none_or(|o|!o.is_empty()){
+            return Err("자동 모델 검증은 빈 설정으로 별도 요청해야 합니다.".into());
+        }
+        return PreviewStore::auto_govern_blend(|payload|recognition::execute("compare_registered_models",payload.clone()));
+    }
     if let Some(config)=input.get("pairedBlendEvaluation"){
         if input.as_object().is_none_or(|o|o.len()!=1){return Err("독립 평가 요청을 분리하세요.".into());}
         return PreviewStore::paired_blend_evaluation(config,|payload|
