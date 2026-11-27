@@ -1,4 +1,5 @@
 //! Shared selection triggers, option rows and searchable menus; overlay owns popup lifetime.
+use crate::ui_layout::SharedAllocationExt as _;
 use eframe::egui::{self,Color32,Rect,Response,Stroke,Ui,Vec2};
 use crate::ui_primitives::UiWidthPolicyExt;
 use crate::{theme,typography};
@@ -304,7 +305,7 @@ fn management_dropdown_option_inner<T:PartialEq>(
     let selected=*current==value;
     let response=match style{
         ManagementDropdownOptionStyle::Compact(width)=>{
-            let mut response=ui.add_sized(
+            let mut response=ui.shared_add_sized(
                 Vec2::new(width,theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT),
                 egui::Button::selectable(selected,invisible)
             );
