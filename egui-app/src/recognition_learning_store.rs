@@ -275,18 +275,24 @@ pub(super) fn assess_support(tx:&Transaction<'_>,scope:&str,input:&Value)->Resul
 }
 
 // Bound foreground shadow capture before reading and verifying any full facts.
-pub(super) fn owner_capture_ids(tx:&Transaction<'_>,scope:&str,target:&str,keys:&BTreeSet<String>)
+pub(super) fn shadow_capture_ids(tx:&Transaction<'_>,scope:&str,target:&str,keys:&BTreeSet<String>)
     ->Result<Vec<String>,String>{
-    if keys.is_empty()||keys.len()>8{return Err("실시간 학습 문맥 한도 오류".into());}
+    if keys.is_empty()||keys.len()>32{return Err("실시간 학습 문맥 한도 오류".into());}
     let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending WHERE scope=?1 AND feature_version=?2",
         params![scope,FEATURE_VERSION],|r|r.get(0)).map_err(|e|e.to_string())?;
     if pending!=0{return Err("복구 대기 학습 주문".into());}
     let mut stmt=tx.prepare("SELECT DISTINCT order_id FROM recognition_learning_facts
-        WHERE scope=?1 AND feature_version=?2 AND family='statistics' AND context_key=?3
+        WHERE scope=?1 AND feature_version=?2 AND family=?5 AND context_key=?3
         AND order_id<>?4 ORDER BY order_id LIMIT 251").map_err(|e|e.to_string())?;
     let mut ids=BTreeSet::new();
     for key in keys{
-        let rows=stmt.query_map(params![scope,FEATURE_VERSION,key,target],|r|r.get::<_,String>(0))
+        let context:Value=serde_json::from_str(key).map_err(|_|"실시간 문맥 키 오류")?;
+        let family=match context[1].as_str(){
+            Some("recipient_ownership")=>"statistics",
+            Some("type"|"product"|"variant"|"quantity")=>"fieldContextStatistics",
+            _=>return Err("실시간 학습 작업 유형 오류".into())
+        };
+        let rows=stmt.query_map(params![scope,FEATURE_VERSION,key,target,family],|r|r.get::<_,String>(0))
             .map_err(|e|e.to_string())?;
         for id in rows{
             ids.insert(id.map_err(|e|e.to_string())?);
@@ -739,22 +745,29 @@ mod recognition_learning_store_tests{
     fn owner_capture_only_reads_requested_contexts_excludes_target_and_blocks_pending(){
         let mut c=conn();
         let tx=c.transaction().unwrap();
-        let ids=vec!["a".to_owned(),"target".to_owned(),"other".to_owned()];
+        let ids=vec!["a".to_owned(),"target".to_owned(),"other".to_owned(),"field".to_owned()];
+        let owner=json!([1,"recipient_ownership","base",null,["address",true,true]]).to_string();
+        let other=json!([1,"recipient_ownership","base",null,["address",false,true]]).to_string();
+        let field=json!([1,"type","base",null,["address",[0,0,1,0,0]]]).to_string();
         let orders=ids.iter().map(|id|json!({"id":id})).collect::<Vec<_>>();
         synchronize(&tx,"db",&ids,&orders,|o|{
             let mut r=report(1);
             let counts=r["fieldStatistics"][0]["counts"].clone();
             r["fieldStatistics"]=json!([]);
-            r["statistics"]=json!([{"key":if o["id"]=="other"{"other"}else{"wanted"},"counts":counts}]);
+            if o["id"]=="field"{
+                r["fieldContextStatistics"]=json!([{"key":field,"counts":counts}]);
+            }else{
+                r["statistics"]=json!([{"key":if o["id"]=="other"{&other}else{&owner},"counts":counts}]);
+            }
             Ok(r)
         }).unwrap();
-        let keys=BTreeSet::from(["wanted".to_owned()]);
-        assert_eq!(owner_capture_ids(&tx,"db","target",&keys).unwrap(),vec!["a".to_owned()]);
-        assert!(owner_capture_ids(&tx,"different","target",&keys).unwrap().is_empty());
-        let excessive=(0..9).map(|n|n.to_string()).collect::<BTreeSet<_>>();
-        assert!(owner_capture_ids(&tx,"db","target",&excessive).is_err());
+        let keys=BTreeSet::from([owner.clone(),field]);
+        assert_eq!(shadow_capture_ids(&tx,"db","target",&keys).unwrap(),vec!["a".to_owned(),"field".to_owned()]);
+        assert!(shadow_capture_ids(&tx,"different","target",&keys).unwrap().is_empty());
+        let excessive=(0..33).map(|n|n.to_string()).collect::<BTreeSet<_>>();
+        assert!(shadow_capture_ids(&tx,"db","target",&excessive).is_err());
         mark_pending(&tx,"db","a").unwrap();
-        assert!(owner_capture_ids(&tx,"db","target",&keys).is_err());
+        assert!(shadow_capture_ids(&tx,"db","target",&keys).is_err());
     }
     #[test]
     fn local_replay_uses_only_pre_cutoff_current_verified_training_orders(){

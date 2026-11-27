@@ -193,6 +193,44 @@ fn field_contexts(units:&[u16],first:&Value)->FieldContexts{
     result
 }
 
+// Only candidates already present in the original analysis. A selected
+// value alone is not evidence that the full competing set was retained.
+fn field_shadow_candidates(units:&[u16],first:&Value,s:Span,task:&str)->Vec<String>{
+    let mut candidates=BTreeSet::new();
+    let mut links=Vec::new();
+    for row in rows(&first["recipients"]){
+        for source in rows(&row["sources"]){
+            if span(units,source)==Some(s){links.push((row,source));}
+        }
+        for item in rows(&row["items"]){
+            for source in rows(&item["sources"]){
+                if span(units,source)==Some(s){links.push((item,source));}
+            }
+        }
+    }
+    if links.len()!=1{return Vec::new();}
+    let (item,source)=links[0];
+    let field=source["field"].as_str().unwrap_or("");
+    fn add(candidates:&mut BTreeSet<String>,id:Option<&str>){
+        if let Some(id)=id.filter(|v|!v.trim().is_empty()&&v.len()<=1024){candidates.insert(id.to_owned());}
+    }
+    match task{
+        "type"=>add(&mut candidates,Some(field)),
+        "product" if field=="product"=>{
+            add(&mut candidates,item["productId"].as_str());
+            for candidate in rows(&item["productCandidates"]){add(&mut candidates,candidate["productId"].as_str());}
+            for candidate in rows(&item["match"]["productIds"]){add(&mut candidates,candidate.as_str());}
+        }
+        "variant" if field=="product"=>add(&mut candidates,item["variantId"].as_str()),
+        "quantity" if field=="quantity"&&item["quantityConfirmed"]==true=>{
+            if let Some(q)=item["quantity"].as_i64().filter(|q|*q>0){candidates.insert(q.to_string());}
+        }
+        _=>{}
+    }
+    if candidates.len()>64{return Vec::new();}
+    candidates.into_iter().collect()
+}
+
 /// Explicit diagnostic/lookup projection, not a second parser. The same
 /// context key function is used for first/final observations and new traces.
 pub(super) fn lookup(payload:&Value)->Result<Value,String>{
@@ -203,7 +241,9 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
         json!({"source":{"start":s.0,"end":s.1},"contexts":keys})
     ).collect::<Vec<_>>();
     let field_entries=field_contexts(&units,first).into_iter().map(|((s,task),keys)|
-        json!({"source":{"start":s.0,"end":s.1},"task":task,"contexts":keys})).collect::<Vec<_>>();
+        json!({"source":{"start":s.0,"end":s.1},"task":task,"contexts":keys,
+            "shadowCandidates":field_shadow_candidates(&units,first,s,task),
+            "candidateCoverage":"observed_only"})).collect::<Vec<_>>();
     let mut result=json!({"featureVersion":FEATURE_VERSION,"entries":entries,"fieldEntries":field_entries});
     // Optional offline comparison. Ordinary context projection remains unchanged.
     if let Some(history)=payload.get("historicalOrders"){

@@ -328,7 +328,7 @@ impl BandoGateway for LocalGateway {
         let result=(||->Result<Value,String>{
             let contexts=recognition::execute("project_owner_contexts",
                 serde_json::json!({"raw":raw,"initialAnalysis":first}))?;
-            PreviewStore::capture_owner_learning(order,&contexts)
+            PreviewStore::capture_recognition_learning(order,&contexts)
         })();
         Some(result.unwrap_or_else(|_|serde_json::json!({
             "status":"unavailable","reason":"unverified_or_unavailable_ledger",

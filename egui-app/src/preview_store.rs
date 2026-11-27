@@ -909,31 +909,47 @@ impl PreviewStore {
         tx.commit().map_err(|e|e.to_string())
     }
 
-    pub(crate) fn capture_owner_learning(target:&str,projection:&Value)->Result<Value,String>{
+    pub(crate) fn capture_recognition_learning(target:&str,projection:&Value)->Result<Value,String>{
         use sha2::{Digest,Sha256};
         use std::collections::{BTreeMap,BTreeSet};
         // Diagnostic ratio only; not an automatic classification policy.
         const RATIO:f64=3.0;
-        let entries=projection["entries"].as_array().ok_or("귀속 문맥 목록 누락")?;
-        if entries.is_empty(){return Ok(json!({"status":"no_eligible_context","decisionChanged":false,
-            "calibratedProbability":null}));}
-        if entries.len()>16{return Err("실시간 학습 관측 한도 초과".into());}
+        let owners=projection["entries"].as_array().ok_or("귀속 문맥 목록 누락")?;
+        let fields=projection["fieldEntries"].as_array().ok_or("필드 문맥 목록 누락")?;
+        if owners.len()+fields.len()>64{return Err("실시간 학습 관측 한도 초과".into());}
         let mut keys=BTreeSet::new();
+        let mut queries=BTreeSet::<(String,String,Vec<String>)>::new();
         let mut locations=Vec::new();
-        for entry in entries{
-            let source=&entry["source"];
-            let start=source["start"].as_u64().ok_or("귀속 위치 오류")?;
-            let end=source["end"].as_u64().filter(|end|*end>start).ok_or("귀속 위치 오류")?;
-            let mut local=Vec::new();
-            for c in entry["contexts"].as_array().ok_or("귀속 문맥 오류")?{
-                let key=c["key"].as_str().ok_or("귀속 문맥 키 누락")?.to_owned();
-                keys.insert(key.clone());local.push(key);
+        let mut skipped=0usize;
+        for (entry,owner) in owners.iter().map(|e|(e,true)).chain(fields.iter().map(|e|(e,false))){
+            let task=if owner{"recipient_ownership"}else{entry["task"].as_str().ok_or("필드 작업 오류")?};
+            if !matches!(task,"recipient_ownership"|"type"|"product"|"variant"|"quantity"){
+                return Err("실시간 작업 오류".into());
             }
-            locations.push(json!({"start":start,"end":end,"contextKeys":local}));
+            let candidates=if owner{vec!["previous".to_owned(),"next".to_owned()]}else{
+                entry["shadowCandidates"].as_array().ok_or("필드 후보 오류")?.iter()
+                    .map(|v|v.as_str().map(str::to_owned).ok_or("필드 후보 오류".to_owned()))
+                    .collect::<Result<Vec<_>,_>>()?
+            };
+            if candidates.is_empty(){skipped+=1;continue;}
+            let source=&entry["source"];
+            let start=source["start"].as_u64().ok_or("학습 위치 오류")?;
+            let end=source["end"].as_u64().filter(|end|*end>start).ok_or("학습 위치 오류")?;
+            let mut local=Vec::new();
+            for c in entry["contexts"].as_array().ok_or("학습 문맥 오류")?{
+                let key=c["key"].as_str().ok_or("학습 문맥 키 누락")?.to_owned();
+                keys.insert(key.clone());local.push(key.clone());
+                queries.insert((task.to_owned(),key,candidates.clone()));
+            }
+            locations.push(json!({"start":start,"end":end,"task":task,"contextKeys":local,
+                "candidates":candidates,"candidateCoverage":if owner{"traced_pair"}else{"observed_only"}}));
         }
+        if keys.is_empty(){return Ok(json!({"status":"no_eligible_context","skippedMissingCandidates":skipped,
+            "decisionChanged":false,"calibratedProbability":null}));}
+        if queries.len()>32{return Err("실시간 학습 조회 한도 초과".into());}
         let (mut conn,business,scope)=Self::learning_connection()?;
         let tx=conn.transaction().map_err(|e|e.to_string())?;
-        let ids=recognition_learning_store::owner_capture_ids(&tx,&scope,target,&keys)?;
+        let ids=recognition_learning_store::shadow_capture_ids(&tx,&scope,target,&keys)?;
         let (frozen,digests)=if ids.is_empty(){(BTreeMap::new(),BTreeMap::new())}else{
             let (frozen,_,digests)=crate::business_state::read_learning_inputs(&ids,|sources|{
                 let (misses,digests)=select_learning_changes(&tx,&scope,sources)?;
@@ -945,13 +961,15 @@ impl PreviewStore {
             (frozen,digests)
         };
         let mut results=Vec::new();
-        for key in &keys{
+        for (task,key,candidates) in &queries{
             let report=recognition_learning_store::assess_support(&tx,&scope,&json!({
-                "task":"recipient_ownership","contextKey":key,"targetOrderId":target,
-                "candidates":["previous","next"],"explicitToWeakRatio":RATIO}))?;
+                "task":task,"contextKey":key,"targetOrderId":target,
+                "candidates":candidates,"explicitToWeakRatio":RATIO}))?;
             // Only compact predictive sufficient statistics are persisted,
             // not the correction-validation report or source documents.
-            results.push(json!({"contextKey":key,"supportVersion":report["supportVersion"],
+            results.push(json!({"contextKey":key,"task":task,"candidateIds":candidates,
+                "candidateCoverage":if task=="recipient_ownership"{"traced_pair"}else{"observed_only"},
+                "supportVersion":report["supportVersion"],
                 "featureVersion":report["featureVersion"],"contributionVersion":report["contributionVersion"],
                 "contextOrders":report["contextOrders"],"supportedOrders":report["supportedOrders"],
                 "totalSupportMass":report["totalSupportMass"],"weightEffectiveOrders":report["weightEffectiveOrders"],
@@ -963,10 +981,10 @@ impl PreviewStore {
             return Err("실시간 학습 조회 중 원본 변경".into());
         }
         let mut hash=Sha256::new();
-        hash.update(serde_json::to_vec(&json!(["owner-shadow-v1",scope,RATIO,digests,results]))
+        hash.update(serde_json::to_vec(&json!(["recognition-shadow-v2",scope,RATIO,digests,results]))
             .map_err(|_|"실시간 학습 모델 지문 오류")?);
         let model=format!("shadow-{:x}",hash.finalize());
-        let result=json!({"status":"captured_shadow_support","task":"recipient_ownership",
+        let result=json!({"status":"captured_shadow_support","captureVersion":2,"skippedMissingCandidates":skipped,
             "modelId":model,"capturedAt":chrono::Utc::now().to_rfc3339(),
             "explicitToWeakRatio":RATIO,"verifiedSourceOrders":ids.len(),"locations":locations,
             "contexts":results,"sourceDigestsMatched":true,"fullHistoryReconciled":false,
