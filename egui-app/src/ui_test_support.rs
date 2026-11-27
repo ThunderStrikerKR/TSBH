@@ -88,3 +88,34 @@ pub(crate) fn assert_rect_geometry(role:&str,actual:Rect,expected:Rect,tolerance
         assert_geometry_value(role,edge,a,b,tolerance);
     }
 }
+
+
+ 
+/// Actual text paint and effective clipping, shared by control regressions.
+pub(crate) fn painted_text_rects(output:&egui::FullOutput,label:&str)->Vec<(Rect,Rect)>{
+    fn visit(shape:&egui::Shape,clip:Rect,label:&str,out:&mut Vec<(Rect,Rect)>){
+        match shape{
+            egui::Shape::Text(text) if text.galley.text()==label=>
+                out.push((text.galley.rect.translate(text.pos.to_vec2()),clip)),
+            egui::Shape::Vec(shapes)=>for shape in shapes{visit(shape,clip,label,out);},
+            _=>{}
+        }
+    }
+    let mut out=Vec::new();
+    for shape in &output.shapes{visit(&shape.shape,shape.clip_rect,label,&mut out);}
+    out
+}
+pub(crate) fn assert_rect_inside(role:&str,inner:Rect,outer:Rect,tolerance:f32){
+    assert!(inner.is_positive()&&outer.is_positive(),"{role}: invalid rectangles");
+    assert!(inner.left()>=outer.left()-tolerance&&inner.right()<=outer.right()+tolerance
+        &&inner.top()>=outer.top()-tolerance&&inner.bottom()<=outer.bottom()+tolerance,
+        "{role}: {inner:?} escapes {outer:?}");
+}
+pub(crate) fn assert_painted_caption(output:&egui::FullOutput,label:&str,widget:Rect)->Rect{
+    let (ink,clip)=painted_text_rects(output,label).into_iter()
+        .find(|(r,_)|widget.contains(r.center()))
+        .unwrap_or_else(||panic!("missing painted caption {label} in {widget:?}"));
+    assert_rect_inside(label,ink,widget,1.0);
+    assert_rect_inside(label,ink,clip,1.0);
+    ink
+}
