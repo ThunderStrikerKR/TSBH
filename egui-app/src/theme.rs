@@ -65,7 +65,11 @@ pub const CARD_BORDER:Color32=DIVIDER;
 // Restore the original shared blue pointer feedback; focus stays independent.
 pub const BUTTON_HOVER_BG:Color32=Color32::from_rgb(47,62,74);
 pub const ACTIVE_NAVIGATION_BG:Color32=Color32::from_rgb(41,72,92);
-pub const BUTTON_HOVER_TINT:Color32=INTERACTION_BLUE_TINT;
+// Strong pointer feedback belongs to controls, not the subdued table/sort tint.
+pub const BUTTON_HOVER_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,66);
+pub const BUTTON_HOVER_LIGHT_BG:Color32=Color32::from_rgb(143,197,255);
+pub const BUTTON_HOVER_LIGHT_BORDER:Color32=Color32::from_rgb(35,103,174);
+pub const BUTTON_HOVER_BORDER_WIDTH:f32=2.0;
 pub const LINKED_PREVIEW_BG:Color32=Color32::from_rgb(23,67,109);
 pub const LINKED_PREVIEW_TEXT:Color32=Color32::from_rgb(234,244,255);
 pub const LINKED_PREVIEW_BORDER:Color32=Color32::from_rgb(117,181,255);
