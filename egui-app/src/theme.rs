@@ -260,25 +260,13 @@ pub const SETTINGS_HELP_ICON_SIZE: f32 = 22.0;
 // Settings/Basic compresses the form into three shared section cards.
 // Above the split threshold, the two information cards remain left of the
 // independently scrolling account card. These are logical egui points.
-pub const SETTINGS_BASIC_SPLIT_MIN_WIDTH:f32=1040.0;
 pub const SETTINGS_BASIC_LEFT_PANE_WIDTH:f32=410.0;
-pub const SETTINGS_BASIC_SAVE_RESERVE:f32=50.0;
 pub const SETTINGS_OPERATOR_FIELD_WIDTH:f32=112.0;
 pub const SETTINGS_SENDER_NAME_WIDTH:f32=164.0;
 pub const SETTINGS_SENDER_POSTCODE_WIDTH:f32=106.0;
-pub const SETTINGS_SENDER_PHONE_WIDTH:f32=160.0;
-pub const SETTINGS_SENDER_ADDRESS_WIDTH:f32=500.0;
-// Input boxes have content-appropriate capped widths; they must not
-// stretch with a wide Settings panel or become three equal-width columns.
-pub const SETTINGS_ACCOUNT_ROW_MIN_WIDTH:f32=490.0;
+// The common registry table owns account column growth and scroll geometry.
 pub const SETTINGS_ACCOUNT_FIELD_WIDTHS:[f32;3]=[118.0,194.0,112.0];
-pub const SETTINGS_ACCOUNT_DELETE_WIDTH:f32=102.0;
 pub const SETTINGS_ACCOUNT_PICKER_MAX_WIDTH:f32=278.0;
-// Cap only the account rows' scroll viewport, never the whole Settings page.
-pub const SETTINGS_ACCOUNT_LIST_MIN_HEIGHT:f32=48.0;
-pub const SETTINGS_ACCOUNT_LIST_MAX_HEIGHT:f32=260.0;
-pub const SETTINGS_ACCOUNT_PANEL_FIXED_HEIGHT:f32=190.0;
-pub const SETTINGS_ACCOUNT_STACKED_EXTRA_HEIGHT:f32=62.0;
 pub const SPACING: f32 = SPACE_8;
 const HEADER_PADDING_X: i8 = SPACE_16 as i8;
 pub const BRAND_ICON_SIZE: f32 = 38.0;
