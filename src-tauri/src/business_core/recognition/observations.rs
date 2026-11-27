@@ -218,6 +218,84 @@ fn owner_observations(units:&[u16],first:&Value,final_rows:&Value)->Vec<Value>{
     result
 }
 
+// A changed snapshot is not itself an error label. Require an explicit
+// source binding audit, same frozen recognition, and independently verified
+// old/new owner anchors. Only the final confirmed direction contributes.
+fn reconcile_owner_audits(payload:&Value,units:&[u16],first:&Value,observations:&mut [Value])->Result<(),String>{
+    let Some(events)=payload.get("recognitionAuditEvents")else{return Ok(());};
+    let events=events.as_array().ok_or("정정 감사 목록 형식 오류")?;
+    if events.len()>1000{return Err("주문별 정정 감사는 최대 1000건입니다.".into());}
+    let snapshot=&payload["confirmationSnapshot"];
+    let Some(id)=payload["id"].as_str().filter(|s|!s.is_empty())else{return Ok(());};
+    let Some(confirmed)=payload["confirmedAt"].as_str()
+        .filter(|at|snapshot["at"].as_str()==Some(*at))
+        .and_then(|at|chrono::DateTime::parse_from_rfc3339(at).ok())else{return Ok(());};
+    let raw=snapshot["raw"].as_str().unwrap_or("");
+    let mut seen=BTreeMap::<&str,&Value>::new();
+    let mut candidates=BTreeMap::<Span,Vec<(&Value,Value)>>::new();
+    for event in events{
+        if event["orderId"].as_str()!=Some(id)||event["sourceRaw"].as_str()!=Some(raw)
+            || &event["initialAnalysis"]!=first || event["context"]["schemaVersion"]!=1{continue;}
+        let Some(at)=event["at"].as_str().and_then(|v|chrono::DateTime::parse_from_rfc3339(v).ok())else{continue;};
+        if at>confirmed{continue;}
+        let Some(audit_id)=event["id"].as_str().filter(|s|!s.is_empty())else{continue;};
+        if let Some(old)=seen.insert(audit_id,event){
+            if old!=event{return Err("동일 정정 감사 ID의 내용이 상충합니다.".into());}
+            continue;
+        }
+        let extracted=super::corrections::extract(event)?;
+        for candidate in rows(&extracted["candidates"]).filter(|c|c["method"]=="explicit_binding"){
+            if let Some(s)=span(units,&candidate["source"]){
+                candidates.entry(s).or_default().push((event,candidate.clone()));
+            }
+        }
+    }
+    for observation in observations.iter_mut().filter(|v|v["task"]=="recipient_ownership"){
+        let Some(s)=position(units,&observation["source"])else{continue;};
+        let Some(entries)=candidates.get(&s)else{continue;};
+        if observation["outcome"]=="unchanged_observed"{
+            // An explicit intervention (including a reverted edit) is not
+            // an untouched observation. Do not count it as weak success.
+            observation["outcome"]=json!("changed_requires_review");
+            observation["eligibleForCandidateLearning"]=json!(false);
+            observation["requiresReview"]=json!(true);
+            observation["reason"]=json!("explicit_intervention_without_final_change");
+            continue;
+        }
+        if observation["reason"]!="different_verified_anchor"{continue;}
+        let kind=observation["sourceKind"].as_str().unwrap_or("");
+        let Some(original)=rows(&first["candidates"]).find(|c|span(units,c)==Some(s)
+            && c["kind"].as_str()==Some(kind)).and_then(|c|c["value"].as_str())else{continue;};
+        let (Some(initial),Some(final_anchor))=(position(units,&observation["initialAnchor"]),
+            position(units,&observation["finalAnchor"]))else{continue;};
+        // Only an unambiguous direct old -> new transition is promoted.
+        // Multiple explicit edits for the same span remain under review.
+        if entries.len()!=1{continue;}
+        let (event,candidate)=&entries[0];
+        let cell=&candidate["target"];
+        let field=cell["field"].as_str().unwrap_or("");
+        if cell["itemId"].is_string() || !(kind==field||contact(kind)&&contact(field)){continue;}
+        let old=OwnerIndex::new(units,&event["beforeRows"]);
+        let new=OwnerIndex::new(units,&event["afterRows"]);
+        if old.owner(s,kind,original)!=Some(initial)||new.owner(s,kind,original)!=Some(final_anchor){continue;}
+        let Some(target_id)=cell["recipientId"].as_str().filter(|s|!s.is_empty())else{continue;};
+        let mut targets=rows(&event["afterRows"]).enumerate()
+            .filter(|(_,r)|r["id"].as_str()==Some(target_id));
+        let Some((target_index,_))=targets.next()else{continue;};
+        if targets.next().is_some()||new.unique_anchor(target_index)!=Some(final_anchor){continue;}
+        observation["outcome"]=json!("explicit_correction_observed");
+        observation["reason"]=json!("verified_explicit_owner_reassignment");
+        observation["eligibleForCandidateLearning"]=json!(true);
+        observation["requiresReview"]=json!(false);
+        observation["negativeCandidates"]=observation["initialCandidates"].clone();
+        observation["positiveCandidates"]=observation["finalCandidates"].clone();
+        // Client-specific evidence must additionally match the audited client.
+        observation["auditClientId"]=event["context"]["clientId"].clone();
+        observation["auditClientSelection"]=event["context"]["clientSelection"].clone();
+    }
+    Ok(())
+}
+
 pub(super) fn compare(payload:&Value)->Result<Value,String>{
     let snapshot=&payload["confirmationSnapshot"];
     let Some(raw)=snapshot["raw"].as_str().filter(|raw|!raw.trim().is_empty())
@@ -258,6 +336,7 @@ pub(super) fn compare(payload:&Value)->Result<Value,String>{
         }));
     }
     observations.extend(owner_observations(&units,first,&snapshot["recipients"]));
+    reconcile_owner_audits(payload,&units,first,&mut observations)?;
     Ok(json!({"status":"compared","observations":observations,
         "initialRecognition":first.get("recognitionContext"),
         "finalClientId":baseline.get("finalClientId"),
@@ -388,6 +467,72 @@ mod tests{
             candidate["gap"]=json!({"blankLines":0,"contentLines":0,"maxConsecutiveBlankLines":0});
         }
         p
+    }
+    fn audited_reassignment()->Value{
+        let mut p=patterned_order("audit-order");
+        let first=p["confirmationSnapshot"]["recognitionBaseline"]["initialAnalysis"].clone();
+        let before=first["recipients"].clone();
+        let mut after=before.clone();
+        let link=after[0]["sources"].as_array_mut().unwrap().pop().unwrap();
+        after[0]["mobile"]=json!("");
+        after[1]["mobile"]=json!("010-1234-5678");
+        after[1]["sources"].as_array_mut().unwrap().push(link);
+        let block=json!({"id":"6:19","start":6,"end":19,"text":"010-1234-5678","field":"mobile"});
+        p["confirmationSnapshot"]["recipients"]=after.clone();
+        p["recognitionAuditEvents"]=json!([{
+            "id":"audit-1","orderId":"audit-order","at":"2026-11-26T23:59:00Z",
+            "sourceRaw":p["confirmationSnapshot"]["raw"],"initialAnalysis":first,
+            "beforeRows":before,"afterRows":after,
+            "context":{"schemaVersion":1,"clientId":"client-1","clientSelection":"MANUAL",
+                "beforeClassification":{"blocks":[block.clone()],"assignments":{}},
+                "afterClassification":{"blocks":[block],"assignments":{"6:19":{
+                    "recipientId":"b","field":"mobile","value":"010-1234-5678"
+                }}}
+            }
+        }]);
+        p
+    }
+    #[test]
+    fn owner_audit_reconciles_exact_explicit_correction_and_excludes_stale_events(){
+        let p=audited_reassignment();
+        let o=owner_result(&p);
+        assert_eq!(o["outcome"],"explicit_correction_observed");
+        assert_eq!(o["negativeCandidates"],json!(["previous"]));
+        assert_eq!(o["positiveCandidates"],json!(["next"]));
+        let mut duplicate=p.clone();
+        let event=duplicate["recognitionAuditEvents"][0].clone();
+        duplicate["recognitionAuditEvents"].as_array_mut().unwrap().push(event);
+        assert_eq!(owner_result(&duplicate)["outcome"],"explicit_correction_observed");
+        for (field,value) in [("sourceRaw",json!("different")),("orderId",json!("other")),
+            ("at",json!("2026-11-28T00:00:00Z"))]{
+            let mut stale=p.clone();
+            stale["recognitionAuditEvents"][0][field]=value;
+            assert_eq!(owner_result(&stale)["outcome"],"changed_requires_review");
+        }
+        let mut reverted=p.clone();
+        reverted["confirmationSnapshot"]["recipients"]=p["recognitionAuditEvents"][0]["beforeRows"].clone();
+        let o=owner_result(&reverted);
+        assert_eq!(o["outcome"],"changed_requires_review");
+        assert_eq!(o["eligibleForCandidateLearning"],false);
+        let mut external=p.clone();
+        external["confirmationSnapshot"]["recipients"][1]["mobile"]=json!("010-9999-9999");
+        assert_eq!(owner_result(&external)["outcome"],"unresolved_evidence");
+    }
+    #[test]
+    fn owner_audit_statistics_separate_positive_negative_and_weak_evidence(){
+        let p=audited_reassignment();
+        let summary=super::super::learning_context::statistics(&json!({
+            "orders":[p.clone(),p,patterned_order("unchanged")]
+        })).unwrap();
+        for group in summary["statistics"].as_array().unwrap(){
+            let c=&group["counts"];
+            assert_eq!(c["weakUnchangedCount"],1);
+            assert_eq!(c["explicitCorrectionCount"],1);
+            assert_eq!(c["explicitCorrectionOrders"],1);
+            assert_eq!(c["explicitPositiveCandidates"]["next"],1);
+            assert_eq!(c["explicitNegativeCandidates"]["previous"],1);
+            assert_eq!(c["pendingCorrectionCount"],0);
+        }
     }
     #[test]
     fn owner_context_lookup_and_observations_share_keys_without_personal_text(){
