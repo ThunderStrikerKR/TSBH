@@ -1975,6 +1975,7 @@ pub(super) fn learn_field_blend_weights(payload:&Value)->Result<Value,String>{
         let units=raw.encode_utf16().collect::<Vec<_>>();
         let projection=super::learning_context::lookup(&json!({"raw":raw,"initialAnalysis":first}))?;
         let mut local=BTreeMap::<FieldGroup,Vec<FieldBlendRecord>>::new();let mut used=BTreeSet::new();
+        let mut fallback=BTreeMap::<(String,&str),ModelPairCounts>::new();
         for obs in rows(&compared["observations"]){
             let Some(task)=obs["task"].as_str().filter(|t|matches!(*t,"type"|"product"|"variant"|"quantity"))else{continue;};
             let label=match obs["outcome"].as_str(){
@@ -1988,10 +1989,14 @@ pub(super) fn learn_field_blend_weights(payload:&Value)->Result<Value,String>{
             if let Some((key,record))=field_blend_record(&units,first,&projection,shadow,obs,label){
                 *joined.entry((task.to_owned(),phase)).or_default()+=1;
                 local.entry(key).or_default().push(record);
+            }else if phase==2{
+                // An unavailable learning context is not a dropped test
+                // observation. The live classifier retains its old answer.
+                fallback.entry((task.to_owned(),label)).or_default().observe(old,actual,Some(old),None);
             }
         }
         match phase{0=>for (key,records) in local{calibration.entry(key).or_default().add_order(&records);},
-            1=>weight_orders.push(local),_=>test_orders.push(local)}
+            1=>weight_orders.push(local),_=>test_orders.push((local,fallback))}
     }
     let mut fits=BTreeMap::<FieldGroup,BlendFit>::new();
     for order in weight_orders{
@@ -2001,17 +2006,20 @@ pub(super) fn learn_field_blend_weights(payload:&Value)->Result<Value,String>{
         }
     }
     let mut totals=BTreeMap::<(FieldGroup,String),(BlendTest,PairedEvaluation)>::new();
-    for order in test_orders{
+    let mut task_totals=BTreeMap::<(String,String),ModelPairCounts>::new();
+    for (order,mut fallback) in test_orders{
         for (key,records) in order{
             let w=fits.get(&key).and_then(BlendFit::weight);
             let mut local=BTreeMap::<&str,(BlendTest,PairedEvaluation)>::new();
             for record in records{
                 let sample=calibration.get(&key).and_then(|c|c.blend_sample(&record));
+                let old=record.old.to_string();let actual=record.shadow.actual.to_string();
+                let predicted=sample.as_ref().zip(w).map(|(s,w)|field_blend_recommendation(&key.0,&record,s,w).0.to_string());
+                fallback.entry((key.0.clone(),record.shadow.label)).or_default()
+                    .observe(&old,&actual,Some(&old),predicted.as_deref());
                 for label in [record.shadow.label,"mixed_proxy"]{
                     let (loss,agreement)=local.entry(label).or_default();
                     loss.observe(sample.as_ref(),w);
-                    let old=record.old.to_string();let actual=record.shadow.actual.to_string();
-                    let predicted=sample.as_ref().zip(w).map(|(s,w)|field_blend_recommendation(&key.0,&record,s,w).0.to_string());
                     agreement.observe(&old,&actual,predicted.as_deref(),record.shadow.actual+1==record.shadow.distribution.len());
                 }
             }
@@ -2019,7 +2027,13 @@ pub(super) fn learn_field_blend_weights(payload:&Value)->Result<Value,String>{
                 let (a,b)=totals.entry((key.clone(),label.to_owned())).or_default();a.merge(loss);b.merge_order(agreement);
             }
         }
+        // Count each order once per task/label, even across context levels.
+        for ((task,label),value) in fallback{
+            task_totals.entry((task,label.to_owned())).or_default().merge_order(value);
+        }
     }
+    let task_groups=task_totals.into_iter().map(|((task,label),v)|
+        json!({"task":task,"labelKind":label,"metrics":v.wire()})).collect::<Vec<_>>();
     let models=calibration.iter().map(|((task,level,coverage),cal)|{
         let fit=fits.get(&(task.clone(),level.clone(),coverage.clone()));
         let params=cal.parameters();
@@ -2038,7 +2052,7 @@ pub(super) fn learn_field_blend_weights(payload:&Value)->Result<Value,String>{
     Ok(json!({"status":"field_blend_diagnostic_only","schemaVersion":1,
         "method":"categorical_legacy_reliability_order_macro_brier_v1","phaseOrder":["calibration","weight","test"],
         "legacyProxyBuckets":["selected","other_traced","outside"],"models":models,"testGroups":groups,
-        "coverageByTask":coverage,"excludedOrders":excluded,"clientBuildVersion":build,
+        "coverageByTask":coverage,"testTaskGroups":task_groups,"excludedOrders":excluded,"clientBuildVersion":build,
         "representativeLabelsVerified":false,"sourceProvenanceVerified":false,
         "automaticChangeAuthorized":false,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
 }
@@ -2988,6 +3002,29 @@ mod tests{
         assert_eq!(field_blend_recommendation("type",&record,&sample,0.0),(0,"legacy_agreement"));
         let mut outside=sample;outside.shadow=vec![0.0,0.0,1.0];
         assert_eq!(field_blend_recommendation("product",&record,&outside,1.0),(0,"insufficient_or_conflicting_support"));
+    }
+    #[test]
+    fn field_blend_task_evaluation_includes_unjoined_observations(){
+        let mut order=seal_test_audits(patterned_order("missing-field-support"));
+        order["learningActive"]=json!(true);
+        order["confirmationSnapshot"]["recognitionBaseline"]["initialAnalysis"]["initialPredictionCapture"]=json!({
+            "schemaVersion":1,"origin":"native_reception_worker","orderId":"missing-field-support",
+            "clientBuildVersion":"test","analysisStartedAt":"2026-11-26T23:50:00Z","analysisCompletedAt":"2026-11-26T23:51:00Z",
+            "learningShadow":{"status":"captured_shadow_support","captureVersion":4,"sourceDigestsMatched":true,
+                "explicitToWeakRatio":3.0,"decisionChanged":false,"modelId":format!("shadow-{}","a".repeat(64)),
+                "capturedAt":"2026-11-26T23:52:00Z","locations":[],"contexts":[],"contextSelection":[]}});
+        let config=json!({"fitStart":"2026-08-01T00:00:00Z","weightStart":"2026-09-01T00:00:00Z",
+            "testStart":"2026-11-01T00:00:00Z","testEnd":"2026-12-01T00:00:00Z",
+            "evaluationAsOf":"2026-12-01T00:00:00Z","clientBuildVersion":"test"});
+        let result=learn_field_blend_weights(&json!({"config":config,"orders":[order]})).unwrap();
+        assert_eq!(result["excludedOrders"],0);
+        let group=rows(&result["testTaskGroups"]).find(|v|v["task"]=="type"&&v["labelKind"]=="unchanged_proxy").unwrap();
+        assert_eq!(group["metrics"]["eligibleObservations"],3);
+        assert_eq!(group["metrics"]["independentOrders"],1);
+        assert_eq!(group["metrics"]["candidateCovered"],0);
+        assert_eq!(group["metrics"]["fallbackBaselineAgreement"],1.0);
+        assert_eq!(group["metrics"]["fallbackCandidateAgreement"],1.0);
+        assert_eq!(result["testGroups"],json!([]));
     }
     #[test]
     fn field_blend_rejects_overlapping_time_windows_and_duplicate_orders(){
