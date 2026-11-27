@@ -10,6 +10,7 @@ on:
       - '.github/workflows/security-bootstrap-lockfiles.yml'
       - 'egui-app/Cargo.toml'
       - 'crates/bando-data-access/Cargo.toml'
+      - 'src-tauri/Cargo.toml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -38,14 +39,152 @@ jobs:
           $ErrorActionPreference = 'Stop'
           cargo --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($manifest in @('egui-app/Cargo.toml','crates/bando-data-access/Cargo.toml')) {
+          foreach ($manifest in @('egui-app/Cargo.toml','crates/bando-data-access/Cargo.toml','src-tauri/Cargo.toml')) {
             $lock = Join-Path (Split-Path $manifest -Parent) 'Cargo.lock'
             if (!(Test-Path -LiteralPath $lock)) {
               cargo generate-lockfile --manifest-path $manifest
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            } else {
+              cargo update --manifest-path $manifest -p rusqlite --precise 0.41.1
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              cargo update --manifest-path $manifest -p libsqlite3-sys --precise 0.39.1
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             }
             cargo metadata --locked --format-version 1 --no-deps --manifest-path $manifest | Out-Null
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $lockText = Get-Content -LiteralPath $lock -Raw
+            if ($lockText -notmatch '(?m)^name = "rusqlite"\r?\nversion = "0\.41\.1"
+          # Recheck the full graph and registry resolution against the generated locks.
+          cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path egui-app/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path crates/bando-data-access/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Report exact lockfile bytes for read-only recovery
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          foreach ($path in @('egui-app/Cargo.lock','crates/bando-data-access/Cargo.lock','src-tauri/Cargo.lock')) {
+            $bytes = [IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $path).Path)
+            $encoded = [Convert]::ToBase64String($bytes)
+            Write-Output "LOCK_BEGIN:$path"
+            Write-Output "LOCK_SHA256:$((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)"
+            for ($i=0; $i -lt $encoded.Length; $i+=1024) {
+              Write-Output ("LOCK_CHUNK:" + $encoded.Substring($i,[Math]::Min(1024,$encoded.Length-$i)))
+            }
+            Write-Output "LOCK_END:$path"
+          }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: resolved-cargo-locks
+          path: |
+            egui-app/Cargo.lock
+            crates/bando-data-access/Cargo.lock
+            src-tauri/Cargo.lock
+          if-no-files-found: error
+          retention-days: 3
+  commit:
+    needs: resolve
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/security/v0.8.0-pre-release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: resolved-cargo-locks
+          path: lock-output
+      - name: Commit only generated lockfiles to isolated branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/security/v0.8.0-pre-release
+          git fetch origin refs/heads/security/v0.8.0-pre-release
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          for dir in egui-app crates/bando-data-access src-tauri; do
+            test -f "lock-output/$dir/Cargo.lock"
+            test ! -L "lock-output/$dir/Cargo.lock"
+            grep -q '^version = 4$' "lock-output/$dir/Cargo.lock"
+            cp "lock-output/$dir/Cargo.lock" "$dir/Cargo.lock"
+          done
+          rm -rf lock-output
+          git add -- egui-app/Cargo.lock crates/bando-data-access/Cargo.lock src-tauri/Cargo.lock
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -c core.hooksPath=/dev/null commit -m 'security: commit Cargo-resolved SQLite patched lockfiles'
+          git push origin HEAD:refs/heads/security/v0.8.0-pre-release
+ -or $lockText -notmatch '(?m)^name = "libsqlite3-sys"\r?\nversion = "0\.39\.1"
+          # Recheck the full graph and registry resolution against the generated locks.
+          cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path egui-app/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path crates/bando-data-access/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Report exact lockfile bytes for read-only recovery
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          foreach ($path in @('egui-app/Cargo.lock','crates/bando-data-access/Cargo.lock')) {
+            $bytes = [IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $path).Path)
+            $encoded = [Convert]::ToBase64String($bytes)
+            Write-Output "LOCK_BEGIN:$path"
+            Write-Output "LOCK_SHA256:$((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)"
+            for ($i=0; $i -lt $encoded.Length; $i+=1024) {
+              Write-Output ("LOCK_CHUNK:" + $encoded.Substring($i,[Math]::Min(1024,$encoded.Length-$i)))
+            }
+            Write-Output "LOCK_END:$path"
+          }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: resolved-cargo-locks
+          path: |
+            egui-app/Cargo.lock
+            crates/bando-data-access/Cargo.lock
+          if-no-files-found: error
+          retention-days: 3
+  commit:
+    needs: resolve
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/security/v0.8.0-pre-release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: resolved-cargo-locks
+          path: lock-output
+      - name: Commit only generated lockfiles to isolated branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/security/v0.8.0-pre-release
+          git fetch origin refs/heads/security/v0.8.0-pre-release
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          for dir in egui-app crates/bando-data-access; do
+            test -f "lock-output/$dir/Cargo.lock"
+            test ! -L "lock-output/$dir/Cargo.lock"
+            grep -q '^version = 4$' "lock-output/$dir/Cargo.lock"
+            cp "lock-output/$dir/Cargo.lock" "$dir/Cargo.lock"
+          done
+          rm -rf lock-output
+          git add -- egui-app/Cargo.lock crates/bando-data-access/Cargo.lock
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -c core.hooksPath=/dev/null commit -m 'security: commit Cargo-resolved native lockfiles'
+          git push origin HEAD:refs/heads/security/v0.8.0-pre-release
+) { throw "SQLite security versions not resolved: $lock" }
           }
           # Recheck the full graph and registry resolution against the generated locks.
           cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path egui-app/Cargo.toml
