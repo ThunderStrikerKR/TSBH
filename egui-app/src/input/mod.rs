@@ -1,4 +1,5 @@
 //! Shared native input construction, formatting and exact-cell editing.
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Layout,Rect,Response,Stroke,Ui,Vec2};
@@ -248,7 +249,7 @@ fn money_unit_margin(
 fn paint_money_unit(ui:&Ui,rect:Rect,galley:std::sync::Arc<egui::Galley>,right_inset:f32){
     let pos=egui::pos2(money_unit_left(rect.right(),right_inset,galley.size().x),
         rect.center().y-galley.size().y/2.0);
-    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()))
+    ui.painter().with_shared_clip(rect.intersect(ui.clip_rect()))
         .galley(pos,galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
 }
 
@@ -741,7 +742,7 @@ fn reception_quantity_editor(
                     Align::RIGHT,egui::Margin::ZERO).frame(false),
                 request_focus,click_at
             );
-            segments.painter().with_clip_rect(unit_rect).text(
+            segments.painter().with_shared_clip(unit_rect).text(
                 unit_rect.center(),egui::Align2::CENTER_CENTER,"개",font.clone(),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
             );
             let mut clicked=false;
