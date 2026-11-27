@@ -283,7 +283,14 @@ fn unique_source_target<'a>(units:&[u16],rs:&'a Value,s:Span)->Option<(&'a Value
 fn field_state(units:&[u16],rs:&Value,s:Span,task:&str)->Option<String>{
     let (target,field)=unique_source_target(units,rs,s)?;
     match task{
-        "type"=>Some(field.to_owned()),
+        "type"=>{
+            // A stale recipient source link does not prove that the final
+            // value still corresponds to the classified original text.
+            let original=String::from_utf16(&units[s.0..s.1]).ok()?;
+            if delivery(field)&&!same_delivery_value(field,field,target[field].as_str()?,&original){return None;}
+            if matches!(field,"name"|"note")&&target[field].as_str()?.trim()!=original.trim(){return None;}
+            Some(field.to_owned())
+        },
         "product" if field=="product"=>target["productId"].as_str().filter(|v|!v.is_empty()).map(str::to_owned),
         "variant" if field=="product"=>target["variantId"].as_str().filter(|v|!v.is_empty()).map(str::to_owned),
         "quantity" if field=="quantity"&&target["quantityConfirmed"]==true=>
@@ -586,6 +593,11 @@ pub(super) fn compare(payload:&Value)->Result<Value,String>{
         }
         if task=="variant"&&field_state(&units,old_rows,position,"product")!=
             field_state(&units,new_rows,position,"product"){status="unresolved_evidence";}
+        if task=="variant"&&status=="unchanged_observed"&&
+            unique_source_target(&units,old_rows,position).zip(unique_source_target(&units,new_rows,position))
+                .is_none_or(|((a,_),(b,_))|a["color"]!=b["color"]){
+            status="unresolved_evidence";
+        }
 
         // A default option is not a verified source observation. Require
         // the written color and a single associated product for weak credit.
