@@ -1083,6 +1083,20 @@ impl CategoryManager {
 mod modal_layout_contract_tests{
     use super::*;
     #[test]
+    fn actual_category_editor_keeps_rects_during_permission_and_busy_changes(){
+        use crate::ui_test_support::{test_context,assert_popup_transition_geometry};
+        let catalog=json!({"revision":1,"categories":[{"id":"synthetic-child","name":"검증 분류","parentId":ROOTS[0].0,"active":true}],"products":[]});
+        let ctx=test_context();
+        let work=Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1400.0,900.0));
+        let mut manager=CategoryManager::default();
+        manager.selected="synthetic-child".into();manager.editor=true;
+        manager.name="검증 분류".into();
+        assert_popup_transition_geometry(&ctx,work,4,|ctx,phase|{
+            manager.show_overlays(ctx,work,&catalog,phase!=1,phase==2);
+        });
+    }
+
+    #[test]
     fn navigation_reset_clears_cached_map_and_focus(){
         let mut manager=CategoryManager::default();
         manager.focused=true;manager.query="보면대".into();
