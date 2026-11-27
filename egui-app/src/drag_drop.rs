@@ -13,7 +13,8 @@ pub(crate) fn cursor(ctx:&Context,allowed:bool){
     ctx.set_cursor_icon(if allowed{egui::CursorIcon::Grabbing}else{egui::CursorIcon::NotAllowed});
 }
 pub(crate) fn pointer_hits(ui:&Ui,rect:Rect,pointer:Option<Pos2>)->bool{
-    ui.is_enabled()&&pointer.is_some_and(|pos|rect.intersect(ui.clip_rect()).contains(pos))
+    let visible=rect.intersect(ui.clip_rect());
+    ui.is_enabled()&&visible.is_positive()&&pointer.is_some_and(|pos|visible.contains(pos))
 }
 /// Per-frame collector for custom drag targets. Repeated observations of
 /// the same logical target are harmless; different compatible targets at
@@ -139,11 +140,12 @@ mod tests{
     #[test]
     fn native_drag_commits_only_once_to_enabled_valid_primary_target(){
         use egui::{Event,Modifiers,PointerButton};
-        for (enabled,valid,button,expected) in [
-            (true,true,PointerButton::Primary,1),
-            (false,true,PointerButton::Primary,0),
-            (true,false,PointerButton::Primary,0),
-            (true,true,PointerButton::Secondary,0),
+        for (enabled,valid,button,outside,expected) in [
+            (true,true,PointerButton::Primary,false,1),
+            (false,true,PointerButton::Primary,false,0),
+            (true,false,PointerButton::Primary,false,0),
+            (true,true,PointerButton::Secondary,false,0),
+            (true,true,PointerButton::Primary,true,0),
         ]{
             let ctx=crate::ui_test_support::test_context();
             let screen=Rect::from_min_size(Pos2::ZERO,Vec2::new(600.0,400.0));
@@ -175,7 +177,9 @@ mod tests{
             draw(vec![Event::PointerMoved(source.center()+egui::vec2(12.0,0.0))]);
             draw(vec![Event::PointerMoved(target.center())]);
             draw(vec![Event::PointerMoved(target.center())]);
-            draw(vec![Event::PointerButton{pos:target.center(),button,pressed:false,modifiers:Modifiers::NONE}]);
+            let release_at=if outside{egui::pos2(500.0,350.0)}else{target.center()};
+            draw(vec![Event::PointerMoved(release_at)]);
+            draw(vec![Event::PointerButton{pos:release_at,button,pressed:false,modifiers:Modifiers::NONE}]);
             draw(vec![]);
             draw(vec![]);
             drop(draw);
