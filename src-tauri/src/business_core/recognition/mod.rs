@@ -24,6 +24,30 @@ struct Evidence {
     item_id: Option<String>,
 }
 
+// Structurally recognized source candidates that cannot participate in
+// the current assignment. Keep offsets, not duplicate raw text. These
+// are distinct from missing/unknown fields and must not become anchors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CandidateExclusion { SaleUnit, OverlappingField, SenderSection, EmbeddedDigits }
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ExcludedCandidate {
+    kind:&'static str,
+    start:usize,
+    end:usize,
+    reason:CandidateExclusion,
+}
+#[derive(Default)]
+struct CandidateExclusions { entries:Vec<ExcludedCandidate>, truncated:bool }
+impl CandidateExclusions {
+    fn record(&mut self,raw:&str,kind:&'static str,start:usize,end:usize,reason:CandidateExclusion){
+        if start>=end||raw.get(start..end).is_none(){self.truncated=true;return;}
+        if self.entries.len()>=4096{self.truncated=true;return;}
+        self.entries.push(ExcludedCandidate{kind,start,end,reason});
+    }
+    fn excludes(&self,kind:&str,start:usize,end:usize)->bool{
+        self.entries.iter().any(|e|e.kind==kind&&e.start==start&&e.end==end)
+    }
+}
 #[derive(Clone, Debug)]
 struct Line<'a> {
     text: &'a str,
@@ -953,6 +977,7 @@ struct ExtractedDocument<'a>{
     product_hits:Vec<ProductHit>,
     geometry:SourceGeometry,
     delivery:DeliveryGeometry,
+    exclusions:CandidateExclusions,
 }
 fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->ExtractedDocument<'a>{
     let client_id = client_id(client);
@@ -964,6 +989,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         &person_label,&phone,&mut search);
     let geometry=SourceGeometry::new(raw);
     let mut events: Vec<Evidence> = Vec::new();
+    let mut exclusions=CandidateExclusions::default();
     let mut product_hits: Vec<ProductHit> = Vec::new();
     // Direct translation of order-evidence.ts:140-170: parenthesized
     // delivery requests and note continuation remain separate evidence.
@@ -1096,15 +1122,19 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         }
         for c in phone.captures_iter(line.text) {
             let full = c.get(0).expect("phone match");
-            if name_span.is_some_and(|(a,b)|a<full.end()&&full.start()<b){continue;}
+            let kind=if c[1].starts_with("01"){"mobile"}else{"phone"};
+            if name_span.is_some_and(|(a,b)|a<full.end()&&full.start()<b){
+                exclusions.record(raw,kind,line.start+full.start(),line.start+full.end(),CandidateExclusion::OverlappingField);
+                continue;
+            }
             // Reject a phone-like substring embedded in a longer digit run.
             if (full.start() > 0 && line.text[..full.start()].chars().next_back()
                 .map_or(false, |v| v.is_ascii_digit()))
                 || line.text[full.end()..].chars().next().map_or(false, |v|v.is_ascii_digit()) {
+                exclusions.record(raw,kind,line.start+full.start(),line.start+full.end(),CandidateExclusion::EmbeddedDigits);
                 continue;
             }
             let value = format!("{}-{}-{}", &c[1], &c[2], &c[3]);
-            let kind = if c[1].starts_with("01") { "mobile" } else { "phone" };
             add_match(&mut events, line, full.start(),full.end(),kind,value,
                 "연락처 원문 구간");
         }
@@ -1173,6 +1203,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
                         .any(|name|model::find_term(skip_until,name,true).is_some())))
             }
         };
+        let offset = line.text.find(trimmed).unwrap_or(0);
         // parser.ts:537-552: a compound sale-unit phrase containing
         // "2개" is part of the option name, not an order quantity.
         if quantity_values.len()==1 {
@@ -1185,12 +1216,15 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
                     .and_then(|v|v.get("option")).and_then(Value::as_str);
                 if sale_unit==Some("2개 구성")
                     && option.map_or(false,|o|!o.is_empty() && trimmed.contains(o)) {
+                    for q in &quantity_values{
+                        exclusions.record(raw,"quantity",line.start+offset+q.start,
+                            line.start+offset+q.end,CandidateExclusion::SaleUnit);
+                    }
                     quantity_values.clear();
                 }
             }
         }
         let mut quantity_indexes = Vec::new();
-        let offset = line.text.find(trimmed).unwrap_or(0);
         for q in quantity_values {
             quantity_indexes.push(add_match(&mut events, line, offset+q.start,offset+q.end,
                 "quantity",q.value.to_string(),"상품 행에 명시된 수량"));
@@ -1236,7 +1270,12 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
     }
     // A generic quantity line is evidence but cannot itself prove which SKU was ordered.
     for line in &lines {
-        if sender_lines.contains(&line.number){continue;}
+        if sender_lines.contains(&line.number){
+            for q in search.quantities(line.text){
+                exclusions.record(raw,"quantity",line.start+q.start,line.start+q.end,CandidateExclusion::SenderSection);
+            }
+            continue;
+        }
         if events.iter().any(|e| e.kind == "quantity" && e.line == line.number) { continue; }
         if is_money_or_header(line.text) { continue; }
         if product_hits.iter().any(|h| h.line == line.number) { continue; }
@@ -1249,20 +1288,29 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
             let overlaps_field=events.iter().any(|e|
                 matches!(e.kind,"address"|"name"|"phone"|"mobile"|"note")
                     && e.start < end && start < e.end);
-            if overlaps_field { continue; }
+            if overlaps_field {
+                exclusions.record(raw,"quantity",start,end,CandidateExclusion::OverlappingField);
+                continue;
+            }
             add_match(&mut events,line,q.start,q.end,"quantity",q.value.to_string(),
                 "독립 수량 원문; 상품 연결은 별도 판정");
         }
     }
 
     let delivery=DeliveryGeometry::new(&events);
-    ExtractedDocument{raw,lines,events,product_hits,geometry,delivery}
+    ExtractedDocument{raw,lines,events,product_hits,geometry,delivery,exclusions}
 }
 fn analyze(raw:&str,state:&Value,client:Option<&Value>)->Result<Value,String>{
     assign_document(extract_document(raw,state,client),state,client)
 }
 fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Value>)->Result<Value,String>{
-    let ExtractedDocument{raw,lines,mut events,product_hits,geometry,delivery}=document;
+    let ExtractedDocument{raw,lines,mut events,product_hits,geometry,delivery,exclusions}=document;
+    // No blocked candidate may be used as an assignable field. Keep
+    // event indexes stable for ProductHit; reject contradictory extraction
+    // rather than deleting events after product references were built.
+    if events.iter().any(|e|exclusions.excludes(e.kind,e.start,e.end)){
+        return Err("원문 후보의 채택·제외 상태가 충돌합니다.".into());
+    }
     let mut anchors: Vec<usize> = events.iter().enumerate()
         .filter_map(|(i,e)| (e.kind == "name").then_some(i)).collect();
     anchors.sort_by_key(|i| events[*i].start);
@@ -2051,6 +2099,19 @@ mod tests {
             &&e.start<e.end&&raw.get(e.start..e.end).is_some()));
         assert!(!document.product_hits.is_empty());
         assert_eq!(assign_document(document,&state,None).unwrap(),analyze(raw,&state,None).unwrap());
+    }
+    #[test]
+    fn excluded_source_candidates_retain_offsets_without_entering_assignment(){
+        let raw="김가상\n010-0000-0001\n709 1개\n송하인: 가상상호\n7개";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        assert!(!doc.exclusions.truncated);
+        let excluded=doc.exclusions.entries.iter().find(|e|e.reason==CandidateExclusion::SenderSection).unwrap();
+        assert_eq!(&raw[excluded.start..excluded.end],"7개");
+        assert_eq!(excluded.kind,"quantity");
+        assert!(doc.events.iter().all(|e|!doc.exclusions.excludes(e.kind,e.start,e.end)));
+        let output=assign_document(doc,&state,None).unwrap();
+        assert_eq!(output["recipients"][0]["items"][0]["quantity"],1);
     }
     #[test]
     fn sender_quantity_does_not_become_recipient_evidence(){
