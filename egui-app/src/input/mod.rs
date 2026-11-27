@@ -51,10 +51,13 @@ pub(crate) fn allocate_singleline_field(
     ui:&mut Ui,size:Vec2,edit:egui::TextEdit<'_>,enabled:Option<bool>
 )->Response{
     let place=|slot:&mut Ui|slot.add_sized(size,edit);
-    match enabled{
+    let response=match enabled{
         Some(enabled)=>ui.add_enabled_ui(enabled,place).inner,
         None=>place(ui),
-    }
+    };
+    #[cfg(test)]
+    crate::ui_test_support::record_component_geometry("input",response.rect,ui.clip_rect(),Some(size.y));
+    response
 }
 
 /// Standard form width policy; compact rate fields retain their 1pt floor.
