@@ -1195,9 +1195,7 @@ impl PreviewStore {
             rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?
         };
         if ids.len()<AUTO_RETRAIN_MIN_ORDERS{return Ok(auto_retrain_status("insufficient_orders",ids.len()));}
-        let prior:Option<String>=tx.query_row("SELECT cohort FROM recognition_blend_retrain_state
-            WHERE scope=?1 AND build=?2 AND policy_version=?3",params![scope,build,AUTO_RETRAIN_POLICY_VERSION],|r|r.get(0))
-            .optional().map_err(|e|e.to_string())?;
+        let prior:Option<String>=read_retrain_cohort(&tx,&scope,build)?;
         let previous=prior.as_deref().map(serde_json::from_str::<LearningDigests>).transpose().map_err(|_|"자동 재학습 상태 손상")?;
         let (frozen,mut orders,(digests,due))=crate::business_state::learning_inputs_from_snapshot(&source,&ids,|sources|{
             let (misses,digests)=select_learning_changes(&tx,&scope,sources)?;
@@ -1229,9 +1227,7 @@ impl PreviewStore {
         let report=evaluate(&json!({"orders":orders,"config":config}))?;
         let fit_ms=started.elapsed().as_millis() as u64;
         let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
-        let latest:Option<String>=tx.query_row("SELECT cohort FROM recognition_blend_retrain_state
-            WHERE scope=?1 AND build=?2 AND policy_version=?3",params![scope,build,AUTO_RETRAIN_POLICY_VERSION],|r|r.get(0))
-            .optional().map_err(|e|e.to_string())?;
+        let latest:Option<String>=read_retrain_cohort(&tx,&scope,build)?;
         let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending WHERE scope=?1 AND feature_version=1",
             [&scope],|r|r.get(0)).map_err(|e|e.to_string())?;
         let current=crate::business_state::read_learning_sources(&ids)?;
@@ -1372,9 +1368,7 @@ impl PreviewStore {
                     crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
                     return Err("보정 규격 갱신 중 모델 또는 업무 DB 변경".into());
                 }
-                set_selected_blend_model(&write,&scope,None)?;
-                write.execute("DELETE FROM recognition_blend_monitor WHERE scope=?1",[&scope]).map_err(|e|e.to_string())?;
-                write.execute("DELETE FROM recognition_blend_monitor_checkpoint WHERE scope=?1",[&scope]).map_err(|e|e.to_string())?;
+                retire_incompatible_blend_selection(&write,&scope,id)?;
                 write.commit().map_err(|e|e.to_string())?;
                 return Ok(status("obsolete_calibration_selection_retired"));
             }
@@ -1757,6 +1751,12 @@ const OWNER_CALIBRATION_SCOPE:&str="conditional_traced_owner_pair_v1";
 const AUTO_RETRAIN_POLICY_VERSION:i64=2;
 const AUTO_RETRAIN_MIN_ORDERS:usize=60;
 const AUTO_RETRAIN_NEW_ORDERS:usize=20;
+fn read_retrain_cohort(conn:&Connection,scope:&str,build:&str)->Result<Option<String>,String>{
+    conn.query_row("SELECT cohort FROM recognition_blend_retrain_state
+        WHERE scope=?1 AND build=?2 AND policy_version=?3",
+        params![scope,build,AUTO_RETRAIN_POLICY_VERSION],|r|r.get(0))
+        .optional().map_err(|e|e.to_string())
+}
 fn auto_retrain_status(status:&str,n:usize)->Value{
     json!({"status":status,"candidateOrders":n,"policyVersion":1,
         "retrainCompatibilityVersion":AUTO_RETRAIN_POLICY_VERSION,
@@ -1967,6 +1967,16 @@ fn read_registered_blend_model(conn:&Connection,scope:&str,id:&str)->Result<Valu
     let model=read_blend_model_payload(conn,scope,id)?;
     validate_registry_model(scope,&model)?;
     Ok(model)
+}
+fn retire_incompatible_blend_selection(conn:&Connection,scope:&str,id:&str)->Result<(),String>{
+    if selected_blend_model(conn,scope)?.as_deref()!=Some(id)||
+        read_blend_model_payload(conn,scope,id)?["calibrationScope"]==OWNER_CALIBRATION_SCOPE{
+        return Err("호환 불가 모델 선택 상태 불일치".into());
+    }
+    set_selected_blend_model(conn,scope,None)?;
+    conn.execute("DELETE FROM recognition_blend_monitor WHERE scope=?1",[scope]).map_err(|e|e.to_string())?;
+    conn.execute("DELETE FROM recognition_blend_monitor_checkpoint WHERE scope=?1",[scope]).map_err(|e|e.to_string())?;
+    Ok(())
 }
 fn selected_blend_model(conn:&Connection,scope:&str)->Result<Option<String>,String>{
     conn.query_row("SELECT model_id FROM recognition_blend_selection WHERE scope=?1",[scope],|r|r.get(0))
@@ -2709,6 +2719,20 @@ mod reception_edit_audit_tests {
     }
 
     #[test]
+    fn retrain_cohort_is_invalidated_by_calibration_revision(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE recognition_blend_retrain_state(
+            scope TEXT NOT NULL,build TEXT NOT NULL,policy_version INTEGER NOT NULL,
+            cohort TEXT NOT NULL,attempted_at TEXT NOT NULL,status TEXT NOT NULL,model_id TEXT,
+            PRIMARY KEY(scope,build,policy_version));
+            INSERT INTO recognition_blend_retrain_state VALUES('scope','build',1,'old','2020','stored',NULL);").unwrap();
+        assert_eq!(read_retrain_cohort(&conn,"scope","build").unwrap(),None);
+        conn.execute("INSERT INTO recognition_blend_retrain_state VALUES('scope','build',?1,'new','2020','stored',NULL)",
+            [AUTO_RETRAIN_POLICY_VERSION]).unwrap();
+        assert_eq!(read_retrain_cohort(&conn,"scope","build").unwrap(),Some("new".into()));
+        assert_eq!(read_retrain_cohort(&conn,"other","build").unwrap(),None);
+    }
+    #[test]
     fn automatic_retrain_uses_distinct_time_windows_and_new_order_threshold(){
         let old=(0..60).map(|i|(format!("id-{i}"),"a".repeat(64))).collect::<LearningDigests>();
         let mut current=old.clone();
@@ -2815,6 +2839,25 @@ mod reception_edit_audit_tests {
         set_selected_blend_model(&conn,"scope",None).unwrap();
         assert!(selected_blend_model(&conn,"scope").unwrap().is_none());
         assert_eq!(read_registered_blend_model(&conn,"scope",&b).unwrap(),model);
+        // A stored old revision remains readable for history, but may not
+        // participate in prediction or automatic model comparison.
+        let mut obsolete=model.clone();
+        obsolete.as_object_mut().unwrap().remove("calibrationScope");
+        let (old_id,old_payload)=blend_model_identity(&obsolete).unwrap();
+        conn.execute("INSERT INTO recognition_blend_models(scope,model_id,registry_version,payload,created_at,available_after)
+            VALUES('scope',?1,1,?2,'2020-01-01T00:00:00Z','2020-01-01T00:00:00Z')",
+            params![old_id,old_payload]).unwrap();
+        assert!(read_registered_blend_model(&conn,"scope",&old_id).is_err());
+        assert!(store_blend_model(&conn,"scope",&obsolete).is_err());
+        set_selected_blend_model(&conn,"scope",Some(&old_id)).unwrap();
+        let tx=conn.unchecked_transaction().unwrap();
+        retire_incompatible_blend_selection(&tx,"scope",&old_id).unwrap();
+        tx.commit().unwrap();
+        assert!(selected_blend_model(&conn,"scope").unwrap().is_none());
+        assert_eq!(read_blend_model_payload(&conn,"scope",&old_id).unwrap(),obsolete);
+        set_selected_blend_model(&conn,"scope",Some(&b)).unwrap();
+        assert!(retire_incompatible_blend_selection(&conn,"scope",&b).is_err());
+        assert_eq!(selected_blend_model(&conn,"scope").unwrap(),Some(b));
         model["automaticChangeAuthorized"]=json!(true);
         assert!(store_blend_model(&conn,"scope",&model).is_err());
     }
