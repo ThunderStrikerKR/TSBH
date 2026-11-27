@@ -72,7 +72,7 @@ const masterContract = {
 const {fixed_rows: _fixedRows,...masterOtherCalls}=masterContract;
 const snapshotMasterContract={...masterOtherCalls,fixed_rows_snapshot:1};
 const tableContracts = {
-  "product_manager.rs:show_page":snapshotMasterContract,
+  "product_manager.rs:show_catalog_surface":snapshotMasterContract,
   "freight_manager.rs:show_groups":masterContract,
   "freight_manager.rs:show_rates":masterContract,
   "freight_manager.rs:freight_history_table":masterContract,
@@ -517,7 +517,7 @@ const heightWriteAllowances=new Map([
   ["order_history_manager.rs:history_date_controls:line.set_height(second.height())",1],
   ["order_history_manager.rs:show_page:search.set_height(search_rect.height())",1],
   ["order_history_manager.rs:show_page:dates.set_height(date_rect.height())",1],
-  ["product_manager.rs:show_page:actions.set_height(actions_rect.height())",1],
+  ["product_manager.rs:show_catalog_surface:actions.set_height(actions_rect.height())",1],
   ["navigation.rs:reception_recipient_navigator:segments.set_height(inner.height())",1],
   ["ui_primitives.rs:date_navigation_segmented_surface:segments.set_height(inner.height())",1],
   ["ui_layout.rs:fixed_result_viewport:pane.set_min_height(height)",1],
@@ -1204,8 +1204,8 @@ function selfTest(){
   assert.equal(audit(registry,"model_group_manager.rs",true).filter(hit=>hit.rule.includes("show_editor requires")).length,0);
   assert.equal(audit(registry.replace("table::registry_cell();",""),"model_group_manager.rs",true).filter(hit=>hit.rule.includes("show_editor requires")).length,1);
   assert.equal(audit(registry.replace("table::registry_cell();","fake::registry_cell();"),"model_group_manager.rs",true).filter(hit=>hit.rule.includes("show_editor requires")).length,1);
-  const missingProduct=audit("fn show_page(){}","product_manager.rs",true);
-  assert.equal(missingProduct.filter(hit=>hit.rule.includes("product_manager.rs:show_page requires ")).length,8);
+  const missingProduct=audit("fn show_catalog_surface(){}","product_manager.rs",true);
+  assert.equal(missingProduct.filter(hit=>hit.rule.includes("product_manager.rs:show_catalog_surface requires ")).length,8);
   assert.equal(missingProduct.filter(hit=>hit.rule.includes("product_manager.rs:show_detail requires ")).length,1);
   assert.equal(missingProduct.length,9);
   assert.equal(audit("fn show(){crate::table::show(ui,h,c);crate::table::fixed_rows(ui,v,id,h,n,c);crate::table::row_scope(ui,id,r,c);crate::composite_client::management_row(ui,id,c,t,i);crate::table::management_client_header(ui,h,c,l,w,s);}","client_chooser.rs",true).length,0);
@@ -1237,7 +1237,7 @@ function selfTest(){
   assert.equal(missing("fn virtual_fixed_rows(){strict_viewport_clip(b,v);row.set_clip_rect(r);}","table/mod.rs","table/mod.rs:virtual_fixed_rows").length,0);
   assert.equal(missing("fn virtual_fixed_rows(){row.set_clip_rect(r);}","table/mod.rs","table/mod.rs:virtual_fixed_rows").length,1);
   assert.equal(missing(fixed.replace("row.set_clip_rect(r);",""),"table/mod.rs",tableScope).length,1);
-  assert.equal(missing("fn show_page(){components::show();}","product_manager.rs","product_manager.rs:show_page").length,8);
+  assert.equal(missing("fn show_catalog_surface(){components::show();}","product_manager.rs","product_manager.rs:show_catalog_surface").length,8);
   assert.deepEqual([...sharedDependencies("use crate::{theme, typography}; fn a(){crate::overlay::x();}","button")],["theme","typography","overlay"]);
   assert.equal(sharedDependencies("// crate::components::x();\nfn a(){let s=\"components::x()\";}","button").size,0);
   assert.equal(dependencyCycles(new Map([["button",new Set(["theme"])],["theme",new Set()]])).length,0);
