@@ -2,6 +2,7 @@
 //! Never use this for empty/loading/dirty states or decisions that require a modal.
 //! All coordinates are egui logical points, not OS/device pixels.
 
+use crate::ui_layout::SharedUiClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use std::{collections::HashMap, time::{Duration, Instant}};
@@ -523,7 +524,7 @@ pub fn show(ctx: &Context) {
                         .id_salt("floating-notice-detail-scroll")
                         .aligned_max_rect(text_rect),
                     |inner| {
-                        inner.set_clip_rect(text_rect);
+                        inner.restrict_shared_clip(text_rect);
                         inner.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,text_rect.width());
                         crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                             .id_salt("floating-notice-scroll")
