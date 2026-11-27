@@ -24,6 +24,93 @@ struct Evidence {
     item_id: Option<String>,
 }
 
+// Structurally recognized source candidates that cannot participate in
+// the current assignment. Keep offsets, not duplicate raw text. These
+// are distinct from missing/unknown fields and must not become anchors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CandidateDisposition {
+    SaleUnit, OverlappingField, SenderSection, EmbeddedDigits,
+    // These two are not hard exclusions. They preserve evidence the
+    // legacy policy did not use without turning it into a confirmed field.
+    CompetingType, CompetingQuantity, UnclassifiedSegment,
+}
+impl CandidateDisposition {
+    fn hard(self)->bool{
+        !matches!(self,Self::CompetingType|Self::CompetingQuantity|Self::UnclassifiedSegment)
+    }
+}
+// One source key per role and byte span. Selected evidence is referenced
+// by index so the existing assignment projection need not duplicate text.
+#[derive(Default)]
+struct CandidateRecord {
+    selected:Option<usize>,
+    disposition:Option<CandidateDisposition>,
+    products:HashMap<String,bool>,
+}
+#[derive(Default)]
+struct CommonCandidates {
+    entries:HashMap<(&'static str,usize,usize),CandidateRecord>,
+    product_count:usize,
+    truncated:bool,
+}
+impl CommonCandidates {
+    // Discovery does not require an exclusion reason or a selected event.
+    fn register(&mut self,raw:&str,kind:&'static str,start:usize,end:usize)->Option<&mut CandidateRecord>{
+        if start>=end||raw.get(start..end).is_none(){self.truncated=true;return None;}
+        let key=(kind,start,end);
+        if !self.entries.contains_key(&key)&&self.entries.len()>=4096{
+            self.truncated=true;return None;
+        }
+        Some(self.entries.entry(key).or_default())
+    }
+    fn record(&mut self,raw:&str,kind:&'static str,start:usize,end:usize,reason:CandidateDisposition){
+        if let Some(entry)=self.register(raw,kind,start,end){
+            if entry.disposition.is_none_or(|old|reason.hard()&&!old.hard()){
+                entry.disposition=Some(reason);
+            }
+        }
+    }
+    fn record_products(&mut self,raw:&str,offset:usize,len:usize,source:&[model::SourceCandidate],truncated:bool){
+        self.truncated|=truncated;
+        for c in source{
+            let (a,b)=c.span;
+            if a>=b||b>len||raw.get(offset+a..offset+b).is_none(){
+                self.truncated=true;continue;
+            }
+            let (a,b)=(offset+a,offset+b);
+            let key=("product",a,b);
+            if self.entries.get(&key).is_some_and(|e|e.products.contains_key(&c.product_id)){
+                let entry=self.entries.get_mut(&key).unwrap();
+                *entry.products.get_mut(&c.product_id).unwrap()|=c.literal;
+                continue;
+            }
+            if self.product_count>=4096||(!self.entries.contains_key(&key)&&self.entries.len()>=4096){
+                self.truncated=true;continue;
+            }
+            let entry=self.entries.entry(key).or_default();
+            entry.products.insert(c.product_id.clone(),c.literal);
+            self.product_count+=1;
+ 
+        }
+    }
+    fn index_selected(&mut self,events:&[Evidence]){
+        // A diagnostic budget may truncate alternatives, but never drop
+        // already selected evidence needed by the production projection.
+        for (index,e) in events.iter().enumerate(){
+            self.entries.entry((e.kind,e.start,e.end)).or_default().selected=Some(index);
+        }
+    }
+    fn admits(&self,e:&Evidence,index:usize)->bool{
+        !self.truncated&&self.entries.get(&(e.kind,e.start,e.end)).is_some_and(|r|
+            r.selected==Some(index)&&!r.disposition.is_some_and(CandidateDisposition::hard))
+    }
+    fn disposition(&self,kind:&'static str,start:usize,end:usize)->Option<CandidateDisposition>{
+        self.entries.get(&(kind,start,end)).and_then(|r|r.disposition)
+    }
+    fn excludes(&self,kind:&'static str,start:usize,end:usize)->bool{
+        self.disposition(kind,start,end).is_some_and(CandidateDisposition::hard)
+    }
+}
 #[derive(Clone, Debug)]
 struct Line<'a> {
     text: &'a str,
@@ -63,7 +150,21 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
                         .is_some_and(|variants|variants.iter().any(|variant|
                             variant.get("source").and_then(Value::as_str)==Some("DEMO")))
                 });
-            analyze(raw, &reception, payload.get("client"))
+            // Optional offline evaluation reads the same extracted
+            // feature object as production assignment, with no reparse.
+            let detailed=payload.get("includeDocumentFeatures").and_then(Value::as_bool)==Some(true);
+            let pattern=payload.get("includePatternIdentity").and_then(Value::as_bool)==Some(true);
+            if detailed||pattern{
+                let document=extract_document(raw,&reception,payload.get("client"));
+                let evaluation=detailed.then(||document.features.evaluation(&document.events,&document.geometry));
+                let identity=pattern.then(||document.features.pattern_identity());
+                let mut result=assign_document_with_trace(document,&reception,payload.get("client"),detailed)?;
+                if let Some(v)=evaluation{result["documentFeatures"]=v;}
+                if let Some(v)=identity{result["patternIdentity"]=v;}
+                Ok(result)
+            }else{
+                analyze(raw, &reception, payload.get("client"))
+            }
         }
         "match_products" => {
             let state = required_state(&payload)?;
@@ -175,9 +276,7 @@ fn ts_evidence_reason(raw: &str,e:&Evidence) -> String {
     } else {base.to_owned()}
 }
 
-fn e_json(raw: &str, e: &Evidence) -> Value {
-    let start = utf16(raw, e.start);
-    let end = utf16(raw, e.end);
+fn e_json(raw: &str, e: &Evidence, (start,end):(usize,usize)) -> Value {
     let mut result = json!({
         "id": format!("{}:{}:{}", e.kind, start, end),
         "text": &raw[e.start..e.end],
@@ -237,12 +336,19 @@ struct InterveningLines {
     blank_lines: usize,
     max_consecutive_blank_lines: usize,
 }
-fn intervening_lines(raw: &str, earlier: usize, later: usize) -> InterveningLines {
-    let mut result = InterveningLines::default();
-    if later <= earlier + 1 { return result; }
-    let mut current_blank_run = 0usize;
-    for line in raw.split('\n').skip(earlier + 1).take(later - earlier - 1) {
-        if line.trim().is_empty() {
+// One document-wide index. The normal recognition path reads it instead
+// of repeatedly splitting the original text for each owner candidate.
+struct SourceGeometry { blank: Vec<bool> }
+impl SourceGeometry {
+    fn new(raw:&str)->Self {
+        Self{blank:raw.split('\n').map(|line|line.trim().is_empty()).collect()}
+    }
+    fn between(&self,earlier:usize,later:usize)->InterveningLines {
+        let mut result=InterveningLines::default();
+        if later<=earlier.saturating_add(1){return result;}
+        let mut current_blank_run=0usize;
+        for &blank in self.blank.iter().skip(earlier.saturating_add(1)).take(later-earlier-1){
+        if blank {
             result.blank_lines += 1;
             current_blank_run += 1;
             result.max_consecutive_blank_lines =
@@ -252,7 +358,12 @@ fn intervening_lines(raw: &str, earlier: usize, later: usize) -> InterveningLine
             current_blank_run = 0;
         }
     }
-    result
+        result
+    }
+}
+#[cfg(test)]
+fn intervening_lines(raw:&str,earlier:usize,later:usize)->InterveningLines{
+    SourceGeometry::new(raw).between(earlier,later)
 }
 fn phone_regex() -> Regex {
     Regex::new(r"(?i)(0(?:50\d|1[016789]|2|[3-6]\d|70|80))[\s().-]*(\d{3,4})[\s().-]*(\d{4})")
@@ -392,9 +503,206 @@ fn weak_recipient_hint(text: &str) -> bool {
 fn delivery_boundary(line:&str,phone:&Regex)->bool{
     address_begin(line).is_some() || phone.is_match(line)
 }
-fn unlabelled_recipient_span(
-    line:&str,address:Option<usize>,phone:&Regex,near_delivery:bool,state:&Value,client_id:&str
-)->Option<(usize,usize)>{
+// Cache exact source slices within one document, including logical record
+// boundary checks. Catalog/client are fixed; source offsets still belong
+// to each evidence occurrence, not to the cached decision.
+#[derive(Clone)]
+struct CachedProductDecision{
+    output:Value,
+    candidates:Vec<model::SourceCandidate>,
+    truncated:bool,
+}
+enum ProductSearchEntry<'s>{
+    Collected(model::ProductHypotheses<'s>),
+    Evaluated{result:CachedProductDecision,registered_model:bool},
+}
+struct ProductSearch<'a,'s>{
+    state:&'s Value,
+    client_id:&'s str,
+    decisions:HashMap<&'a str,ProductSearchEntry<'s>>,
+    quantities:HashMap<&'a str,Vec<quantity::Quantity>>,
+}
+impl<'a,'s> ProductSearch<'a,'s>{
+    fn new(state:&'s Value,client_id:&'s str)->Self{
+        Self{state,client_id,decisions:HashMap::new(),quantities:HashMap::new()}
+    }
+    fn decision(&mut self,text:&'a str)->&Value{
+        &self.result(text).output
+    }
+    fn result(&mut self,text:&'a str)->&CachedProductDecision{
+        self.result_with_registration(text,None)
+    }
+    fn ensure_collected(&mut self,text:&'a str){
+        if self.decisions.len()>=512&&!self.decisions.contains_key(text){
+            self.decisions.clear();
+        }
+        let state=self.state;
+        let client=self.client_id;
+        self.decisions.entry(text).or_insert_with(||
+            ProductSearchEntry::Collected(model::collect(text,state,client)));
+    }
+    fn source(&mut self,text:&'a str)->(&[model::SourceCandidate],bool){
+        self.ensure_collected(text);
+        match &self.decisions[text]{
+            ProductSearchEntry::Collected(batch)=>(&batch.source_candidates,batch.source_truncated),
+            ProductSearchEntry::Evaluated{result,..}=>(&result.candidates,result.truncated),
+        }
+    }
+    fn has_registered_model(&mut self,text:&'a str)->bool{
+        self.ensure_collected(text);
+        match &self.decisions[text]{
+            ProductSearchEntry::Collected(batch)=>batch.registered_model,
+            ProductSearchEntry::Evaluated{registered_model,..}=>*registered_model,
+        }
+    }
+    fn result_with_registration(&mut self,text:&'a str,
+        registration:Option<(&str,usize,&mut CommonCandidates)>)->&CachedProductDecision{
+        self.ensure_collected(text);
+        if let Some((raw,offset,candidates))=registration{
+            let (source,truncated)=self.source(text);
+            candidates.record_products(raw,offset,text.len(),source,truncated);
+        }
+        if matches!(self.decisions.get(text),Some(ProductSearchEntry::Collected(_))){
+            let Some(ProductSearchEntry::Collected(batch))=self.decisions.remove(text)else{unreachable!()};
+            let registered_model=batch.registered_model;
+            let decision=model::evaluate(text,self.state,batch);
+            self.decisions.insert(text,ProductSearchEntry::Evaluated{
+                result:CachedProductDecision{output:model::decision_json(&decision),
+                    candidates:decision.source_candidates,truncated:decision.source_truncated},
+                registered_model});
+        }
+        match &self.decisions[text]{
+            ProductSearchEntry::Evaluated{result,..}=>result,
+            ProductSearchEntry::Collected(_)=>unreachable!(),
+        }
+    }
+    fn quantities(&mut self,text:&'a str)->&[quantity::Quantity]{
+        if self.quantities.len()>=512&&!self.quantities.contains_key(text){
+            self.quantities.clear();
+        }
+        self.quantities.entry(text).or_insert_with(||quantity::extract(text))
+    }
+}
+// Split only independently bounded, explicitly labelled delivery records.
+ // Ordinary punctuation in a name, address or memo is not a boundary.
+fn split_recipient_records<'a>(lines:Vec<Line<'a>>,label:&Regex,phone:&Regex)->Vec<Line<'a>>{
+    let mut out=Vec::with_capacity(lines.len());
+    for line in lines{
+        if !line.text.contains([';','；'])||line.text.contains('|'){
+            out.push(line);continue;
+        }
+        let mut ranges=Vec::new();let mut start=0;
+        for (offset,c) in line.text.char_indices(){
+            if matches!(c,';'|'；'){
+                ranges.push((start,offset));start=offset+c.len_utf8();
+            }
+        }
+        ranges.push((start,line.text.len()));
+        let valid=ranges.len()<=16&&ranges.iter().all(|&(a,b)|{
+            let t=&line.text[a..b];
+            label.find(t).is_some_and(|m|m.as_str().contains([':', '：']))&&
+                explicit_recipient_span(t,label,phone).is_some_and(|(x,y)|{
+                    // Require distinct delivery evidence outside the name.
+                    x<y&&delivery_boundary(&t[y..],phone)
+                })
+        });
+        if valid{
+            for (a,b) in ranges{
+                out.push(Line{text:&line.text[a..b],start:line.start+a,
+                    number:line.number,paragraph:line.paragraph});
+            }
+        }else{out.push(line);}
+    }
+    out
+}
+// Product records can share one physical line. Only split when each
+// segment independently has a registered leading model and an explicit
+// terminal quantity. Unknown models, prose, and options that cannot be
+// isolated safely retain their original line for the existing parser.
+fn split_product_records<'a>(lines:Vec<Line<'a>>,label:&Regex,phone:&Regex,
+    search:&mut ProductSearch<'a,'_>)->Vec<Line<'a>>{
+    let mut out=Vec::with_capacity(lines.len());
+    for line in lines{
+        let t=line.text;
+        if label.is_match(t)||phone.is_match(t)||address_begin(t).is_some()||
+            t.contains('|')||is_money_or_header(t)||
+            ["공통","모두","전부","전원","각각","씩","메모","메시지","메세지","요청","구성","포함","송하인","보내는"]
+                .iter().any(|word|t.contains(*word)){
+            out.push(line);continue;
+        }
+        let quantities=search.quantities(t).to_vec();
+        if quantities.len()<2||quantities.len()>16||
+            !t[quantities.last().unwrap().end..].trim().is_empty(){
+            out.push(line);continue;
+        }
+        let mut ranges=Vec::with_capacity(quantities.len());
+        let mut start=0usize;
+        let mut valid=true;
+        for (i,q) in quantities.iter().enumerate(){
+            let prefix=&t[start..q.start];
+            let leading=prefix.len()-prefix.trim_start_matches(|c:char|
+                c.is_whitespace()||(i>0&&matches!(c,';'|'；'|'/'))).len();
+            let begin=start+leading;
+            if begin>=q.start||(i>0&&leading==0){valid=false;break;}
+            let segment=&t[begin..q.end];
+            let qty_start=q.start-begin;
+            let (source,truncated)=search.source(segment);
+            // Distinguish an item boundary from its eventual SKU identity.
+            let bounded=source.iter().filter(|c|c.literal&&c.span.0==0)
+                .map(|c|c.span.1).filter(|&end|end>0&&end<=qty_start&&
+                    segment.get(end..qty_start).is_some_and(|tail|
+                        tail.chars().all(|c|c.is_whitespace()||c=='/')))
+                .max();
+            if truncated||bounded.is_none()||source.iter().any(|c|
+                c.span.1>bounded.unwrap_or(0)){valid=false;break;}
+            ranges.push((begin,q.end));start=q.end;
+        }
+        if valid{
+            for (a,b) in ranges{
+                out.push(Line{text:&t[a..b],start:line.start+a,
+                    number:line.number,paragraph:line.paragraph});
+            }
+        }else{out.push(line);}
+    }
+    out
+}
+// Compare a narrowly scoped name/alias collision using the same cached
+// hypotheses later entered into CommonCandidates. An exact alias or a
+// literal catalog match is protected; so are quantity-qualified products.
+// Only a partial alias inside an honorific name immediately followed by
+// independent delivery information may challenge the legacy product choice.
+fn name_beats_partial_alias(text:&str,inline_delivery:bool,matched:&CachedProductDecision)->bool{
+    if !inline_delivery||matched.truncated||matched.candidates.is_empty(){return false;}
+    if matched.candidates.iter().any(|c|c.literal||c.span==(0,text.len())){return false;}
+    if model::category(text).is_some(){return false;}
+    let Some(stem)=text.strip_suffix('님')else{return false;};
+    if !ts_semantics::person(stem.trim_end()){return false;}
+    // A partial alias has variable strength according to Unicode
+    // coverage. Do not reintroduce a constant score after the gates.
+    let total=text.chars().count() as i64;
+    let mut coverage=0;
+    for c in &matched.candidates{
+        let Some(span)=text.get(c.span.0..c.span.1)else{return false;};
+        if span.is_empty(){return false;}
+        coverage=coverage.max(span.chars().count() as i64);
+    }
+    // Initial type weights: delivery 30, honorific 24, person form 16;
+    // alias evidence 30, legacy support 12, coverage up to 24.
+    let name_score=30+24+16;
+    let product_score=30+12+24*coverage/total.max(1);
+    exceeds_margin(name_score,product_score,OWNER_WEIGHTS.margin)
+}
+#[derive(Clone,Copy)]
+enum NameBoundary { SeparatedSuffix, InlineDelivery, Standalone }
+#[derive(Clone,Copy)]
+struct NameProposal { start:usize,end:usize,boundary:NameBoundary }
+// Discover the candidate span, not its final information type. The
+// legacy table/quantity boundaries are still the source of proposals.
+fn unlabelled_recipient_proposal<'a>(
+    line:&'a str,address:Option<usize>,phone:&Regex,near_delivery:bool,
+    search:&mut ProductSearch<'a,'_>
+)->Option<NameProposal>{
+    let state=search.state;
     let contact=phone.find(line).map(|m|m.start());
     let end=address.into_iter().chain(contact).min().unwrap_or(line.len());
     let prefix=&line[..end];
@@ -413,15 +721,19 @@ fn unlabelled_recipient_span(
         let tail=prefix[start..].trim_end();
         let tail=tail.strip_suffix('/').unwrap_or(tail);
         let (a,b)=trim_span(line,start,start+tail.len())?;
-        if !other_recipient_field(&line[a..b]){return Some((a,b));}
+        if !other_recipient_field(&line[a..b]){
+            return Some(NameProposal{start:a,end:b,boundary:NameBoundary::SeparatedSuffix});
+        }
         return None;
     }
     // A known product followed by an explicit quantity is a separate field.
     // Preserve the ENTIRE suffix, including company and English names.
-    for q in quantity::extract(prefix).into_iter().rev(){
+    for q in search.quantities(prefix).to_vec().into_iter().rev(){
         let before=&prefix[..q.end];
-        let decision=model::decision_json(&model::decide(before,state,client_id));
-        if !product_signal(before,&decision,state){continue;}
+        // Recognize lexical model/category signals without choosing a SKU.
+        // The legacy semantic/alias fallback still needs evaluation.
+        if !product_signal(before,&Value::Null,state)&&
+            !product_signal(before,search.decision(before),state){continue;}
         let tail=&prefix[q.end..];
         let tail=tail.trim_start_matches(|c:char|c.is_whitespace()||c=='|'||c=='ㅣ');
         let a=q.end+prefix[q.end..].len()-tail.len();
@@ -429,24 +741,46 @@ fn unlabelled_recipient_span(
         let candidate=&line[a..b];
         if other_recipient_field(candidate){continue;}
         if bounded || weak_recipient_hint(candidate){
-            return Some((a,b));
+            return Some(NameProposal{start:a,end:b,boundary:NameBoundary::SeparatedSuffix});
         }
     }
     if address.is_some() || contact.is_some(){
         let (a,b)=composite_name_before_address(prefix)?;
-        let candidate=&line[a..b];
-        // Address/phone prefixes with no product quantity must not promote
-        // a known model to a consignee. The explicit label path has priority.
-        let decision=model::decision_json(&model::decide(candidate,state,client_id));
-        if product_signal(candidate,&decision,state){return None;}
-        return Some((a,b));
+        return Some(NameProposal{start:a,end:b,boundary:NameBoundary::InlineDelivery});
     }
     let (a,b)=trim_span(line,0,line.len())?;
     let candidate=&line[a..b];
-    if other_recipient_field(candidate) || !quantity::extract(candidate).is_empty(){return None;}
+    if other_recipient_field(candidate) || !search.quantities(candidate).is_empty(){return None;}
     if !near_delivery && !weak_recipient_hint(candidate){return None;}
-    let decision=model::decision_json(&model::decide(candidate,state,client_id));
-    if product_signal(candidate,&decision,state){return None;}
+    Some(NameProposal{start:a,end:b,boundary:NameBoundary::Standalone})
+}
+// The competing name and catalog hypotheses enter the common index
+// before the legacy type policy is applied. Do not turn a rejected type
+// into a hard exclusion, or rerun the catalog search to retain it.
+fn resolve_name_proposal<'a>(raw:&str,line:&Line<'a>,proposal:NameProposal,
+    search:&mut ProductSearch<'a,'_>,candidates:&mut CommonCandidates)->Option<(usize,usize)>{
+    let NameProposal{start:a,end:b,boundary}=proposal;
+    let state=search.state;
+    let text=&line.text[a..b];
+    let offset=line.start+a;
+    let _=candidates.register(raw,"name",offset,line.start+b);
+    let matched=search.result_with_registration(text,Some((raw,offset,candidates)));
+    let signal=product_signal(text,&matched.output,state);
+    let chosen=match boundary{
+        NameBoundary::SeparatedSuffix=>true,
+        NameBoundary::InlineDelivery=>!signal||name_beats_partial_alias(text,true,matched),
+        NameBoundary::Standalone=>!signal,
+    };
+    if !chosen{
+        candidates.record(raw,"name",offset,line.start+b,CandidateDisposition::CompetingType);
+        return None;
+    }
+    for c in &matched.candidates{
+        let (start,end)=c.span;
+        if start<end&&end<=text.len(){
+            candidates.record(raw,"product",offset+start,offset+end,CandidateDisposition::CompetingType);
+        }
+    }
     Some((a,b))
 }
 fn is_money_or_header(text: &str) -> bool { ts_semantics::ignored_document_line(text) }
@@ -472,9 +806,9 @@ fn product_signal(text: &str, decision: &Value, _state: &Value) -> bool {
     product_category.is_match(t)
         && (quantity::extract(t).len()>0 || t.contains("BANDO") || t.contains("반도"))
 }
-fn source_json(raw: &str, e: &Evidence, recipient_id: &str, target_id: &str) -> Value {
+fn source_json(raw: &str, e: &Evidence, (start,end):(usize,usize), recipient_id: &str, target_id: &str) -> Value {
     json!({
-        "start": utf16(raw,e.start), "end": utf16(raw,e.end),
+        "start": start, "end": end,
         "field": e.kind, "targetId": target_id,
         "recipientId":recipient_id, "text": &raw[e.start..e.end],
     })
@@ -527,82 +861,268 @@ fn address_info(value: &str) -> (String, String, Value) {
     }
     (kind.into(), status.into(), parts)
 }
-fn blank_recipient(id: &str, name: &str, anchor: Option<&Evidence>, raw: &str) -> Value {
+fn blank_recipient(id: &str, name: &str, anchor: Option<(&Evidence,(usize,usize))>) -> Value {
     let mut value = json!({
         "id":id, "name":name, "address":"", "phone":"", "mobile":"", "note":"",
         "items":[], "sources":[], "candidates":[],
     });
-    if let Some(a) = anchor {
-        value["evidence"] = json!({"anchorId": format!("{}:{}:{}",a.kind,utf16(raw,a.start),utf16(raw,a.end)),
-            "start":utf16(raw,a.start),"end":utf16(raw,a.end)});
+    if let Some((a,(start,end))) = anchor {
+        value["evidence"] = json!({"anchorId": format!("{}:{}:{}",a.kind,start,end),
+            "start":start,"end":end});
     }
     value
 }
 fn owner_index(anchors: &[usize], events: &[Evidence], offset: usize) -> usize {
-    anchors.iter().enumerate().rev().find(|(_, i)| events[**i].start <= offset)
-        .map(|(idx,_)|idx).unwrap_or(0)
+    anchors.partition_point(|&i|events[i].start<=offset).saturating_sub(1)
+}
+// Reuse source-coordinate evidence for all candidate ownership decisions.
+// No source text or per-candidate duplicate evidence is copied.
+struct DeliveryGeometry{
+    delivery_starts:HashMap<usize,Vec<usize>>,
+    address_lines:HashMap<usize,Vec<usize>>,
+}
+impl DeliveryGeometry{
+    fn new(events:&[Evidence])->Self{
+        let mut delivery_starts=HashMap::<usize,Vec<usize>>::new();
+        let mut address_lines=HashMap::<usize,Vec<usize>>::new();
+        for e in events{
+            if matches!(e.kind,"address"|"phone"|"mobile"){
+                delivery_starts.entry(e.paragraph).or_default().push(e.start);
+            }
+            if e.kind=="address"{
+                address_lines.entry(e.paragraph).or_default().push(e.line);
+            }
+        }
+        for starts in delivery_starts.values_mut(){starts.sort_unstable();starts.dedup();}
+        for lines in address_lines.values_mut(){lines.sort_unstable();lines.dedup();}
+        Self{delivery_starts,address_lines}
+    }
+    fn between(&self,paragraph:usize,after:usize,before:usize)->bool{
+        self.delivery_starts.get(&paragraph).is_some_and(|starts|{
+            let i=starts.partition_point(|&start|start<=after);
+            starts.get(i).is_some_and(|&start|start<before)
+        })
+    }
+    fn nearby_address(&self,paragraph:usize,line:usize,radius:usize)->bool{
+        self.address_lines.get(&paragraph).is_some_and(|lines|{
+            let i=lines.partition_point(|&n|n<line.saturating_sub(radius));
+            lines.get(i).is_some_and(|&n|n<=line.saturating_add(radius))
+        })
+    }
 }
 // Recipient identity boundaries are stronger than a raw character offset.
 // A delivery address/contact placed BEFORE the next person's name can belong
 // to that next recipient when the preceding name is in another paragraph.
 // Distances are supporting evidence only: they never create recipients.
+// A compact record from the actual decision, not a second evaluation.
+struct OwnerChoice {
+    owner:usize,
+    reason:&'static str,
+    scores:Option<[(usize,i64);2]>,
+}
+impl OwnerChoice {
+    fn retained(owner:usize,reason:&'static str)->Self{Self{owner,reason,scores:None}}
+    fn compared(owner:usize,reason:&'static str,a:(usize,i64),b:(usize,i64))->Self{
+        Self{owner,reason,scores:Some([a,b])}
+    }
+    fn trace(&self,features:&DocumentFeatures,field:usize)->Value{
+        let (start,end)=features.utf16_span(field);
+        json!({"event":field,"start":start,"end":end,"owner":self.owner,
+            "reason":self.reason,"scores":self.scores,"margin":OWNER_WEIGHTS.margin})
+    }
+}
+// Historical delivery preference is evidence/policy, not candidate
+// validity. Keep its existing thresholds here until stage 05 validates
+// replacing them. A preference never marks a competing field excluded.
+fn legacy_delivery_preference(candidate:&Evidence,preceding:&Evidence,following:&Evidence,
+    geometry:&SourceGeometry,delivery:&DeliveryGeometry)->(bool,&'static str){
+    if candidate.paragraph==preceding.paragraph||candidate.paragraph!=following.paragraph{
+        return (false,"paragraph_protection");
+    }
+    if !delivery.between(preceding.paragraph,preceding.start,candidate.start){
+        return (false,"prior_delivery_incomplete");
+    }
+    if geometry.between(candidate.line,following.line).blank_lines>0{
+        return (false,"blank_line_boundary");
+    }
+    if following.line.saturating_sub(candidate.line)>3{
+        return (false,"next_recipient_too_far");
+    }
+    if matches!(candidate.kind,"phone"|"mobile")&&
+        !delivery.nearby_address(candidate.paragraph,candidate.line,4){
+        return (false,"contact_without_address");
+    }
+    (true,"legacy_handoff_retained")
+}
 fn recipient_owner_index(
-    anchors: &[usize], events: &[Evidence], evidence_index: usize, raw: &str
-) -> usize {
+    anchors:&[usize],events:&[Evidence],evidence_index:usize,geometry:&SourceGeometry,
+    delivery:&DeliveryGeometry,features:&DocumentFeatures,candidates:&CommonCandidates
+)->OwnerChoice{
     let candidate=&events[evidence_index];
     let previous=owner_index(anchors,events,candidate.start);
-    if anchors.len()<2 || !matches!(candidate.kind,"address"|"phone"|"mobile") {
-        return previous;
+    if anchors.len()<2||!matches!(candidate.kind,"address"|"phone"|"mobile"){
+        return OwnerChoice::retained(previous,"field_or_single_recipient");
     }
-    let Some(&next_anchor_index)=anchors.get(previous+1) else {return previous};
+    let next=previous+1;
+    let Some(&next_anchor_index)=anchors.get(next)else{return OwnerChoice::retained(previous,"no_next_recipient");};
     let preceding=&events[anchors[previous]];
     let following=&events[next_anchor_index];
-    if candidate.start<=preceding.start || candidate.start>=following.start {
-        return previous;
+    if candidate.start<=preceding.start||candidate.start>=following.start{
+        return OwnerChoice::retained(previous,"outside_candidate_interval");
     }
-    // Keep existing ownership inside the preceding named person's paragraph.
-    // This protects multiple phone numbers for the same recipient.
-    if candidate.paragraph==preceding.paragraph || candidate.paragraph!=following.paragraph {
-        return previous;
+    let (handoff,reason)=legacy_delivery_preference(candidate,preceding,following,geometry,delivery);
+    let incumbent=if handoff{next}else{previous};
+    if !candidates.admits(candidate,evidence_index)||!features.positions_valid{
+        return OwnerChoice::retained(incumbent,"incomplete_candidates_legacy");
     }
-    // The prior named recipient must already have independent delivery
-    // evidence before its blank-line boundary. Otherwise an address after
-    // that blank line may still be the FIRST recipient's own address, not
-    // an address preceding the next recipient's name. Prefer preserving
-    // ownership over an unsupported automatic handoff.
-    let previous_has_delivery=events.iter().any(|e|
-        e.start>preceding.start && e.start<candidate.start
-            && e.paragraph==preceding.paragraph
-            && matches!(e.kind,"address"|"phone"|"mobile")
-    );
-    if !previous_has_delivery {return previous;}
-    // A separating line containing only spaces/tabs counts as a block
-    // boundary too. This is a conservative overlay on the existing gates.
-    let previous_gap=intervening_lines(raw,preceding.line,candidate.line);
-    let following_gap=intervening_lines(raw,candidate.line,following.line);
-    if following_gap.blank_lines>0 {return previous;}
-    let next_distance=following.line.saturating_sub(candidate.line);
-    if next_distance>3 {return previous;}
-    let has_nearby_address=events.iter().any(|e|
-        e.kind=="address" && e.paragraph==candidate.paragraph
-            && e.line.abs_diff(candidate.line)<=4
-    );
-    // A phone just before the next name is not sufficient on its own.
-    // A nearby Korean delivery address is independent corroboration.
-    if matches!(candidate.kind,"phone"|"mobile") && !has_nearby_address {
-        return previous;
+    let w=OWNER_WEIGHTS;
+    let a=ownership_score(events,features,evidence_index,anchors[previous],!handoff,w);
+    let b=ownership_score(events,features,evidence_index,next_anchor_index,handoff,w);
+    // Preserve the existing delivery protection pending calibration.
+    // Unlike a hard exclusion, this policy exposes both valid candidates
+    // and their actual scores even when retaining the legacy preference.
+    choose_ownership(previous,next,incumbent,a,b,handoff,false,reason,w.margin)
+}
+// Shared provisional ownership weights, not calibrated probabilities.
+// Stage 05 validates the profile independently of the hard field gates.
+#[derive(Clone, Copy)]
+struct OwnerWeights {
+    paragraph:i64,
+    line:i64,
+    scalar:i64,
+    rank:i64,
+    legacy:i64,
+    margin:i64,
+    repeat:i64,
+    local:i64,
+    order:i64,
+}
+const OWNER_WEIGHTS:OwnerWeights=OwnerWeights{
+    paragraph:36,line:18,scalar:12,rank:12,legacy:12,margin:10,
+    repeat:52,local:48,order:8,
+};
+// Carry the component values used by the selection gates alongside the
+// total, so the same candidate pair is never evaluated twice.
+struct OwnershipScore {
+    total:i64,
+    structural:i64,
+    same_paragraph:bool,
+    line:i64,
+    rank:i64,
+}
+fn ownership_score(events:&[Evidence],features:&DocumentFeatures,
+    field:usize,anchor:usize,legacy:bool,w:OwnerWeights)->OwnershipScore{
+    let (line,rank,same_paragraph)=features.relation(events,field,anchor);
+    let p=features.positions[field];
+    let a=features.positions[anchor];
+    // Distance between the nearest field endpoints, not between UTF-8 bytes.
+    let gap=if p[1].0<=a[0].0{a[0].0-p[1].0}
+        else if a[1].0<=p[0].0{p[0].0-a[1].0}else{0};
+    let decay=|weight:i64,distance:u64,scale:u64|
+        weight/(1+distance.saturating_div(scale).min(1024) as i64);
+    let structural=features.structural_ownership_score(field,anchor,w);
+    let total=i64::from(same_paragraph)*w.paragraph
+        +decay(w.line,line.unsigned_abs(),1)
+        +decay(w.scalar,gap as u64,24)
+        +decay(w.rank,rank.unsigned_abs(),1)
+        +i64::from(legacy)*w.legacy
+        +structural;
+    OwnershipScore{total,structural,same_paragraph,line,rank}
+}
+fn exceeds_margin(challenger:i64,incumbent:i64,margin:i64)->bool{
+    challenger-incumbent>=margin
+}
+// Shared final selection: only a challenger can change the incumbent.
+// The two policy flags restrict automatic changes, not candidate validity.
+fn choose_ownership(previous:usize,next:usize,incumbent:usize,a:OwnershipScore,b:OwnershipScore,
+    allow_previous:bool,allow_next:bool,retained_reason:&'static str,margin:i64)->OwnerChoice{
+    let (owner,reason)=if incumbent==next&&allow_previous&&exceeds_margin(a.total,b.total,margin){
+        (previous,"weighted_previous")
+    }else if incumbent==previous&&allow_next&&exceeds_margin(b.total,a.total,margin){
+        (next,"weighted_next")
+    }else{(incumbent,retained_reason)};
+    OwnerChoice::compared(owner,reason,(previous,a.total),(next,b.total))
+}
+// Detached quantities use the common distance features, with an explicit
+// provisional direction bonus for a repeated product-then-quantity layout.
+fn quantity_link_score(events:&[Evidence],features:&DocumentFeatures,p:usize,q:usize)->i64{
+    let score=ownership_score(events,features,p,q,false,OWNER_WEIGHTS);
+    score.total
+        +if events[p].end<=events[q].start{18}else{0}
+        +if score.line==1&&score.rank==1{12}else{0}
+}
+// Preflight all inline quantity claims before any item is mutated.
+fn conflicting_inline_quantities(hits:&[ProductHit])->HashSet<usize>{
+    let mut owners=HashMap::new();
+    let mut conflicts=HashSet::new();
+    for hit in hits{
+        for &q in &hit.quantities{
+            if owners.insert(q,hit.evidence).is_some_and(|old|old!=hit.evidence){
+                conflicts.insert(q);
+            }
+        }
     }
-    let preceding_distance=candidate.line.saturating_sub(preceding.line);
-    let previous_score=(if preceding.paragraph==candidate.paragraph {80usize} else {0})
-        + 20usize.saturating_sub(preceding_distance.saturating_mul(5));
-    // Blank-line and content-line evidence are distinct. Their bounded
-    // adjustment must not override paragraph identity or address support.
-    let following_score=(80usize
-        + 20usize.saturating_sub(next_distance.saturating_mul(5))
-        + if has_nearby_address {20} else {0}
-        + previous_gap.blank_lines.min(2)*5)
-        .saturating_sub(following_gap.content_lines.min(2)*5);
-    if following_score >= previous_score+30 {previous+1} else {previous}
+    conflicts
+}
+fn ordered_quantity_pairs(events:&[Evidence],features:&DocumentFeatures,candidates:&CommonCandidates,
+    mut products:Vec<(usize,usize)>,mut quantities:Vec<usize>,trace:&mut Option<Vec<Value>>)->Vec<(usize,usize)>{
+    if candidates.truncated||!features.positions_valid||products.len()<2||
+        products.len()!=quantities.len()||products.len()>32{return vec![];}
+    products.sort_unstable_by_key(|&(_,p)|events[p].start);
+    quantities.sort_unstable_by_key(|&q|events[q].start);
+    for (i,&(_,p)) in products.iter().enumerate(){
+        let q=quantities[i];
+        if !candidates.admits(&events[p],p)||!candidates.admits(&events[q],q)
+            ||events[p].end>events[q].start||events[p].paragraph!=events[q].paragraph
+            ||events[q].line.checked_sub(events[p].line)!=Some(1)
+            ||features.ranks[q].checked_sub(features.ranks[p])!=Some(1)
+            ||events[q].value.parse::<i64>().ok().is_none_or(|v|v<=0){
+            return vec![];
+        }
+        if i+1<products.len()&&events[q].end>events[products[i+1].1].start{return vec![];}
+        let score=quantity_link_score(events,features,p,q);
+        // Compare both adjacent rivals in each direction; never enumerate
+        // the Cartesian product of all document candidates.
+        for j in [i.checked_sub(1),i.checked_add(1).filter(|&j|j<products.len())].into_iter().flatten(){
+            let rival_product=quantity_link_score(events,features,products[j].1,q);
+            let rival_quantity=quantity_link_score(events,features,p,quantities[j]);
+            let wins=exceeds_margin(score,rival_product,OWNER_WEIGHTS.margin)
+                &&exceeds_margin(score,rival_quantity,OWNER_WEIGHTS.margin);
+            if let Some(rows)=trace.as_mut(){rows.push(json!({"event":q,"productEvent":p,
+                "rivalProductEvent":products[j].1,"rivalQuantityEvent":quantities[j],
+                "score":score,"rivalProductScore":rival_product,"rivalQuantityScore":rival_quantity,
+                "margin":OWNER_WEIGHTS.margin,"reason":if wins{"pair_comparison_pass"}else{"pair_comparison_failed"}}));}
+            if !wins{return vec![];}
+        }
+    }
+    products.into_iter().zip(quantities).map(|((item,_),q)|(item,q)).collect()
+}
+fn product_owner_index(anchors:&[usize],events:&[Evidence],features:&DocumentFeatures,
+    candidates:&CommonCandidates,hit:&ProductHit,has_leading:bool)->OwnerChoice{
+    let e=&events[hit.evidence];
+    let next=anchors.partition_point(|&a|events[a].start<=e.start);
+    let previous=next.saturating_sub(1);
+    let legacy=if has_leading&&!anchors.is_empty(){next.min(anchors.len()-1)}else{previous};
+    if hit.common||next==0||next>=anchors.len()||candidates.truncated||!features.positions_valid{
+        return OwnerChoice::retained(legacy,"common_boundary_or_incomplete");
+    }
+    // The common candidate index is the admission boundary. Never promote
+    // an excluded alternative or create a recipient by scoring a span.
+    if !candidates.admits(e,hit.evidence){
+        return OwnerChoice::retained(legacy,"candidate_not_admitted");
+    }
+    let a=anchors[previous];let b=anchors[next];
+    if events[a].kind!="name"||events[b].kind!="name"{return OwnerChoice::retained(legacy,"non_name_anchor");}
+    let w=OWNER_WEIGHTS;
+    let a_score=ownership_score(events,features,hit.evidence,a,legacy==previous,w);
+    let b_score=ownership_score(events,features,hit.evidence,b,legacy==next,w);
+    // The former early return for equal paragraph/structure evidence
+    // is implied by these two permissions. Keep the existing selection
+    // policy, while retaining both real scores for the diagnostic path.
+    let allow_previous=a_score.same_paragraph&&(!b_score.same_paragraph||a_score.structural>b_score.structural);
+    let allow_next=b_score.same_paragraph&&(!a_score.same_paragraph||b_score.structural>a_score.structural);
+    choose_ownership(previous,next,legacy,a_score,b_score,allow_previous,allow_next,
+        "margin_or_structure_protection",w.margin)
 }
 /// Original TypeScript resolvePrice for the recognition Item shape.
 /// The separate pricing migration remains authoritative for business rules.
@@ -794,20 +1314,386 @@ fn dated_dispatch_instruction(text:&str)->bool{
     )).expect("dated dispatch instruction"));
     re.is_match(text)
 }
-fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, String> {
+// Source-order features are derived before any recipient/item assignment.
+// Keep event indexes rather than copying text, and avoid all-pairs matrices.
+struct DocumentFeatures{
+    ordered:Vec<usize>,
+    ranks:Vec<usize>,
+    positions:Vec<[(usize,usize);2]>, // (Unicode scalar, UTF-16) at both endpoints
+    positions_valid:bool,
+    anchors:Vec<usize>,
+    roles:Vec<&'static str>,
+    event_roles:Vec<Option<&'static str>>,
+    ranges:Vec<(usize,usize)>,
+    partial_order:Vec<(&'static str,&'static str,usize)>,
+    local_blocks:Vec<(usize,usize,&'static str)>,
+    repeat_segments:Vec<(usize,usize)>,
+    period:usize,
+    exact_repeat:usize,
+    incomplete_tail:usize,
+    candidate_truncated:bool,
+    competing_candidates:bool,
+    unclassified_segments:bool,
+    overlapping_roles:bool,
+    ambiguous:bool,
+}
+fn structural_role(kind:&str)->Option<&'static str>{
+    match kind{
+        "name"=>Some("N"),"address"=>Some("A"),
+        "phone"|"mobile"=>Some("T"),"product"=>Some("P"),
+        "quantity"=>Some("Q"),_=>None,
+    }
+}
+// Index only actual event endpoints in one forward source pass.
+fn event_positions(raw:&str,events:&[Evidence])->Option<Vec<[(usize,usize);2]>>{
+    let mut endpoints=Vec::with_capacity(events.len().saturating_mul(2));
+    for (i,e) in events.iter().enumerate(){
+        if e.start>e.end||raw.get(e.start..e.end).is_none(){return None;}
+        endpoints.push((e.start,i,0usize));endpoints.push((e.end,i,1usize));
+    }
+    endpoints.sort_unstable();
+    let mut positions=vec![[(0usize,0usize);2];events.len()];
+    let mut chars=raw.char_indices().peekable();
+    let (mut scalar,mut units)=(0usize,0usize);
+    for (offset,i,end) in endpoints{
+        while chars.peek().is_some_and(|(at,_)|*at<offset){
+            let (_,c)=chars.next().unwrap();scalar+=1;units+=c.len_utf16();
+        }
+        positions[i][end]=(scalar,units);
+    }
+    Some(positions)
+}
+fn signed_distance(a:usize,b:usize)->i64{
+    if b>=a{(b-a) as i64}else{-((a-b) as i64)}
+}
+// Local adjacent blocks can differ by one insertion, deletion, or adjacent
+// swap. These are comparison evidence only, never merged pattern identities.
+fn near_role_block(a:&[&str],b:&[&str])->&'static str{
+    if a==b{return "exact";}
+    if a.len()==b.len(){
+        let Some(i)=a.iter().zip(b).position(|(x,y)|x!=y)else{return "different";};
+        if i+1<a.len()&&a[i]==b[i+1]&&a[i+1]==b[i]&&a[i+2..]==b[i+2..]{
+            return "adjacent_swap";
+        }
+        return "different";
+    }
+    let (short,long,kind)=if a.len()<b.len(){(a,b,"one_extra")}else{(b,a,"one_missing")};
+    if long.len()!=short.len()+1{return "different";}
+    let i=short.iter().zip(long).position(|(x,y)|x!=y).unwrap_or(short.len());
+    if short[i..]==long[i+1..]{kind}else{"different"}
+}
+impl DocumentFeatures{
+    fn new(raw:&str,events:&[Evidence],hits:&[ProductHit],deferred:&CommonCandidates)->Self{
+        let mut ordered=(0..events.len()).collect::<Vec<_>>();
+        ordered.sort_by_key(|&i|(events[i].start,events[i].end));
+        let mut ranks=vec![0;events.len()];
+        for (rank,&i) in ordered.iter().enumerate(){ranks[i]=rank;}
+        let mut anchors=ordered.iter().copied().filter(|&i|events[i].kind=="name").collect::<Vec<_>>();
+        anchors.dedup_by_key(|i|(events[*i].start,events[*i].end));
+        if anchors.is_empty(){
+            anchors=ordered.iter().copied().filter(|&i|events[i].kind=="address").collect();
+        }
+        let positions=event_positions(raw,events);
+        let invalid_positions=positions.is_none();
+        let positions=positions.unwrap_or_else(||vec![[(0,0);2];events.len()]);
+        let mut event_roles=events.iter().map(|e|structural_role(e.kind)).collect::<Vec<_>>();
+        // Common goods have different ownership semantics from individual
+        // goods. Explicit per-recipient quantity differs from a common
+        // document total. Preserve that distinction, not the item count.
+        for hit in hits{
+            if hit.common{
+                event_roles[hit.evidence]=Some(if hit.each{"E"}else{"C"});
+            }
+        }
+        let mut roles=Vec::new();
+        let mut ranges:Vec<(usize,usize)>=Vec::new();
+        let mut last_end=0usize;
+        let mut competing_candidates=false;
+        let mut unclassified_segments=false;
+        for record in deferred.entries.values(){
+            match record.disposition{
+                Some(CandidateDisposition::UnclassifiedSegment)=>unclassified_segments=true,
+                Some(d) if !d.hard()=>competing_candidates=true,
+                _=>{}
+            }
+        }
+        let mut overlapping_roles=false;
+        for (rank,&i) in ordered.iter().enumerate(){
+            let event=&events[i];
+            let Some(role)=event_roles[i]else{continue};
+            if event.start<last_end{overlapping_roles=true;}
+            last_end=last_end.max(event.end);
+            // Collapse adjacent product/quantity runs, retaining the raw
+            // event sequence and section bounds for individual decisions.
+            // A leading unattached quantity is NOT an item section.
+            // Optional notes and blank separators do not by themselves
+            // make a new role section or a new pattern identity.
+            let merge=matches!((roles.last().copied(),role),
+                (Some("P"),"P"|"Q")|(Some("C"),"C"|"Q")|
+                (Some("E"),"E"|"Q")|(Some("T"),"T"));
+            if merge{ranges.last_mut().unwrap().1=rank+1;}
+            else{roles.push(role);ranges.push((rank,rank+1));}
+        }
+        // KMP prefix function: linear-time exact period and incomplete
+        // tail, never search arbitrary combinations of candidate blocks.
+        let mut prefix=vec![0usize;roles.len()];
+        for i in 1..roles.len(){
+            let mut j=prefix[i-1];
+            while j>0&&roles[i]!=roles[j]{j=prefix[j-1];}
+            if roles[i]==roles[j]{j+=1;}
+            prefix[i]=j;
+        }
+        let mut period=roles.len().saturating_sub(prefix.last().copied().unwrap_or(0));
+        if period>0&&(!roles[..period].contains(&"N")||
+            !(roles[..period].contains(&"T")||roles[..period].contains(&"A"))){
+            period=roles.len();
+        }
+        let exact_repeat=if period>0&&roles.len()%period==0{roles.len()/period}else{0};
+        let incomplete_tail=if period>0{roles.len()%period}else{0};
+        // Build bounded partial-order and block evidence once, alongside
+        // the structural identity. Evaluation only serializes these.
+        let mut partial=std::collections::BTreeMap::new();
+        for (i,&a) in roles.iter().enumerate(){
+            for &b in roles.iter().skip(i+1).take(2){*partial.entry((a,b)).or_insert(0usize)+=1;}
+        }
+        let partial_order=partial.into_iter().map(|((a,b),count)|(a,b,count)).collect();
+        let mut starts=roles.iter().enumerate().filter_map(|(i,r)|(*r=="N").then_some(i)).collect::<Vec<_>>();
+        starts.push(roles.len());
+        let mut local_blocks=Vec::new();
+        if starts[0]>0{local_blocks.push((0,starts[0],"prefix"));}
+        for (i,w) in starts.windows(2).enumerate(){
+            let relation=if i>0{near_role_block(&roles[starts[i-1]..w[0]],&roles[w[0]..w[1]])}else{"first"};
+            local_blocks.push((w[0],w[1],relation));
+        }
+        let repeat_segments=if period>0&&(exact_repeat>1||incomplete_tail>0){
+            (0..roles.len()/period).map(|i|(i*period,(i+1)*period)).collect()
+        }else{Vec::new()};
+        let ambiguous=invalid_positions||deferred.truncated||competing_candidates||unclassified_segments||overlapping_roles;
+        Self{ordered,ranks,positions,positions_valid:!invalid_positions,anchors,roles,event_roles,ranges,
+            partial_order,local_blocks,repeat_segments,period,exact_repeat,incomplete_tail,
+            candidate_truncated:deferred.truncated,competing_candidates,unclassified_segments,overlapping_roles,ambiguous}
+    }
+    fn utf16_span(&self,index:usize)->(usize,usize){
+        (self.positions[index][0].1,self.positions[index][1].1)
+    }
+    fn relation(&self,events:&[Evidence],from:usize,to:usize)->(i64,i64,bool){
+        let a=&events[from];let b=&events[to];
+        (signed_distance(a.line,b.line),signed_distance(self.ranks[from],self.ranks[to]),a.paragraph==b.paragraph)
+    }
+    // Reuse the existing normalized role ranges. No additional source
+    // parsing, period search, or per-document global candidate pairing.
+    fn role_index(&self,event:usize)->Option<usize>{
+        let rank=*self.ranks.get(event)?;
+        let i=self.ranges.partition_point(|&(_,end)|end<=rank);
+        self.ranges.get(i).filter(|&&(start,end)|start<=rank&&rank<end).map(|_|i)
+    }
+    fn structural_ownership_score(&self,field:usize,anchor:usize,w:OwnerWeights)->i64{
+        if self.ambiguous||!self.positions_valid||self.ordered.len()>4096{return 0;}
+        // The quantity linker uses the same distance score but not
+        // recipient-pattern evidence. Only name anchors are eligible.
+        if self.event_roles.get(anchor).copied().flatten()!=Some("N"){return 0;}
+        let Some(role)=self.event_roles.get(field).copied().flatten()else{return 0;};
+        if !matches!(role,"P"|"T"|"A"){return 0;}
+        let (Some(f),Some(a))=(self.role_index(field),self.role_index(anchor))else{return 0;};
+        let mut support;
+        if self.repeat_segments.len()>=2{
+            let i=self.repeat_segments.partition_point(|&(_,end)|end<=f);
+            let Some(&(start,end))=self.repeat_segments.get(i)else{return 0;};
+            // A complete repeat can vote only if its single recipient
+            // anchor and the candidate field belong to the same cycle.
+            if !(start<=a&&a<end)||self.roles[start..end].iter().filter(|&&r|r=="N").count()!=1{return 0;}
+            support=w.repeat;
+        }else{
+            // Name-headed local blocks are evidence only when a run of at
+            // least three consecutive exact blocks reaches the document
+            // end. A leading-product pattern with a missing last product
+            // must not masquerade as a trailing-product pattern.
+            let Some(&(last_start,last_end,last_relation))=self.local_blocks.last()else{return 0;};
+            let n=self.local_blocks.len();
+            if n<3||last_relation!="exact"||self.local_blocks[n-2].2!="exact"
+                ||last_end!=self.roles.len(){return 0;}
+            let template=&self.roles[last_start..last_end];
+            if template.first()!=Some(&"N")||!template.contains(&"P")
+                ||!(template.contains(&"T")||template.contains(&"A")){return 0;}
+            let i=self.local_blocks.partition_point(|&(_,end,_)|end<=f);
+            let Some(&(start,end,_))=self.local_blocks.get(i)else{return 0;};
+            // Limit evidence to the terminal three corroborating blocks;
+            // do not extrapolate a local layout into earlier mixed blocks.
+            if i<n-3||!(start<=a&&a<end)||&self.roles[start..end]!=template{return 0;}
+            support=w.local;
+        }
+        // The existing directed partial-order histogram contributes only
+        // after a complete segment has independently established ownership.
+        // A transition at the boundary of two blocks cannot vote alone.
+        let pair=if a<f{("N",role)}else{(role,"N")};
+        let reverse=(pair.1,pair.0);
+        let count=|p:(&str,&str)|self.partial_order.iter()
+            .find(|&&(x,y,_)|x==p.0&&y==p.1).map_or(0,|x|x.2);
+        if count(pair)>count(reverse){support+=w.order;}
+        support
+    }
+    // Version 3 is an observed structural identity, not the v1 learned
+    // context key or the v2 strict evaluation key. Preserve incomplete
+    // layouts separately until independent equivalence is validated.
+    fn pattern_identity(&self)->Value{
+        let unavailable=if !self.positions_valid{Some("invalid_source_positions")}
+            else if self.candidate_truncated{Some("candidate_budget_exceeded")}
+            else if self.ordered.len()>4096{Some("event_budget_exceeded")}
+            else if self.roles.is_empty(){Some("no_structural_roles")}
+            else{None};
+        let key=if unavailable.is_some(){Value::Null}
+            else if self.incomplete_tail>0{
+                json!([3,"incomplete_role_cycle",&self.roles[..self.period],
+                    &self.roles[self.roles.len()-self.incomplete_tail..]])
+            }else{
+                let cycle=if self.exact_repeat>0{&self.roles[..self.period]}else{self.roles.as_slice()};
+                json!([3,"role_cycle",cycle])
+            };
+        let mut reasons=Vec::new();
+        if self.competing_candidates{reasons.push("competing_candidates");}
+        if self.unclassified_segments{reasons.push("unclassified_segments");}
+        if self.overlapping_roles{reasons.push("overlapping_roles");}
+        if self.incomplete_tail>0{reasons.push("incomplete_repeat");}
+        let status=if unavailable.is_some(){"unavailable"}
+            else if reasons.is_empty(){"observed"}else{"provisional"};
+        json!({"identityVersion":3,"patternKey":key,"status":status,
+            "unavailableReason":unavailable,"uncertaintyReasons":reasons,
+            "scope":"observed_structure_only","learningEligible":false,"trainingKey":null,
+            "learningBlockers":["candidate_coverage_and_pattern_validation_pending"]})
+    }
+    // Preserve the strict v2 evaluation contract for existing baseline
+    // consumers. New consumers use the single v3 identity above.
+    fn evaluation(&self,events:&[Evidence],geometry:&SourceGeometry)->Value{
+        if events.len()>4096{
+            return json!({"version":2,"evaluationKey":null,"trainingKey":null,
+                "status":"event_budget_exceeded","patternIdentity":self.pattern_identity()});
+        }
+        let cycle=if self.exact_repeat>0{&self.roles[..self.period]}else{self.roles.as_slice()};
+        let segments=self.ranges.iter().map(|&(a,b)|{
+            let first=&events[self.ordered[a]];let last=&events[self.ordered[b-1]];
+            json!({"start":first.start,"end":last.end,"line":first.line,"paragraph":first.paragraph})
+        }).collect::<Vec<_>>();
+        let partial=&self.partial_order;
+        let mut relations=Vec::new();
+        for (i,&from) in self.ordered.iter().enumerate(){
+            for &to in self.ordered.iter().skip(i+1).take(2){
+                let (line,rank,same_paragraph)=self.relation(events,from,to);
+                let gap=geometry.between(events[from].line,events[to].line);
+                let a=self.positions[from];let b=self.positions[to];
+                relations.push(json!({"from":from,"to":to,"signedLine":line,"signedRank":rank,
+                    "signedScalarStart":signed_distance(a[0].0,b[0].0),
+                    "signedUtf16Start":signed_distance(a[0].1,b[0].1),
+                    "scalarGap":signed_distance(a[1].0,b[0].0),
+                    "utf16Gap":signed_distance(a[1].1,b[0].1),
+                    "sameParagraph":same_paragraph,"blankLines":gap.blank_lines,
+                    "contentLines":gap.content_lines,"maxBlankRun":gap.max_consecutive_blank_lines}));
+            }
+        }
+        let observed=self.ordered.iter().map(|&i|json!({
+            "index":i,"role":self.event_roles[i].unwrap_or("optional"),
+            "utf16Start":self.positions[i][0].1,"utf16End":self.positions[i][1].1
+        })).collect::<Vec<_>>();
+        let local=self.local_blocks.iter().map(|&(a,b,relation)|
+            json!({"startRole":a,"endRole":b,"relation":relation})).collect::<Vec<_>>();
+        let repeat_segments=self.repeat_segments.iter().map(|&(a,b)|
+            json!({"startRole":a,"endRole":b})).collect::<Vec<_>>();
+        json!({"version":2,"coordinateUnit":"utf8_byte",
+            "evaluationKey":if self.ambiguous||cycle.is_empty()||self.incomplete_tail>0{Value::Null}else{json!([2,cycle])},
+            "roles":self.roles,"observed":observed,"segments":segments,"period":self.period,
+            "exactRepeatCount":self.exact_repeat,"incompleteTail":self.incomplete_tail,
+            "repeatSegments":repeat_segments,"localBlocks":local,"relations":relations,
+            "partialOrder":partial,"ambiguous":self.ambiguous,"trainingKey":null,
+            "patternIdentity":self.pattern_identity()})
+    }
+}
+fn retain_unclassified_fragments(raw:&str,lines:&[Line<'_>],non_delivery:&HashSet<usize>,
+    mut spans:Vec<(usize,usize)>,deferred:&mut CommonCandidates){
+    spans.retain(|&(a,b)|a<b&&raw.get(a..b).is_some());
+    spans.sort_unstable();
+    let (mut cursor,mut covered_end)=(0usize,0usize);
+    for line in lines{
+        let end=line.start+line.text.len();
+        let mut covered=covered_end.max(line.start).min(end);
+        let keep=!non_delivery.contains(&line.start);
+        let mut gap=|a:usize,b:usize|{
+            if !keep||a>=b{return;}
+            let Some(t)=raw.get(a..b)else{return;};
+            let trim=t.trim();
+            // A label alone does not constitute an unclassified value.
+            let label=trim.trim_end_matches([':', '：']).trim();
+            if !trim.chars().any(char::is_alphanumeric)||matches!(label,
+                "수취인"|"수취인명"|"수하인"|"수령자"|"받는 분"|"받는분"|"이름"|"성함"|
+                "주소"|"배송지"|"배송지 주소"|"연락처"|"전화번호"|"휴대전화"|"상품명"|"품목"|
+                "수량"|"메모"|"요청사항"|"배송메모"|"recipient"|"consignee"|"TEL"){return;}
+            let start=a+t.len()-t.trim_start().len();
+            deferred.record(raw,"segment",start,start+trim.len(),CandidateDisposition::UnclassifiedSegment);
+        };
+        while cursor<spans.len()&&spans[cursor].0<end{
+            let (a,b)=spans[cursor];
+            gap(covered,a.min(end));
+            covered_end=covered_end.max(b);
+            covered=covered_end.max(line.start).min(end);
+            cursor+=1;
+        }
+        gap(covered,end);
+    }
+}
+// Extraction is separated from assignment at the real production boundary.
+// This is the existing evidence/hit set, not a claim that earlier type
+// gates already retain every competing candidate.
+struct ExtractedDocument<'a>{
+    raw:&'a str,
+    lines:Vec<Line<'a>>,
+    events:Vec<Evidence>,
+    product_hits:Vec<ProductHit>,
+    geometry:SourceGeometry,
+    delivery:DeliveryGeometry,
+    exclusions:CommonCandidates,
+    features:DocumentFeatures,
+}
+// Retain the original explicit sale-unit rule. The rejected span stays
+// in the shared candidate index and cannot reappear as a detached quantity.
+fn validate_sale_unit_quantity(raw:&str,text:&str,offset:usize,state:&Value,decision:&Value,
+    quantities:&mut Vec<quantity::Quantity>,candidates:&mut CommonCandidates){
+    if quantities.len()!=1{return;}
+    let Some(id)=decision["productId"].as_str()else{return;};
+    let Some(p)=model::products(state).into_iter().find(|p|p["id"].as_str()==Some(id))else{return;};
+    let option=p["variants"].as_array().and_then(|vs|vs.first())
+        .and_then(|v|v["option"].as_str());
+    if p["sellingUnit"].as_str()==Some("2개 구성")&&
+        option.is_some_and(|o|!o.is_empty()&&text.contains(o)){
+        for q in quantities.drain(..){
+            candidates.record(raw,"quantity",offset+q.start,offset+q.end,CandidateDisposition::SaleUnit);
+        }
+    }
+}
+fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->ExtractedDocument<'a>{
     let client_id = client_id(client);
-    let lines = physical_lines(raw);
-    let mut events: Vec<Evidence> = Vec::new();
-    let mut product_hits: Vec<ProductHit> = Vec::new();
     let phone = phone_regex();
     let person_label = recipient_label();
+    let mut search=ProductSearch::new(state,client_id);
+    let lines=split_product_records(
+        split_recipient_records(physical_lines(raw),&person_label,&phone),
+        &person_label,&phone,&mut search);
+    let geometry=SourceGeometry::new(raw);
+    let mut events: Vec<Evidence> = Vec::new();
+    let mut exclusions=CommonCandidates::default();
+    let mut product_hits: Vec<ProductHit> = Vec::new();
     // Direct translation of order-evidence.ts:140-170: parenthesized
     // delivery requests and note continuation remain separate evidence.
     let note_label = Regex::new(
         r"^\s*\(?(?:배송\s*)?(?:메세지|메시지|요청(?:사항)?|메모)(?:\s*[:：]\s*|\s+)(.*)$"
     ).expect("note");
-    let mut note_continuation: Option<usize>=None;
+    // A heading without a value is only a pending continuation, not a
+    // zero-length evidence source. Keep its paragraph until text arrives.
+    let mut note_continuation: Option<(usize,Option<usize>)>=None;
     let mut sender_section = false;
+    let mut sender_lines=HashSet::new();
+    let mut non_delivery_segments=HashSet::new();
+    let sender_label=Regex::new(r"^(?:보내는\s*(?:분|사람|곳)|송하인(?:명)?)\s*[:：]").expect("sender prefix");
+    // Generic '이름:' or '주소:' can still belong to the sender. Only
+    // an explicit receiving-party marker ends the sender section.
+    let receiving_label=Regex::new(r"(?i)^(?:수취인(?:명|\s*주소)?|수하인(?:명)?|수령자|받(?:는|으시는)\s*(?:분|사람|곳)|배송지(?:\s*주소)?|recipient|consignee)\s*[:：]").expect("receiving prefix");
     for (line_index,line) in lines.iter().enumerate() {
         let text = line.text.trim();
         let explicit_name=explicit_recipient_span(line.text,&person_label,&phone);
@@ -818,12 +1704,20 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                 lines.get(line_index+1).is_none_or(|next|next.paragraph!=line.paragraph));
         let after_label=line_index>0 && lines.get(line_index-1).is_some_and(|prev|
             person_label.find(prev.text).is_some_and(|m|prev.text[m.end()..].trim().is_empty()));
-        if Regex::new(r"^(?:보내는\s*(?:분|사람|곳)|송하인(?:명)?)\s*[:：]")
-            .expect("sender prefix").is_match(text) {
-            sender_section = true;
+        if sender_label.is_match(text){
+            sender_section=true;
+            note_continuation=None;
+        }else if sender_section&&receiving_label.is_match(text){
+            sender_section=false;
+            note_continuation=None;
         }
-        if sender_section { continue; }
+        if sender_section {
+            sender_lines.insert(line.start);
+            non_delivery_segments.insert(line.start);
+            continue;
+        }
         if postcode::labelled_line(text).is_some() {
+            non_delivery_segments.insert(line.start);
             note_continuation=None;
             continue;
         }
@@ -837,24 +1731,36 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             note_continuation=None;
             continue;
         }
-        if is_money_or_header(text) { continue; }
+        if is_money_or_header(text) {
+            non_delivery_segments.insert(line.start);
+            // A contiguous memo source must never bridge an excluded
+            // document row (amount, header, or greeting).
+            note_continuation=None;
+            continue;
+        }
         // The TS recognizer extends a memo through subsequent non-field
         // lines in the same paragraph, stopping at any contact/address/item.
-        if let Some(i)=note_continuation {
+        if let Some((paragraph,existing))=note_continuation {
             let field=person_label.is_match(line.text)
                 || note_label.is_match(line.text)
                 || address_begin(line.text).is_some()
                 || phone.is_match(line.text)
                 || (near_delivery && !other_recipient_field(text))
                 || weak_recipient_hint(text)
-                || (quantity::extract(line.text).len()>0
+                || (!search.quantities(line.text).is_empty()
                     && model::category(line.text).is_some())
                 || product_signal(line.text,
-                    &model::decision_json(&model::decide(line.text,state,client_id)),state);
-            if !field && line.paragraph==events[i].paragraph {
-                events[i].end=line.start+line.text.len();
-                if !events[i].value.is_empty(){events[i].value.push('\n');}
-                events[i].value.push_str(text);
+                    search.decision(line.text),state);
+            if !field && line.paragraph==paragraph {
+                if let Some(i)=existing{
+                    events[i].end=line.start+line.text.len();
+                    if !events[i].value.is_empty(){events[i].value.push('\n');}
+                    events[i].value.push_str(text);
+                }else if let Some((a,b))=trim_span(line.text,0,line.text.len()){
+                    let i=add_match(&mut events,line,a,b,"note",
+                        text.to_owned(),"배송 요청사항 표제어");
+                    note_continuation=Some((paragraph,Some(i)));
+                }
                 continue;
             }
             note_continuation=None;
@@ -864,9 +1770,14 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                 let value=if text.starts_with('(') {
                     v.as_str().trim_end_matches(')').trim().to_owned()
                 } else {v.as_str().trim().to_owned()};
-                let i=add_match(&mut events, line, v.start(), v.end(), "note",
-                    value,"배송 요청사항 표제어");
-                note_continuation=Some(i);
+                if value.is_empty(){
+                    non_delivery_segments.insert(line.start);
+                    note_continuation=Some((line.paragraph,None));
+                }else{
+                    let i=add_match(&mut events,line,v.start(),v.end(),"note",
+                        value,"배송 요청사항 표제어");
+                    note_continuation=Some((line.paragraph,Some(i)));
+                }
             }
             continue;
         }
@@ -921,7 +1832,8 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                 !other_recipient_field(text){
                 trim_span(line.text,0,line.text.len())
             }else{
-                unlabelled_recipient_span(line.text,address,&phone,near_delivery,state,client_id)
+                let proposal=unlabelled_recipient_proposal(line.text,address,&phone,near_delivery,&mut search)?;
+                resolve_name_proposal(raw,line,proposal,&mut search,&mut exclusions)
             }
         });
         if let Some((begin,end))=name_span{
@@ -931,15 +1843,21 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         }
         for c in phone.captures_iter(line.text) {
             let full = c.get(0).expect("phone match");
-            if name_span.is_some_and(|(a,b)|a<full.end()&&full.start()<b){continue;}
+            let kind=if c[1].starts_with("01"){"mobile"}else{"phone"};
+            if name_span.is_some_and(|(a,b)|a<full.end()&&full.start()<b){
+                let reason=if explicit_name.is_some()||after_label{CandidateDisposition::OverlappingField}
+                    else{CandidateDisposition::CompetingType};
+                exclusions.record(raw,kind,line.start+full.start(),line.start+full.end(),reason);
+                continue;
+            }
             // Reject a phone-like substring embedded in a longer digit run.
             if (full.start() > 0 && line.text[..full.start()].chars().next_back()
                 .map_or(false, |v| v.is_ascii_digit()))
                 || line.text[full.end()..].chars().next().map_or(false, |v|v.is_ascii_digit()) {
+                exclusions.record(raw,kind,line.start+full.start(),line.start+full.end(),CandidateDisposition::EmbeddedDigits);
                 continue;
             }
             let value = format!("{}-{}-{}", &c[1], &c[2], &c[3]);
-            let kind = if c[1].starts_with("01") { "mobile" } else { "phone" };
             add_match(&mut events, line, full.start(),full.end(),kind,value,
                 "연락처 원문 구간");
         }
@@ -959,7 +1877,9 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         // a recognized/quantity-qualified SKU precedes the address.
         // Never infer a product from an address's five-digit postal code.
         if let Some(begin)=address {
-            if !ts_semantics::model_before_address(&line.text[..begin],state) {continue;}
+            let prefix=&line.text[..begin];
+            let known=search.has_registered_model(prefix);
+            if !ts_semantics::model_before_address(prefix,known) {continue;}
         }
         let product_end=address.unwrap_or(line.text.len());
         let product_end=name_span.map_or(product_end,|(a,_)|a.min(product_end));
@@ -977,51 +1897,62 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         // create a product even when its digits match a generic model regex.
         let trim_phones: Vec<(usize,usize)> = phone.find_iter(trimmed)
             .map(|m|(m.start(),m.end())).collect();
-        let decision = model::decision_json(&model::decide(trimmed,state,client_id));
+        let contact_only=ts_semantics::only_contact_or_identity(trimmed,&trim_phones)
+            && search.quantities(trimmed).is_empty();
+        let decision = search.decision(trimmed);
         // parser.ts::parseLegacy: a full contact may share the same physical
         // line with a valid product and quantity; filter contact-only rows,
         // not valid joint records such as "709 민판 한개 이가상 010-...".
-        if ts_semantics::only_contact_or_identity(trimmed,&trim_phones)
-            && quantity::extract(trimmed).is_empty()
+        if contact_only
             && decision.pointer("/match/kind").and_then(Value::as_str)==Some("UNKNOWN") {
             continue;
         }
-        if !product_signal(trimmed, &decision, state) { continue; }
+        if !product_signal(trimmed, decision, state) { continue; }
         // Require model/category evidence, not a value made solely from a date or contact.
         if trimmed.contains("발주일") || trimmed.contains("발송일") { continue; }
         let skip_until = ts_semantics::table_product_prefix(trimmed);
         // Never synthesize a new string and then treat its indexes as offsets
         // into raw: UTF-8/UTF-16 source-evidence contract must be lossless.
-        let matched = model::decision_json(&model::decide(skip_until,state,client_id));
-        let mut quantity_values = if trimmed.contains('|') {
-            let model_end=matched.get("evidence").and_then(Value::as_object)
-                .and_then(|o|o.get("end")).and_then(Value::as_u64)
-                .map(|v|v as usize);
-            ts_semantics::table_quantity(trimmed,model_end).map_or_else(Vec::new,
-                |(value,start,end)|vec![quantity::Quantity{value,start,end}])
-        } else {
-            quantity::for_product(skip_until,false,
-                model::products(state).iter().any(|p|model::model_names(p).iter()
-                    .any(|name|model::find_term(skip_until,name,true).is_some())))
+        let offset=line.text.find(trimmed).unwrap_or(0);
+        // Quantity discovery does not require a chosen product identity.
+        // Table cells retain their original byte spans before projection.
+        let table=trimmed.contains('|');
+        let cells=if table{ts_semantics::table_quantity_candidates(trimmed)}else{vec![]};
+        let mut quantity_values=if table{vec![]}else{
+            let explicit=search.quantities(skip_until).to_vec();
+            if !explicit.is_empty(){explicit}else{
+                let known=search.has_registered_model(skip_until);
+                quantity::for_product(skip_until,false,known)
+            }
         };
-        // parser.ts:537-552: a compound sale-unit phrase containing
-        // "2개" is part of the option name, not an order quantity.
-        if quantity_values.len()==1 {
-            if let Some(p)=matched.get("productId").and_then(Value::as_str)
-                .and_then(|pid|model::products(state).into_iter().find(|p|
-                    p.get("id").and_then(Value::as_str)==Some(pid))) {
-                let sale_unit=p.get("sellingUnit").and_then(Value::as_str);
-                let option=p.get("variants").and_then(Value::as_array)
-                    .and_then(|vs|vs.first())
-                    .and_then(|v|v.get("option")).and_then(Value::as_str);
-                if sale_unit==Some("2개 구성")
-                    && option.map_or(false,|o|!o.is_empty() && trimmed.contains(o)) {
-                    quantity_values.clear();
+        for &(_,a,b) in &cells{
+            if trimmed[a..b].parse::<i64>().is_ok(){
+                let _=exclusions.register(raw,"quantity",line.start+offset+a,line.start+offset+b);
+            }
+        }
+        for q in &quantity_values{
+            let _=exclusions.register(raw,"quantity",line.start+offset+q.start,line.start+offset+q.end);
+        }
+        let matched=search.result_with_registration(skip_until,
+            Some((raw,line.start+offset,&mut exclusions))).output.clone();
+        if table{
+            let model_end=matched.get("evidence").and_then(Value::as_object)
+                .and_then(|o|o.get("end")).and_then(Value::as_u64).map(|v|v as usize);
+            quantity_values=ts_semantics::table_quantity(trimmed,model_end,&cells).map_or_else(Vec::new,
+                |(value,start,end)|vec![quantity::Quantity{value,start,end}]);
+            for &(_,a,b) in &cells{
+                if trimmed[a..b].parse::<i64>().is_ok()&&
+                    !quantity_values.iter().any(|q|q.start==a&&q.end==b){
+                    exclusions.record(raw,"quantity",line.start+offset+a,line.start+offset+b,
+                        CandidateDisposition::CompetingQuantity);
                 }
             }
         }
+        // A selected product's sale-unit policy is applied to the
+        // projection, never to the original candidate discovery.
+        validate_sale_unit_quantity(raw,trimmed,line.start+offset,state,&matched,
+            &mut quantity_values,&mut exclusions);
         let mut quantity_indexes = Vec::new();
-        let offset = line.text.find(trimmed).unwrap_or(0);
         for q in quantity_values {
             quantity_indexes.push(add_match(&mut events, line, offset+q.start,offset+q.end,
                 "quantity",q.value.to_string(),"상품 행에 명시된 수량"));
@@ -1042,7 +1973,8 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         product_hits.push(ProductHit {
             evidence:product_evidence,source_start:line.start+offset,
             line:line.number,raw:original_product_line.to_owned(),
-            decision:matched,quantities:quantity_indexes,
+            decision:matched,
+            quantities:quantity_indexes,
             common:Regex::new(r"공통|모두|전부|전원|각\s*수취인|같은\s*상품")
                 .expect("common item").is_match(trimmed),
             // order-evidence.ts:358-368: a common total is not a
@@ -1066,33 +1998,84 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         }
     }
     // A generic quantity line is evidence but cannot itself prove which SKU was ordered.
+    // Preserve other quantity candidates on product/quantity rows without
+    // changing the current assignment policy or scanning the event list
+    // for the same line and span repeatedly.
+    let mut quantity_lines:HashSet<_>=events.iter().filter(|e|e.kind=="quantity")
+        .map(|e|e.line).collect();
+    let mut quantity_spans:HashSet<_>=events.iter().filter(|e|e.kind=="quantity")
+        .map(|e|(e.start,e.end)).collect();
+    let product_lines:HashSet<_>=product_hits.iter().map(|h|h.line).collect();
     for line in &lines {
-        if events.iter().any(|e| e.kind == "quantity" && e.line == line.number) { continue; }
+        if sender_lines.contains(&line.start){
+            for q in search.quantities(line.text){
+                exclusions.record(raw,"quantity",line.start+q.start,line.start+q.end,CandidateDisposition::SenderSection);
+            }
+            continue;
+        }
         if is_money_or_header(line.text) { continue; }
-        if product_hits.iter().any(|h| h.line == line.number) { continue; }
-        for q in quantity::extract(line.text) {
+        let already_handled=quantity_lines.contains(&line.number)||product_lines.contains(&line.number);
+        for q in search.quantities(line.text) {
             // An independently scanned quantity must not reuse characters
             // already owned by a recognized address/name/contact/memo span.
             // Preserve separately positioned quantities in mixed-field rows.
             let start=line.start+q.start;
             let end=line.start+q.end;
+            if quantity_spans.contains(&(start,end)){continue;}
+            if exclusions.excludes("quantity",start,end){continue;}
             let overlaps_field=events.iter().any(|e|
                 matches!(e.kind,"address"|"name"|"phone"|"mobile"|"note")
                     && e.start < end && start < e.end);
-            if overlaps_field { continue; }
+            if overlaps_field {
+                exclusions.record(raw,"quantity",start,end,CandidateDisposition::OverlappingField);
+                continue;
+            }
+            if already_handled{
+                exclusions.record(raw,"quantity",start,end,CandidateDisposition::CompetingQuantity);
+                continue;
+            }
             add_match(&mut events,line,q.start,q.end,"quantity",q.value.to_string(),
                 "독립 수량 원문; 상품 연결은 별도 판정");
+            quantity_spans.insert((start,end));
+            quantity_lines.insert(line.number);
         }
     }
 
-    let mut anchors: Vec<usize> = events.iter().enumerate()
-        .filter_map(|(i,e)| (e.kind == "name").then_some(i)).collect();
-    anchors.sort_by_key(|i| events[*i].start);
-    anchors.dedup_by_key(|i| events[*i].line);
-    if anchors.is_empty() {
-        anchors = events.iter().enumerate()
-            .filter_map(|(i,e)| (e.kind=="address").then_some(i)).collect();
+    // Preserve meaningful uncovered source fragments even when the same
+    // logical record already contains a recognized field. Union all known
+    // candidate spans in source order, without a second recognition pass.
+    exclusions.index_selected(&events);
+    let spans=exclusions.entries.keys().map(|&(_,a,b)|(a,b)).collect::<Vec<_>>();
+    retain_unclassified_fragments(raw,&lines,&non_delivery_segments,spans,&mut exclusions);
+    let delivery=DeliveryGeometry::new(&events);
+    let features=DocumentFeatures::new(raw,&events,&product_hits,&exclusions);
+    ExtractedDocument{raw,lines,events,product_hits,geometry,delivery,exclusions,features}
+}
+fn analyze(raw:&str,state:&Value,client:Option<&Value>)->Result<Value,String>{
+    assign_document(extract_document(raw,state,client),state,client)
+}
+fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Value>)->Result<Value,String>{
+    assign_document_with_trace(document,state,client,false)
+}
+fn assign_document_with_trace(document:ExtractedDocument<'_>,state:&Value,client:Option<&Value>,include_trace:bool)->Result<Value,String>{
+    let mut trace=include_trace.then(Vec::<Value>::new);
+    let ExtractedDocument{raw,lines,mut events,product_hits,geometry,delivery,exclusions,mut features}=document;
+    if !features.positions_valid{return Err("원문 후보 좌표가 일치하지 않습니다.".into());}
+    // Narrowing a display span is the only post-extraction coordinate
+    // mutation. Keep the extracted ordering and reuse it unless that
+    // projection actually changes relative source order.
+    let mut span_changed=false;
+    // No blocked candidate may be used as an assignable field. Keep
+    // event indexes stable for ProductHit; reject contradictory extraction
+    // rather than deleting events after product references were built.
+    if exclusions.entries.values().any(|r|
+        r.selected.is_some()&&r.disposition.is_some_and(CandidateDisposition::hard)){
+        return Err("원문 후보의 채택·제외 상태가 충돌합니다.".into());
     }
+    // Alternative product offsets were validated when inserted into the
+    // common index. A malformed unselected hypothesis only marks it
+    // truncated; it must not reject otherwise usable order evidence.
+    let anchors=&features.anchors;
     // If a document has only one unnamed destination, keep exactly one row.
     if anchors.is_empty() && raw.trim().is_empty() {
         return Ok(json!({"recipients":[],"candidates":[],"unassigned":[]}));
@@ -1100,21 +2083,23 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     let mut recipients: Vec<Value> = anchors.iter().enumerate().map(|(i,a)| {
         let e = &events[*a];
         blank_recipient(&format!("recognition:recipient:{i}"),
-            if e.kind=="name" {&e.value} else {""},Some(e),raw)
+            if e.kind=="name" {&e.value} else {""},Some((e,features.utf16_span(*a))))
     }).collect();
     if recipients.is_empty() {
-        recipients.push(blank_recipient("recognition:recipient:0","",None,raw));
+        recipients.push(blank_recipient("recognition:recipient:0","",None));
     }
     let mut postcodes=vec![HashSet::<String>::new();recipients.len()];
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
-        let row_index = recipient_owner_index(&anchors,&events,index,raw);
+        let choice=recipient_owner_index(anchors,&events,index,&geometry,&delivery,&features,&exclusions);
+        if let Some(rows)=trace.as_mut(){rows.push(choice.trace(&features,index));}
+        let row_index=choice.owner;
         let rid = recipients[row_index]["id"].as_str().unwrap_or("").to_owned();
         let e = &events[index];
         let kind = e.kind;
         if kind=="address" {
             if let Some((line_index,line))=lines.iter().enumerate()
-                .find(|(_,line)|line.number==e.line){
+                .find(|(_,line)|line.number==e.line&&line.start<=e.start&&e.start<line.start+line.text.len()){
                 let prefix=&raw[line.start..e.start];
                 if let Some(code)=postcode::before_address(prefix){
                     postcodes[row_index].insert(code.to_owned());
@@ -1165,13 +2150,14 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                 other
             } else {kind}
         } else {kind};
-        let mut src=source_json(raw,e,&rid,&rid);
+        let (start,end)=features.utf16_span(index);
+        let mut src=source_json(raw,e,(start,end),&rid,&rid);
         src["field"]=json!(effective_field);
         recipients[row_index]["sources"].as_array_mut().expect("sources").push(src);
         recipients[row_index]["candidates"].as_array_mut().expect("candidates")
-            .push(json!({"id":format!("{}:{}:{}",kind,utf16(raw,e.start),utf16(raw,e.end)),
+            .push(json!({"id":format!("{}:{}:{}",kind,start,end),
                 "field":effective_field,"value":e.value,"label":e.value,
-                "start":utf16(raw,e.start),"end":utf16(raw,e.end)}));
+                "start":start,"end":end}));
         events[index].recipient = Some(row_index);
     }
     for (row,codes) in recipients.iter_mut().zip(postcodes) {
@@ -1185,21 +2171,32 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             row["addressParts"] = parts;
         }
     }
+    // Build eligible detached-quantity groups once; mutable assignments
+    // are checked when consumed. Individual product ownership is scored
+    // separately; common quantity semantics remain unchanged.
+    let product_lines:HashSet<_>=product_hits.iter().map(|h|h.line).collect();
+    let mut detached=vec![Vec::<usize>::new();recipients.len()];
+    for (i,e) in events.iter().enumerate(){
+        if e.kind=="quantity"&&!product_lines.contains(&e.line){
+            detached[owner_index(anchors,&events,e.start)].push(i);
+        }
+    }
+    let conflicting_quantities=conflicting_inline_quantities(&product_hits);
     let has_leading = anchors.first().map_or(false, |a| product_hits.iter().any(|h|
         !h.common && events[h.evidence].start < events[*a].start));
     for hit in &product_hits {
-        let anchor_index = owner_index(&anchors,&events,events[hit.evidence].start);
-        let owner = if has_leading && !anchors.is_empty() {
-            anchors.iter().position(|a| events[*a].start > events[hit.evidence].start)
-                .unwrap_or(anchors.len()-1)
-        } else { anchor_index };
+        let choice=product_owner_index(anchors,&events,&features,&exclusions,hit,has_leading);
+        if let Some(rows)=trace.as_mut(){
+            if !hit.common{rows.push(choice.trace(&features,hit.evidence));}
+        }
+        let owner=choice.owner;
         let attach_to: Vec<usize> = if hit.common {
             (0..recipients.len()).filter(|idx| recipients[*idx]["items"]
                 .as_array().map_or(true,|xs|xs.is_empty())).collect()
         } else { vec![owner] };
         for idx in attach_to {
             let (display_raw,display_start)=ts_product_display(hit,&events);
-            let id = format!("recognition:item:{}:{}", utf16(raw,events[hit.evidence].start),idx);
+            let id = format!("recognition:item:{}:{}", features.utf16_span(hit.evidence).0,idx);
             let rid = recipients[idx]["id"].as_str().unwrap_or("").to_owned();
             // Direct port of order-evidence.ts:534-560:
             // - non-common goods keep their own line quantity
@@ -1207,19 +2204,32 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             //   explicitly per-recipient ('각각'/'씩') source quantity
             // - a common document total must never be multiplied
             let selected_qty = if hit.common {
-                events.iter().enumerate().find_map(|(qi,e)|
-                    (e.kind=="quantity" && e.item_id.is_none()
-                        && !hit.quantities.contains(&qi)
-                        && !product_hits.iter().any(|p|p.line==e.line)
-                        && owner_index(&anchors,&events,e.start)==idx).then_some(qi)
-                ).or_else(||(hit.each && hit.quantities.len()==1)
-                    .then(||hit.quantities[0]))
+                let mut local=detached[idx].iter().copied().filter(|&qi|
+                    events[qi].item_id.is_none()&&!hit.quantities.contains(&qi)
+                        &&!conflicting_quantities.contains(&qi));
+                match (local.next(),local.next()){
+                    (Some(q),None)=>Some(q),
+                    (Some(_),Some(_))=>None,
+                    (None,_) if hit.each&&hit.quantities.len()==1=>Some(hit.quantities[0]),
+                    _=>None,
+                }
             } else if hit.quantities.len()==1 {
                 Some(hit.quantities[0])
             } else {None};
-            let unique = selected_qty.is_some();
+            let proposed_qty=selected_qty;
+            let selected_qty=selected_qty.filter(|&i|!conflicting_quantities.contains(&i)
+                &&events[i].kind=="quantity"
+                &&(events[i].item_id.is_none()||(hit.common&&hit.each&&hit.quantities.contains(&i))));
+            if let Some(rows)=trace.as_mut(){
+                if let Some(q)=proposed_qty{
+                    rows.push(json!({"event":q,"productEvent":hit.evidence,"owner":idx,
+                        "reason":if selected_qty.is_some(){"quantity_link_accepted"}else{"quantity_link_conflict"}}));
+                }
+            }
             let quantity_value = selected_qty
-                .and_then(|i|events[i].value.parse::<i64>().ok());
+                .and_then(|i|events[i].value.parse::<i64>().ok()).filter(|q|*q>0);
+            let unique=quantity_value.is_some();
+            let selected_qty=selected_qty.filter(|_|unique);
             let chosen = hit.decision.get("productId").and_then(Value::as_str)
                 .filter(|s| !s.is_empty());
             let decision_name=hit.decision.get("name").and_then(Value::as_str)
@@ -1308,7 +2318,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             if !reason.is_null() {item["recognitionReason"]=reason;}
             apply_registered_item(&mut item,state,client,
                 hit.decision.get("color").and_then(Value::as_str).unwrap_or(""));
-            let mut product_source=source_json(raw,&events[hit.evidence],&rid,&id);
+            let mut product_source=source_json(raw,&events[hit.evidence],features.utf16_span(hit.evidence),&rid,&id);
             // parser.ts::productNameEvidence returns the registered model
             // token rather than the surrounding "(블랙)" color hint. Keep
             // recognition's original evidence intact; correct only the
@@ -1330,24 +2340,42 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                         if let Some((begin,end))=spans.first().copied() {
                             let start=hit.source_start+begin;
                             let finish=hit.source_start+end;
-                            product_source["start"]=json!(utf16(raw,start));
-                            product_source["end"]=json!(utf16(raw,finish));
-                            product_source["text"]=json!(&hit.raw[begin..end]);
-                            // TS analyzes product NameEvidence once and
-                            // exposes the same narrowed source span in both
-                            // Item.sources and the top-level evidence list.
-                            // Previously Rust narrowed only Item.sources.
-                            events[hit.evidence].start=start;
-                            events[hit.evidence].end=finish;
+                            // Update the cached endpoint coordinates using
+                            // only the changed local range, not the prefix
+                            // of the entire order. Never fabricate a span.
+                            let e=&events[hit.evidence];
+                            if raw.get(start..finish)==Some(&hit.raw[begin..end]){
+                                let old=features.positions[hit.evidence][0];
+                                let adjusted=if start>=e.start{
+                                    let delta=&raw[e.start..start];
+                                    (old.0+delta.chars().count(),old.1+delta.encode_utf16().count())
+                                }else{
+                                    let delta=&raw[start..e.start];
+                                    (old.0-delta.chars().count(),old.1-delta.encode_utf16().count())
+                                };
+                                let tail=&raw[start..finish];
+                                let last=(adjusted.0+tail.chars().count(),adjusted.1+tail.encode_utf16().count());
+                                features.positions[hit.evidence]=[adjusted,last];
+                                product_source["start"]=json!(adjusted.1);
+                                product_source["end"]=json!(last.1);
+                                product_source["text"]=json!(tail);
+                                span_changed|=e.start!=start||e.end!=finish;
+                                events[hit.evidence].start=start;
+                                events[hit.evidence].end=finish;
+                            }
                         }
                     }
                 }
             }
             let mut sources=vec![product_source];
             if let Some(qi)=selected_qty {
-                sources.push(source_json(raw,&events[qi],&rid,&id));
-                events[qi].item_id=Some(id.clone());
-                events[qi].recipient=Some(idx);
+                sources.push(source_json(raw,&events[qi],features.utf16_span(qi),&rid,&id));
+                // A deliberately shared per-recipient quantity keeps its
+                // first canonical evidence owner; every item still has a source.
+                if events[qi].item_id.is_none(){
+                    events[qi].item_id=Some(id.clone());
+                    events[qi].recipient=Some(idx);
+                }
             }
             item["sources"] = json!(sources);
             recipients[idx]["items"].as_array_mut().expect("items").push(item);
@@ -1357,29 +2385,55 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             }
         }
     }
-    // A detached quantity is attachable only when exactly one item and one quantity
-    // are unresolved within the same recipient. Otherwise it stays visible as evidence.
+    // Index unresolved individual products once. Common totals and items
+    // with ambiguous inline quantities are ineligible for new pairing.
+    let mut blocked_items=HashSet::new();
+    for hit in &product_hits{
+        if hit.quantities.iter().any(|q|conflicting_quantities.contains(q)){
+            if let Some(id)=events[hit.evidence].item_id.as_ref(){blocked_items.insert(id.clone());}
+        }
+    }
+    let mut pending_hits=vec![HashMap::<String,usize>::new();recipients.len()];
+    for hit in &product_hits{
+        if hit.common||!hit.quantities.is_empty(){continue;}
+        let e=&events[hit.evidence];
+        if let (Some(idx),Some(id))=(e.recipient,e.item_id.as_ref()){
+            pending_hits[idx].insert(id.clone(),hit.evidence);
+        }
+    }
+    // Keep the existing single-item path. Multiple unresolved items need
+    // an independently supported, complete, one-to-one ordered matching.
     for idx in 0..recipients.len() {
-        let standalone: Vec<usize> = events.iter().enumerate().filter_map(|(i,e)|
-            (e.kind=="quantity" && e.item_id.is_none()
-                && owner_index(&anchors,&events,e.start)==idx
-                && !product_hits.iter().any(|h| h.line==e.line)).then_some(i)
-        ).collect();
+        let standalone:Vec<usize>=detached[idx].iter().copied()
+            .filter(|&i|events[i].item_id.is_none()&&!conflicting_quantities.contains(&i)).collect();
         let pending: Vec<usize> = recipients[idx]["items"].as_array().expect("items")
             .iter().enumerate().filter_map(|(i,it)|it["quantity"].is_null().then_some(i)).collect();
-        if standalone.len()==1 && pending.len()==1 {
-            let q = standalone[0];
-            let item_idx = pending[0];
+        let pairs=if standalone.len()==1&&pending.len()==1{
+            vec![(pending[0],standalone[0])]
+        }else if standalone.len()==pending.len()&&pending.len()>1&&pending.len()<=32{
+            let items=recipients[idx]["items"].as_array().expect("items");
+            let products=pending.iter().filter_map(|&i|
+                items[i]["id"].as_str().and_then(|id|pending_hits[idx].get(id)).map(|&p|(i,p)))
+                .collect::<Vec<_>>();
+            if products.len()==pending.len(){
+                ordered_quantity_pairs(&events,&features,&exclusions,products,standalone,&mut trace)
+            }else{vec![]}
+        }else{vec![]};
+        for (item_idx,q) in pairs{
+            if events[q].item_id.is_some()||conflicting_quantities.contains(&q)
+                ||recipients[idx]["items"][item_idx]["id"].as_str().is_some_and(|id|blocked_items.contains(id)){continue;}
+            if let Some(rows)=trace.as_mut(){rows.push(json!({"event":q,"owner":idx,
+                "itemIndex":item_idx,"reason":"detached_quantity_accepted"}));}
             let rid = recipients[idx]["id"].as_str().unwrap_or("").to_owned();
             let id = recipients[idx]["items"][item_idx]["id"].as_str().unwrap_or("").to_owned();
-            if let Ok(value) = events[q].value.parse::<i64>() {
+            if let Some(value) = events[q].value.parse::<i64>().ok().filter(|q|*q>0) {
                 recipients[idx]["items"][item_idx]["quantity"]=json!(value);
                 recipients[idx]["items"][item_idx]["quantityConfirmed"]=json!(true);
                 if let Some(issues) = recipients[idx]["items"][item_idx]["issues"].as_array_mut() {
                     issues.retain(|s|!s.as_str().unwrap_or("").contains("수량"));
                 }
                 recipients[idx]["items"][item_idx]["sources"].as_array_mut().expect("item sources")
-                    .push(source_json(raw,&events[q],&rid,&id));
+                    .push(source_json(raw,&events[q],features.utf16_span(q),&rid,&id));
                 events[q].recipient=Some(idx);
                 events[q].item_id=Some(id);
             }
@@ -1389,15 +2443,23 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     // Source order-evidence.ts sorts all evidence by source position before
     // assigning and returning candidates. A quantity inserted ahead of its
     // corresponding product in Rust must not reverse the public array order.
-    let mut ordered=events.iter().collect::<Vec<_>>();
-    ordered.sort_by_key(|e|(e.start,e.end));
-    let mut unassigned=Vec::new();
-    for e in &ordered {
-        if e.recipient.is_none(){unassigned.push(e_json(raw,e)["id"].clone());}
+    if span_changed&&features.ordered.windows(2).any(|w|{
+        let a=&events[w[0]];let b=&events[w[1]];
+        (a.start,a.end,w[0])>(b.start,b.end,w[1])
+    }){
+        features.ordered.sort_by_key(|&i|(events[i].start,events[i].end,i));
     }
-    for e in &events {
+    let mut unassigned=Vec::new();
+    for &i in &features.ordered {
+        let e=&events[i];
+        if e.recipient.is_none(){
+            let (start,end)=features.utf16_span(i);
+            unassigned.push(json!(format!("{}:{}:{}",e.kind,start,end)));
+        }
+    }
+    for (i,e) in events.iter().enumerate() {
         if (e.kind=="product" || e.kind=="quantity") && e.recipient.is_none() {
-            let idx=owner_index(&anchors,&events,e.start);
+            let idx=owner_index(anchors,&events,e.start);
             // Indexing a missing JSON key creates null. Check the array
             // before indexing; otherwise the first unassigned evidence is
             // silently dropped and its shipping warning disappears.
@@ -1406,17 +2468,20 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                 recipients[idx]["unassignedEvidence"]=json!([]);
             }
             recipients[idx]["unassignedEvidence"].as_array_mut()
-                .expect("unassigned evidence array").push(e_json(raw,e));
+                .expect("unassigned evidence array").push(e_json(raw,e,features.utf16_span(i)));
         }
     }
-    let candidates: Vec<Value> = ordered.iter().map(|e| {
-        let mut candidate=e_json(raw,e);
+    let candidates: Vec<Value> = features.ordered.iter().map(|&i| {
+        let e=&events[i];
+        let mut candidate=e_json(raw,e,features.utf16_span(i));
         if let Some(idx) = e.recipient {
             candidate["recipientId"]=recipients[idx]["id"].clone();
         }
         candidate
     }).collect();
-    Ok(json!({"recipients":recipients,"candidates":candidates,"unassigned":unassigned}))
+    let mut result=json!({"recipients":recipients,"candidates":candidates,"unassigned":unassigned});
+    if let Some(rows)=trace{result["decisionTrace"]=json!({"version":1,"entries":rows});}
+    Ok(result)
 }
 
 fn reanalyze(payload: &Value) -> Result<Value, String> {
@@ -1736,6 +2801,59 @@ mod tests {
         assert!(recipients[1]["address"].as_str().unwrap().contains("불정로 6"));
     }
     #[test]
+    fn legacy_owner_margin_cannot_change_decision_after_existing_gates(){
+        for prev_distance in 0usize..=30{
+            for next_distance in 0usize..=3{
+                for prior_blank in 0usize..=5{
+                    for content in 0usize..=next_distance.saturating_sub(1){
+                        for nearby in [false,true]{
+                            let previous=20usize.saturating_sub(prev_distance.saturating_mul(5));
+                            let following=(80+20usize.saturating_sub(next_distance*5)
+                                +if nearby{20}else{0}+prior_blank.min(2)*5)
+                                .saturating_sub(content.min(2)*5);
+                            assert!(following>=previous+30);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn ownership_margin_is_shared_and_requires_a_real_advantage(){
+        assert!(exceeds_margin(50,40,OWNER_WEIGHTS.margin));
+        assert!(!exceeds_margin(49,40,OWNER_WEIGHTS.margin));
+        assert!(!exceeds_margin(40,50,OWNER_WEIGHTS.margin));
+    }
+    #[test]
+    fn common_owner_selection_distinguishes_soft_policy_from_candidate_scores(){
+        let score=|total|OwnershipScore{total,structural:0,same_paragraph:true,line:1,rank:1};
+        let retained=choose_ownership(0,1,0,score(20),score(80),false,false,"legacy_preference",10);
+        assert_eq!(retained.owner,0);
+        assert_eq!(retained.scores,Some([(0,20),(1,80)]));
+        let changed=choose_ownership(0,1,0,score(20),score(80),false,true,"legacy_preference",10);
+        assert_eq!(changed.owner,1);
+        let close=choose_ownership(0,1,1,score(29),score(20),true,false,"legacy_preference",10);
+        assert_eq!(close.owner,1);
+    }
+    #[test]
+    fn recipient_handoff_scores_and_margin_use_the_same_legacy_incumbent(){
+        let raw="김가상\n서울특별시 마포구 월드컵로 20\n010-1234-5678\n\n경기도 성남시 분당구 불정로 6\n010-2345-6789\n박가상";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        let anchors=&doc.features.anchors;
+        assert_eq!(anchors.len(),2);
+        let i=doc.events.iter().position(|e|e.kind=="mobile"&&e.value=="010-2345-6789").unwrap();
+        let choice=recipient_owner_index(anchors,&doc.events,i,&doc.geometry,&doc.delivery,&doc.features,&doc.exclusions);
+        let w=OWNER_WEIGHTS;
+        let a=ownership_score(&doc.events,&doc.features,i,anchors[0],false,w).total;
+        let b=ownership_score(&doc.events,&doc.features,i,anchors[1],true,w).total;
+        let without_support=ownership_score(&doc.events,&doc.features,i,anchors[1],false,w).total;
+        assert_eq!(b-without_support,w.legacy);
+        assert_eq!(choice.scores,Some([(0,a),(1,b)]));
+        assert_eq!(choice.owner,if exceeds_margin(a,b,w.margin){0}else{1});
+        assert_eq!(choice.owner,1);
+    }
+    #[test]
     fn address_and_phone_before_next_name_use_new_paragraph_and_proximity(){
         // A second delivery may list address/phone BEFORE its addressee.
         // Its own nearby address corroborates the contact; the blank line
@@ -1771,6 +2889,593 @@ mod tests {
         assert_eq!(recipients.len(),1);
         assert_eq!(recipients[0]["mobile"],"010-1234-5678");
         assert_eq!(recipients[0]["phone"],"010-3456-7890");
+    }
+    #[test]
+    fn alternating_detached_quantities_attach_to_their_own_products(){
+        let raw="수취인: 김가상\n010-0000-0001\n709\n2개\nGT-1\n3개";
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let items=result["recipients"][0]["items"].as_array().unwrap();
+        assert_eq!(items.len(),2);
+        assert_eq!(items[0]["productId"],"p709");
+        assert_eq!(items[0]["quantity"],2);
+        assert_eq!(items[1]["productId"],"pgt");
+        assert_eq!(items[1]["quantity"],3);
+        for item in items{
+            assert_eq!(item["quantityConfirmed"],true);
+            assert_eq!(item["sources"].as_array().unwrap().iter().filter(|s|s["field"]=="quantity").count(),1);
+        }
+    }
+    #[test]
+    fn grouped_detached_quantities_remain_unresolved_without_alternating_evidence(){
+        let raw="수취인: 김가상\n010-0000-0001\n709\nGT-1\n2개\n3개";
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let items=result["recipients"][0]["items"].as_array().unwrap();
+        assert_eq!(items.len(),2);
+        assert!(items.iter().all(|it|it["quantity"].is_null()&&it["quantityConfirmed"]==false));
+    }
+    #[test]
+    fn same_line_registered_products_keep_independent_quantity_sources(){
+        let state=state();
+        for products in ["709 2개; GT-1 3개","709 2개 GT-1 3개","709 2개 / GT-1 3개"]{
+            let raw=format!("김가상\n010-0000-0001\n{products}");
+            let result=execute("analyze_order",json!({"raw":raw,"state":state})).unwrap();
+            let rows=result["recipients"].as_array().unwrap();
+            assert_eq!(rows.len(),1);
+            let items=rows[0]["items"].as_array().unwrap();
+            assert_eq!(items.len(),2,"{products}: {result}");
+            assert_eq!(items[0]["productId"],"p709");
+            assert_eq!(items[0]["quantity"],2);
+            assert_eq!(items[1]["productId"],"pgt");
+            assert_eq!(items[1]["quantity"],3);
+            let units=raw.encode_utf16().collect::<Vec<_>>();
+            for item in items{
+                for source in item["sources"].as_array().unwrap(){
+                    let a=source["start"].as_u64().unwrap() as usize;
+                    let b=source["end"].as_u64().unwrap() as usize;
+                    assert_eq!(source["text"],String::from_utf16(&units[a..b]).unwrap());
+                }
+            }
+        }
+        let mut search=ProductSearch::new(&state,"");
+        for raw in ["709 2개 구성 GT-1 3개","메모: 709 2개 GT-1 3개","709 2개 알수없는상품 3개",
+            "공통 709 2개 GT-1 3개","709 2개 GT-1 3개 부탁"]{
+            assert_eq!(split_product_records(physical_lines(raw),&recipient_label(),&phone_regex(),&mut search).len(),1, "{raw}");
+        }
+    }
+    #[test]
+    fn indexed_delivery_geometry_preserves_original_boundary_rules(){
+        let raw="김가상\n010-0000-0001\n서울특별시 중구 가상로 1\n\n박가상\n010-0000-0002";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        let index=&doc.delivery;
+        for paragraph in 0..3{
+            for after in 0..raw.len(){
+                for before in [after,after+1,raw.len()]{
+                    let expected=doc.events.iter().any(|e|e.paragraph==paragraph&&
+                        e.start>after&&e.start<before&&matches!(e.kind,"address"|"phone"|"mobile"));
+                    assert_eq!(index.between(paragraph,after,before),expected);
+                }
+            }
+            for line in 0..10{
+                for radius in 0..5{
+                    let expected=doc.events.iter().any(|e|e.kind=="address"&&
+                        e.paragraph==paragraph&&e.line.abs_diff(line)<=radius);
+                    assert_eq!(index.nearby_address(paragraph,line,radius),expected);
+                }
+            }
+        }
+    }
+    #[test]
+    fn explicit_recipient_records_keep_distinct_original_offsets(){
+        let raw="수취인: 김가상 010-0000-0001; 수취인: 박가상 010-0000-0002";
+        let parts=split_recipient_records(physical_lines(raw),&recipient_label(),&phone_regex());
+        assert_eq!(parts.len(),2);
+        assert!(parts.iter().all(|p|p.number==0&&p.paragraph==0&&
+            &raw[p.start..p.start+p.text.len()]==p.text));
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let rows=result["recipients"].as_array().unwrap();
+        assert_eq!(rows.len(),2);
+        assert_eq!(rows[0]["name"],"김가상");
+        assert_eq!(rows[0]["mobile"],"010-0000-0001");
+        assert_eq!(rows[1]["name"],"박가상");
+        assert_eq!(rows[1]["mobile"],"010-0000-0002");
+        assert_eq!(split_recipient_records(physical_lines("수취인: 김가상; 박가상"),&recipient_label(),&phone_regex()).len(),1);
+        assert_eq!(split_recipient_records(physical_lines("메모: 문 앞; 연락 부탁"),&recipient_label(),&phone_regex()).len(),1);
+    }
+    #[test]
+    fn product_search_reuses_exact_slices_without_merging_distinct_candidates(){
+        let state=state();
+        let mut search=ProductSearch::new(&state,"");
+        let raw="709 2개";
+        let a=search.decision(raw).clone();
+        assert_eq!(&a,search.decision(raw));
+        assert_eq!(search.decisions.len(),1);
+        assert_eq!(search.decision("GT-1 2개")["productId"],"pgt");
+        assert_eq!(search.decisions.len(),2);
+        assert_eq!(search.decision(raw)["productId"],"p709");
+        assert_eq!(search.quantities(raw)[0].value,2);
+        assert_eq!(search.quantities(raw)[0].value,2);
+        assert_eq!(search.quantities.len(),1);
+    }
+    #[test]
+    fn extracted_document_is_pre_assignment_and_reused_by_normal_analysis(){
+        let raw="김가상\n010-0000-0001\n709 2개";
+        let state=state();
+        let document=extract_document(raw,&state,None);
+        assert!(!document.events.is_empty());
+        assert!(document.events.iter().all(|e|e.recipient.is_none()&&e.item_id.is_none()
+            &&e.start<e.end&&raw.get(e.start..e.end).is_some()));
+        assert!(!document.product_hits.is_empty());
+        assert_eq!(assign_document(document,&state,None).unwrap(),analyze(raw,&state,None).unwrap());
+    }
+    #[test]
+    fn terminal_local_blocks_can_override_global_leading_within_one_paragraph(){
+        // An independent address in the prefix breaks the global cycle;
+        // P N T P N T P N T P alone is an incomplete leading cycle.
+        let raw="709 1개\n서울특별시 마포구 월드컵로 20\n수취인: 김가상\n010-0000-0001\n709 2개\n수취인: 박가상\n010-0000-0002\nGT-1 3개\n수취인: 이가상\n010-0000-0003\n709 4개";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        let hit=doc.product_hits.iter().find(|h|h.decision["productId"]=="pgt").unwrap();
+        let a=&doc.features.anchors;
+        assert_eq!(a.len(),3);
+        assert!(doc.features.structural_ownership_score(hit.evidence,a[1],OWNER_WEIGHTS)>=OWNER_WEIGHTS.local);
+        assert_eq!(doc.features.structural_ownership_score(hit.evidence,a[2],OWNER_WEIGHTS),0);
+        assert_eq!(product_owner_index(a,&doc.events,&doc.features,&doc.exclusions,hit,true).owner,1);
+        let result=assign_document(doc,&state,None).unwrap();
+        assert!(result["recipients"][1]["items"].as_array().unwrap().iter()
+            .any(|it|it["productId"]=="pgt"&&it["quantity"]==3));
+    }
+    #[test]
+    fn incomplete_leading_cycle_is_not_reinterpreted_as_local_trailing(){
+        let raw="709 1개\n수취인: 김가상\n010-0000-0001\nGT-1 2개\n수취인: 박가상\n010-0000-0002\n709 3개\n수취인: 이가상\n010-0000-0003\nGT-1 4개";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        let a=&doc.features.anchors;
+        assert_eq!(doc.features.incomplete_tail,1);
+        let middle=doc.product_hits.iter().find(|h|h.decision["productId"]=="pgt").unwrap();
+        assert_eq!(product_owner_index(a,&doc.events,&doc.features,&doc.exclusions,middle,true).owner,1);
+        let last=doc.product_hits.last().unwrap();
+        assert_eq!(doc.features.structural_ownership_score(last.evidence,a[2],OWNER_WEIGHTS),0);
+    }
+    #[test]
+    fn complete_leading_cycles_support_only_their_own_anchor(){
+        let raw="709 1개\n수취인: 김가상\n010-0000-0001\nGT-1 2개\n수취인: 박가상\n010-0000-0002\n709 3개\n수취인: 이가상\n010-0000-0003";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        let hit=doc.product_hits.iter().find(|h|h.decision["productId"]=="pgt").unwrap();
+        let a=&doc.features.anchors;
+        assert_eq!(doc.features.exact_repeat,3);
+        assert_eq!(doc.features.structural_ownership_score(hit.evidence,a[0],OWNER_WEIGHTS),0);
+        assert!(doc.features.structural_ownership_score(hit.evidence,a[1],OWNER_WEIGHTS)>=OWNER_WEIGHTS.repeat);
+        assert_eq!(product_owner_index(a,&doc.events,&doc.features,&doc.exclusions,hit,true).owner,1);
+    }
+    #[test]
+    fn inline_quantity_conflict_is_symmetric_and_same_hit_is_not_a_conflict(){
+        let hit=|evidence,quantities|ProductHit{evidence,source_start:0,line:0,raw:String::new(),
+            decision:Value::Null,quantities,common:false,each:false};
+        let hits=vec![hit(0,vec![2,2]),hit(1,vec![2,3])];
+        assert_eq!(conflicting_inline_quantities(&hits),HashSet::from([2]));
+        assert!(conflicting_inline_quantities(&[hit(0,vec![2,2])]).is_empty());
+    }
+    #[test]
+    fn contested_inline_quantity_is_not_confirmed_for_either_item(){
+        let raw="수취인: 김가상\n010-0000-0001\n709 2개\nGT-1 3개";
+        let state=state();
+        let mut doc=extract_document(raw,&state,None);
+        assert_eq!(doc.product_hits.len(),2);
+        let q=doc.product_hits[0].quantities[0];
+        doc.product_hits[1].quantities=vec![q];
+        let result=assign_document(doc,&state,None).unwrap();
+        let items=result["recipients"][0]["items"].as_array().unwrap();
+        assert_eq!(items.len(),2);
+        assert!(items.iter().all(|it|it["quantity"].is_null()&&it["quantityConfirmed"]==false));
+        assert!(!result["unassigned"].as_array().unwrap().is_empty());
+    }
+    #[test]
+    fn trace_is_opt_in_and_records_the_operational_decision(){
+        let raw="수취인: 김가상\n010-0000-0001\n709 1개";
+        let state=state();
+        let plain=execute("analyze_order",json!({"raw":raw,"state":state})).unwrap();
+        let mut detailed=execute("analyze_order",json!({"raw":raw,"state":state,"includeDocumentFeatures":true})).unwrap();
+        let trace=detailed.as_object_mut().unwrap().remove("decisionTrace").unwrap();
+        assert_eq!(trace["version"],1);
+        assert!(trace["entries"].as_array().unwrap().iter().any(|e|e["reason"]=="quantity_link_accepted"));
+        detailed.as_object_mut().unwrap().remove("documentFeatures");
+        assert_eq!(plain,detailed);
+    }
+    #[test]
+    fn product_ownership_uses_local_paragraph_instead_of_global_leading_direction(){
+        let raw="709 1개\n수취인: 김가상\n010-0000-0001\n\n수취인: 박가상\n010-0000-0002\nGT-1 2개\n\n수취인: 이가상\n010-0000-0003";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        let hit=doc.product_hits.iter().find(|h|h.decision["productId"]=="pgt").unwrap();
+        assert_eq!(doc.features.anchors.len(),3);
+        let anchors=&doc.features.anchors;
+        assert_eq!(product_owner_index(anchors,&doc.events,&doc.features,&doc.exclusions,hit,true).owner,1);
+        let result=assign_document(doc,&state,None).unwrap();
+        assert_eq!(result["recipients"][0]["items"][0]["productId"],"p709");
+        assert_eq!(result["recipients"][1]["items"][0]["productId"],"pgt");
+        assert_eq!(result["recipients"][1]["items"][0]["quantity"],2);
+        assert!(result["recipients"][2]["items"].as_array().unwrap().is_empty());
+    }
+    #[test]
+    fn product_ownership_preserves_legacy_for_incomplete_candidates(){
+        let raw="709 1개\n수취인: 김가상\n010-0000-0001\n\n수취인: 박가상\n010-0000-0002\nGT-1 2개\n\n수취인: 이가상\n010-0000-0003";
+        let state=state();
+        let mut doc=extract_document(raw,&state,None);
+        doc.exclusions.truncated=true;
+        let hit=doc.product_hits.iter().find(|h|h.decision["productId"]=="pgt").unwrap();
+        assert_eq!(product_owner_index(&doc.features.anchors,&doc.events,&doc.features,&doc.exclusions,hit,true).owner,2);
+    }
+    #[test]
+    fn common_candidate_index_preserves_selected_and_excluded_roles(){
+        let raw="709";
+        let mut candidates=CommonCandidates::default();
+        candidates.record(raw,"quantity",0,3,CandidateDisposition::CompetingQuantity);
+        candidates.record(raw,"phone",0,3,CandidateDisposition::EmbeddedDigits);
+        let events=vec![Evidence{kind:"product",value:raw.to_owned(),start:0,end:3,
+            line:0,paragraph:0,reason:"synthetic",recipient:None,item_id:None}];
+        candidates.index_selected(&events);
+        assert_eq!(candidates.entries.len(),3);
+        assert_eq!(candidates.entries[&("product",0,3)].selected,Some(0));
+        assert!(!candidates.excludes("quantity",0,3));
+        assert!(candidates.excludes("phone",0,3));
+        assert!(candidates.entries[&("quantity",0,3)].selected.is_none());
+    }
+    #[test]
+    fn product_search_retains_pre_rank_candidates_in_extracted_document(){
+        let state=state();
+        let raw="709 GT-1 2개";
+        let doc=extract_document(raw,&state,None);
+        assert!(!doc.product_hits.is_empty());
+        for id in ["p709","pgt"]{
+            assert!(doc.exclusions.entries.iter().any(|(&(kind,a,b),r)|
+                kind=="product"&&r.products.get(id)==Some(&true)&&raw.get(a..b).is_some()));
+        }
+        for (i,e) in doc.events.iter().enumerate(){
+            assert_eq!(doc.exclusions.entries[&(e.kind,e.start,e.end)].selected,Some(i));
+        }
+        assert!(assign_document(doc,&state,None).is_ok());
+    }
+    #[test]
+    fn inline_honorific_name_can_win_against_partial_alias(){
+        let mut state=state();
+        state["aliases"]=json!([{"id":"a1","text":"김가상","productId":"pgt"}]);
+        let raw="김가상님 010-0000-0001\n709 1개";
+        let doc=extract_document(raw,&state,None);
+        assert!(doc.events.iter().any(|e|e.kind=="name"&&e.value=="김가상님"));
+        assert!(doc.exclusions.entries.iter().any(|(&(kind,_,_),r)|
+            kind=="product"&&r.products.contains_key("pgt")&&r.selected.is_none()));
+        let result=assign_document(doc,&state,None).unwrap();
+        assert_eq!(result["recipients"][0]["name"],"김가상님");
+        assert_eq!(result["recipients"][0]["items"].as_array().unwrap().len(),1);
+        assert_eq!(result["recipients"][0]["items"][0]["productId"],"p709");
+    }
+    #[test]
+    fn type_score_changes_with_partial_alias_coverage(){
+        for (text,alias,expected) in [("김가상님","김가상",true),("김가상민님","김가상민",false)]{
+            let matched=CachedProductDecision{output:Value::Null,
+                candidates:vec![model::SourceCandidate{product_id:"pgt".into(),span:(0,alias.len()),literal:false}],truncated:false};
+            assert_eq!(name_beats_partial_alias(text,true,&matched),expected);
+            assert!(!name_beats_partial_alias(text,false,&matched));
+        }
+    }
+    #[test]
+    fn exact_alias_and_literal_model_are_not_overridden_by_type_scoring(){
+        for (span,literal) in [((0,"김가상님".len()),false),((0,"김가상".len()),true)]{
+            let matched=CachedProductDecision{output:Value::Null,
+                candidates:vec![model::SourceCandidate{product_id:"pgt".into(),span,literal}],truncated:false};
+            assert!(!name_beats_partial_alias("김가상님",true,&matched));
+        }
+    }
+    #[test]
+    fn split_item_boundaries_do_not_evaluate_product_identity(){
+        let state=state();
+        let raw="709 2개 GT-1 3개";
+        let mut search=ProductSearch::new(&state,"");
+        let lines=split_product_records(physical_lines(raw),&recipient_label(),&phone_regex(),&mut search);
+        assert_eq!(lines.iter().map(|l|l.text).collect::<Vec<_>>(),vec!["709 2개","GT-1 3개"]);
+        assert!(search.decisions.values().all(|entry|matches!(entry,ProductSearchEntry::Collected(_))));
+        assert!(search.has_registered_model("709 2개"));
+        assert!(matches!(search.decisions.get("709 2개"),Some(ProductSearchEntry::Collected(_))));
+        assert_eq!(search.decision("709 2개")["productId"],"p709");
+        assert!(matches!(search.decisions.get("709 2개"),Some(ProductSearchEntry::Evaluated{..})));
+    }
+    #[test]
+    fn registration_reuses_the_same_cached_product_hypotheses(){
+        let state=state();
+        let raw="709 1개\n709 1개";
+        let mut search=ProductSearch::new(&state,"");
+        let mut candidates=CommonCandidates::default();
+        let first=search.result_with_registration("709 1개",Some((raw,0,&mut candidates))).output.clone();
+        let second_offset=raw.rfind("709").unwrap();
+        let second=search.result_with_registration("709 1개",Some((raw,second_offset,&mut candidates))).output.clone();
+        assert_eq!(first,second);
+        assert_eq!(search.decisions.len(),1);
+        assert_eq!(candidates.entries[&("product",0,3)].products.get("p709"),Some(&true));
+        assert_eq!(candidates.entries[&("product",second_offset,second_offset+3)].products.get("p709"),Some(&true));
+    }
+    #[test]
+    fn inferred_name_discovery_preserves_losing_type_before_projection(){
+        let state=state();
+        let raw="GT-1 010-0000-0001";
+        let line=physical_lines(raw).remove(0);
+        let phone=phone_regex();
+        let mut search=ProductSearch::new(&state,"");
+        let proposal=unlabelled_recipient_proposal(line.text,None,&phone,true,&mut search).unwrap();
+        assert_eq!(&raw[proposal.start..proposal.end],"GT-1");
+        let mut candidates=CommonCandidates::default();
+        assert!(resolve_name_proposal(raw,&line,proposal,&mut search,&mut candidates).is_none());
+        let name=&candidates.entries[&("name",0,4)];
+        assert_eq!(name.disposition,Some(CandidateDisposition::CompetingType));
+        assert!(name.selected.is_none());
+        let product=&candidates.entries[&("product",0,4)];
+        assert_eq!(product.products.get("pgt"),Some(&true));
+        assert!(product.selected.is_none());
+        assert!(!candidates.excludes("name",0,4));
+    }
+    #[test]
+    fn inferred_name_preserves_competing_product_identity_without_confirming_it(){
+        let state=state();
+        let raw="709 1개 GT-1\n010-0000-0001";
+        let doc=extract_document(raw,&state,None);
+        let start=raw.find("GT-1").unwrap();
+        assert!(doc.events.iter().any(|e|e.kind=="name"&&e.start==start));
+        let record=&doc.exclusions.entries[&("product",start,start+4)];
+        assert_eq!(record.products.get("pgt"),Some(&true));
+        assert_eq!(record.disposition,Some(CandidateDisposition::CompetingType));
+        assert!(record.selected.is_none());
+        assert!(!doc.exclusions.excludes("product",start,start+4));
+        let result=assign_document(doc,&state,None).unwrap();
+        assert_eq!(result["recipients"][0]["name"],"GT-1");
+        assert_eq!(result["recipients"][0]["items"].as_array().unwrap().len(),1);
+        assert_eq!(result["recipients"][0]["items"][0]["productId"],"p709");
+    }
+    #[test]
+    fn explicitly_labelled_name_does_not_create_competing_product_identity(){
+        let state=state();
+        let raw="수취인: GT-1\n010-0000-0001\n709 1개";
+        let doc=extract_document(raw,&state,None);
+        let start=raw.find("GT-1").unwrap();
+        assert!(!doc.exclusions.entries.contains_key(&("product",start,start+4)));
+        let result=assign_document(doc,&state,None).unwrap();
+        assert_eq!(result["recipients"][0]["name"],"GT-1");
+    }
+    #[test]
+    fn sender_scope_resumes_only_at_explicit_receiving_label(){
+        let raw="송하인: 가상상호\n이름: 가상송하인\n7개\n수취인: 김가상 010-0000-0001\n709 1개";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        assert!(doc.events.iter().all(|e|e.value!="가상송하인"&&!(e.kind=="quantity"&&e.value=="7")));
+        let result=assign_document(doc,&state,None).unwrap();
+        assert_eq!(result["recipients"][0]["name"],"김가상");
+        assert_eq!(result["recipients"][0]["items"][0]["quantity"],1);
+    }
+    #[test]
+    fn table_quantity_discovery_preserves_all_numeric_columns_before_projection(){
+        let raw="1 | GT-1 | 2 | 3";
+        let state=state();
+        let cells=ts_semantics::table_quantity_candidates(raw);
+        assert_eq!(cells.iter().map(|&(_,a,b)|&raw[a..b]).collect::<Vec<_>>(),vec!["2","3"]);
+        let doc=extract_document(raw,&state,None);
+        let last=raw.rfind('3').unwrap();
+        assert_eq!(doc.exclusions.disposition("quantity",last,last+1),Some(CandidateDisposition::CompetingQuantity));
+        assert!(!doc.exclusions.excludes("quantity",last,last+1));
+        let result=assign_document(doc,&state,None).unwrap();
+        assert_eq!(result["recipients"][0]["items"][0]["quantity"],2);
+    }
+    #[test]
+    fn sale_unit_validation_retains_excluded_span_without_an_order_quantity(){
+        let raw="GT-1 2개 구성";
+        let mut state=state();
+        let product=state["products"].as_array_mut().unwrap().iter_mut()
+            .find(|p|p["id"]=="pgt").unwrap();
+        product["sellingUnit"]=json!("2개 구성");
+        product["variants"][0]["option"]=json!("2개 구성");
+        let mut candidates=CommonCandidates::default();
+        let mut quantities=quantity::extract(raw);
+        let q=quantities[0].clone();
+        let _=candidates.register(raw,"quantity",q.start,q.end);
+        validate_sale_unit_quantity(raw,raw,0,&state,&json!({"productId":"pgt"}),&mut quantities,&mut candidates);
+        assert!(quantities.is_empty());
+        assert_eq!(candidates.disposition("quantity",q.start,q.end),Some(CandidateDisposition::SaleUnit));
+        assert!(candidates.excludes("quantity",q.start,q.end));
+        assert!(candidates.entries[&("quantity",q.start,q.end)].selected.is_none());
+    }
+    #[test]
+    fn table_quantity_policy_preserves_unused_explicit_quantity_candidate(){
+        let raw="709 | 2 | 3개";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        let start=raw.find("3개").unwrap();
+        assert_eq!(doc.exclusions.disposition("quantity",start,raw.len()),
+            Some(CandidateDisposition::CompetingQuantity));
+        assert!(!doc.exclusions.excludes("quantity",start,raw.len()));
+        let result=assign_document(doc,&state,None).unwrap();
+        assert_eq!(result["recipients"][0]["items"][0]["quantity"],2);
+    }
+    #[test]
+    fn pattern_identity_survives_soft_conflicts_without_authorizing_training(){
+        let raw="abcdefghijklmno";
+        let kinds=["name","mobile","product","name","mobile","product"];
+        let events=kinds.iter().enumerate().map(|(i,&kind)|Evidence{
+            kind,value:String::new(),start:i*2,end:i*2+1,line:i,paragraph:0,
+            reason:"synthetic",recipient:None,item_id:None
+        }).collect::<Vec<_>>();
+        let clean=DocumentFeatures::new(raw,&events,&[],&CommonCandidates::default()).pattern_identity();
+        let mut candidates=CommonCandidates::default();
+        candidates.record(raw,"segment",1,2,CandidateDisposition::UnclassifiedSegment);
+        candidates.record(raw,"name",4,5,CandidateDisposition::CompetingType);
+        let uncertain=DocumentFeatures::new(raw,&events,&[],&candidates).pattern_identity();
+        assert_eq!(clean["patternKey"],uncertain["patternKey"]);
+        assert_eq!(uncertain["status"],"provisional");
+        assert_eq!(uncertain["uncertaintyReasons"],json!(["competing_candidates","unclassified_segments"]));
+        assert_eq!(uncertain["learningEligible"],false);
+        assert!(uncertain["trainingKey"].is_null());
+        let incomplete=DocumentFeatures::new(raw,&events[..4],&[],&candidates).pattern_identity();
+        assert_eq!(incomplete["patternKey"],json!([3,"incomplete_role_cycle",["N","T","P"],["N"]]));
+        assert_ne!(incomplete["patternKey"],clean["patternKey"]);
+        candidates.truncated=true;
+        let unavailable=DocumentFeatures::new(raw,&events,&[],&candidates).pattern_identity();
+        assert!(unavailable["patternKey"].is_null());
+        assert_eq!(unavailable["unavailableReason"],"candidate_budget_exceeded");
+    }
+    #[test]
+    fn lightweight_pattern_projection_matches_detailed_projection(){
+        let raw="수취인: 김가상\n010-0000-0001\n709 1개";
+        let state=state();
+        let plain=execute("analyze_order",json!({"raw":raw,"state":state})).unwrap();
+        let mut lightweight=execute("analyze_order",json!({"raw":raw,"state":state,"includePatternIdentity":true})).unwrap();
+        let full=execute("analyze_order",json!({"raw":raw,"state":state,"includeDocumentFeatures":true})).unwrap();
+        assert_eq!(lightweight["patternIdentity"],full["documentFeatures"]["patternIdentity"]);
+        lightweight.as_object_mut().unwrap().remove("patternIdentity");
+        assert_eq!(plain,lightweight);
+    }
+    #[test]
+    fn document_features_reuse_order_and_normalize_item_counts(){
+        // Build synthetic source roles to isolate feature behavior from
+        // legacy field gates. No real order values are used.
+        let kinds=["name","mobile","product","quantity","product","quantity",
+                   "name","phone","product","quantity"];
+        let events=kinds.iter().enumerate().map(|(i,&kind)|Evidence{
+            kind,value:String::new(),start:i*3,end:i*3+1,line:i,paragraph:usize::from(i>=6),
+            reason:"synthetic",recipient:None,item_id:None
+        }).collect::<Vec<_>>();
+        let raw="x".repeat(kinds.len()*3);
+        let geometry=SourceGeometry::new(&raw);
+        let features=DocumentFeatures::new(&raw,&events,&[],&CommonCandidates::default());
+        assert_eq!(features.anchors,vec![0,6]);
+        assert_eq!(features.roles,vec!["N","T","P","N","T","P"]);
+        assert_eq!(features.exact_repeat,2);
+        assert_eq!(features.period,3);
+        assert_eq!(features.relation(&events,6,1),(-5,-5,false));
+        let eval=features.evaluation(&events,&geometry);
+        assert_eq!(eval["evaluationKey"],json!([2,["N","T","P"]]));
+        assert!(eval["trainingKey"].is_null());
+        let incomplete=DocumentFeatures::new(&raw,&events[..7],&[],&CommonCandidates::default());
+        assert_eq!(incomplete.incomplete_tail,1);
+        assert_eq!(incomplete.exact_repeat,0);
+        let mut uncertain=CommonCandidates::default();
+        uncertain.truncated=true;
+        assert!(DocumentFeatures::new(&raw,&events,&[],&uncertain).evaluation(&events,&geometry)["evaluationKey"].is_null());
+        assert!(incomplete.evaluation(&events[..7],&geometry)["evaluationKey"].is_null());
+        assert_eq!(near_role_block(&["N","T","A"],&["N","A","T"]),"adjacent_swap");
+        assert_eq!(near_role_block(&["N","T"],&["N","A","T"]),"one_extra");
+        assert_eq!(near_role_block(&["N","A","T"],&["N","T"]),"one_missing");
+    }
+    #[test]
+    fn common_and_per_recipient_goods_do_not_share_individual_pattern_identity(){
+        let kinds=["name","mobile","product","quantity","product","quantity"];
+        let events=kinds.iter().enumerate().map(|(i,&kind)|Evidence{
+            kind,value:String::new(),start:i*3,end:i*3+1,line:i,paragraph:0,
+            reason:"synthetic",recipient:None,item_id:None
+        }).collect::<Vec<_>>();
+        let raw="x".repeat(kinds.len()*3);
+        let geometry=SourceGeometry::new(&raw);
+        let deferred=CommonCandidates::default();
+        let make_hit=|evidence:usize,common:bool,each:bool|ProductHit{
+            evidence,source_start:events[evidence].start,line:events[evidence].line,
+            raw:String::new(),decision:Value::Null,
+            quantities:vec![evidence+1],common,each
+        };
+        let ordinary=DocumentFeatures::new(&raw,&events,&[],&deferred);
+        let common=DocumentFeatures::new(&raw,&events,&[make_hit(2,true,false),make_hit(4,true,false)],&deferred);
+        let each=DocumentFeatures::new(&raw,&events,&[make_hit(2,true,true),make_hit(4,true,true)],&deferred);
+        assert_eq!(ordinary.roles,vec!["N","T","P"]);
+        assert_eq!(common.roles,vec!["N","T","C"]);
+        assert_eq!(each.roles,vec!["N","T","E"]);
+        let key=|f:&DocumentFeatures|f.evaluation(&events,&geometry)["evaluationKey"].clone();
+        assert_ne!(key(&ordinary),key(&common));
+        assert_ne!(key(&common),key(&each));
+        assert_ne!(key(&ordinary),key(&each));
+        let fewer=DocumentFeatures::new(&raw,&events[..4],&[],&deferred);
+        assert_eq!(key(&ordinary),fewer.evaluation(&events[..4],&geometry)["evaluationKey"]);
+        assert!(ordinary.partial_order.iter().any(|&(a,b,_)|a=="N"&&b=="T"));
+    }
+    #[test]
+    fn output_evidence_reuses_indexed_utf16_positions(){
+        let state=state();
+        let raw="수취인: 김가상😀\n010-0000-0001\n709(블랙) 2개";
+        let output=analyze(raw,&state,None).unwrap();
+        let units=raw.encode_utf16().collect::<Vec<_>>();
+        let candidates=output["candidates"].as_array().unwrap();
+        for e in candidates{
+            let a=e["start"].as_u64().unwrap() as usize;
+            let b=e["end"].as_u64().unwrap() as usize;
+            assert_eq!(e["text"],String::from_utf16(&units[a..b]).unwrap());
+        }
+        for row in output["recipients"].as_array().unwrap(){
+            for item in row["items"].as_array().unwrap(){
+                for e in item["sources"].as_array().unwrap(){
+                    let a=e["start"].as_u64().unwrap() as usize;
+                    let b=e["end"].as_u64().unwrap() as usize;
+                    assert_eq!(e["text"],String::from_utf16(&units[a..b]).unwrap());
+                }
+            }
+        }
+        assert!(candidates.windows(2).all(|w|w[0]["start"].as_u64()<=w[1]["start"].as_u64()));
+    }
+    #[test]
+    fn document_feature_character_positions_distinguish_utf16_and_scalar(){
+        let raw="😀N\nT";
+        let events=vec![
+            Evidence{kind:"name",value:"N".into(),start:4,end:5,line:0,paragraph:0,
+                reason:"synthetic",recipient:None,item_id:None},
+            Evidence{kind:"mobile",value:"T".into(),start:6,end:7,line:1,paragraph:0,
+                reason:"synthetic",recipient:None,item_id:None}
+        ];
+        let f=DocumentFeatures::new(raw,&events,&[],&CommonCandidates::default());
+        assert_eq!(f.positions,vec![[(1,2),(2,3)],[(3,4),(4,5)]]);
+        let e=f.evaluation(&events,&SourceGeometry::new(raw));
+        assert_eq!(e["relations"][0]["utf16Gap"],1);
+        assert_eq!(e["relations"][0]["signedLine"],1);
+        assert_eq!(e["observed"][0]["utf16Start"],2);
+    }
+    #[test]
+    fn partial_unclassified_fragments_preserve_only_uncovered_source(){
+        let raw="수취인: 김가상 XYZ";
+        let lines=physical_lines(raw);
+        let name=raw.find("김가상").unwrap();
+        let mut deferred=CommonCandidates::default();
+        retain_unclassified_fragments(raw,&lines,&HashSet::new(),
+            vec![(name,name+"김가상".len())],&mut deferred);
+        let start=raw.find("XYZ").unwrap();
+        assert_eq!(deferred.entries.len(),1);
+        assert_eq!(deferred.disposition("segment",start,raw.len()),
+            Some(CandidateDisposition::UnclassifiedSegment));
+    }
+    #[test]
+    fn unclassified_records_are_not_promoted_to_fields(){
+        let raw="ABCDEF";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        assert!(doc.events.is_empty());
+        assert_eq!(doc.exclusions.disposition("segment",0,raw.len()),
+            Some(CandidateDisposition::UnclassifiedSegment));
+        assert!(!doc.exclusions.excludes("segment",0,raw.len()));
+        let result=assign_document(doc,&state,None).unwrap();
+        assert_eq!(result["recipients"][0]["items"].as_array().unwrap().len(),0);
+    }
+    #[test]
+    fn excluded_source_candidates_retain_offsets_without_entering_assignment(){
+        let raw="김가상\n010-0000-0001\n709 1개\n송하인: 가상상호\n7개";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        assert!(!doc.exclusions.truncated);
+        let (&(kind,start,end),_)=doc.exclusions.entries.iter()
+            .find(|(_,r)|r.disposition==Some(CandidateDisposition::SenderSection)).unwrap();
+        assert_eq!(&raw[start..end],"7개");
+        assert_eq!(kind,"quantity");
+        assert!(doc.events.iter().all(|e|!doc.exclusions.excludes(e.kind,e.start,e.end)));
+        let output=assign_document(doc,&state,None).unwrap();
+        assert_eq!(output["recipients"][0]["items"][0]["quantity"],1);
+    }
+    #[test]
+    fn sender_quantity_does_not_become_recipient_evidence(){
+        let raw="김가상\n010-0000-0001\n709 1개\n송하인: 가상상호\n7개";
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        assert_eq!(result["recipients"][0]["items"][0]["quantity"],1);
+        assert!(!result["candidates"].as_array().unwrap().iter().any(|e|e["kind"]=="quantity"&&e["value"]=="7"));
     }
     #[test]
     fn content_blank_and_whitespace_only_lines_are_distinct_evidence() {
@@ -1835,6 +3540,50 @@ mod tests {
         assert_eq!(rows.len(),2);
         assert_eq!(rows[0]["mobile"],"010-1234-5678");
         assert_eq!(rows[1]["mobile"],"010-2345-6789");
+    }
+    #[test]
+    fn empty_memo_heading_does_not_create_zero_length_source(){
+        let state=state();
+        for ending in ["", "\n송하인: 가상상호\n010-0000-0002",
+                       "\n\n배송메모:"]{
+            let raw=format!("수취인: 김가상\n010-0000-0001\n709 1개\n배송메모 :{ending}");
+            let result=analyze(&raw,&state,None).unwrap();
+            assert_eq!(result["recipients"][0]["note"],"");
+            assert!(result["candidates"].as_array().unwrap().iter().all(|e|
+                e["kind"]!="note"&&e["start"].as_u64()<e["end"].as_u64()));
+            assert!(result["recipients"][0]["sources"].as_array().unwrap().iter().all(|e|
+                e["start"].as_u64()<e["end"].as_u64()));
+        }
+    }
+    #[test]
+    fn ignored_document_rows_terminate_memo_continuation(){
+        let state=state();
+        for heading in ["배송메모 : 문 앞에 놓아주세요", "배송메모 :"] {
+            for boundary in ["합계: 100,000원", "발주일: 2026-11-27", "감사합니다"] {
+                assert!(is_money_or_header(boundary));
+                let raw=format!("수취인: 김가상\n010-0000-0001\n709 1개\n{heading}\n{boundary}\n경비실에 맡겨주세요");
+                let document=extract_document(&raw,&state,None);
+                let notes=document.events.iter().filter(|e|e.kind=="note").collect::<Vec<_>>();
+                if heading.ends_with(':'){
+                    assert!(notes.is_empty());
+                }else{
+                    assert_eq!(notes.len(),1);
+                    assert_eq!(notes[0].value,"문 앞에 놓아주세요");
+                    assert_eq!(&raw[notes[0].start..notes[0].end],"문 앞에 놓아주세요");
+                }
+            }
+        }
+    }
+    #[test]
+    fn empty_memo_heading_can_still_accept_continuation(){
+        let raw="수취인: 김가상\n010-0000-0001\n709 1개\n배송메모 :\n문 앞에 놓아주세요";
+        let result=analyze(raw,&state(),None).unwrap();
+        assert_eq!(result["recipients"][0]["note"],"문 앞에 놓아주세요");
+        let notes=result["candidates"].as_array().unwrap().iter()
+            .filter(|e|e["kind"]=="note").collect::<Vec<_>>();
+        assert_eq!(notes.len(),1);
+        assert_eq!(notes[0]["text"],"문 앞에 놓아주세요");
+        assert!(notes[0]["start"].as_u64()<notes[0]["end"].as_u64());
     }
     #[test]
     fn shipping_memo_label_must_not_swallow_next_recipient_address(){

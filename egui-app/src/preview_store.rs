@@ -823,6 +823,20 @@ fn query_reception_audit_page(conn:&Connection,query:&Value)->Result<Value,Strin
     let order_id=query.get("orderId").and_then(Value::as_str);
     let client_id=query.get("clientId").and_then(Value::as_str);
     let since=query.get("since").and_then(Value::as_str);
+    // Exact observed-pattern partition, never a general fallback. This
+    // selects evidence for later reconciliation; it does not authorize it.
+    let pattern=query.get("patternKey").filter(|v|!v.is_null()).map(|v|{
+        let key=v.as_array().ok_or_else(||"작성 패턴 키 형식 오류".to_owned())?;
+        let role_list=|v:&Value|v.as_array().is_some_and(|roles|!roles.is_empty()
+            &&roles.len()<=4096&&roles.iter().all(|r|matches!(r.as_str(),Some("N"|"T"|"A"|"P"|"Q"|"C"|"E"))));
+        let valid=match key.get(1).and_then(Value::as_str){
+            Some("role_cycle")=>key.len()==3&&role_list(&key[2]),
+            Some("incomplete_role_cycle")=>key.len()==4&&role_list(&key[2])&&role_list(&key[3]),
+            _=>false,
+        };
+        if key.first()!=Some(&json!(3))||!valid{return Err("지원하지 않는 작성 패턴 키".to_owned());}
+        Ok(v.to_string())
+    }).transpose()?;
     let cursor=query.get("cursor").filter(|v|!v.is_null());
     let (at,id)=if let Some(c)=cursor{
         (Some(c["at"].as_str().filter(|v|!v.is_empty()).ok_or("감사 조회 커서 시각 오류")?),
@@ -839,9 +853,11 @@ fn query_reception_audit_page(conn:&Connection,query:&Value)->Result<Value,Strin
           AND (?2 IS NULL OR json_extract({context},'$.clientId')=?2)
           AND (?3 IS NULL OR recorded_at>=?3)
           AND (?4 IS NULL OR (recorded_at,id)>(?4,?5))
+          AND (?7 IS NULL OR (CASE WHEN json_valid(initial_analysis_json)
+            THEN json_extract(initial_analysis_json,'$.patternIdentity.patternKey') END)=?7)
         ORDER BY recorded_at,id LIMIT ?6");
     let mut stmt=conn.prepare(&sql).map_err(|e|e.to_string())?;
-    let records=stmt.query_map(params![order_id,client_id,since,at,id,(limit+1) as i64],|r|Ok((
+    let records=stmt.query_map(params![order_id,client_id,since,at,id,(limit+1) as i64,pattern],|r|Ok((
         r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,
         r.get::<_,String>(3)?,r.get::<_,String>(4)?,r.get::<_,String>(5)?,
         r.get::<_,String>(6)?,r.get::<_,Option<String>>(7)?
@@ -1159,6 +1175,29 @@ mod ocr_layout_tests {
 mod reception_edit_audit_tests {
     use super::*;
 
+    #[test]
+    fn correction_query_partitions_observed_patterns_before_page_limit(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE reception_edit_audit(
+            id TEXT PRIMARY KEY,order_id TEXT,source_raw TEXT,initial_analysis_json TEXT,
+            before_rows_json TEXT,after_rows_json TEXT,recorded_at TEXT,context_json TEXT);").unwrap();
+        let a=json!([3,"role_cycle",["N","T","P"]]);
+        let b=json!([3,"role_cycle",["P","N","T"]]);
+        for (id,pattern) in [("a",a.clone()),("b",b.clone()),("c",a.clone()),("d",Value::Null)]{
+            let initial=json!({"patternIdentity":{"identityVersion":3,"patternKey":pattern,"learningEligible":false}});
+            conn.execute("INSERT INTO reception_edit_audit VALUES(?1,?1,'synthetic',?2,'[]','[]','2026-11-01',NULL)",
+                params![id,initial.to_string()]).unwrap();
+        }
+        let first=query_reception_audit_page(&conn,&json!({"limit":1,"patternKey":a})).unwrap();
+        assert_eq!(first["events"][0]["id"],"a");
+        let second=query_reception_audit_page(&conn,&json!({"limit":1,"patternKey":a,"cursor":first["nextCursor"]})).unwrap();
+        assert_eq!(second["events"][0]["id"],"c");
+        assert!(second["nextCursor"].is_null());
+        let other=query_reception_audit_page(&conn,&json!({"patternKey":b})).unwrap();
+        assert_eq!(other["events"].as_array().unwrap().len(),1);
+        assert_eq!(other["events"][0]["id"],"b");
+        assert!(query_reception_audit_page(&conn,&json!({"patternKey":[2,["N","T","P"]]})).is_err());
+    }
     #[test]
     fn correction_query_pages_and_filters_without_inventing_legacy_context(){
         let conn=Connection::open_in_memory().unwrap();

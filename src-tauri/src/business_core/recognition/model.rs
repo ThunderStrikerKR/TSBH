@@ -3,6 +3,15 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 
+// Exact evidence collected before the name ranking and business filters.
+// These are hypotheses, not permission to select a SKU. Keep the source
+// span relative to the original search slice and distinguish aliases.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct SourceCandidate {
+    pub(super) product_id:String,
+    pub(super) span:(usize,usize),
+    pub(super) literal:bool,
+}
 #[derive(Clone, Debug)]
 pub(crate) struct Decision {
     pub(crate) product_id: Option<String>,
@@ -16,6 +25,8 @@ pub(crate) struct Decision {
     pub(crate) candidates: Vec<Value>,
     pub(crate) alias_id: Option<String>,
     pub(crate) span: Option<(usize, usize)>,
+    pub(super) source_candidates:Vec<SourceCandidate>,
+    pub(super) source_truncated:bool,
 }
 
 fn str_field<'a>(v: &'a Value, name: &str) -> &'a str {
@@ -124,6 +135,12 @@ fn spell(term: &str, is_model: bool) -> String {
     result
 }
 pub(crate) fn find_term(text: &str, term: &str, is_model: bool) -> Option<(usize, usize)> {
+    visit_term(text,term,is_model,|_|false)
+}
+// Reuse exactly the same compiled matcher and token boundary for the
+// legacy first choice and all retained occurrence hypotheses.
+fn visit_term(text:&str,term:&str,is_model:bool,
+    mut visit:impl FnMut((usize,usize))->bool)->Option<(usize,usize)>{
     if term.trim().is_empty() { return None; }
     // A full product catalog scan repeats the same registered model patterns
     // hundreds of times. Cache the compiled *identical* regex so this changes
@@ -142,9 +159,13 @@ pub(crate) fn find_term(text: &str, term: &str, is_model: bool) -> Option<(usize
             compiled
         }
     };
-    let found=re.find_iter(text).find(|m| is_boundary(text,m.start(),m.end()))
-        .map(|m|(m.start(),m.end()));
-    found
+    let mut first=None;
+    for m in re.find_iter(text).filter(|m|is_boundary(text,m.start(),m.end())){
+        let span=(m.start(),m.end());
+        first.get_or_insert(span);
+        if !visit(span){break;}
+    }
+    first
 }
 pub(crate) fn model_names(p: &Value) -> Vec<String> {
     let name = lead(p);
@@ -360,24 +381,48 @@ fn terms(p: &Value) -> Vec<(String, u8, bool)> {
 }
 #[derive(Clone)]
 struct Entry<'a> { p: &'a Value, priority: u8, span: (usize, usize) }
-fn evidence<'a>(text: &str, p: &'a Value, verified: &HashSet<String>) -> Option<Entry<'a>> {
-    for (term, priority, model) in terms(p) {
-        if let Some(span) = find_term(text, &term, model) {
-            return Some(Entry { p, priority, span });
-        }
+// Keep one bounded collection for the current search, with no secondary
+// catalog traversal. Duplicate terms for the same product/span are not
+// separate evidence. If the budget is reached the legacy decision still
+// obtains its first match; only completeness of the raw pool is lost.
+const SOURCE_CANDIDATE_LIMIT:usize=4096;
+fn retain_occurrence(pool:&mut Vec<SourceCandidate>,truncated:&mut bool,
+    seen:&mut HashSet<(usize,usize)>,id:&str,span:(usize,usize),literal:bool)->bool{
+    if !seen.insert(span){return true;}
+    if pool.len()>=SOURCE_CANDIDATE_LIMIT{
+        *truncated=true;return false;
     }
+    pool.push(SourceCandidate{product_id:id.to_owned(),span,literal});
+    true
+}
+fn evidence<'a>(text: &str, p: &'a Value, verified: &HashSet<String>,
+    pool:&mut Vec<SourceCandidate>,truncated:&mut bool,registered_model:&mut bool) -> Option<Entry<'a>> {
+    let mut selected=None;
+    let mut seen=HashSet::new();
+    let id=str_field(p,"id");
+    for (term, priority, model) in terms(p) {
+        let first=visit_term(text,&term,model,|span|
+            retain_occurrence(pool,truncated,&mut seen,id,span,true));
+        if model&&first.is_some(){*registered_model=true;}
+        if selected.is_none(){
+            if let Some(span)=first{selected=Some(Entry{p,priority,span});}
+        }
+        if *truncated&&selected.is_some(){break;}
+    }
+    if selected.is_some(){return selected;}
     if let Some((base, _, _)) = score_model(p) {
         if (verified.contains(&base) && ((no_holes(text) && top(p, verified) == Some("UNPERFORATED"))
             || (!no_holes(text) && top(p, verified) == Some("PERFORATED"))))
             || (no_holes(text) && top(p, verified) == Some("UNPERFORATED")) {
-            if let Some(span) = find_term(text, &base, true) {
-                return Some(Entry { p, priority: 2, span });
+            if let Some(span)=visit_term(text,&base,true,|span|
+                retain_occurrence(pool,truncated,&mut seen,id,span,true)){
+                return Some(Entry{p,priority:2,span});
             }
         }
     }
     None
 }
-fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
+fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>,source:&[SourceCandidate],truncated:bool) -> Vec<Entry<'a>> {
     if entries.is_empty() { return entries; }
     let priority = entries.iter().map(|e| e.priority).max().unwrap_or(0);
     let mut xs: Vec<_> = entries.into_iter().filter(|e| e.priority == priority).collect();
@@ -391,12 +436,33 @@ fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
         let max = xs.iter().map(|e| option_score(text, e.p)).max().unwrap_or(0);
         if max > 0 { xs.retain(|e| option_score(text, e.p) == max); }
     }
-    if priority == 1 && xs.len() > 1 { return vec![]; }
+    if priority == 1 && xs.len() > 1 {
+        // Weak descriptive names may be nested in a more specific phrase.
+        // Do not choose between separate occurrences (possibly two items),
+        // equally specific descriptions, or incompatible explicit options.
+        let proof=qualifiers(text);
+        if truncated||!proof.is_empty()||written_color(text).is_some(){return vec![];}
+        let size=|e:&Entry<'_>|text[e.span.0..e.span.1].chars()
+            .filter(|c|!c.is_whitespace()).count();
+        let Some(best)=xs.iter().max_by_key(|e|size(e))else{return vec![];};
+        let best_size=size(best);
+        let score=|e:&Entry<'_>|100*size(e) as i64/best_size.max(1) as i64;
+        let wins=xs.iter().filter(|e|str_field(e.p,"id")!=str_field(best.p,"id"))
+            .all(|e|best.span.0<=e.span.0&&e.span.1<=best.span.1
+                &&best_size.saturating_sub(size(e))>=3
+                &&super::exceeds_margin(score(best),score(e),20));
+        // Entry carries the first hit only. Check all previously retained
+        // occurrences of these competing identities for a separate item.
+        let separate=source.iter().any(|c|c.literal
+            &&xs.iter().any(|e|str_field(e.p,"id")==c.product_id)
+            &&(c.span.0<best.span.0||c.span.1>best.span.1));
+        if wins&&!separate{return vec![(*best).clone()];}
+        return vec![];
+    }
     xs
 }
-fn name_entries<'a>(text: &str, ps: &[&'a Value],
-    verified: &HashSet<String>) -> Vec<Entry<'a>> {
-    let mut entries: Vec<_> = ps.iter().filter_map(|p| evidence(text, p, verified)).collect();
+fn name_entries<'a>(text: &str, mut entries:Vec<Entry<'a>>,
+    verified: &HashSet<String>,source:&[SourceCandidate],truncated:bool) -> Vec<Entry<'a>> {
     if no_holes(text) {
         entries.retain(|e| top(e.p, verified) != Some("PERFORATED"));
     } else if with_holes(text) {
@@ -423,30 +489,35 @@ fn name_entries<'a>(text: &str, ps: &[&'a Value],
                             .cloned().collect();
                         if defaults.is_empty() { family } else { defaults }
                     };
-                    return strongest(text, selected);
+                    return strongest(text, selected,source,truncated);
                 }
             }
         }
     }
-    strongest(text, entries)
+    strongest(text, entries,source,truncated)
 }
 fn alias_entries<'a>(text: &str, state: &'a Value, client_id: &str,
-    ps: &[&'a Value]) -> Vec<(&'a Value, &'a Value)> {
-    let mut aliases: Vec<&Value> = state.get("aliases").and_then(Value::as_array)
-        .map(|xs| xs.iter().filter(|a| {
-            let scope = a.get("clientId").and_then(Value::as_str);
-            (scope.is_none() || scope == Some(client_id)) &&
-                !generic(str_field(a,"text")) &&
-                find_term(text, str_field(a,"text"), true).is_some()
-        }).collect()).unwrap_or_default();
-    aliases.sort_by(|a,b| {
+    ps: &[&'a Value],pool:&mut Vec<SourceCandidate>,truncated:&mut bool
+) -> Vec<(&'a Value, &'a Value,(usize,usize))> {
+    let mut seen=HashMap::<&str,HashSet<(usize,usize)>>::new();
+    let mut aliases=Vec::new();
+    for a in state.get("aliases").and_then(Value::as_array).into_iter().flatten(){
+        let scope=a.get("clientId").and_then(Value::as_str);
+        if !(scope.is_none()||scope==Some(client_id))||generic(str_field(a,"text")){continue;}
+        let id=str_field(a,"productId");
+        let Some(&p)=ps.iter().find(|p|str_field(p,"id")==id)else{continue;};
+        let positions=seen.entry(id).or_default();
+        if let Some(span)=visit_term(text,str_field(a,"text"),true,|span|
+            retain_occurrence(pool,truncated,positions,id,span,false)){
+            aliases.push((a,p,span));
+        }
+    }
+    aliases.sort_by(|(a,_,_),(b,_,_)|{
         b.get("clientId").and_then(Value::as_str).is_some()
             .cmp(&a.get("clientId").and_then(Value::as_str).is_some())
-            .then_with(|| str_field(b,"text").len().cmp(&str_field(a,"text").len()))
+            .then_with(||str_field(b,"text").len().cmp(&str_field(a,"text").len()))
     });
-    aliases.into_iter().filter_map(|a| ps.iter()
-        .find(|p| str_field(p,"id") == str_field(a,"productId"))
-        .map(|p| (a,*p))).collect()
+    aliases
 }
 // Vocabulary-level normalization, not a learned guess. An unambiguous
 // conductor's score stand is described as "지휘용 악보 스탠드" in customer
@@ -470,14 +541,49 @@ fn conductor_semantic_entries<'a>(text: &str, ps: &[&'a Value]) -> Vec<Entry<'a>
             && str_field(p,"name").contains("보면대"))
         .map(|p|Entry{p,priority:1,span:(m.start(),m.end())}).collect()
 }
-pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
-    let ps = products(state);
-    let verified = verified_bases(&ps);
-    let entries = name_entries(text, &ps, &verified);
+// The original catalog matcher remains the only source of literal and
+// alias hypotheses. This batch is independent of a selected product.
+pub(super) struct ProductHypotheses<'a>{
+    ps:Vec<&'a Value>,
+    verified:HashSet<String>,
+    raw_entries:Vec<Entry<'a>>,
+    aliases:Vec<(&'a Value,&'a Value,(usize,usize))>,
+    literal_count:usize,
+    literal_truncated:bool,
+    pub(super) registered_model:bool,
+    pub(super) source_candidates:Vec<SourceCandidate>,
+    pub(super) source_truncated:bool,
+}
+pub(super) fn collect<'a>(text:&str,state:&'a Value,client_id:&str)->ProductHypotheses<'a>{
+    let ps=products(state);
+    let verified=verified_bases(&ps);
+    let mut source_candidates=Vec::new();
+    let mut source_truncated=false;
+    let mut registered_model=false;
+    let raw_entries=ps.iter().filter_map(|p|
+        evidence(text,p,&verified,&mut source_candidates,&mut source_truncated,&mut registered_model)).collect();
+    // Only a truncated scan can omit a later literal model term.
+    if source_truncated&&!registered_model{
+        registered_model=ps.iter().any(|p|model_names(p).iter()
+            .any(|name|find_term(text,name,true).is_some()));
+    }
+    // Preserve the original literal-only rank input and budget. Aliases
+    // are collected before ranking but must not change literal ranking.
+    let literal_count=source_candidates.len();
+    let literal_truncated=source_truncated;
+    let aliases=alias_entries(text,state,client_id,&ps,&mut source_candidates,&mut source_truncated);
+    ProductHypotheses{ps,verified,raw_entries,aliases,literal_count,literal_truncated,
+        registered_model,source_candidates,source_truncated}
+}
+pub(crate) fn decide(text:&str,state:&Value,client_id:&str)->Decision{
+    evaluate(text,state,collect(text,state,client_id))
+}
+pub(super) fn evaluate<'a>(text:&str,state:&'a Value,hypotheses:ProductHypotheses<'a>)->Decision{
+    let ProductHypotheses{ps,verified,raw_entries,aliases,literal_count,literal_truncated,
+        registered_model:_,source_candidates,source_truncated}=hypotheses;
+    let entries=name_entries(text,raw_entries,&verified,&source_candidates[..literal_count],literal_truncated);
     // parser.ts:487-510 filters brand/catalog and DEMO before options.
-    let (mut entries,known_brand) =
-        filter_business_candidates(text,state,&ps,entries);
-    let aliases = alias_entries(text, state, client_id, &ps);
+    let (mut entries,known_brand)=filter_business_candidates(text,state,&ps,entries);
     let mut hint=code_color_hint(text,&ps);
     if let Some((base,_,term))=hint.clone() {
         // parser.ts::protectedCode guards against reinterpreting the final
@@ -528,14 +634,13 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
     let proof = qualifiers(text);
     entries.retain(|e| qualifies(e.p, &proof, &verified));
     let code_entries = entries.clone();
-    let first_alias = aliases.first().map(|(a,_)| *a);
+    let first_alias = aliases.first().map(|(a,_,_)| *a);
     if entries.is_empty() {
-        if let Some((_,p)) = aliases.first() {
+        if let Some((_,p,span)) = aliases.first() {
             if qualifies(p, &proof, &verified) {
                 entries = vec![Entry {
                     p, priority: 1,
-                    span: find_term(text, str_field(first_alias.unwrap(), "text"), true)
-                        .unwrap_or((0, text.len())),
+                    span:*span,
                 }];
             }
         }
@@ -561,12 +666,12 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
             .cloned().collect()
     } else { code_entries.clone() };
     let alias_conflict = (!exact.is_empty() && aliases.iter()
-            .any(|(_,p)| !exact.iter().any(|e| str_field(e.p,"id") == str_field(p,"id"))))
+            .any(|(_,p,_)| !exact.iter().any(|e| str_field(e.p,"id") == str_field(p,"id"))))
         || (exact.is_empty() && {
             let priority = first_alias.and_then(|a| a.get("clientId").and_then(Value::as_str)).is_some();
-            let ids: HashSet<_> = aliases.iter().filter(|(a,_)|
+            let ids: HashSet<_> = aliases.iter().filter(|(a,_,_)|
                 a.get("clientId").and_then(Value::as_str).is_some() == priority)
-                .map(|(_,p)| str_field(p,"id")).collect();
+                .map(|(_,p,_)| str_field(p,"id")).collect();
             ids.len() > 1
         });
     let category_mismatch = chosen.as_ref().map_or(false, |pick| {
@@ -578,7 +683,7 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
     let broad = category(text).is_some() && code_entries.is_empty() && aliases.is_empty();
     let mut available = if alias_conflict {
         let mut seen = HashSet::new();
-        exact.iter().map(|e| e.p).chain(aliases.iter().map(|(_,p)| *p))
+        exact.iter().map(|e| e.p).chain(aliases.iter().map(|(_,p,_)| *p))
             .filter(|p| seen.insert(str_field(p,"id")))
             .map(|p| Entry {
                 p, priority: 0, span: find_term(text, lead(p), true).unwrap_or((0,text.len()))
@@ -650,6 +755,7 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
                 .unwrap_or_else(|| text.to_owned())),
         reason, candidates, alias_id: first_alias.map(|a|str_field(a,"id").to_owned()),
         span,
+        source_candidates,source_truncated,
     }
 }
 pub(crate) fn decision_json(decision: &Decision) -> Value {
@@ -670,6 +776,62 @@ pub(crate) fn decision_json(decision: &Decision) -> Value {
 #[cfg(test)]
 mod option_boundary_tests {
     use super::*;
+    #[test]
+    fn discovery_keeps_literal_and_alias_hypotheses_before_selection(){
+        let state=json!({"products":[
+            {"id":"a","name":"GT-1","variants":[]},
+            {"id":"b","name":"GT-2","variants":[]}
+        ],"aliases":[{"id":"alias","text":"GT-1","productId":"b"}]});
+        let text="GT-1 2개";
+        let batch=collect(text,&state,"");
+        assert!(batch.source_candidates.iter().any(|c|c.product_id=="a"&&c.literal));
+        assert!(batch.source_candidates.iter().any(|c|c.product_id=="b"&&!c.literal));
+        assert!(!batch.source_truncated);
+        let expected=decision_json(&decide(text,&state,""));
+        let decision=evaluate(text,&state,batch);
+        assert_eq!(decision_json(&decision),expected);
+        assert_eq!(decision.kind,"CONFLICT");
+        assert!(decision.product_id.is_none());
+    }
+    #[test]
+    fn descriptive_product_rank_requires_nested_and_distinct_evidence(){
+        let a=json!({"id":"a","name":"A / 접이식 탁상용 기타 스탠드"});
+        let b=json!({"id":"b","name":"B / 탁상용 기타 스탠드"});
+        let text="접이식 탁상용 기타 스탠드";
+        let short=text.find("탁상용").unwrap();
+        let entries=vec![Entry{p:&a,priority:1,span:(0,text.len())},
+            Entry{p:&b,priority:1,span:(short,text.len())}];
+        let ranked=strongest(text,entries,&[],false);
+        assert_eq!(ranked.len(),1);
+        assert_eq!(str_field(ranked[0].p,"id"),"a");
+        let tied=vec![Entry{p:&a,priority:1,span:(0,text.len())},
+            Entry{p:&b,priority:1,span:(0,text.len())}];
+        assert!(strongest(text,tied,&[],false).is_empty());
+        let disjoint="접이식 탁상용 기타 스탠드 / 탁상용 기타 스탠드";
+        let other=disjoint.rfind("탁상용").unwrap();
+        let separate=vec![Entry{p:&a,priority:1,span:(0,text.len())},
+            Entry{p:&b,priority:1,span:(other,disjoint.len())}];
+        assert!(strongest(disjoint,separate,&[],false).is_empty());
+        let first_hits=vec![Entry{p:&a,priority:1,span:(0,text.len())},
+            Entry{p:&b,priority:1,span:(short,text.len())}];
+        let all_hits=vec![SourceCandidate{product_id:"b".into(),span:(other,disjoint.len()),literal:true}];
+        assert!(strongest(disjoint,first_hits.clone(),&all_hits,false).is_empty());
+        assert!(strongest(disjoint,first_hits,&[],true).is_empty());
+    }
+    #[test]
+    fn retained_term_occurrences_share_first_match_boundary(){
+        let text="709 709 7090 709";
+        let mut spans=Vec::new();
+        let first=visit_term(text,"709",true,|span|{spans.push(span);true});
+        assert_eq!(first,find_term(text,"709",true));
+        assert_eq!(spans,vec![(0,3),(4,7),(13,16)]);
+        let state=json!({"products":[{"id":"p","name":"709","active":true}],"aliases":[]});
+        let decision=decide(text,&state,"");
+        let positions=decision.source_candidates.iter().filter(|c|c.product_id=="p"&&c.literal)
+            .map(|c|c.span).collect::<Vec<_>>();
+        assert_eq!(positions,spans);
+        assert!(!decision.source_truncated);
+    }
 
     #[test]
     fn type_evidence_cannot_bridge_model_code_boundary() {

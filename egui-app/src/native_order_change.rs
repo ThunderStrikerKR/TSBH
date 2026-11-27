@@ -30,6 +30,44 @@ pub struct ChangeResult {
     pub recognition: Option<Value>,
 }
 
+/// Attach the immutable first analysis only at explicit confirmation.
+/// The latest dealer-specific quote is not the original recognition.
+/// The existing order snapshot owns this data; no additional raw copy.
+pub(crate) fn attach_recognition_baseline(order:&mut Value,source:&WorkingReception){
+    if source.raw.trim().is_empty() ||
+        source.analysis_raw.as_deref()!=Some(source.raw.as_str()) ||
+        order.get("raw").and_then(Value::as_str)!=Some(source.raw.as_str()) ||
+        order.get("id").and_then(Value::as_str)!=Some(source.id.as_str()){
+        return;
+    }
+    let Some(first)=source.analysis_evidence.as_ref().filter(|v|
+        v["recipients"].is_array() && v["candidates"].is_array())
+    else{return;};
+    // Capture the exact accepted audit identities at confirmation. A
+    // later DB read cannot interpret missing rows as no user intervention.
+    let mut audit_ids=Vec::new();
+    let mut unique=std::collections::HashSet::new();
+    for event in &source.edit_history{
+        if event["sourceRaw"].as_str()!=Some(source.raw.as_str()){continue;}
+        // A correction on the same raw text but against a different first
+        // analysis must not be silently treated as an unchanged order.
+        if &event["initialAnalysis"]!=first{return;}
+        let Some(id)=event["id"].as_str().filter(|s|!s.trim().is_empty())else{return;};
+        if !unique.insert(id){return;}
+        audit_ids.push(event["id"].clone());
+    }
+    if let Some(object)=order.as_object_mut(){
+        object.insert("recognitionBaseline".into(),json!({
+            "schemaVersion":1,
+            "auditEventIds":audit_ids,
+            "initialAnalysis":first,
+            "sourceInputMethod":source.source_input_method,
+            "finalClientId":source.client_id,
+            "finalClientSelection":source.client_selection
+        }));
+    }
+}
+
 fn required<'a>(value:&'a Value,key:&str)->Result<&'a Value,String>{
     value.get(key).filter(|v|!v.is_null()).ok_or_else(||
         format!("Rust 주문 변경 결과에 {key}가 없습니다."))
@@ -471,6 +509,26 @@ mod manual_rebind_tests {
             edit_history:vec![]
         };
         let result=prepare(&PreviewGateway,&source,"new").unwrap();
+        let mut order=result.order.clone().unwrap();
+        attach_recognition_baseline(&mut order,&source);
+        assert_eq!(order["recognitionBaseline"]["initialAnalysis"],source.analysis_evidence.clone().unwrap());
+        assert_eq!(order["recognitionBaseline"]["auditEventIds"],json!([]));
+        let mut corrected=source.clone();
+        let initial=corrected.analysis_evidence.clone().unwrap();
+        corrected.edit_history.push(json!({"id":"edit-1","sourceRaw":"원문","initialAnalysis":initial}));
+        let mut order=result.order.clone().unwrap();
+        attach_recognition_baseline(&mut order,&corrected);
+        assert_eq!(order["recognitionBaseline"]["auditEventIds"],json!(["edit-1"]));
+        let duplicate=corrected.edit_history[0].clone();
+        corrected.edit_history.push(duplicate);
+        let mut order=result.order.clone().unwrap();
+        attach_recognition_baseline(&mut order,&corrected);
+        assert!(order.get("recognitionBaseline").is_none());
+        corrected.edit_history.pop();
+        corrected.edit_history[0]["initialAnalysis"]=json!({"recipients":[1],"candidates":[]});
+        let mut order=result.order.clone().unwrap();
+        attach_recognition_baseline(&mut order,&corrected);
+        assert!(order.get("recognitionBaseline").is_none());
         assert_eq!(result.order.as_ref().and_then(|order|order["id"].as_str()),
             Some("order-1"),"the explicit confirmation path needs the exact native Order");
         assert_eq!(result.recognition,Some(json!({

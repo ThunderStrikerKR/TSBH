@@ -82,23 +82,38 @@ pub(super) fn table_product_prefix(text: &str) -> &str {
 }
 
 /// From order-evidence.ts's product-quantity association, table fields.
-pub(super) fn table_quantity(text: &str, model_end: Option<usize>) -> Option<(i64,usize,usize)> {
-    let start = model_end.unwrap_or(0);
-    if start > text.len() || !text.is_char_boundary(start) { return None; }
-    let field = Regex::new(r"\|\s*([1-9]\d*)\s*(?:\||$)")
-        .expect("table quantity");
-    let m = field.captures(&text[start..])?.get(1)?;
-    Some((m.as_str().parse().ok()?,start+m.start(),start+m.end()))
+// Capture each pipe-bounded numeric cell once, including adjacent cells
+// that share a pipe. Retain the opening pipe for legacy column projection.
+pub(super) fn table_quantity_candidates(text:&str)->Vec<(usize,usize,usize)>{
+    static CELL:std::sync::OnceLock<Regex>=std::sync::OnceLock::new();
+    let re=CELL.get_or_init(||Regex::new(r"^\s*([1-9]\d*)\s*$").expect("table quantity"));
+    let mut previous=None;
+    let mut cells=Vec::new();
+    for end in text.match_indices('|').map(|(i,_)|i).chain(std::iter::once(text.len())){
+        if let Some(pipe)=previous{
+            let start=pipe+1;
+            if let Some(m)=re.captures(&text[start..end]).and_then(|c|c.get(1)){
+                cells.push((pipe,start+m.start(),start+m.end()));
+            }
+        }
+        previous=Some(end);
+    }
+    cells
+}
+pub(super) fn table_quantity(text:&str,model_end:Option<usize>,cells:&[(usize,usize,usize)])->Option<(i64,usize,usize)>{
+    let start=model_end.unwrap_or(0);
+    if start>text.len()||!text.is_char_boundary(start){return None;}
+    // Match historical first eligible cell, even if its numeric value
+    // overflows: do not silently promote a later column in that case.
+    let &(_,a,b)=cells.iter().find(|&&(pipe,_,_)|pipe>=start)?;
+    Some((text.get(a..b)?.parse().ok()?,a,b))
 }
 
 /// Direct port of parser.ts:102-149 (logicalLines): when a line contains
 /// a delivery address, its prefix is an order item only if a real registered
 /// model is present, or an unknown three-digit SKU also has an explicit
 /// quantity. Do not turn five-digit postal codes into fake SKUs.
-pub(super) fn model_before_address(prefix: &str, state: &serde_json::Value) -> bool {
-    let known=super::model::products(state).iter().any(|p|
-        super::model::model_names(p).iter()
-            .any(|name|super::model::find_term(prefix,name,true).is_some()));
+pub(super) fn model_before_address(prefix: &str, known:bool) -> bool {
     if known { return true; }
     let model=Regex::new(r"(?i)(?:BD\s*)?\d{3}[A-Za-z0-9-]*")
         .expect("legacy unknown model");
@@ -189,7 +204,7 @@ mod tests {
         let input="연주용의자 | BB-3 | EA | 1 | 여가상 / 0502-1234-5678";
         let prefix=table_product_prefix(input);
         assert!(input.starts_with(prefix));
-        let (value,start,end)=table_quantity(input,Some(input.find("BB-3").unwrap()+4)).unwrap();
+        let (value,start,end)=table_quantity(input,Some(input.find("BB-3").unwrap()+4),&table_quantity_candidates(input)).unwrap();
         assert_eq!(value,1);
         assert_eq!(&input[start..end],"1");
     }
