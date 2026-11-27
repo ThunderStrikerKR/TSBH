@@ -5,7 +5,6 @@ use crate::ui_primitives::{text_exceeds_rect,overflow_tooltip};
 use crate::input::{reception_recipient_text_edit,allocate_singleline_field,reception_recipient_value_hit,money_edit_text,reception_freight_money_readonly,money_unit_left,RECEPTION_MONEY_PENDING,RECEPTION_MONEY_UNIT_GAP};
 use crate::table::{management_table_data_width,reception_item_columns,reception_item_text_clip,paint_management_table_row_rule};
 use crate::scrollbar::{scroll_area,ScrollAxes};
-use crate::popup::{show_decision_window,decision_content};
 use crate::ui_layout::fixed_status_slot;
 use crate::checkbox::checkbox;
 use crate::dropdown::reception_cod_dropdown;
@@ -300,23 +299,18 @@ pub fn reception_message_copy_actions(ui:&mut Ui,enabled:bool)->Option<bool>{
 pub fn reception_item_delete_confirmation(
     ctx:&egui::Context,work_area:Rect,name:&str,error:Option<&str>,busy:bool
 )->(bool,bool){
-    let mut cancel=false;
-    let mut remove=false;
-    show_decision_window(ctx,"품목 삭제 확인","reception-item-delete-confirm",work_area,|ui|{
-            (cancel,remove)=decision_content(
-                ui,"품목 삭제 확인","취소",!busy,
-                |body|{
-                    body.add(egui::Label::new(typography::body(
-                        &format!("{} 품목을 발주서에서 삭제할까요?",name)
-                    )).wrap());
-                    let width=body.available_width();
-                    fixed_status_slot(body,width,typography::METADATA_LINE_HEIGHT,
-                        error,error,theme::DANGER);
-                },
-                |actions|crate::button::action(actions,"삭제",theme::ButtonRole::Danger,!busy).clicked()
-            );
-        });
-    (cancel,remove)
+    let decision=crate::popup::show_delete_confirmation(
+        ctx,work_area,"reception-item-delete-confirm","품목 삭제 확인","삭제",
+        !busy,!busy,crate::popup::DeleteBody::Plain,|body|{
+            body.add(egui::Label::new(typography::body(
+                &format!("{} 품목을 발주서에서 삭제할까요?",name)
+            )).wrap());
+            let width=body.available_width();
+            fixed_status_slot(body,width,typography::METADATA_LINE_HEIGHT,
+                error,error,theme::DANGER);
+        }
+    );
+    (decision==crate::popup::ConfirmDecision::Cancel,decision==crate::popup::ConfirmDecision::Confirm)
 }
 
 pub struct ReceptionItemCells {
