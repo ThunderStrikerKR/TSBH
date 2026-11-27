@@ -619,6 +619,31 @@ pub(super) fn statistics(payload:&Value)->Result<Value,String>{
 mod tests{
     use super::*;
     #[test]
+    fn field_shadow_candidates_are_original_span_bound_and_never_final_labels(){
+        let units="709 3개".encode_utf16().collect::<Vec<_>>();
+        let first=json!({"recipients":[{"items":[{
+            "productId":"p","variantId":"v","quantity":3,"quantityConfirmed":true,
+            "productCandidates":[{"productId":"p"},{"productId":"p2"},{"productId":null}],
+            "match":{"productIds":["p3"]},
+            "sources":[{"start":0,"end":3,"text":"709","field":"product"},
+                {"start":4,"end":6,"text":"3개","field":"quantity"}]}]}],
+            "finalCandidates":["never_use"]});
+        assert_eq!(field_shadow_candidates(&units,&first,(0,3),"product"),vec!["p","p2","p3"]);
+        assert_eq!(field_shadow_candidates(&units,&first,(0,3),"variant"),vec!["v"]);
+        assert_eq!(field_shadow_candidates(&units,&first,(0,3),"type"),vec!["product"]);
+        assert_eq!(field_shadow_candidates(&units,&first,(4,6),"quantity"),vec!["3"]);
+        assert!(field_shadow_candidates(&units,&first,(0,3),"quantity").is_empty());
+        let mut changed=first.clone();
+        changed["recipients"][0]["items"][0]["quantityConfirmed"]=json!(false);
+        assert!(field_shadow_candidates(&units,&changed,(4,6),"quantity").is_empty());
+        changed["recipients"][0]["items"][0]["sources"][0]["text"]=json!("708");
+        assert!(field_shadow_candidates(&units,&changed,(0,3),"product").is_empty());
+        let mut ambiguous=first.clone();
+        let duplicate=ambiguous["recipients"][0]["items"][0].clone();
+        ambiguous["recipients"][0]["items"].as_array_mut().unwrap().push(duplicate);
+        assert!(field_shadow_candidates(&units,&ambiguous,(0,3),"product").is_empty());
+    }
+    #[test]
     fn field_contexts_use_initial_shape_task_and_manual_client_only(){
         let first=json!({
             "recognitionContext":{"clientId":"client-a","clientBasis":"MANUAL"},
