@@ -59,7 +59,7 @@ pub fn source_document(
         rect.intersect(ui.clip_rect()),
     );
     ui.painter().add(egui::Shape::Vec(fills));
-    ui.painter().galley(galley_pos,galley.clone(),theme::TEXT);
+    ui.painter().galley(galley_pos,galley.clone(),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
     ui.painter().add(egui::Shape::Vec(outlines));
     // Selection is exact by native source ID, even if another span shares its LinkKey.
     if let Some(span)=selected_source.and_then(|id|spans.iter().find(|s|s.source_id.as_deref()==Some(id))){
@@ -68,7 +68,7 @@ pub fn source_document(
             Some(&span.key),assigned_ids,rect.intersect(ui.clip_rect())
         );
         ui.painter().add(egui::Shape::Vec(fill));
-        ui.painter().galley(galley_pos,galley.clone(),theme::TEXT);
+        ui.painter().galley(galley_pos,galley.clone(),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
         ui.painter().add(egui::Shape::Vec(outline));
     }
 

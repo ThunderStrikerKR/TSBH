@@ -371,9 +371,9 @@ fn table<const N:usize>(
         let arrow=if sort_enabled[i]{
             let (glyph,color)=match (*sort).filter(|s|s.column==i)
                 .map(|s|s.direction){
-                Some(Direction::Up)=>("▲",theme::SELECTION),
-                Some(Direction::Down)=>("▼",theme::SELECTION),
-                None=>("↕",theme::MUTED)
+                Some(Direction::Up)=>("▲",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Selected)),
+                Some(Direction::Down)=>("▼",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Selected)),
+                None=>("↕",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Normal))
             };
             Some((typography::management_table_header_galley(ui,glyph),color))
         }else{None};

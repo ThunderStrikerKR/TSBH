@@ -902,11 +902,13 @@ pub(crate) const fn surface_palette(role:SurfaceRole,state:VisualState)->Surface
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub(crate) enum IconRole{Secondary,Interactive,Navigation}
+pub(crate) enum IconRole{Secondary,Interactive,Navigation,SortIndicator}
 pub(crate) const fn icon_ink(role:IconRole,state:VisualState)->Color32{
     match (role,state){
         (IconRole::Navigation,VisualState::Disabled)=>RECEPTION_RECIPIENT_NAV_DISABLED_ICON,
         (_,VisualState::Disabled)=>text_ink(TextRole::Label,TextState::Disabled),
+        (IconRole::SortIndicator,VisualState::Selected)=>SELECTION,
+        (IconRole::SortIndicator,_)=>text_ink(TextRole::Metadata,TextState::Normal),
         (IconRole::Interactive|IconRole::Navigation,VisualState::Hovered)=>text_ink(TextRole::Value,TextState::Normal),
         _=>text_ink(TextRole::Label,TextState::Normal),
     }
@@ -1002,6 +1004,8 @@ mod shared_visual_role_contract_tests{
             assert_eq!(height,disabled);
             assert_eq!((fill,ink,stroke.color),(DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,DISABLED_ACTION_BORDER));
         }
+        assert_eq!(icon_ink(IconRole::SortIndicator,VisualState::Selected),SELECTION);
+        assert_eq!(icon_ink(IconRole::SortIndicator,VisualState::Normal),MUTED);
         assert_eq!(icon_ink(IconRole::Interactive,VisualState::Hovered),TEXT);
         assert_eq!(icon_ink(IconRole::Interactive,VisualState::Normal),SECONDARY);
         assert_eq!(icon_ink(IconRole::Navigation,VisualState::Disabled),RECEPTION_RECIPIENT_NAV_DISABLED_ICON);

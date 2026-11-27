@@ -350,9 +350,9 @@ pub fn reception_item_row(
     // Mono font fallback gave quantity digits and '개' differing visual heights.
     let mut item_overflow=[false;3];
     for (index, (text, color)) in [
-        (name, theme::TEXT),
-        (quantity, theme::SECONDARY),
-        (amount, theme::TEXT),
+        (name, theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)),
+        (quantity, theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)),
+        (amount, theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)),
     ].into_iter().enumerate() {
         let font=match index {
             1=>typography::data_value_font(
@@ -614,7 +614,7 @@ pub fn reception_total_footer(
     let right = rect.right() - theme::SPACE_8;
     let right_start = (right - 148.0).max(left + 50.0);
     let review=crate::one_touch::stage(ui)==crate::one_touch::Stage::Review;
-    let value_color=if review{crate::one_touch::INK}else{theme::TEXT};
+    let value_color=if review{crate::one_touch::INK}else{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)};
     let amount = total.map(display_money_number)
         .unwrap_or_else(||RECEPTION_MONEY_PENDING.to_owned());
     let first_amount = Rect::from_min_max(
@@ -653,20 +653,20 @@ pub fn reception_total_footer(
     let count_painter=ui.painter().with_clip_rect(second_left.intersect(ui.clip_rect()));
     let center_y=second_left.center().y;
     if let Some(n)=count{
-        let prefix=count_painter.layout_no_wrap("배송".to_owned(),metadata_font.clone(),theme::SECONDARY);
-        let count_color=if review{crate::one_touch::INK}else{theme::SECONDARY};
+        let prefix=count_painter.layout_no_wrap("배송".to_owned(),metadata_font.clone(),theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
+        let count_color=if review{crate::one_touch::INK}else{theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)};
         let value=count_painter.layout_no_wrap(format!("{n}건"),metadata_font.clone(),count_color);
         let prefix_pos=egui::pos2(left,center_y-prefix.size().y/2.0);
         let value_pos=egui::pos2(left+prefix.size().x+theme::SPACE_8,center_y-value.size().y/2.0);
         let value_ink=Rect::from_min_size(value_pos,value.size());
         let count_highlight=crate::one_touch::value_rect(value_ink,second_left);
         if review{crate::one_touch::background(ui,count_highlight);}
-        count_painter.galley(prefix_pos,prefix,theme::SECONDARY);
+        count_painter.galley(prefix_pos,prefix,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
         count_painter.galley(value_pos,value,count_color);
         if review{crate::one_touch::outline(ui,count_highlight);}
     }else{
         count_painter.text(egui::pos2(left,center_y),egui::Align2::LEFT_CENTER,
-            "배송 건수 미확정",metadata_font.clone(),theme::SECONDARY);
+            "배송 건수 미확정",metadata_font.clone(),theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
     }
     let second_right = Rect::from_min_max(
         egui::pos2(right_start, rect.top() + 30.0),
@@ -674,6 +674,6 @@ pub fn reception_total_footer(
     );
     ui.painter().with_clip_rect(second_right.intersect(ui.clip_rect())).text(
         egui::pos2(right, second_right.center().y), egui::Align2::RIGHT_CENTER,
-        vat, metadata_font, theme::SECONDARY,
+        vat, metadata_font, theme::text_ink(theme::TextRole::Label,theme::TextState::Normal),
     );
 }

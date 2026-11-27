@@ -322,7 +322,7 @@ fn paint_manual_source_drag_preview(
         crate::highlight::paint_parts(&painter,rect.translate(translation),
             original_geometry.style.radius,Some(original_geometry.style.fill),None);
     }
-    painter.galley(galley_pos,galley,theme::TEXT);
+    painter.galley(galley_pos,galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
     // Match the source document's paint order: glyphs first, then the outline.
     for rect in &original_geometry.rects {
         crate::highlight::paint_parts(&painter,rect.translate(translation),

@@ -1786,9 +1786,9 @@ impl ProductManager {
                 let arrow=column.map(|column|{
                     let (text,color)=match self.sort
                         .filter(|state|state.column==column).map(|sort|sort.direction){
-                        Some(ProductSortDirection::Ascending)=>("▲",theme::SELECTION),
-                        Some(ProductSortDirection::Descending)=>("▼",theme::SELECTION),
-                        None=>("↕",theme::MUTED),
+                        Some(ProductSortDirection::Ascending)=>("▲",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Selected)),
+                        Some(ProductSortDirection::Descending)=>("▼",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Selected)),
+                        None=>("↕",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Normal)),
                     };
                     (typography::management_table_header_galley(panel,text),color)
                 });

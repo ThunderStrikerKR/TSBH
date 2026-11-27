@@ -33,7 +33,7 @@ fn header_begin(ui:&Ui,header:Rect,content:Rect)->Rect{
     let text=Rect::from_min_max(content.min,egui::pos2(
         content.right(),content.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT
     ));
-    ui.painter().with_clip_rect(header).rect_filled(header,0.0,theme::RAISED);
+    ui.painter().with_clip_rect(header).rect_filled(header,0.0,theme::surface_palette(theme::SurfaceRole::Button,theme::VisualState::Normal).fill);
     text
 }
 
@@ -596,8 +596,8 @@ pub(crate) fn history_row<const N:usize>(
     row_scope(ui,id,rect,|row|{
         row.allocate_exact_size(rect.size(),egui::Sense::hover());
         if let Some(block)=detail{
-            row.painter().rect_filled(rect,0.0,theme::CANVAS);
-            crate::card::paint_shipment_detail_surface(row,block,theme::PANEL,false);
+            row.painter().rect_filled(rect,0.0,theme::surface_palette(theme::SurfaceRole::Workspace,theme::VisualState::Normal).fill);
+            crate::card::paint_shipment_detail_surface(row,block,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill,false);
         }else{
             paint_management_table_row_background(row.painter(),rect,index);
             paint_management_table_row_rule(row.painter(),rect);
@@ -1128,9 +1128,9 @@ pub(crate) fn management_client_header_with_tags(
             if text_rect.width()>0.0 {
                 let title_galley=typography::management_table_header_galley(ui,title);
                 let (arrow,color)=match current_sort{
-                    Some((col,false)) if col==i=>("▲",theme::SELECTION),
-                    Some((col,true)) if col==i=>("▼",theme::SELECTION),
-                    _=>("↕",theme::MUTED)
+                    Some((col,false)) if col==i=>("▲",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Selected)),
+                    Some((col,true)) if col==i=>("▼",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Selected)),
+                    _=>("↕",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Normal))
                 };
                 let arrow_galley=typography::management_table_header_galley(ui,arrow);
                 heading(ui,column,text_row,text_rect,

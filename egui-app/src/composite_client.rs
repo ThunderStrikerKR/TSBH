@@ -22,13 +22,13 @@ pub fn management_chooser_row(
     if selected{
         crate::highlight::paint(ui,rect,theme::CONTROL_RADIUS,crate::highlight::Role::ChooserSelected);
     }else{
-        painter.rect_filled(rect,theme::CONTROL_RADIUS,theme::PANEL);
+        painter.rect_filled(rect,theme::CONTROL_RADIUS,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
     }
     let primary=typography::management_table_cell_galley(
         ui,title,typography::ManagementTableCellRole::ClientName
     );
     let secondary=typography::client_table_metadata_galley(
-        ui,status,theme::MUTED
+        ui,status,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)
     );
     let lines=primary.size().y+secondary.size().y+theme::SPACE_4;
     let x=rect.left()+theme::SPACE_12;
@@ -37,10 +37,10 @@ pub fn management_chooser_row(
         egui::pos2(x,rect.top()),egui::pos2(rect.right()-theme::SPACE_12,rect.bottom())
     );
     let ink=painter.with_clip_rect(content_rect);
-    ink.galley(egui::pos2(x,y),primary,theme::TEXT);
+    ink.galley(egui::pos2(x,y),primary,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
     ink.galley(
         egui::pos2(x,y+lines-secondary.size().y),
-        secondary,theme::MUTED
+        secondary,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)
     );
     if !selected {
         crate::button::paint_button_hover(
@@ -185,7 +185,7 @@ pub fn reception_client_summary_card_editable(
             let terms=summary.map(|data|data.conditions.as_str()).unwrap_or("");
             let available=row.right()-x;
             let terms_galley=typography::client_table_metadata_galley(
-                ui,terms,theme::MUTED
+                ui,terms,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)
             );
             let full=typography::management_table_cell_galley(
                 ui,name,typography::ManagementTableCellRole::ClientName
@@ -210,7 +210,7 @@ pub fn reception_client_summary_card_editable(
                     egui::pos2(x,row.top()),
                     egui::pos2(x+name_width,row.bottom())
                 );
-                paint_table_galley(ui,name_cell,x,shown_galley,theme::TEXT);
+                paint_table_galley(ui,name_cell,x,shown_galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
                 overflow_region_tooltip(ui,name_cell,
                     ui.make_persistent_id("source-client-name-overflow"),name_overflow,name);
             }
@@ -221,7 +221,7 @@ pub fn reception_client_summary_card_editable(
                         egui::pos2(terms_x,row.top()),row.right_bottom()
                     );
                     let overflow=paint_table_galley(
-                        ui,terms_cell,terms_x,terms_galley,theme::MUTED
+                        ui,terms_cell,terms_x,terms_galley,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)
                     );
                     overflow_region_tooltip(ui,terms_cell,
                         ui.make_persistent_id("source-client-terms-overflow"),overflow,terms);
@@ -298,8 +298,8 @@ pub fn management_row_with_tags(
                     egui::pos2((badge.right()+theme::SPACE_8).min(cell.right()),cell.top()),
                     cell.max
                 );
-                let galley=typography::client_table_metadata_galley(ui,secondary,theme::MUTED);
-                let overflow=paint_table_galley(ui,second,second.left(),galley,theme::MUTED);
+                let galley=typography::client_table_metadata_galley(ui,secondary,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal));
+                let overflow=paint_table_galley(ui,second,second.left(),galley,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal));
                 overflow_region_tooltip(ui,second,
                     ui.make_persistent_id(("management-row-hover",row_id,i,1)),overflow,secondary);
             }
@@ -309,7 +309,7 @@ pub fn management_row_with_tags(
             if !visible.is_empty(){
                 let metadata=primary.is_empty() && i==0;
                 let galley=if metadata{
-                    typography::client_table_metadata_galley(ui,visible,theme::MUTED)
+                    typography::client_table_metadata_galley(ui,visible,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal))
                 }else{
                     typography::management_table_cell_galley(
                         ui,visible,if i==0{
@@ -321,7 +321,7 @@ pub fn management_row_with_tags(
                 };
                 let overflow=paint_table_galley(
                     ui,cell,cell.left(),galley,
-                    if metadata{theme::MUTED}else{theme::TEXT}
+                    if metadata{theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)}else{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)}
                 );
                 overflow_region_tooltip(ui,cell,
                     ui.make_persistent_id(("management-row-hover",row_id,i,0)),overflow,visible);

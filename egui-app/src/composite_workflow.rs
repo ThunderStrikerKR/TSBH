@@ -33,9 +33,9 @@ pub fn workflow_compact_money(
 /// Noninteractive retail marker occupies the existing unused action slot.
 pub fn workflow_idle_caption(ui:&Ui,rect:Rect,caption:&str){
     let galley=ui.painter().layout_no_wrap(caption.to_owned(),
-        egui::FontId::proportional(typography::FONT_METADATA),theme::SECONDARY);
+        egui::FontId::proportional(typography::FONT_METADATA),theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
     let x=rect.right()-galley.size().x;
-    let _=paint_table_galley(ui,rect,x,galley,theme::SECONDARY);
+    let _=paint_table_galley(ui,rect,x,galley,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
 }
 
 /// Use the existing semantic numeric/body layout for shipment charges.
@@ -64,9 +64,9 @@ pub fn workflow_shipment_row(
     let outer=ui.available_width();
     let (widths,gap)=workflow_shipment_columns(outer);
     let preview_ink=if chosen{theme::WORKFLOW_SELECTED_ROW_TEXT}
-        else if previewed{source_highlight::ACTIVE_TEXT}else{theme::TEXT};
-    let summary_ink=if chosen{theme::TEXT}else{preview_ink};
-    let freight_ink=if freight_emphasis{crate::one_touch::INK}else{theme::TEXT};
+        else if previewed{source_highlight::ACTIVE_TEXT}else{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)};
+    let summary_ink=if chosen{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)}else{preview_ink};
+    let freight_ink=if freight_emphasis{crate::one_touch::INK}else{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)};
     let name_galley=shipment_detail_product_galley(ui,widths[0],name,preview_ink);
     let product_galley=shipment_detail_product_galley(ui,widths[1],summary,summary_ink);
     let freight_text=freight.unwrap_or("—");

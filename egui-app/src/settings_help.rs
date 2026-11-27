@@ -314,14 +314,14 @@ pub fn icon(heading:&mut Ui,title:&str){
         let (rect,response)=heading.allocate_exact_size(
             Vec2::splat(theme::SETTINGS_HELP_ICON_SIZE),Sense::click()
         );
-        let ink=if response.hovered(){theme::TEXT}else{theme::SECONDARY};
+        let ink=theme::icon_ink(theme::IconRole::Interactive,theme::VisualState::pointer(true,response.hovered()));
         heading.painter().circle_filled(
             rect.center(),theme::SETTINGS_HELP_ICON_SIZE/2.0,
-            theme::RAISED
+            theme::surface_palette(theme::SurfaceRole::Button,theme::VisualState::Normal).fill
         );
         heading.painter().circle_stroke(
             rect.center(),theme::SETTINGS_HELP_ICON_SIZE/2.0,
-            Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER)
+            Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::surface_palette(theme::SurfaceRole::Button,theme::VisualState::Normal).border)
         );
         heading.painter().text(
             rect.center(),Align2::CENTER_CENTER,"?",

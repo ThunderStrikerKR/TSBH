@@ -420,11 +420,11 @@ fn paint_center(ui:&Ui,rect:Rect,value:&str){
     );
     let x=(rect.center().x-galley.size().x/2.0)
         .max(rect.left()+theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET);
-    crate::table::paint_table_galley(ui,rect,x,galley,theme::SECONDARY);
+    crate::table::paint_table_galley(ui,rect,x,galley,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
 }
 fn paint_caption(ui:&Ui,rect:Rect,value:&str){
-    let galley=typography::client_table_metadata_galley(ui,value,theme::MUTED);
-    crate::table::paint_table_galley(ui,rect,rect.left()+theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET,galley,theme::MUTED);
+    let galley=typography::client_table_metadata_galley(ui,value,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal));
+    crate::table::paint_table_galley(ui,rect,rect.left()+theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET,galley,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal));
 }
 // One distinct product per line in EXPANDED shipment detail only.
 // The parent order summary retains its compact single-line formatter.
@@ -467,7 +467,7 @@ fn history_line_height(ui:&Ui,line:HistoryLine,
     let card=history_detail_block_rect(placeholder,widths,spacing);
     let product_cell=history_detail_cells(card)[1];
     let galley=crate::table::shipment_detail_product_galley(
-        ui,product_cell.width(),&product,theme::TEXT
+        ui,product_cell.width(),&product,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
     );
     // Only the inner text padding belongs to the card's content height.
     // Group spacing is accounted for independently, so first/middle/last
@@ -477,8 +477,8 @@ fn history_line_height(ui:&Ui,line:HistoryLine,
 }
 fn paint_detail_products(ui:&Ui,rect:Rect,text:&str)->bool{
     let galley=crate::table::shipment_detail_product_galley(
-        ui,rect.width(),text,theme::TEXT);
-    crate::table::paint_shipment_detail_products(ui,rect,galley,theme::TEXT)
+        ui,rect.width(),text,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
+    crate::table::paint_shipment_detail_products(ui,rect,galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal))
 }
 fn history_shipment_logistics(shipment:Option<&Value>)->(String,String){
     // A detail block belongs to exactly one shipment. Never merge freight or

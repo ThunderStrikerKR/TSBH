@@ -212,11 +212,11 @@ fn freight_assignment_text(
             )/2.0;
             painter.galley(
                 egui::pos2(clipped.left(),y),
-                prefix_galley.clone(),theme::MUTED
+                prefix_galley.clone(),theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)
             );
             painter.galley(
                 egui::pos2(clipped.left()+prefix_galley.size().x,y),
-                leaf_galley,theme::SECONDARY
+                leaf_galley,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)
             );
         }
         _=>unreachable!("non-category cells use the common painter"),
@@ -1872,9 +1872,9 @@ impl FreightManager {
                         // any column is selected. Only one column is active.
                         let current=sort.filter(|value|value.column==column);
                         let (glyph,color)=match current.map(|state|state.direction){
-                            Some(FreightSortDirection::Ascending)=>("▲",theme::SELECTION),
-                            Some(FreightSortDirection::Descending)=>("▼",theme::SELECTION),
-                            None=>("↕",theme::MUTED),
+                            Some(FreightSortDirection::Ascending)=>("▲",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Selected)),
+                            Some(FreightSortDirection::Descending)=>("▼",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Selected)),
+                            None=>("↕",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Normal)),
                         };
                         let visible=region.intersect(header_text_rect);
                         if visible.width()>0.0 && visible.height()>0.0 {
@@ -2117,9 +2117,9 @@ impl FreightManager {
                 let indicator=sort_column.map(|column|{
                     let selected=sort.filter(|current|current.column==column);
                     let (label,color)=match selected.map(|value|value.direction){
-                        Some(FreightSortDirection::Ascending)=>("▲",theme::SELECTION),
-                        Some(FreightSortDirection::Descending)=>("▼",theme::SELECTION),
-                        None=>("↕",theme::MUTED),
+                        Some(FreightSortDirection::Ascending)=>("▲",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Selected)),
+                        Some(FreightSortDirection::Descending)=>("▼",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Selected)),
+                        None=>("↕",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Normal)),
                     };
                     let hit=cell.intersect(header_text_rect);
                     if hit.width()>0.0 && hit.height()>0.0{
@@ -2162,7 +2162,7 @@ impl FreightManager {
                     section.painter().with_clip_rect(available).text(
                         available.center(),egui::Align2::CENTER_CENTER,caption,
                         typography::metadata_font(),
-                        theme::MUTED
+                        theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)
                     );
                 }
             }
@@ -2563,10 +2563,10 @@ fn freight_history_table<const N:usize>(
                 .filter(|value|value.column==column)
                 .map(|value|value.direction){
                     Some(FreightSortDirection::Ascending)=>
-                        ("▲",theme::SELECTION),
+                        ("▲",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Selected)),
                     Some(FreightSortDirection::Descending)=>
-                        ("▼",theme::SELECTION),
-                    None=>("↕",theme::MUTED),
+                        ("▼",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Selected)),
+                    None=>("↕",theme::icon_ink(theme::IconRole::SortIndicator,theme::VisualState::Normal)),
                 };
             let hit=cell.intersect(header_text_rect);
             if hit.width()>0.0 && hit.height()>0.0{
@@ -2608,7 +2608,7 @@ fn freight_history_table<const N:usize>(
                 ui.painter().with_clip_rect(body).text(
                     body.center(),egui::Align2::CENTER_CENTER,message,
                     typography::metadata_font(),
-                    theme::MUTED,
+                    theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal),
                 );
             }
         }
