@@ -189,6 +189,36 @@ impl SharedAllocationExt for Ui{
     }
 }
 
+/// Clip boundaries are visibility limits, not allocation requests.
+/// Preserve their exact intersections: rounding outward can expose a
+/// neighboring row, and rounding inward can cut off a border or glyph.
+pub(crate) trait SharedUiClipExt{
+    /// Ordinary children cannot extend their inherited visible region.
+    fn restrict_shared_clip(&mut self,requested:Rect);
+    /// A separate foreground Area borrows the explicit clip of its owner
+    /// pane, rather than the independent Area's inherited clip.
+    fn use_owner_pane_clip(&mut self,owner_pane:Rect);
+}
+impl SharedUiClipExt for Ui{
+    fn restrict_shared_clip(&mut self,requested:Rect){
+        self.set_clip_rect(self.clip_rect().intersect(requested));
+    }
+    fn use_owner_pane_clip(&mut self,owner_pane:Rect){
+        self.set_clip_rect(owner_pane);
+    }
+}
+
+/// Painter clipping always narrows the inherited paint region. It never
+/// changes widget allocation, hit targets, IDs or layout cursor.
+pub(crate) trait SharedPainterClipExt{
+    fn with_shared_clip(&self,requested:Rect)->egui::Painter;
+}
+impl SharedPainterClipExt for egui::Painter{
+    fn with_shared_clip(&self,requested:Rect)->egui::Painter{
+        self.with_clip_rect(requested)
+    }
+}
+
 /// Semantic layout profiles. Screen modules choose a content role, never
 /// a numeric spacing override. Preserve the reviewed spacing for each role.
 #[derive(Clone,Copy)]
@@ -252,7 +282,7 @@ pub fn fixed_row<R>(
     let mut row=ui.new_child(
         UiBuilder::new().aligned_max_rect(rect).layout(layout)
     );
-    row.set_clip_rect(rect.intersect(ui.clip_rect()));
+    row.restrict_shared_clip(rect.intersect(ui.clip_rect()));
     row.spacing_mut().item_spacing.y=0.0;
     let result=add_contents(&mut row);
     (rect,result)
@@ -319,7 +349,7 @@ pub fn reception_goods_viewport(
     let mut child=ui.new_child(UiBuilder::new()
         .id_salt("reception-goods-viewport")
         .aligned_max_rect(rect).layout(Layout::top_down(Align::Min)));
-    child.set_clip_rect(rect.intersect(ui.clip_rect()));
+    child.restrict_shared_clip(rect.intersect(ui.clip_rect()));
     child.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());
     set_fixed_height(&mut child,rect.height());
     child.spacing_mut().item_spacing.y=0.0;
@@ -341,7 +371,7 @@ pub fn reception_section_scroll(
     if !rect.is_positive(){return;}
     let mut child=ui.new_child(UiBuilder::new().id_salt("reception-section-viewport")
         .aligned_max_rect(rect).layout(Layout::top_down(Align::Min)));
-    child.set_clip_rect(rect.intersect(ui.clip_rect()));
+    child.restrict_shared_clip(rect.intersect(ui.clip_rect()));
     child.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());
     set_fixed_height(&mut child,rect.height());
     scroll_area(ScrollAxes::Vertical).id_salt(id_salt)
@@ -557,7 +587,7 @@ pub(crate) fn management_toolbar_slot<R>(
 )->R{
     let rect=aligned_rect(rect);
     ui.scope_builder(UiBuilder::new().id_salt(id).aligned_max_rect(rect).layout(layout),|slot|{
-        if clip{slot.set_clip_rect(rect.intersect(slot.clip_rect()));}
+        if clip{slot.restrict_shared_clip(rect.intersect(slot.clip_rect()));}
         slot.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());
         if fixed_height{set_fixed_height(slot,rect.height());}
         draw(slot)
