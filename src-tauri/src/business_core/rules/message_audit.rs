@@ -49,7 +49,7 @@ pub(super) fn record(payload:&Value)->Result<Value,String>{
         }
     }
     let actor=str_field(field(&state,"settings"),"operatorName");
-    let actor=if actor.is_empty(){"직원".to_owned()}else{actor.to_owned()};
+    let actor=if actor.is_empty(){super::terminology::UNASSIGNED_ACTOR.to_owned()}else{actor.to_owned()};
     let event=json!({
         "id":required_str(payload,"eventId")?,
         "at":required_str(payload,"now")?,

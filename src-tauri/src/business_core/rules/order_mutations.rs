@@ -30,7 +30,7 @@ fn actor<'a>(payload:&'a Value,state:&'a Value)->&'a str{
     let explicit=str_field(payload,"actor");
     if !explicit.is_empty(){return explicit;}
     let staff=str_field(field(state,"settings"),"operatorName").trim();
-    if !staff.is_empty(){staff}else{"직원"}
+    if !staff.is_empty(){staff}else{super::terminology::UNASSIGNED_ACTOR}
 }
 pub(super) fn delete_order(payload:&Value)->Result<Value,String>{
     let mut state=req(payload,"state")?.clone();

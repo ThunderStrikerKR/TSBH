@@ -209,7 +209,7 @@ pub(super) fn recommend(order: &Value, state: &Value) -> Result<Value, String> {
                 } else if let Some(known) = known.filter(|_| !expired) {
                     (safe(field(known,"charge")),"현재 기준의 확인된 동일 조합".into(),"COMBINATION")
                 } else if unknown {
-                    (None,"상품별 기본 운임 미등록 / 직원 확인 필요".into(),"MANUAL")
+                    (None,"상품별 기본 운임 미등록 / 확인 필요".into(),"MANUAL")
                 } else {
                     let mut charges = Vec::new();
                     let mut reason = String::new();
@@ -431,7 +431,7 @@ pub(super) fn shipping_action(payload: &Value) -> Result<Value, String> {
                             "version":version,"at":now,
                             "fees":{"1":null,"2":null,"3":null,"4":null,"5":null,"6":null},
                             "maxBundle":null,"maxConfirmed":false,"perItem":null,
-                            "notes":"직원이 분류와 운임을 확인해 입력하세요."
+                            "notes":"분류와 운임을 확인해 입력하세요."
                         },"history":[]});
                     shipping["groups"].as_array_mut().ok_or("운임 그룹 목록 누락")?
                         .push(group);
@@ -957,7 +957,7 @@ mod p1_product_freight_tests {
                         "maxConfirmed":true,"perItem":null,"fees":{"2":4000}}}],
                 "combinations":[]}
         });
-        let order=json!({"recipients":[{"id":"r","name":"직원 확인",
+        let order=json!({"recipients":[{"id":"r","name":"작업자 확인",
             "dispatchOrigin":"FACTORY",
             "items":[{"id":"i","name":"709","productId":"p","variantId":"v",
                 "origin":"FACTORY","quantity":2}]}]});

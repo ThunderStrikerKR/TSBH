@@ -473,7 +473,7 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
                 .and_then(|v|v["id"].as_str());
             record["variantId"]=variant.map_or(Value::Null,|id|json!(id));
             record["actor"]=json!(before["settings"]["operatorName"]
-                .as_str().filter(|v|!v.trim().is_empty()).unwrap_or("직원"));
+                .as_str().filter(|v|!v.trim().is_empty()).unwrap_or(bando_data_access::terminology::UNASSIGNED_ACTOR));
             record["createdAt"]=json!(chrono::Utc::now().to_rfc3339());
             let result=catalog_clients::execute("save_alias",
                 json!({"state":&before,"record":record}),

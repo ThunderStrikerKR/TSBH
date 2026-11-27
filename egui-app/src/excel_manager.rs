@@ -745,7 +745,7 @@ impl ExcelManager{
                                 });
                             });
                             ui.label(typography::table_cell(&format!("송장 {} / 출고 운임 {} / {}",
-                                text(row,"tracking"),amount(&row["actual"]),text(row,"issue").replace("직원 확인 필요","확인 필요"))));
+                                text(row,"tracking"),amount(&row["actual"]),bando_data_access::terminology::display_factory_issue(text(row,"issue")))));
                             for candidate in rows(&row["candidates"]){
                                 let row_number=candidate["exportRow"].as_u64().map(|n|n.to_string())
                                     .unwrap_or_else(||"미확인".into());
@@ -1327,7 +1327,7 @@ mod table_state_tests {
         for obsolete in [
             concat!("관련", " 주문"),
             concat!("주문", " 상세 보기"),
-            concat!("실제 공장", " 전달 확인"),
+            concat!("공장 전달", " 확인"),
             concat!("전달 전 정정", " / 재출력"),
             concat!("매장 발송", " 확인"),
             concat!("history", "_detail"),

@@ -223,7 +223,7 @@ fn validate_automatic_change(before: &Value, next: &Value, id: &str, name: &str)
             return Err("같은 배송 건에 중복 회신을 자동 반영할 수 없습니다.".into());
         }
         let tracking = row["tracking"].as_str().ok_or("운송장번호가 없습니다.")?;
-        let actual = row["actual"].as_u64().ok_or("실제 운임이 올바르지 않습니다.")?;
+        let actual = row["actual"].as_u64().ok_or("출고 운임을 확인하세요.")?;
         if !(8..=30).contains(&tracking.len())
             || !tracking.bytes().all(|b| b.is_ascii_digit()) || actual > i64::MAX as u64 {
             return Err("자동 회신 운송장번호 또는 운임이 올바르지 않습니다.".into());
@@ -303,11 +303,11 @@ fn validate_automatic_change(before: &Value, next: &Value, id: &str, name: &str)
         }
         let ids = event["shipmentIds"].as_array().ok_or("변경 이력의 배송 건 누락")?;
         if ids.len() != 1 || !ids[0].as_str().is_some_and(|id| applied_ids.contains(id)) {
-            return Err("변경 이력이 실제 적용 행과 일치하지 않습니다.".into());
+            return Err("변경 이력이 반영된 행과 일치하지 않습니다.".into());
         }
     }
     if applied == 0 && before["workflow"] != next["workflow"] {
-        return Err("보류 회신이 실제 배송 정보를 변경했습니다.".into());
+        return Err("보류 회신이 배송 정보를 변경했습니다.".into());
     }
     Ok((applied, held))
 }
@@ -586,7 +586,7 @@ mod tests {
         candidate["factoryReplies"].as_array_mut().unwrap().push(json!({
             "id":id,"filename":filename,"status":"APPLIED",
             "businessDate":"2026-11-13","at":"2026-11-13T08:05:00Z",
-            "actor":"직원","rows":[{
+            "actor":"작업자","rows":[{
                 "row":2,"name":"박수하","address":"서울 서초구 １２３",
                 "contacts":["010-1111-2222"],"tracking":"001234567890",
                 "actual":4000,"shipmentId":"s1","orderId":"o1","applied":true

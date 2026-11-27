@@ -180,7 +180,7 @@ fn validate_color_group(state:&Value,ids:&Value,representative:&str)->Result<(),
     let colors=variants.iter().map(|v|color_label(str_field(v,"color")).to_lowercase())
         .collect::<Vec<_>>();
     if colors.iter().any(|c|c.is_empty()||c=="단일"||c=="색상 미표기"){
-        return Err("실제 색상이 등록된 상품만 그룹에 추가하세요.".into());
+        return Err("색상이 등록된 상품만 그룹에 추가하세요.".into());
     }
     if colors.iter().collect::<HashSet<_>>().len()!=colors.len(){
         return Err("같은 색상 상품이 중복됐습니다. 다른 규격은 별도 그룹으로 관리하세요.".into());
@@ -194,7 +194,7 @@ fn validate_color_group(state:&Value,ids:&Value,representative:&str)->Result<(),
         return Err("색상에 따라 가격이 다릅니다. 동일한 가격의 상품만 대표색상 그룹으로 등록하세요.".into());
     }
     if !colors.contains(&color_label(representative).to_lowercase()){
-        return Err("대표색상은 그룹에 등록된 상품의 실제 색상에서 선택하세요.".into());
+        return Err("대표색상은 그룹에 등록된 상품의 등록 색상에서 선택하세요.".into());
     }
     Ok(())
 }
@@ -282,7 +282,7 @@ fn resolve(payload:&Value)->Result<Value,String>{
         rows(field(&product,"variants")).first()
     }else{
         rows(field(&product,"variants")).iter().find(|v|str_field(v,"id")==selected_id)
-    }.ok_or("실제 상품 옵션을 선택하세요.")?;
+    }.ok_or("상품 옵션을 선택하세요.")?;
     let changed=str_field(&old,"productId")!=pid ||
         (!selected_id.is_empty()&&str_field(&old,"variantId")!=selected_id);
     let mut default_color=None::<Value>;
@@ -299,7 +299,7 @@ fn resolve(payload:&Value)->Result<Value,String>{
             validate_model_group(&state,field(group,"productIds"),rep)?;
             if rep!=pid||rows(field(&product,"variants")).len()!=1||
                 str_field(&product["variants"][0],"id")!=str_field(variant,"id"){
-                return Err("지정한 대표모델과 실제 선택 상품이 일치하지 않습니다.".into());
+                return Err("지정한 대표모델과 선택한 상품이 일치하지 않습니다.".into());
             }
             representative=Some(json!({"groupId":group_id,"productId":pid,
                 "productName":field(&product,"name")}));
@@ -364,7 +364,7 @@ fn resolve(payload:&Value)->Result<Value,String>{
             "clientId":if scope=="common"{Value::Null}else{field(&client,"id").clone()},
             "createdAt":required_str(payload,"now")?,
             "actor":if str_field(field(&state,"settings"),"operatorName").is_empty(){
-                "직원"}else{str_field(field(&state,"settings"),"operatorName")}
+                super::terminology::UNASSIGNED_ACTOR}else{str_field(field(&state,"settings"),"operatorName")}
         });
         if needs_customer{
             let errors=alias_problems(&record,&state);

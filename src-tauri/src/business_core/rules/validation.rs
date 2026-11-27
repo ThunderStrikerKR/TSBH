@@ -99,7 +99,7 @@ pub(super) fn validate_with_prior_core(state:&Value,before:Option<&Value>,
             }
         }
         for v in field(s,"actualFreight").as_object().into_iter().flat_map(|m|m.values()) {
-            if !v.is_null() && safe(v).is_none() {return Err("실제 출고 운임 금액 오류".into());}
+            if !v.is_null() && safe(v).is_none() {return Err("출고 운임 금액 오류".into());}
         }
         for v in field(s,"charges").as_object().into_iter().flat_map(|m|m.values()) {
             if !v.is_null() && safe(v).is_none() {return Err("운임 금액 오류".into());}
@@ -249,7 +249,7 @@ pub(super) fn validate_with_prior_core(state:&Value,before:Option<&Value>,
                             field(field(event,"after"),"amount")==current_freight
                         });
                     if !has_evidence {
-                        return Err("실제 출고 운임의 수정 근거를 확인하세요.".into());
+                        return Err("출고 운임의 수정 근거를 확인하세요.".into());
                     }
                 }
                 if has_value(field(old,"delivery")) &&
@@ -300,7 +300,7 @@ pub(super) fn validate_with_prior_core(state:&Value,before:Option<&Value>,
                     let metadata_only=old_file_only && !flag(current,"fileOnly") &&
                         current_delivered && metadata_view==*old &&
                         rows(field(w,"events")).iter().any(|e|
-                            str_field(e,"action")=="공장 전달 직원 확인" &&
+                            super::terminology::canonical_event_action(str_field(e,"action"))==super::terminology::FACTORY_DELIVERY_CONFIRMED &&
                             rows(field(e,"shipmentIds")).iter()
                                 .any(|sid|sid.as_str()==Some(str_field(old,"shipmentId"))));
                     let reopened=old_file_only && !old_delivered &&
@@ -352,7 +352,7 @@ pub(super) fn retail_issues(order:&Value,state:&Value)->Vec<String>{
         }
         let actual=field(row,"actualFreight");
         if !actual.is_null()&&safe(actual).is_none(){
-            issues.push("실제 출고 운임을 확인하세요.".into());
+            issues.push("출고 운임을 확인하세요.".into());
         }
         for item in rows(field(row,"items")){
             let found=rows(field(state,"products")).iter().any(|p|

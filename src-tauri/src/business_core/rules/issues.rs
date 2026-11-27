@@ -784,7 +784,7 @@ pub(super) fn issue_action(payload:&Value)->Result<Value,String> {
                 .iter().position(|i|str_field(i,"id")==iid));
             let bad=ri.zip(ii).is_none_or(|(ri,ii)|
                 !can_approve_missing_quantity(&order["recipients"][ri]["items"][ii]));
-            if bad{return Err("수량 미기재로 확인된 실제 상품만 1개 잠정 처리할 수 있습니다.".into());}
+            if bad{return Err("수량 미기재로 확인된 주문 상품만 1개 잠정 처리할 수 있습니다.".into());}
             let ri=ri.unwrap();
             let ii=ii.unwrap();
             let now=required_str(payload,"now")?;
@@ -997,7 +997,7 @@ mod quantity_staff_projection_tests {
         let good=order(item());
         assert_eq!(eligible_flag(&good),Some(true));
         let args=|o|json!({"action":"approve_missing_quantity","order":o,
-            "recipientId":"r","itemId":"i","now":"2026-11-17T09:00:00Z","actor":"직원"});
+            "recipientId":"r","itemId":"i","now":"2026-11-17T09:00:00Z","actor":"작업자"});
         let applied=issue_action(&args(good.clone())).unwrap();
         assert_eq!(applied["order"]["recipients"][0]["items"][0]["quantity"],1);
         for mutate in [

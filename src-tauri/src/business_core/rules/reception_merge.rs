@@ -347,7 +347,7 @@ mod tests{
     use super::*;
     #[test]fn matches_recipient_by_original_name_span_and_preserves_confirmations(){
         let before=json!({"id":"o","raw":"김가상 709","orderType":"DEALER",
-            "recipients":[{"id":"old","name":"직원확정","address":"서울",
+            "recipients":[{"id":"old","name":"수동확정","address":"서울",
                 "mobile":"010-1111-2222","phone":"","confirmedFields":["name"],
                 "sources":[{"field":"name","start":0,"text":"김가상"}],
                 "items":[{"id":"i-old","raw":"709 2개","manuallyConfirmed":true,
@@ -365,7 +365,7 @@ mod tests{
             "state":{"products":[]},"client":{"id":"c1","tier":"wholesale"}})).unwrap();
         let r=&result["order"]["recipients"][0];
         assert_eq!(r["id"],"old");
-        assert_eq!(r["name"],"직원확정");
+        assert_eq!(r["name"],"수동확정");
         assert_eq!(r["items"][0]["id"],"i-old");
         assert_eq!(result["order"]["analysisEvidence"][0]["recipientId"],"old");
         assert_eq!(result["order"]["analysisEvidence"][0]["itemId"],"i-old");

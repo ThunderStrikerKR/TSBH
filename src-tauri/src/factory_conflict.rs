@@ -65,7 +65,7 @@ fn correct_state(
     if row_number < 2 || target["applied"] == true
         || !text(&target, "issue").contains("충돌")
         || text(&target, "shipmentId").is_empty() {
-        return Err("직원 정정을 허용하는 충돌 행이 아닙니다.".into());
+        return Err("정정할 수 없는 충돌 항목입니다.".into());
     }
     if replies.iter().any(|r| r["resolves"]["id"] == id
         && r["resolves"]["row"] == row_number) {
@@ -81,7 +81,7 @@ fn correct_state(
     }
     let actual = target["actual"].as_u64()
         .filter(|n| *n <= MAX_JS_INT)
-        .ok_or("회신 실제 운임을 확인하세요.")?;
+        .ok_or("회신된 출고 운임을 확인하세요.")?;
     let contacts = target["contacts"].as_array()
         .ok_or("회신 연락처가 없습니다.")?;
     let matching_queue: HashSet<String> = state["workflow"]["queue"].as_array()
@@ -134,7 +134,7 @@ fn correct_state(
     }
     let actor = state["settings"]["operatorName"].as_str()
         .map(str::trim).filter(|s| !s.is_empty())
-        .unwrap_or("직원").to_owned();
+        .unwrap_or(bando_data_access::terminology::UNASSIGNED_ACTOR).to_owned();
     let now = now_utc(db)?;
     let new_id = unique_id(db)?;
     let before = json!({"tracking":old_tracking,"actual":old_actual});
@@ -229,7 +229,7 @@ mod tests {
                     "row":2,"name":"김수취","address":"서울 강남구 123",
                     "contacts":["010-1234-5678"],"tracking":"009988776655",
                     "actual":4000,"shipmentId":"ship-1","orderId":"order-1",
-                    "issue":"기존 송장 / 실제 운임과 충돌합니다. 직원 확인 필요"
+                    "issue":"기존 송장 / 출고 운임과 충돌합니다. 확인 필요"
                 }]
             }]
         });

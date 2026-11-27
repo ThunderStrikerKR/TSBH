@@ -266,7 +266,7 @@ mod tests{
              "confirmedAt":"2026-11-07T12:00:00+09:00",
              "recipients":[{"id":"recipient-confirmed","name":"받는 사람 B","items":[confirmed_item.clone()]}],
              "confirmationSnapshot":snapshot,
-             "receipt":{"original":"가상원문","actor":"가상 직원"}}
+             "receipt":{"original":"가상원문","actor":"가상 작업자"}}
         ]);
         let original_confirmed=old["orders"][1].clone();
         let original_links=old["sourceLinks"].clone();

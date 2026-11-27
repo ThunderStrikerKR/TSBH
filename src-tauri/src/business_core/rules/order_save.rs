@@ -41,7 +41,7 @@ fn queue_issues(order: &Value, client: &Value, total: &Value) -> Vec<String> {
     if total.is_null() { issues.push("청구 금액 / 운임 미확정".into()); }
     if !flag(order, "notified") { issues.push("안내 완료 처리 필요".into()); }
     if str_field(client, "payment") == "PREPAID" && !flag(order, "paid") {
-        issues.push("실제 입금 확인 필요".into());
+        issues.push("입금 확인 필요".into());
     }
     if str_field(client, "payment") == "POSTPAID" && !flag(order, "postpaidApproved") {
         issues.push("후불 출고 승인 필요".into());

@@ -4185,7 +4185,7 @@ mod quote_reuse_tests {
         let original=sample();
         for field in ["name","mobile","phone","note"]{
             let mut updated=original.clone();
-            updated["recipients"][0][field]=json!("직원 수정");
+            updated["recipients"][0][field]=json!("작업자 수정");
             assert_eq!(
                 price_input_snapshot(&original),price_input_snapshot(&updated),
                 "editing {field} must not refresh the invoice"
@@ -4300,7 +4300,7 @@ mod inline_recognition_identity_tests{
         for recipient_id in ["recognition:recipient:0","draft-identity:recognition:recipient:0"] {
         let event=apply_inline(&gateway,&source,&InlineRequest{
             recipient_id:recipient_id.into(),
-            item_id:None,field:"note".into(),value:json!("직원 메모")
+            item_id:None,field:"note".into(),value:json!("작업자 메모")
         }).expect("inline cell edit");
         let Event::Applied{order,model,..}=event else{
             panic!("inline edit must return an applied model");
@@ -4317,7 +4317,7 @@ mod inline_recognition_identity_tests{
             "draft-identity:recognition:recipient:0");
         assert_eq!(order["analysisEvidence"][0]["itemId"],
             "draft-identity:recognition:item:0:0");
-        assert_eq!(order["recipients"][0]["note"],"직원 메모");
+        assert_eq!(order["recipients"][0]["note"],"작업자 메모");
         let mut legacy=source.clone();
         // Legacy model IDs are normalized at the same boundary.
         let mut saved=model.clone();

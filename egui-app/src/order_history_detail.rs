@@ -327,7 +327,7 @@ fn change_entries(order:&Value,state:&Value,shipment_ids:&HashSet<&str>)->Vec<Au
             at:field(change,"at").to_owned(),
             title:"발주 원문 변경".into(),
             detail:format!("담당자 {} · 변경 전 원문: {}",
-                display_or(field(change,"actor"),"미확인"),
+                bando_data_access::terminology::display_actor(field(change,"actor")),
                 audit_value(&change["raw"]))
         });
     }
@@ -337,7 +337,7 @@ fn change_entries(order:&Value,state:&Value,shipment_ids:&HashSet<&str>)->Vec<Au
             title:"발주 원문 정정".into(),
             detail:format!(
                 "담당자 {} · {} · 변경 전 {} → 변경 후 {}",
-                display_or(field(change,"actor"),"미확인"),
+                bando_data_access::terminology::display_actor(field(change,"actor")),
                 display_or(field(change,"reason"),"정정 사유 미기록"),
                 audit_value(&change["before"]),audit_value(&change["after"])
             )
@@ -366,14 +366,14 @@ fn change_entries(order:&Value,state:&Value,shipment_ids:&HashSet<&str>)->Vec<Au
             (None,None)=>String::new()
         };
         let details=[
-            field(event,"actor").to_owned(),
-            field(event,"reason").to_owned(),
+            bando_data_access::terminology::display_actor(field(event,"actor")).to_owned(),
+            bando_data_access::terminology::display_reason(field(event,"reason")).to_owned(),
             difference
         ].into_iter().filter(|text|!text.trim().is_empty())
             .collect::<Vec<_>>().join(" · ");
         output.push(AuditEntry{
             at:field(event,"at").to_owned(),
-            title:display_or(field(event,"action"),"업무 기록").to_owned(),
+            title:display_or(bando_data_access::terminology::display_event_action(field(event,"action")),"업무 기록").to_owned(),
             detail:details
         });
     }

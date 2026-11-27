@@ -60,7 +60,7 @@ fn receipt_of(order:&Value)->Value{
         .and_then(|e|e.get("raw")).filter(|v|!v.is_null())
         .unwrap_or_else(||field(order,"raw"));
     json!({"original":initial,"at":field(order,"createdAt"),
-        "actor":"과거 데이터 / 접수 직원 미확인",
+        "actor":"과거 데이터 / 접수 작업자 미확인",
         "clientId":field(order,"clientId"),"legacy":true})
 }
 pub(super) fn apply(payload:&Value)->Result<Value,String>{
@@ -83,7 +83,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String>{
                 return Err("작업용 원문과 정정 사유를 입력하세요.".into());
             }
             let actor=str_field(field(input,"settings"),"operatorName");
-            let actor=if actor.is_empty(){"직원"}else{actor};
+            let actor=if actor.is_empty(){super::terminology::UNASSIGNED_ACTOR}else{actor};
             let before=field(order,"analysisRaw").as_str()
                 .unwrap_or_else(||str_field(order,"raw"));
             if text==before{return Err("변경한 내용이 없습니다.".into());}

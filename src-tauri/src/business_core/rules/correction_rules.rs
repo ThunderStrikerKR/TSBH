@@ -7,7 +7,7 @@ use super::{field,find_by_id,flag,has_value,req,required_str,rows,safe,set,str_f
 
 fn actor(state:&Value)->String {
     let v=str_field(field(state,"settings"),"operatorName");
-    if v.is_empty(){"직원".into()}else{v.into()}
+    if v.is_empty(){super::terminology::UNASSIGNED_ACTOR.into()}else{v.into()}
 }
 fn id<'a>(payload:&'a Value,n:usize)->Result<&'a str,String>{
     rows(field(payload,"ids")).get(n).and_then(Value::as_str)
@@ -232,7 +232,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String>{
             let current_status=status(&state,request_id);
             if current_status=="CONFIRMED"{return Ok(json!({"state":state}));}
             if current_status!="PENDING_FACTORY"{
-                return Err("변경 문구 복사 후 실제 공장 반영을 확인하세요.".into());
+                return Err("변경 문구 복사 후 공장 반영 여부를 확인하세요.".into());
             }
             let sid=str_field(&request,"shipmentId").to_string();
             let si=ship_idx(&state,&sid)
@@ -280,10 +280,10 @@ pub(super) fn apply(payload:&Value)->Result<Value,String>{
                 }
             }
             let has_event=rows(field(&state["workflow"],"events")).iter().any(|e|
-                str_field(e,"action")=="공장 전달 직원 확인"&&
+                super::terminology::canonical_event_action(str_field(e,"action"))==super::terminology::FACTORY_DELIVERY_CONFIRMED&&
                 rows(field(e,"shipmentIds")).iter().any(|x|x.as_str()==Some(sid)));
             if !has_event{
-                push_event(&mut state,payload,0,"공장 전달 직원 확인",sid,None,None)?;
+                push_event(&mut state,payload,0,super::terminology::FACTORY_DELIVERY_CONFIRMED,sid,None,None)?;
             }
         }
         "mark_collected"=>{

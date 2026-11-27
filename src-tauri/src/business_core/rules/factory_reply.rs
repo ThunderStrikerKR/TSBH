@@ -195,7 +195,7 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
             && field(&current,"actual").as_i64().is_some_and(|n|
                 (0..=9_007_199_254_740_991).contains(&n));
         if !valid{
-            reply["rows"][index]["issue"]=json!("필수 배송정보 / Q열 운송장 / 실제 운임 확인 필요");
+            reply["rows"][index]["issue"]=json!("필수 배송정보 / Q열 운송장 / 출고 운임 확인 필요");
             continue
         }
         let explicit=if source.get("resolves").is_some()&&count==1 {
@@ -253,12 +253,12 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
         // order. Keep its independent audit event before the reply event.
         let order=rows(&next,"orders").iter()
             .find(|o|s(o,"id")==s(&ship,"orderId"))
-            .ok_or("실제 출고지와 배송 건을 확인하세요.")?;
+            .ok_or("출고지와 배송 건을 확인하세요.")?;
         let original_recipient=rows(order,"recipients").iter()
             .find(|r|s(r,"id")==s(&ship,"recipientId"))
-            .ok_or("실제 출고지와 배송 건을 확인하세요.")?;
+            .ok_or("출고지와 배송 건을 확인하세요.")?;
         if !rows(original_recipient,"items").iter().any(|i|s(i,"origin")=="FACTORY"){
-            return Err("실제 출고지와 배송 건을 확인하세요.".into())
+            return Err("출고지와 배송 건을 확인하세요.".into())
         }
         // Read the current effective cost, never the frozen export note.
         let order_actual=actual(&ship,original_recipient);
@@ -284,7 +284,7 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
             changes.push(json!({"field":"운송장번호 변경","before":prev_tracking,"after":s(&current,"tracking")}));
         }
         if !prev_actual.is_null()&&prev_actual!=*wanted{
-            changes.push(json!({"field":"실제 운임 변경","before":grouped_amount(&prev_actual),"after":grouped_amount(wanted)}));
+            changes.push(json!({"field":"출고 운임 변경","before":grouped_amount(&prev_actual),"after":grouped_amount(wanted)}));
         }
         if !changes.is_empty(){reply["rows"][index]["notificationChanges"]=json!(changes);}
         if !prev_tracking.is_empty()&&prev_tracking==s(&current,"tracking")&&prev_actual==*wanted{
@@ -421,7 +421,7 @@ fn parse_reply(payload:&Value)->Result<Value,String>{
         }else if !valid_tracking(&tracking){
             Some("Q열 운송장번호가 없거나 올바르지 않습니다.")
         }else if freight.is_none(){
-            Some("G열 실제 택배운임은 0 이상의 정수로 입력하세요.")
+            Some("G열 출고 운임은 0 이상의 정수로 입력하세요.")
         }else{None};
         let mut row=json!({"row":n,"name":name,"address":address,
             "contacts":contacts,"goods":goods,"matchDate":field(payload,"businessDate"),
@@ -798,7 +798,7 @@ mod tests {
         let recipient=json!({"id":"r1","name":"김수취","address":"서울 종로구 10",
             "phone":"010-1234-5678","mobile":"","actualFreight":null,
             "items":[{"id":"item","origin":"FACTORY"}]});
-        json!({"revision":3,"factoryReplies":[],"settings":{"operatorName":"직원"},
+        json!({"revision":3,"factoryReplies":[],"settings":{"operatorName":"작업자"},
             "orders":[{"id":"o1","recipients":[recipient.clone()]}],
             "workflow":{"shipments":[{"id":"s1","orderId":"o1","recipientId":"r1",
                 "tracking":{},"actualFreight":{}}],
@@ -814,7 +814,7 @@ mod tests {
             "trackingNumeric":false,"reservedJ":false,"extraAfterQ":false
         }],"id":"factory-reply-test","filename":"reply.xlsx",
             "businessDate":"2026-11-13","at":"2026-11-13T10:00:00Z",
-            "actor":"직원"})
+            "actor":"작업자"})
     }
     #[test] fn collision_preview_is_read_only_and_recovers_exact_old_values(){
         let mut state=fixture();

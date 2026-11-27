@@ -681,19 +681,18 @@ mod modal_input_routing_tests {
         let mut popup_layer=None;
         let mut popup_rect=Rect::NOTHING;
         let mut owner_body=Rect::NOTHING;
-        for frame in 0..4 {
+        // Mount the owner before opening its native menu, matching the
+        // production interaction. The initial sizing pass is not painted.
+        for frame in 0..6 {
             let mut raw=egui::RawInput::default();
             raw.screen_rect=Some(work_area);
-            // Advance the same monotonic clock used by actual egui frames.
-            // The first pass mounts/sizes the menu; every subsequent raise
-            // must still paint it visibly above its opaque owner.
             raw.time=Some(f64::from(frame)*0.2);
             let output=ctx.run(raw,|ctx|{
                 crate::overlay::begin_frame(ctx);
                 modal_backdrop(ctx,"popup-owner-regression-dim",true);
                 show_decision_window(ctx,"Popup owner","popup-owner-regression",work_area,|ui|{
                     let trigger=ui.button("Open popup");
-                    egui::Popup::open_id(ctx,egui::Popup::default_response_id(&trigger));
+                    if frame==2{egui::Popup::open_id(ctx,egui::Popup::default_response_id(&trigger));}
                     let _=crate::overlay::show_menu(&trigger,None,|menu|{
                         let response=menu.button("Select option");
                         popup_layer=Some(response.layer_id);
@@ -707,7 +706,8 @@ mod modal_input_routing_tests {
                 });
                 crate::overlay::finish_frame(ctx);
             });
-            if frame>=1{
+            if frame>=3{
+                assert!(egui::Popup::is_any_open(&ctx),"menu must remain open after owner raise in frame {frame}");
                 crate::ui_test_support::assert_painted_caption(&output,"Select option",popup_rect);
             }
         }

@@ -31,7 +31,7 @@ fn validate_new_correction(old: &Value, next: &Value, correction: &Value) -> Res
         || correction["before"].as_str() != Some(before)
         || correction["after"].as_str() != Some(after)
     {
-        return Err("접수 정정의 전후 원문이 실제 변경과 일치하지 않습니다.".into());
+        return Err("접수 정정의 전후 원문이 변경 내용과 일치하지 않습니다.".into());
     }
     for key in ["at", "actor", "reason"] {
         if !correction[key].as_str().is_some_and(|s| !s.trim().is_empty()) {
@@ -302,7 +302,7 @@ mod tests {
         after["orders"][0]["analysisRaw"]=json!("수정 후");
         assert!(validate_reception(&before,&after).unwrap_err().contains("정정 이력"));
         after["orders"][0]["rawCorrections"]=json!([{"id":"correction-1","at":"2026-11-07T08:00:00Z",
-            "actor":"직원","reason":"잘못 입력된 모델 정정","before":"수정 전","after":"수정 후",
+            "actor":"작업자","reason":"잘못 입력된 모델 정정","before":"수정 전","after":"수정 후",
             "affectedRecipientIds":["recipient"]}]);
         assert!(validate_reception(&before,&after).is_ok());
         after["orders"][0]["rawCorrections"][0]["before"]=json!("위조한 원문");

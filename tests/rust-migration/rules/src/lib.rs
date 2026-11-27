@@ -346,7 +346,7 @@ mod regression {
         assert_eq!(view["issues"],json!([]));
         let advanced=run("apply_workflow_action",json!({
             "state":s,"groupId":"group:o1","action":"advance_group",
-            "eventId":"event-1","now":"2026-11-13T10:00:00+09:00","actor":"직원"
+            "eventId":"event-1","now":"2026-11-13T10:00:00+09:00","actor":"작업자"
         }));
         assert_eq!(advanced["step"],4);
         assert_eq!(advanced["state"]["workflow"]["events"][0]["action"],"후불 출고 승인");
@@ -647,7 +647,7 @@ mod regression {
         before["workflow"]["confirmations"]=json!([{
             "id":"confirm-1","groupId":"group:o1","dealerId":"dealer-1",
             "shipmentIds":["shipment:o1:r1"],"amount":36300,
-            "confirmedAt":"2026-11-13T09:00:00+09:00","actor":"직원",
+            "confirmedAt":"2026-11-13T09:00:00+09:00","actor":"작업자",
             "announcedAccount":{"id":"account-1","bank":"가상은행",
                 "number":"123-456","holder":"가상상호"},
             "allocations":[{"shipmentId":"shipment:o1:r1","amount":36300}]
@@ -742,7 +742,7 @@ mod regression {
         state["workflow"]["confirmations"]=json!([{
             "id":"confirmation-1","groupId":"group:o1","dealerId":"dealer-1",
             "shipmentIds":["shipment:o1:r1"],"amount":36300,
-            "confirmedAt":"2026-11-13T09:00:00+09:00","actor":"직원",
+            "confirmedAt":"2026-11-13T09:00:00+09:00","actor":"작업자",
             "allocations":[{"shipmentId":"shipment:o1:r1","amount":36300}]
         }]);
         let updated=run("apply_workflow_action",json!({
@@ -780,7 +780,7 @@ mod regression {
         let mut state=two_shipments_in_one_group();
         state["workflow"]["groups"][0]["notices"]=json!([{
             "id":"notice-1","at":"2026-11-13T09:00:00+09:00",
-            "actor":"직원","shipmentIds":["shipment:o1:r1","shipment:o1:r2"],
+            "actor":"작업자","shipmentIds":["shipment:o1:r1","shipment:o1:r2"],
             "amounts":{"shipment:o1:r1":36300,"shipment:o1:r2":36300},
             "total":72600,"account":{"id":"account-1","bank":"가상은행",
                 "number":"123-456","holder":"가상상호"},"message":"가상 안내"
@@ -984,12 +984,15 @@ mod regression {
         after["workflow"]["queue"][0]["factoryDeliveredAt"]=json!("2026-11-13T15:00:00+09:00");
         after["workflow"]["events"].as_array_mut().unwrap().push(json!({
             "id":"event-1","action":"공장 전달 직원 확인",
-            "at":"2026-11-13T15:00:00+09:00","actor":"직원",
+            "at":"2026-11-13T15:00:00+09:00","actor":"작업자",
             "shipmentIds":["shipment:o1:r1"]
         }));
         assert_eq!(run("validate_workflow",json!({
             "state":after,"before":before
         }))["valid"],true);
+        let mut canonical=after.clone();
+        canonical["workflow"]["events"][0]["action"]=json!("공장 전달 확인");
+        assert_eq!(run("validate_workflow",json!({"state":canonical,"before":before}))["valid"],true);
         let mut forged=after.clone();
         forged["workflow"]["events"]=json!([]);
         assert!(execute("validate_workflow",json!({
@@ -1009,7 +1012,7 @@ mod regression {
         after["workflow"]["queue"][0]["status"]=json!("CANCELLED");
         after["workflow"]["events"].as_array_mut().unwrap().push(json!({
             "id":"event-discard","action":"전달 전 출력본 폐기 / 재작성",
-            "at":"2026-11-13T15:00:00+09:00","actor":"직원",
+            "at":"2026-11-13T15:00:00+09:00","actor":"작업자",
             "shipmentIds":["shipment:o1:r1"]
         }));
         after["exports"]=json!([{
@@ -1030,7 +1033,7 @@ mod regression {
         before["workflow"]["confirmations"]=json!([{
             "id":"confirm-1","groupId":"group:o1","dealerId":"dealer-1",
             "shipmentIds":["shipment:o1:r1","shipment:o1:r2"],
-            "amount":72600,"actor":"직원",
+            "amount":72600,"actor":"작업자",
             "confirmedAt":"2026-11-13T12:00:00+09:00",
             "announcedAccount":{"id":"account-1","bank":"가상은행",
                 "number":"123-456","holder":"가상상호"},

@@ -50,7 +50,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String>{
             if !issues.is_empty(){return Err(issues.join("\n"));}
             let at=required_str(payload,"now")?;
             let staff=str_field(field(input,"settings"),"operatorName");
-            let actor=if staff.is_empty(){"직원"}else{staff};
+            let actor=if staff.is_empty(){super::terminology::UNASSIGNED_ACTOR}else{staff};
             let mut order=draft.clone();
             set(&mut order,"clientId",json!(""))?;
             set(&mut order,"raw",json!(""))?;

@@ -368,7 +368,7 @@ fn validate_color_guidance(state: &Value) -> Result<(), String> {
         if let Some(representative) = group.get("representativeProductId") {
             let selected = representative.as_str().unwrap_or("").trim();
             if selected.is_empty() {
-                return Err("모델군에 등록된 실제 상품을 대표모델로 선택하세요.".into());
+                return Err("모델군에 등록된 상품을 대표모델로 선택하세요.".into());
             }
             let mut local = std::collections::HashSet::new();
             for member in members {
@@ -414,7 +414,7 @@ fn validate_color_guidance(state: &Value) -> Result<(), String> {
             let v=&p["variants"][0];
             let color=canonical_color_key(v["color"].as_str().unwrap_or(""));
             if color.is_empty() || color=="단일" || color=="색상 미표기" {
-                return Err("실제 색상이 등록된 상품만 그룹에 등록하세요.".into());
+                return Err("색상이 등록된 상품만 그룹에 등록하세요.".into());
             }
             if !colors.insert(color) { return Err("같은 색상이 중복됐습니다. 규격을 확인하세요.".into()); }
             let price=(v["wholesale"].clone(),v["semi"].clone(),v["retail"].clone());

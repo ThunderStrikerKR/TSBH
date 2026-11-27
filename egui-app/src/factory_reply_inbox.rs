@@ -377,7 +377,7 @@ mod tests{
             "phone":"010-0000-0000","mobile":"","actualFreight":null,
             "items":[{"id":"i1","origin":"FACTORY","quantity":1,"unitPrice":10000}]});
         let mut state=json!({"revision":7,"products":[],"clients":[],"aliases":[],"queue":[],"exports":[],
-            "factoryReplies":[],"settings":{"accounts":[],"operatorName":"합성 직원",
+            "factoryReplies":[],"settings":{"accounts":[],"operatorName":"합성 작업자",
                 "factoryReplyDirectory":inbox.to_string_lossy(),"excelDirectory":archive.to_string_lossy()},
             "orders":[{"id":"o1","clientId":"c1","raw":"합성 원문","recipients":[recipient.clone()]}],
             "workflow":{"sources":[{"id":"src1","orderId":"o1"}],
@@ -643,7 +643,7 @@ mod tests{
         source["businessDate"]=json!("2026-11-25");
         source["at"]=json!("2026-11-25T01:00:00Z");
         source["freightAt"]=source["at"].clone();
-        source["actor"]=json!("합성 직원");
+        source["actor"]=json!("합성 작업자");
         source["freightEventIds"]=json!(["f1","f2"]);
         source["replyEventIds"]=json!(["e1","e2"]);
         let mut expected=rules::import_automatic_factory_reply(&initial,&source).unwrap();

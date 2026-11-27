@@ -22,7 +22,7 @@ pub(crate) fn resolve_export_path(state: &Value, id: &str) -> Result<PathBuf, St
         .ok_or("출력 파일 이름을 확인할 수 없습니다.")?;
     if file.file_name().and_then(|name|name.to_str())
         .is_none_or(|name| !name.eq_ignore_ascii_case(filename)) {
-        return Err("출력 이력에 기록된 파일 이름과 실제 경로가 다릅니다.".into());
+        return Err("출력 이력에 기록된 파일 이름과 파일 경로가 일치하지 않습니다.".into());
     }
     let is_xlsx = |path: &Path| path.extension().and_then(|e|e.to_str())
         .is_some_and(|ext|ext.eq_ignore_ascii_case("xlsx"));

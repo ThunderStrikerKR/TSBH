@@ -85,12 +85,12 @@ pub(super) fn price_history(before:&Value,next:&Value)->CheckResult{
         }
         for entry in added{
             let key=text(entry,"field");
-            let Some((a,b))=expected.remove(key)else{return Err("실제 가격 변경과 일치하지 않는 이력".into());};
+            let Some((a,b))=expected.remove(key)else{return Err("가격 변경과 일치하지 않는 이력".into());};
             if entry["before"]!=*a||entry["after"]!=*b||text(entry,"at").is_empty()||text(entry,"source").is_empty(){
                 return Err("가격 변경 이력의 전후 금액 또는 기록 정보 오류".into());
             }
         }
-        if !expected.is_empty(){return Err("실제 가격 변경의 이력이 누락되었습니다.".into());}
+        if !expected.is_empty(){return Err("가격 변경 이력이 누락되었습니다.".into());}
     }
     // New product registration may have an empty or absent history; no
     // prior persisted price exists. Imported historical rows need a

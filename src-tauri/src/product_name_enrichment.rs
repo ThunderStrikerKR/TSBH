@@ -390,7 +390,7 @@ mod tests {
             .position(|p| p["id"] == "bando-site-300").unwrap();
         let original_price = before["products"][first]["variants"].clone();
         before["products"][first]["name"] = json!("BD 777");
-        before["products"][second]["name"] = json!("직원 직접 지정 이름");
+        before["products"][second]["name"] = json!("작업자 직접 지정 이름");
         let before_orders = before["orders"].clone();
         let before_clients = before["clients"].clone();
         let expected_revision = before["revision"].as_u64().unwrap();
@@ -398,7 +398,7 @@ mod tests {
         assert_eq!(apply(&mut db, &base).unwrap(), 1);
         let after = get_snapshot(&db).unwrap();
         assert_eq!(after["products"][first]["name"], "BD 777 / 고정형 보면대");
-        assert_eq!(after["products"][second]["name"], "직원 직접 지정 이름");
+        assert_eq!(after["products"][second]["name"], "작업자 직접 지정 이름");
         assert_eq!(after["products"][first]["variants"], original_price);
         assert_eq!(after["orders"], before_orders);
         assert_eq!(after["clients"], before_clients);
@@ -433,7 +433,7 @@ mod tests {
             // Staff-added wording remains, while the unwanted prefix alone is removed.
             if product["siteId"] == "310" {
                 product["name"] = json!(
-                    "반도스탠드 BD Desk JS-4 Black 검정 / 직원 직접 수정"
+                    "반도스탠드 BD Desk JS-4 Black 검정 / 작업자 직접 수정"
                 );
             }
             // Even if the employee set the name back to the original, a recorded
@@ -442,7 +442,7 @@ mod tests {
                 product["name"] = product["originalName"].clone();
                 product["priceHistory"] = json!([{
                     "field": "name", "source": "MANUAL",
-                    "before": "직원 기록 이전 이름", "after": "공식 이름",
+                    "before": "작업자 기록 이전 이름", "after": "공식 이름",
                     "at": "2026-11-09T00:00:00+09:00"
                 }]);
             }
@@ -463,7 +463,7 @@ mod tests {
         assert_eq!(by_site("254")["name"], "BD Desk JS-2 / 실버 / 자바라 길이 35cm");
         assert_eq!(by_site("249")["name"], "BD Desk TS-3 / 실버 / Bar 길이 32cm");
         assert_eq!(by_site("310")["name"],
-            "BD Desk JS-4 Black 검정 / 직원 직접 수정");
+            "BD Desk JS-4 Black 검정 / 작업자 직접 수정");
         assert_eq!(by_site("245")["name"],
             "BD Desk JS-2 Black 검정 (자바라 길이 35cm)");
 
@@ -496,7 +496,7 @@ mod tests {
         let original_price = target["variants"].clone();
         let original_name = target["originalName"].clone();
         target["name"] = json!(
-            "반도스탠드 BD Desk JS-3 Black 검정 (자바라 길이 43cm) / 직원 별도 메모"
+            "반도스탠드 BD Desk JS-3 Black 검정 (자바라 길이 43cm) / 작업자 별도 메모"
         );
         target["siteCode"] = Value::Null; // Old database has incomplete optional metadata.
         target["priceHistory"] = json!([{"field":"name","source":"MANUAL"}]);
@@ -506,7 +506,7 @@ mod tests {
             .find(|p| p["siteId"] == "246").unwrap();
         assert_eq!(
             updated["name"],
-            "BD Desk JS-3 Black 검정 (자바라 길이 43cm) / 직원 별도 메모"
+            "BD Desk JS-3 Black 검정 (자바라 길이 43cm) / 작업자 별도 메모"
         );
         assert_eq!(updated["originalName"], original_name);
         assert_eq!(updated["variants"], original_price);
@@ -704,11 +704,11 @@ mod tests {
         )).unwrap();
         let p = state["products"].as_array_mut().unwrap().iter_mut()
             .find(|p| p["siteId"] == "319").unwrap();
-        p["name"] = json!("BD FloorJS-2BK / 직원 직접 작성한 상품명");
+        p["name"] = json!("BD FloorJS-2BK / 작업자 직접 작성한 상품명");
         assert_eq!(apply_to_state(&mut state).unwrap(), 0);
         let p = state["products"].as_array().unwrap().iter()
             .find(|p| p["siteId"] == "319").unwrap();
-        assert_eq!(p["name"], "BD FloorJS-2BK / 직원 직접 작성한 상품명");
+        assert_eq!(p["name"], "BD FloorJS-2BK / 작업자 직접 작성한 상품명");
     }
 
     #[test]
@@ -775,11 +775,11 @@ mod tests {
         )).unwrap();
         let item=state["products"].as_array_mut().unwrap().iter_mut()
             .find(|p|p["siteId"]=="301").unwrap();
-        item["name"]=json!("BD LED-2W / 직원이 직접 수정한 상품명");
+        item["name"]=json!("BD LED-2W / 작업자이 직접 수정한 상품명");
         assert_eq!(apply_to_state(&mut state).unwrap(),0);
         let updated=state["products"].as_array().unwrap().iter()
             .find(|p|p["siteId"]=="301").unwrap();
-        assert_eq!(updated["name"],"BD LED-2W / 직원이 직접 수정한 상품명");
+        assert_eq!(updated["name"],"BD LED-2W / 작업자이 직접 수정한 상품명");
     }
 
     #[test]

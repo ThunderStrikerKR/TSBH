@@ -3,6 +3,79 @@
 use serde_json::{json, Value};
 
 mod pricing;
+/// Common business terminology, including the legacy read compatibility.
+pub mod terminology {
+    pub const UNASSIGNED_ACTOR: &str = "작업자 미지정";
+    pub const FACTORY_DELIVERY_CONFIRMED: &str = "공장 전달 확인";
+
+    pub fn canonical_event_action(action:&str)->&str{
+        match action{
+            "공장 전달 직원 확인"=>FACTORY_DELIVERY_CONFIRMED,
+            _=>action,
+        }
+    }
+
+    /// Translate persisted action names for display only; identity checks stay unchanged.
+    pub fn display_event_action(action:&str)->&str{
+        match action{
+            "실제 출고 운임 입력"=>"출고 운임 입력",
+            "실제 입금 기록"=>"입금 기록",
+            "실제 배송 완료 / 운임 검증"=>"배송 완료 / 운임 검증",
+            _=>canonical_event_action(action),
+        }
+    }
+
+    /// Only translate known, generated factory-reply messages, not source text.
+    pub fn display_factory_issue(issue:&str)->String{
+        issue.replace("직원 확인 필요","확인 필요")
+            .replace("실제 운임","출고 운임")
+            .replace("실제 택배운임","출고 운임")
+    }
+
+    pub fn display_factory_field(field:&str)->&str{
+        match field{
+            "실제 운임 변경"=>"출고 운임 변경",
+            _=>field,
+        }
+    }
+
+    /// Render known legacy system placeholders without changing stored evidence.
+    pub fn display_actor(actor:&str)->&str{
+        match actor{
+            ""|"직원"|"직원(이름 미설정)"=>UNASSIGNED_ACTOR,
+            "과거 데이터 / 접수 직원 미확인"=>"과거 데이터 / 접수 작업자 미확인",
+            _=>actor,
+        }
+    }
+
+    pub fn display_reason(reason:&str)->&str{
+        match reason{
+            "직원이 운임 설정 변경"=>"운임 설정 변경",
+            _=>reason,
+        }
+    }
+
+    #[cfg(test)]
+    mod tests{
+        use super::*;
+        #[test]
+        fn legacy_terminology_is_display_only_and_event_aliases_match(){
+            assert_eq!(canonical_event_action("공장 전달 직원 확인"),FACTORY_DELIVERY_CONFIRMED);
+            assert_eq!(canonical_event_action(FACTORY_DELIVERY_CONFIRMED),FACTORY_DELIVERY_CONFIRMED);
+            assert_eq!(canonical_event_action("공장 전달"),"공장 전달");
+            assert_eq!(display_event_action("실제 출고 운임 입력"),"출고 운임 입력");
+            assert_eq!(display_event_action("실제 입금 기록"),"입금 기록");
+            assert_eq!(display_event_action("실제 배송 완료 / 운임 검증"),"배송 완료 / 운임 검증");
+            assert_eq!(display_factory_issue("기존 송장 / 실제 운임과 충돌합니다. 직원 확인 필요"),"기존 송장 / 출고 운임과 충돌합니다. 확인 필요");
+            assert_eq!(display_factory_field("실제 운임 변경"),"출고 운임 변경");
+            assert_eq!(display_actor("직원"),UNASSIGNED_ACTOR);
+            assert_eq!(display_actor("직원(이름 미설정)"),UNASSIGNED_ACTOR);
+            assert_eq!(display_actor("김작업자"),"김작업자");
+            assert_eq!(display_reason("직원이 운임 설정 변경"),"운임 설정 변경");
+        }
+    }
+}
+
 pub(crate) use pricing::{ReceptionEditQuoteCache,vat_applies};
 pub mod settings_accounts;
 mod reconciliation;
