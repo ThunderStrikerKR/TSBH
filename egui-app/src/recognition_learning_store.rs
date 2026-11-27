@@ -145,7 +145,13 @@ fn replace(tx:&Transaction<'_>,scope:&str,id:&str,new:&[Fact])->Result<bool,Stri
         tx.execute("INSERT INTO recognition_learning_orders VALUES(?1,?2,?3)",params![scope,FEATURE_VERSION,id]).map_err(|e|e.to_string())?;
     }
     for ((family,k,metric,candidate),n) in &previous{
-        if next.get(&(family.clone(),k.clone(),metric.clone(),candidate.clone()))==Some(n){continue;}
+        if next.get(&(family.clone(),k.clone(),metric.clone(),candidate.clone()))==Some(n){
+            let valid:i64=tx.query_row("SELECT count(*) FROM recognition_learning_totals
+                WHERE scope=?1 AND feature_version=?2 AND family=?3 AND context_key=?4 AND metric=?5 AND candidate=?6 AND amount>=?7",
+                params![scope,FEATURE_VERSION,family,k,metric,candidate,n],|r|r.get(0)).map_err(|e|e.to_string())?;
+            if valid!=1{return Err("기존 학습 합계 불일치: 갱신을 중단했습니다.".into());}
+            continue;
+        }
         let changed=tx.execute("UPDATE recognition_learning_totals SET amount=amount-?7
             WHERE scope=?1 AND feature_version=?2 AND family=?3 AND context_key=?4 AND metric=?5 AND candidate=?6 AND amount>=?7",
             params![scope,FEATURE_VERSION,family,k,metric,candidate,n]).map_err(|e|e.to_string())?;
@@ -718,6 +724,53 @@ mod recognition_learning_store_tests{
             "weakCandidates":{"address":n},"weakCandidateOrders":{"address":1},
             "explicitPositiveCandidates":{},"explicitNegativeCandidates":{},
             "explicitPositiveCandidateOrders":{},"explicitNegativeCandidateOrders":{}}}]})
+    }
+    #[test]
+    fn performance_shared_context_benchmark(){
+        use std::time::Instant;
+        let mut c=conn();
+        let ids=(0..64).map(|i|format!("synthetic-{i:03}")).collect::<Vec<_>>();
+        let orders=ids.iter().map(|id|json!({"id":id})).collect::<Vec<_>>();
+        let keys=(0..12).map(|i|json!([1,"type","base",null,["address",i]]).to_string()).collect::<BTreeSet<_>>();
+        let tx=c.transaction().unwrap();
+        synchronize(&tx,"perf",&ids,&orders,|_|{
+            let mut r=report(1);let counts=r["fieldStatistics"][0]["counts"].clone();
+            r["fieldStatistics"]=json!([]);
+            r["fieldContextStatistics"]=json!(keys.iter().map(|key|json!({"key":key,"counts":counts})).collect::<Vec<_>>());
+            Ok(r)
+        }).unwrap();
+        let queries=keys.iter().map(|key|json!({"task":"type","contextKey":key,"targetOrderId":"target",
+            "candidates":["address","name"],"explicitToWeakRatio":3.0})).collect::<Vec<_>>();
+        let started=Instant::now();
+        let baseline=queries.iter().map(|q|assess_support(&tx,"perf",q).unwrap()).collect::<Vec<_>>();
+        let baseline_us=started.elapsed().as_micros();
+        let started=Instant::now();
+        let members=shadow_capture_contexts(&tx,"perf","target",&keys).unwrap();
+        let mut verified=BTreeMap::new();
+        for id in &ids{
+            let digest:String=tx.query_row("SELECT fingerprint FROM recognition_learning_fingerprints WHERE scope='perf' AND order_id=?1",
+                [id],|r|r.get(0)).unwrap();
+            verified.insert(id.clone(),verified_facts(&tx,"perf",id,&digest).unwrap().unwrap());
+        }
+        let optimized=queries.iter().map(|q|assess_verified_support(q,&members,&verified).unwrap()).collect::<Vec<_>>();
+        let shared_us=started.elapsed().as_micros();
+        assert_eq!(baseline,optimized);
+        assert_eq!(verified.len(),64);
+        // Report actual runner measurements, not a brittle wall-clock gate.
+        println!("learning_perf context_orders=64 contexts=12 independent_context_us={baseline_us} shared_context_us={shared_us} independent_verifications=768 shared_verifications=64");
+    }
+    #[test]
+    fn performance_incremental_facts_preserve_unchanged_rows(){
+        let mut c=conn();
+        let tx=c.transaction().unwrap();
+        let ids=vec!["a".to_owned()];
+        synchronize(&tx,"perf",&ids,&[json!({"id":"a","revision":1})],|_|Ok(report(1))).unwrap();
+        let before:i64=tx.query_row("SELECT rowid FROM recognition_learning_facts WHERE scope='perf' AND order_id='a' AND metric='independentOrders'",[],|r|r.get(0)).unwrap();
+        synchronize(&tx,"perf",&ids,&[json!({"id":"a","revision":2})],|_|Ok(report(3))).unwrap();
+        let after:i64=tx.query_row("SELECT rowid FROM recognition_learning_facts WHERE scope='perf' AND order_id='a' AND metric='independentOrders'",[],|r|r.get(0)).unwrap();
+        assert_eq!(before,after);
+        assert_eq!(total(&tx,"perf","weakUnchangedCount"),3);
+        assert_eq!(total(&tx,"perf","independentOrders"),1);
     }
     fn total(c:&Connection,scope:&str,metric:&str)->i64{
         c.query_row("SELECT coalesce(sum(amount),0) FROM recognition_learning_totals WHERE scope=?1 AND metric=?2",

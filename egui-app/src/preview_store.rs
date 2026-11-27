@@ -1312,9 +1312,11 @@ impl PreviewStore {
         }
         let mut payload=json!({"orders":orders,"baseline":baseline,"candidate":candidate,
             "evaluationAsOf":chrono::Utc::now().to_rfc3339()});
+        let inference_started=std::time::Instant::now();
         if let Some(cutoff)=minimum_after{payload["minimumPredictionAfter"]=json!(cutoff);}
         if let Some(alpha)=alpha{payload["inferenceAlpha"]=json!(alpha);}
         let mut report=evaluate(&payload)?;
+        report["replayElapsedMs"]=json!(inference_started.elapsed().as_millis() as u64);
         if crate::business_state::read_learning_sources(ids)?!=frozen||
             crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?.as_path()!=business{
             return Err("독립 평가 중 원본 변경".into());

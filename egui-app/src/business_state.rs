@@ -600,6 +600,10 @@ mod auto_database_location_tests {
         attach_learning_lifecycle(&conn,&mut orders).unwrap();
         assert_eq!(orders.iter().map(|o|o["learningActive"].as_bool().unwrap()).collect::<Vec<_>>(),
             vec![true,false,false,false]);
+        let index=learning_lifecycle_index(&conn).unwrap();
+        for order in &orders{
+            assert_eq!(index.get(order["id"].as_str().unwrap()).copied().unwrap_or(false),order["learningActive"].as_bool().unwrap());
+        }
         state["workflow"]["groups"][1]["deletedAt"]=serde_json::json!("t");
         conn.execute("UPDATE app_state SET payload=?1",[state.to_string()]).unwrap();
         attach_learning_lifecycle(&conn,&mut orders).unwrap();

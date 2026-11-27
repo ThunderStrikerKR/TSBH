@@ -1,0 +1,40 @@
+name: Learning engine performance regression
+on:
+  push:
+    branches: [audit-154-p01-p02]
+    paths:
+      - 'egui-app/src/**'
+      - 'src-tauri/src/business_core/recognition/**'
+      - '.github/workflows/learning-engine-performance.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: learning-engine-performance-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  learning-performance:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: egui-app -> target
+      - name: Synthetic performance and equivalence checks
+        run: cargo test --manifest-path egui-app/Cargo.toml performance_ -- --nocapture
+      - name: Recognition support and learning ledger regression
+        run: |
+          cargo test --manifest-path egui-app/Cargo.toml recognition_support_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml recognition_learning_store_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: First analysis and correction regressions
+        run: |
+          cargo test --manifest-path egui-app/Cargo.toml recognition::observations::tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml recognition::learning_context::tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml learning_lifecycle_excludes_cancelled_deleted_and_partial_orders -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

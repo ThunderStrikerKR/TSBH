@@ -326,9 +326,14 @@ impl BandoGateway for LocalGateway {
     fn capture_recognition_learning(&self,order:&str,raw:&str,first:&Value)->Option<Value>{
         if crate::business_state::authorized_business_write_path().is_err(){return None;}
         let result=(||->Result<Value,String>{
+            let start=std::time::Instant::now();
             let contexts=recognition::execute("project_owner_contexts",
                 serde_json::json!({"raw":raw,"initialAnalysis":first}))?;
+            let context_us=start.elapsed().as_micros() as u64;
+            let support_started=std::time::Instant::now();
             let (mut shadow,selected_model)=PreviewStore::capture_recognition_learning(order,&contexts)?;
+            let support_us=support_started.elapsed().as_micros() as u64;
+            let combined_started=std::time::Instant::now();
             // Always preserve the original recognition. An absent or rejected
             // developer model is a recorded abstention, never a parser error.
             let combined=(||->Result<Value,String>{
@@ -349,6 +354,10 @@ impl BandoGateway for LocalGateway {
             shadow["combinedShadow"]=combined.unwrap_or_else(|_|serde_json::json!({
                 "status":"unavailable_or_incompatible_model","decisionChanged":false,
                 "eligibleForAutomaticDecision":false}));
+            if std::env::var_os("BANDO_LEARNING_PERF").is_some(){
+                eprintln!("[BANDO LEARNING PERF] projection_us={} verified_support_us={} combined_us={} total_us={}",
+                    context_us,support_us,combined_started.elapsed().as_micros(),start.elapsed().as_micros());
+            }
             Ok(shadow)
         })();
         Some(result.unwrap_or_else(|_|serde_json::json!({

@@ -2472,6 +2472,25 @@ mod tests{
         assert!(tied["oneSidedImprovementSignP"].is_null());
         assert!(tied["orderMeanInterval"]["lower"].as_f64().unwrap()<0.0);
     }
+    #[test]
+    fn performance_combined_confirmation_shares_exact_comparison(){
+        let p=owner_fixture();
+        let mut expected=super::super::learning_context::statistics(&json!({"orders":[&p]})).unwrap();
+        expected["combinedEvaluation"]=evaluate_combined_confirmation(&p).unwrap();
+        assert_eq!(super::super::learning_context::summarize_confirmation(&p).unwrap(),expected);
+    }
+    #[test]
+    fn performance_shadow_grid_matches_reference_losses(){
+        let samples=[ShadowCalibrationSample{distribution:vec![0.4,0.5,0.1],actual:0,label:"explicit_correction"},
+            ShadowCalibrationSample{distribution:vec![0.7,0.1,0.2],actual:2,label:"unchanged_proxy"}];
+        let mut fit=ShadowFit::default();fit.add_order(&samples);
+        for (i,t) in SHADOW_TEMPERATURES.iter().enumerate(){
+            for (j,s) in SHADOW_SMOOTHING.iter().enumerate(){
+                let expected=samples.iter().map(|v|multiclass_brier(&shadow_transform(&v.distribution,*t,*s),v.actual)).sum::<f64>()/samples.len() as f64;
+                assert!((expected-fit.losses[i*5+j]).abs()<1e-12);
+            }
+        }
+    }
     fn owner_fixture()->Value{
         // Emoji makes the UTF-16 positions differ from byte offsets.
         let raw="😀김가상\n010-1234-5678\n박가상";
