@@ -1254,6 +1254,26 @@ fn shadow_distribution(report:&Value,allowed:&BTreeSet<&str>,actual:&str)
     let actual=allowed.iter().position(|id|*id==actual).unwrap_or(allowed.len());
     Some(ShadowCalibrationSample{distribution,actual,label:""})
 }
+// Owner labels currently certify only the two traced anchors. Outside
+// support is an abstention signal, not an estimated third-class frequency.
+const OWNER_PAIR_CALIBRATION_SCOPE:&str="conditional_traced_owner_pair_v1";
+fn condition_owner_pair(sample:&ShadowCalibrationSample)->Option<ShadowCalibrationSample>{
+    if sample.actual>=2||!valid_candidate_distribution(&sample.distribution,3){return None;}
+    let total=sample.distribution[0]+sample.distribution[1];
+    if total<=0.0{return None;}
+    Some(ShadowCalibrationSample{distribution:vec![sample.distribution[0]/total,sample.distribution[1]/total],
+        actual:sample.actual,label:sample.label})
+}
+fn owner_pair_shadow(sample:&ShadowCalibrationSample,t:f64,s:f64)->Option<Vec<f64>>{
+    let pair=condition_owner_pair(sample)?;
+    let mut p=shadow_transform(&pair.distribution,t,s);
+    p.push(0.0);
+    valid_candidate_distribution(&p,3).then_some(p)
+}
+fn owner_outside_block(sample:&ShadowCalibrationSample)->Option<&'static str>{
+    (sample.distribution.get(2).is_none_or(|p|!p.is_finite()||*p>MAX_CHANGE_OUTSIDE+1e-10))
+        .then_some("outside_mass_too_high")
+}
 fn shadow_transform(raw:&[f64],temperature:f64,smoothing:f64)->Vec<f64>{
     let power=raw.iter().map(|p|p.powf(1.0/temperature)).collect::<Vec<_>>();
     let sum=power.iter().sum::<f64>();
@@ -1299,8 +1319,8 @@ struct ShadowCalTest{
     raw_loss:f64,adjusted_loss:f64,macro_raw:f64,macro_adjusted:f64,
 }
 impl ShadowCalTest{
-    fn observe(&mut self,v:&ShadowCalibrationSample,params:Option<(f64,f64)>){
-        self.eligible+=1;self.outside+=usize::from(v.actual+1==v.distribution.len());
+    fn observe(&mut self,v:&ShadowCalibrationSample,params:Option<(f64,f64)>,has_outside:bool){
+        self.eligible+=1;self.outside+=usize::from(has_outside&&v.actual+1==v.distribution.len());
         if let Some((t,s))=params{
             self.covered+=1;
             self.raw_loss+=multiclass_brier(&v.distribution,v.actual);
@@ -1418,6 +1438,10 @@ fn calibrate_shadow_candidates_prepared(payload:&Value,cache:Option<&ComparisonC
                 if reports.next().is_some(){invalid+=1;continue;}
                 let Some(mut sample)=shadow_distribution(r,&allowed,actual)else{missing+=1;continue;};
                 sample.label=label;
+                if task=="recipient_ownership"{
+                    let Some(pair)=condition_owner_pair(&sample)else{labels_excluded+=1;continue;};
+                    sample=pair;
+                }
                 local.entry((task.to_owned(),level.to_owned(),coverage.to_owned())).or_default().push(sample);
             }
         }
@@ -1431,7 +1455,7 @@ fn calibrate_shadow_candidates_prepared(payload:&Value,cache:Option<&ComparisonC
             let params=fits.get(&key).and_then(ShadowFit::parameters);
             let mut local=BTreeMap::<&str,ShadowCalTest>::new();
             for sample in samples{
-                for label in [sample.label,"mixed_proxy"]{local.entry(label).or_default().observe(&sample,params);}
+                for label in [sample.label,"mixed_proxy"]{local.entry(label).or_default().observe(&sample,params,key.0!="recipient_ownership");}
             }
             for (label,metrics) in local{totals.entry((key.clone(),label.to_owned())).or_default().merge(metrics);}
         }
@@ -1439,6 +1463,7 @@ fn calibrate_shadow_candidates_prepared(payload:&Value,cache:Option<&ComparisonC
     let models=fits.into_iter().map(|((task,level,coverage),v)|{
         let params=v.parameters();
         json!({"task":task,"contextLevel":level,"candidateCoverage":coverage,"fitOrders":v.orders,
+            "calibrationScope":if task=="recipient_ownership"{OWNER_PAIR_CALIBRATION_SCOPE}else{"traced_candidates_and_outside"},
             "temperature":params.map(|p|p.0),"uniformSmoothing":params.map(|p|p.1)})
     }).collect::<Vec<_>>();
     let groups=totals.into_iter().map(|(((task,level,coverage),label),v)|json!({
@@ -1736,14 +1761,14 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
                 let sample=shadow_distribution(r,&allowed,actual)?;
                 let mut models=rows(&shadow_model["models"]).filter(|r|r["task"]=="recipient_ownership"&&
                     r["contextLevel"]==level&&r["candidateCoverage"]=="traced_pair");
-                let model=models.next()?;if models.next().is_some(){return None;}
+                let model=models.next()?;if models.next().is_some()||model["calibrationScope"]!=OWNER_PAIR_CALIBRATION_SCOPE{return None;}
                 let t=model["temperature"].as_f64()?;let smoothing=model["uniformSmoothing"].as_f64()?;
                 if !SHADOW_TEMPERATURES.contains(&t)||!SHADOW_SMOOTHING.contains(&smoothing){return None;}
                 // BTreeSet order: next, previous, outside.
                 Some(((kind.to_owned(),route.to_owned(),level.to_owned()),BlendSample{
-                    legacy:vec![p,1.0-p,0.0],shadow:shadow_transform(&sample.distribution,t,smoothing),
+                    legacy:vec![p,1.0-p,0.0],shadow:owner_pair_shadow(&sample,t,smoothing)?,
                     actual:sample.actual,label,legacy_choice:usize::from(old=="previous"),
-                    transfer_block:owner_transfer_indexed(&units,first,&owner_index,d,s,old)}))
+                    transfer_block:owner_transfer_indexed(&units,first,&owner_index,d,s,old).or_else(||owner_outside_block(&sample))}))
             })();
             if let Some((key,sample))=candidate{local.entry(key).or_default().push(sample);}
             else{unavailable+=1;}
@@ -1816,8 +1841,10 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
     report["sourceProvenanceVerified"]=json!(false);
     report["calibratedProbability"]=Value::Null;
     report["commonProbabilityVerified"]=json!(false);
-    report["legacyCalibrationScope"]=json!("conditional_traced_owner_pair");
+    report["legacyCalibrationScope"]=json!(OWNER_PAIR_CALIBRATION_SCOPE);
+    report["learningCalibrationScope"]=json!(OWNER_PAIR_CALIBRATION_SCOPE);
     report["outsideLegacyProbabilityEstimated"]=json!(false);
+    report["outsideSupportUsedForAbstention"]=json!(true);
     report["eligibleForAutomaticDecision"]=json!(false);
     report["decisionChanged"]=json!(false);
     Ok(report)
@@ -2272,20 +2299,22 @@ fn run_blend_prepared(first:&Value,shadow:&Value,model:&Value,prediction_at:&Val
             // The dummy class is not used in inference or screening.
             let sample=shadow_distribution(r,&allowed,old)?;
             let mut models=rows(&model["shadowModels"]).filter(|r|r["task"]=="recipient_ownership"&&r["contextLevel"]==level&&r["candidateCoverage"]=="traced_pair");
-            let sm=models.next()?;if models.next().is_some()||sm["fitOrders"].as_u64()?<MIN_CALIBRATION_ORDERS as u64{return None;}
+            let sm=models.next()?;if models.next().is_some()||sm["fitOrders"].as_u64()?<MIN_CALIBRATION_ORDERS as u64||
+                sm["calibrationScope"]!=OWNER_PAIR_CALIBRATION_SCOPE{return None;}
             let t=sm["temperature"].as_f64()?;let smoothing=sm["uniformSmoothing"].as_f64()?;
             if !SHADOW_TEMPERATURES.contains(&t)||!SHADOW_SMOOTHING.contains(&smoothing){return None;}
             let mut weights=rows(&model["blendModels"]).filter(|r|r["sourceKind"]==kind&&r["legacyRoute"]==route&&r["contextLevel"]==level);
             let wm=weights.next()?;if weights.next().is_some()||wm["weightFitOrders"].as_u64()?<MIN_BLEND_ORDERS as u64{return None;}
             let w=wm["learningWeight"].as_f64()?;
             if !w.is_finite()||!(0.0..=1.0).contains(&w)||(w*10.0-(w*10.0).round()).abs()>1e-8{return None;}
-            let blend=BlendSample{legacy:vec![p,1.0-p,0.0],shadow:shadow_transform(&sample.distribution,t,smoothing),
+            let blend=BlendSample{legacy:vec![p,1.0-p,0.0],shadow:owner_pair_shadow(&sample,t,smoothing)?,
                 actual:sample.actual,label:"runtime_unlabeled",legacy_choice:usize::from(old=="previous"),
-                transfer_block:owner_transfer_indexed(&units,first,&owner_index,d,s,old)};
+                transfer_block:owner_transfer_indexed(&units,first,&owner_index,d,s,old).or_else(||owner_outside_block(&sample))};
             let (reason,target)=screen_blend_change(&blend,Some(w));
             Some(json!({"start":s.0,"end":s.1,"legacyCandidate":old,"contextLevel":level,
                 "sourceKind":kind,"legacyRoute":route,"learningWeight":w,
                 "candidateOrder":["next","previous","outside"],"legacyProxy":blend.legacy,
+                "calibrationScope":OWNER_PAIR_CALIBRATION_SCOPE,"outsideSupport":sample.distribution[2],
                 "learningProxy":blend.shadow,"combinedProxy":blend_distribution(&blend.legacy,&blend.shadow,w),
                 "status":reason,"diagnosticCandidate":target.map(|i|if i==0{"next"}else{"previous"}),
                 "decisionChanged":false,"eligibleForAutomaticDecision":false}))
@@ -2771,7 +2800,7 @@ mod tests{
         assert!(fit.parameters().is_none());
         for _ in 0..4{fit.add_order(&[sample()]);}
         let params=fit.parameters().unwrap();
-        let mut metrics=ShadowCalTest::default();metrics.observe(&sample(),Some(params));metrics.observe(&sample(),None);
+        let mut metrics=ShadowCalTest::default();metrics.observe(&sample(),Some(params),true);metrics.observe(&sample(),None,true);
         let mut total=ShadowCalTest::default();total.merge(metrics);
         assert_eq!(total.wire()["coverage"],0.5);
         assert!(total.wire()["adjustedBrierOnCovered"].as_f64().unwrap()<total.wire()["rawBrierOnCovered"].as_f64().unwrap());
@@ -2997,6 +3026,24 @@ mod tests{
                 actual:2,label:"explicit_correction",legacy_choice:0,transfer_block:None};
             assert_eq!(field_blend_top(&outside,1.0),None);
         }
+    }
+    #[test]
+    fn owner_pair_calibration_preserves_outside_abstention_without_third_class_fit(){
+        let sample=ShadowCalibrationSample{distribution:vec![0.18,0.72,0.10],actual:1,label:"explicit_correction"};
+        let pair=condition_owner_pair(&sample).unwrap();
+        assert!((pair.distribution[0]-0.2).abs()<1e-10);
+        assert!((pair.distribution[1]-0.8).abs()<1e-10);
+        let transformed=owner_pair_shadow(&sample,1.0,0.0).unwrap();
+        assert_eq!(transformed[2],0.0);
+        assert!(valid_candidate_distribution(&transformed,3));
+        assert_eq!(owner_outside_block(&sample),Some("outside_mass_too_high"));
+        let blend=BlendSample{legacy:vec![0.9,0.1,0.0],shadow:vec![0.01,0.99,0.0],
+            actual:1,label:"explicit_correction",legacy_choice:0,transfer_block:owner_outside_block(&sample)};
+        assert_eq!(screen_blend_change(&blend,Some(1.0)),("outside_mass_too_high",None));
+        let outside=ShadowCalibrationSample{distribution:vec![0.0,0.0,1.0],actual:2,label:"explicit_correction"};
+        assert!(condition_owner_pair(&outside).is_none());
+        let mut metrics=ShadowCalTest::default();metrics.observe(&pair,Some((1.0,0.0)),false);
+        assert_eq!(metrics.outside,0);
     }
     #[test]
     fn common_candidate_distribution_rejects_mismatched_or_invalid_vectors(){
