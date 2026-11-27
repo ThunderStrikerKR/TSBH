@@ -1994,6 +1994,28 @@ mod tests {
     }
 
     #[test]
+    fn owner_replay_recomputes_source_links_without_changing_original_analysis(){
+        let raw="김가상\n010-1234-5678\n박가상";
+        let catalog=state();
+        let first=execute("analyze_order",json!({"raw":raw,"state":catalog,"collectOwnerTrace":true,"collectCandidateTrace":true})).unwrap();
+        assert_eq!(first["recipients"][0]["mobile"],"010-1234-5678");
+        let d=first["recipientOwnerTrace"]["decisions"].as_array().unwrap().iter()
+            .find(|d|d["source"]["kind"]=="mobile").unwrap();
+        let decision=json!({"start":d["source"]["start"],"end":d["source"]["end"],
+            "status":"diagnostic_proposal_only","legacyCandidate":"previous","diagnosticCandidate":"next",
+            "calibrationScope":"conditional_traced_owner_pair_v1","decisionChanged":false,"eligibleForAutomaticDecision":false});
+        let mut payload=json!({"raw":raw,"state":catalog,"initialAnalysis":first,"decision":decision});
+        let result=execute("replay_owner_recommendation",payload.clone()).unwrap();
+        assert_eq!(result["recognition"]["recipients"][0]["mobile"],"");
+        assert_eq!(result["recognition"]["recipients"][1]["mobile"],"010-1234-5678");
+        assert_eq!(result["recognition"]["candidates"].as_array().unwrap().iter()
+            .find(|d|d["kind"]=="mobile").unwrap()["recipientId"],result["recognition"]["recipients"][1]["id"]);
+        assert_eq!(payload["initialAnalysis"]["recipients"][0]["mobile"],"010-1234-5678");
+        assert_eq!(result["decisionChanged"],false);
+        payload["initialAnalysis"]["recipients"][1]["mobile"]=json!("010-9999-9999");
+        assert!(execute("replay_owner_recommendation",payload).is_err());
+    }
+    #[test]
     fn owner_trace_preserves_legacy_attribution_and_records_rejected_candidates(){
         let raw="김가상\n서울특별시 마포구 월드컵로 20\n010-1234-5678\n\n경기도 성남시 분당구 불정로 6\n010-2345-6789\n박가상";
         let baseline=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
