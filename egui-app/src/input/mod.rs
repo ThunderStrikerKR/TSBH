@@ -1,4 +1,5 @@
 //! Shared native input construction, formatting and exact-cell editing.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Layout,Rect,Response,Stroke,Ui,Vec2};
 use crate::{source_highlight,theme,typography};
@@ -65,7 +66,7 @@ pub(crate) fn allocate_singleline_field(
     // content-fitted window sizing passes. Reserve the requested height in
     // the TextEdit itself, including its margins, without changing width policy.
     let edit=edit.min_size(Vec2::new(0.0,size.y));
-    let place=|slot:&mut Ui|slot.add_sized(size,edit);
+    let place=|slot:&mut Ui|slot.shared_add_sized(size,edit);
     let response=match enabled{
         Some(enabled)=>ui.add_enabled_ui(enabled,place).inner,
         None=>place(ui),
@@ -336,9 +337,9 @@ mod shared_singleline_allocation_tests{
                         let response=if shared{
                             allocate_singleline_field(ui,size,edit,permission)
                         }else if let Some(enabled)=permission{
-                            ui.add_enabled_ui(enabled,|slot|slot.add_sized(size,edit)).inner
+                            ui.add_enabled_ui(enabled,|slot|slot.shared_add_sized(size,edit)).inner
                         }else{
-                            ui.add_sized(size,edit)
+                            ui.shared_add_sized(size,edit)
                         };
                         results.push((response.id,response.rect,response.enabled(),
                             ui.available_rect_before_wrap().min));
@@ -415,7 +416,7 @@ pub(crate) fn multiline_text_field_sized(
         .frame(frame)
         .margin(margin)
         .desired_rows(desired_rows);
-    let response=ui.add_sized(size,editor);
+    let response=ui.shared_add_sized(size,editor);
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("multiline input",response.rect,ui.clip_rect());
     response
@@ -808,7 +809,7 @@ pub(crate) fn bounded_quantity_field(
 ){
     let previous=value.clone();
     ui.add_enabled_ui(enabled,|input|{
-        let (rect,_)=input.allocate_exact_size(
+        let (rect,_)=input.shared_allocate_exact_size(
             Vec2::new(112.0,theme::INPUT_HEIGHT),egui::Sense::hover()
         );
         reception_quantity_editor(input,rect,value,false,None,maximum,false);
@@ -871,7 +872,7 @@ pub(crate) fn reception_recipient_value_hit(ui:&mut Ui,display:&Response)->Respo
 /// OCR image zoom uses a fixed control width and a separate formatted label.
 /// Keep the native slider's keyboard and drag behavior.
 pub(crate) fn ocr_zoom_slider(ui:&mut Ui,zoom:&mut f32)->Response{
-    let response=ui.add_sized(
+    let response=ui.shared_add_sized(
         Vec2::new(118.0,24.0),
         egui::Slider::new(zoom,0.5..=4.0).show_value(false)
     );
