@@ -3142,6 +3142,11 @@ impl BandoEgui {
                 self.select_client_candidate(&id,ctx);
                 return;
             }
+            review_panel::Action::ValidationApproval{recipient_id,request,cancel}=>{
+                self.start_review_inline_action(InlineTarget{recipient_id,item_id:None,
+                    field:if cancel{"cancelValidationApproval"}else{"validationApproval"}},request,ctx);
+                return;
+            }
             review_panel::Action::ApproveOne{recipient_id,item_id}=>{
                 self.start_review_inline_action(
                     InlineTarget{
@@ -7430,6 +7435,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let mut confirmed_commit=false;
             let mut confirmed_cancel=false;
             let mut confirmed_navigation_request:Option<(InlineTarget,CellNavigationKey)>=None;
+            let mut confirmed_validation_approval:Option<(String,serde_json::Value,bool)>=None;
             let mut confirmed_add=false;
             let mut confirmed_vat=false;
             let mut confirmed_item:Option<(serde_json::Value,bool)>=None;
@@ -7464,6 +7470,16 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     crate::card::review_issue_card(issues,tone,|content|{
                                         content.add(egui::Label::new(typography::body(&label)
                                             .color(tone.text_color())).wrap());
+                                        if let Some(target)=group.shipments.iter().find(|s|
+                                            issue["recipientId"].as_str()==Some(s.recipient_id.as_str()) &&
+                                            issue["orderId"].as_str()==Some(s.order_id.as_str())){
+                                            let enabled=confirmed_editable && confirmed_controls_idle
+                                                && !target.transferred && self.workflow_ui.active_preview().is_none();
+                                            if let Some(cancel)=review_panel::show_validation_approval_action(content,issue,enabled){
+                                                confirmed_validation_approval=Some((target.id.clone(),
+                                                    review_panel::validation_approval_request(issue),cancel));
+                                            }
+                                        }
                                         if let Some((target,origin))=workflow_board::missing_freight_target(group,issue,&ship.id){
                                             let enabled=self.gateway.workflow_write_enabled()
                                                 && self.workflow_mutation_ready()
@@ -7855,6 +7871,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
             }
             else if confirmed_commit{self.submit_confirmed_cell(ui.ctx());}
+            else if let Some((id,request,cancel))=confirmed_validation_approval{
+                if let Some(target_ship)=group.shipments.iter().find(|s|s.id==id){
+                    if let Some(bound)=self.confirmed_edit_target(&board,group,target_ship){
+                        self.submit_confirmed_change(&bound,
+                            if cancel{"cancelValidationApproval"}else{"validationApproval"},None,request,ui.ctx());
+                    }
+                }
+            }
             else if confirmed_vat{
                 if let Some(bound)=self.confirmed_edit_target(&board,group,ship){
                     let mut seen=std::collections::HashSet::new();

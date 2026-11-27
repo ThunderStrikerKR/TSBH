@@ -60,6 +60,7 @@ pub enum Action {
     Candidate{recipient_id:String,field:String,value:String},
     ApproveOne{recipient_id:String,item_id:String},
     CancelApproval{recipient_id:String,item_id:String},
+    ValidationApproval{recipient_id:String,request:Value,cancel:bool},
 }
 impl ReviewPanel {
     pub fn clear(&mut self){*self=Self::default();}
@@ -407,6 +408,15 @@ fn model_navigation(issue:&Value)->Action{
 pub(crate) const MODEL_RESOLUTION_GUIDANCE:&str=
     "품목 클릭 → 상품 변경 → 선택 → 적용 → 초안에 적용";
 
+pub(crate) fn validation_approval_request(issue:&Value)->Value{
+    json!({"issueId":issue["issueId"],"approvalBasis":issue["approvalBasis"]})
+}
+pub(crate) fn show_validation_approval_action(ui:&mut Ui,issue:&Value,enabled:bool)->Option<bool>{
+    let cancel=issue["canCancelCurrent"]==true;
+    if !cancel && issue["canApproveCurrent"]!=true{return None;}
+    crate::button::review_action(ui,if cancel{"승인 취소"}else{"현재 정보 승인"},
+        ButtonRole::Standard,enabled).clicked().then_some(cancel)
+}
 fn issue_card(
     ui:&mut Ui,issue:&Value,analysis:&ReceptionAnalysis,
     enabled:bool,selected:&mut Option<Action>,
@@ -420,6 +430,14 @@ fn issue_card(
     let link_key=issue.get("linkKey").and_then(Value::as_str);
     let tone=issue_tone(issue);
     crate::card::review_issue_card(ui,tone,|cell|{
+            if text(issue,"resolution")=="USER_APPROVED"{
+                cell.add(egui::Label::new(typography::review_title(detail,tone)).wrap());
+                if let Some(cancel)=show_validation_approval_action(cell,issue,enabled){
+                    *selected=Some(Action::ValidationApproval{recipient_id:rid.to_owned(),
+                        request:validation_approval_request(issue),cancel});
+                }
+                return;
+            }
             if kind=="CLIENT_MATCH_EVIDENCE" && severity=="INFO"{
                 cell.add(egui::Label::new(typography::review_title(title,tone)).wrap());
                 return;
@@ -541,6 +559,10 @@ fn issue_card(
                     });
                 }
             });
+            if let Some(cancel)=show_validation_approval_action(cell,issue,enabled){
+                *selected=Some(Action::ValidationApproval{recipient_id:rid.to_owned(),
+                    request:validation_approval_request(issue),cancel});
+            }
             // Keep the immediate action ahead of the secondary reference
             // guidance so a narrow panel does not hide the input button.
             if severity!="INFO"{

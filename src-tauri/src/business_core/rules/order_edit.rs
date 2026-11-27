@@ -392,6 +392,17 @@ fn edit_confirmed_recipient(payload:&Value)->Result<Value,String>{
     let mut model=json!({"rows":[old],"assignments":{},"blocks":[]});
     let cell=json!({"recipientId":rid,"itemId":iid,"field":key});
     match key {
+        "validationApproval"|"cancelValidationApproval"=>{
+            if !iid.is_empty(){return Err("수취인 승인 대상을 확인하세요.".into());}
+            let actor=str_field(field(before,"settings"),"operatorName");
+            let result=super::issues::issue_action(&json!({
+                "action":if key=="validationApproval"{"approve_current_information"}else{"cancel_current_information"},
+                "order":order,"recipientId":rid,"issueId":field(value,"issueId"),
+                "approvalBasis":field(value,"approvalBasis"),"now":now,
+                "actor":if actor.trim().is_empty(){"사용자"}else{actor}
+            }))?;
+            model["rows"][0]=result["order"]["recipients"][ri].clone();
+        },
         "name"|"address"|"mobile"|"phone"|"note"=>{
             if !iid.is_empty(){return Err("수취인 입력 대상을 확인하세요.".into());}
             if value.as_str()==Some(str_field(old,key)){return Ok(json!({"state":before,"unchanged":true}));}

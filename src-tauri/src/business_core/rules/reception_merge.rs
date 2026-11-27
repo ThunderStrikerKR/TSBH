@@ -254,7 +254,7 @@ fn apply(payload:&Value)->Result<Value,String>{
             }
         }
         for key in ["confirmedFields","dispatchOrigin","actualFreight","freightCode",
-                    "vatDefault","vatOverride","vatRateBps","shippingCharges"]{
+                    "vatDefault","vatOverride","vatRateBps","shippingCharges","validationApprovals"]{
             clone_field(recipient,prior,key)?;
         }
         if rows(field(prior,"confirmedFields")).iter().any(|v|v=="address"){
@@ -306,6 +306,7 @@ fn apply(payload:&Value)->Result<Value,String>{
         }
     }
     scope_recognition_ids(required_str(previous,"id")?,&mut parsed,&mut candidates)?;
+    for recipient in &mut parsed {super::issues::prune_validation_approvals(recipient);}
     if !str_field(previous,"orderType").is_empty(){
         for recipient in &mut parsed {
             if field(recipient,"dispatchOrigin").is_null(){

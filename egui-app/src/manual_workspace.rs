@@ -785,6 +785,7 @@ pub fn apply_inline(
         }
     }else{
         match change.field.as_str(){
+            "validationApproval"|"cancelValidationApproval"=>"native_validation_approval",
             "name"|"address"|"mobile"|"phone"|"note"=>"set_manual_recipient_field",
             "shippingCharge"|"dispatchOrigin"|"freightCode"|
             "remoteDelivery"|"vatOverride"=>"set_manual_delivery_option",
@@ -830,6 +831,26 @@ pub fn apply_inline(
     let response=if action=="add_manual_item"{
         add_selected_manual_product(gateway,&order,&payload,&change.value,
             &change.recipient_id,&json!(keys))?
+    }else if action=="native_validation_approval"{
+        let actor=gateway.load_settings().ok()
+            .and_then(|settings|settings.pointer("/settings/operatorName")
+                .and_then(Value::as_str).map(str::trim)
+                .filter(|name|!name.is_empty()).map(str::to_owned))
+            .unwrap_or_else(||"사용자".to_owned());
+        let approved=gateway.execute(ReadOperation::ApplyIssueAction,json!({
+            "action":if change.field=="validationApproval"{"approve_current_information"}else{"cancel_current_information"},
+            "order":&order,"recipientId":change.recipient_id,
+            "issueId":change.value["issueId"],"approvalBasis":change.value["approvalBasis"],
+            "actor":actor,"now":chrono::Utc::now().to_rfc3339()
+        }))?;
+        let row=approved["order"]["recipients"].as_array().into_iter().flatten()
+            .find(|r|text(r,"id")==change.recipient_id.as_str())
+            .ok_or("승인한 배송 정보를 확인할 수 없습니다.")?;
+        let target=model["rows"].as_array_mut().and_then(|rows|rows.iter_mut()
+            .find(|r|text(r,"id")==change.recipient_id.as_str()))
+            .ok_or("승인할 배송 정보를 찾을 수 없습니다.")?;
+        target["validationApprovals"]=row["validationApprovals"].clone();
+        json!({"model":model})
     }else if action=="native_approve_one" || action=="native_cancel_approval"{
         let rid=change.recipient_id.as_str();
         let iid=change.item_id.as_deref()

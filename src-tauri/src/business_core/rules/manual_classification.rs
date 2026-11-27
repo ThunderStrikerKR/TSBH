@@ -109,53 +109,6 @@ fn valid_quantity_item(item:&Value)->bool{
     number.is_some_and(|n|n>0 && n<=9_007_199_254_740_991)
         && item.get("quantityConfirmed")!=Some(&Value::Bool(false))
 }
-fn synchronize(order:&mut Value)->Result<(),String>{
-    let previous=field(order,"issueResolutions").as_object()
-        .cloned().unwrap_or_default();
-    let mut next=previous.clone();
-    let current=super::issues::order_issues(order);
-    let now=order.get("updatedAt").cloned();
-    let mut present=std::collections::HashSet::new();
-    for issue in current {
-        let id=str_field(&issue,"issueId").to_owned();
-        if id.is_empty(){continue}
-        present.insert(id.clone());
-        let evidence=issue.get("evidence").filter(|value|!value.is_null())
-            .cloned().unwrap_or_else(||field(&issue,"title").clone());
-        let old=previous.get(&id);
-        let unchanged=old.is_some_and(|old|
-            old.get("resolution")==issue.get("resolution")&&
-            old.get("evidence")==Some(&evidence));
-        let mut decision=Map::new();
-        for key in ["resolution","resolutionSource"] {
-            if let Some(value)=issue.get(key) {
-                decision.insert(key.to_owned(),value.clone());
-            }
-        }
-        decision.insert("evidence".into(),evidence);
-        let updated_at=if unchanged {
-            old.and_then(|value|value.get("updatedAt")).cloned()
-        }else{
-            now.clone()
-        };
-        if let Some(value)=updated_at {
-            decision.insert("updatedAt".into(),value);
-        }
-        next.insert(id,Value::Object(decision));
-    }
-    for (id,old) in &previous {
-        if !present.contains(id) && [
-            "PENDING_CUSTOMER","UNRESOLVED","PROVISIONALLY_APPROVED","AUTO_APPLIED",
-        ].contains(&str_field(old,"resolution")) {
-            let mut updated=old.clone();
-            set(&mut updated,"resolution",json!("RESOLVED"))?;
-            set(&mut updated,"resolutionSource",json!("직원 수정 또는 현재 원문 반영"))?;
-            if let Some(ref now)=now {set(&mut updated,"updatedAt",now.clone())?;}
-            next.insert(id.clone(),updated);
-        }
-    }
-    set(order,"issueResolutions",Value::Object(next))
-}
 fn apply_final(payload:&Value,draft_preview:bool)->Result<Value,String>{
     let order=req(payload,"order")?;
     let model=req(payload,"model")?;
@@ -191,6 +144,7 @@ fn apply_final(payload:&Value,draft_preview:bool)->Result<Value,String>{
     let recipients=next.get_mut("recipients").and_then(Value::as_array_mut)
         .ok_or("배송 행이 없습니다.")?;
     for recipient in recipients.iter_mut(){
+        super::issues::prune_validation_approvals(recipient);
         if order_has_type {
             if recipient.get("dispatchOrigin").is_none_or(Value::is_null){
                 set(recipient,"dispatchOrigin",json!("FACTORY"))?;
@@ -250,7 +204,7 @@ fn apply_final(payload:&Value,draft_preview:bool)->Result<Value,String>{
                 .ok_or("수취인 출처 정보 오류")?.push(span);
         }
     }
-    synchronize(&mut next)?;
+    super::issues::synchronize(&mut next)?;
     Ok(json!({"order":next}))
 }
 
@@ -290,6 +244,7 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
         }else{
             set(row,field_name,json!(value))?;
         }
+        super::issues::prune_validation_approvals(row);
         if !field(row,"confirmedFields").is_array() {
             set(row,"confirmedFields",json!([]))?;
         }

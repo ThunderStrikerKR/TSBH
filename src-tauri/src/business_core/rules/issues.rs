@@ -143,14 +143,54 @@ fn address_candidates_form_one_location(row:&Value,candidates:&[Value])->bool {
 
 /// Exact recipient-delivery eligibility from src/delivery-requirements.ts.
 /// This read-only projection is authoritative in the manual and order screens.
+// User approval is scoped to the actual row and exact relevant values.
+ // No approval can create missing data or bypass a structural prerequisite.
+fn approval_basis(row:&Value,kind:&str)->Option<Value>{
+    let nonempty=|key:&str|!str_field(row,key).trim().is_empty();
+    let values=match kind{
+        "ADDRESS" if nonempty("address")=>json!([field(row,"address")]),
+        "CONTACT" if nonempty("phone")||nonempty("mobile")=>
+            json!([field(row,"phone"),field(row,"mobile")]),
+        "CANDIDATE_name"|"CANDIDATE_address"|"CANDIDATE_phone"|"CANDIDATE_mobile"=>{
+            let key=kind.strip_prefix("CANDIDATE_")?;
+            if !nonempty(key){return None;}
+            let candidates=rows(field(row,"candidates")).iter()
+                .filter(|c|str_field(c,"field")==key).cloned().collect::<Vec<_>>();
+            json!([field(row,key),candidates])
+        },
+        _=>return None
+    };
+    let id=str_field(row,"id");
+    if id.is_empty(){return None;}
+    Some(json!({"recipientId":id,"kind":kind,"values":values}))
+}
+fn approved(row:&Value,kind:&str)->bool{
+    approval_basis(row,kind).is_some_and(|basis|
+        field(row,"validationApprovals").get(kind).is_some_and(|record|
+            field(record,"basis")==&basis && !str_field(record,"approvedAt").is_empty()
+            && !str_field(record,"approvedBy").is_empty()))
+}
+pub(super) fn prune_validation_approvals(row:&mut Value){
+    let valid=field(row,"validationApprovals").as_object().map(|records|
+        records.keys().filter(|kind|approved(row,kind)).cloned().collect::<HashSet<_>>());
+    if let (Some(valid),Some(records))=(valid,row.get_mut("validationApprovals").and_then(Value::as_object_mut)){
+        records.retain(|kind,_|valid.contains(kind));
+    }
+}
+fn address_format_ok(row:&Value,allow_legacy:bool)->bool{
+    let address=str_field(row,"address");
+    !address.trim().is_empty() &&
+        ((allow_legacy && str_field(row,"addressStatus")=="CONFIRMED") ||
+         (str_field(row,"addressStatus")!="INCOMPLETE" && valid_address(address)))
+}
+fn contact_format_ok(row:&Value)->bool{
+    valid_contact(str_field(row,"phone"))||valid_contact(str_field(row,"mobile"))
+}
 pub(super) fn delivery_requirements(payload: &Value) -> Result<Value, String> {
     let recipients=rows(req(payload,"rows")?);
     let allow_legacy=field(payload,"allowLegacyAddressConfirmation").as_bool()==Some(true);
     let results=recipients.iter().map(|row|{
-        let address=str_field(row,"address");
-        let address_ok=!address.trim().is_empty() &&
-            ((allow_legacy && str_field(row,"addressStatus")=="CONFIRMED") ||
-             (str_field(row,"addressStatus")!="INCOMPLETE" && valid_address(address)));
+        let address_ok=address_format_ok(row,allow_legacy)||approved(row,"ADDRESS");
         let items=rows(field(row,"items"));
         let product_ok=!items.is_empty() && items.iter().all(|i|
             !str_field(i,"productId").is_empty() && !str_field(i,"variantId").is_empty()
@@ -163,8 +203,7 @@ pub(super) fn delivery_requirements(payload: &Value) -> Result<Value, String> {
         json!({"recipientId":field(row,"id"),
             "name":!str_field(row,"name").trim().is_empty(),
             "address":address_ok,
-            "contact":valid_contact(str_field(row,"phone")) ||
-                      valid_contact(str_field(row,"mobile")),
+            "contact":contact_format_ok(row)||approved(row,"CONTACT"),
             "product":product_ok,"quantity":quantity_ok})
     }).collect::<Vec<_>>();
     Ok(json!({"results":results}))
@@ -180,7 +219,7 @@ pub(super) fn delivery_requirements_with_messages(payload:&Value)->Result<Value,
     for (out,row) in entries.iter_mut().zip(source.iter()) {
         for (column,is_mobile) in [("mobile",true),("phone",false)] {
             let value=str_field(row,column);
-            let explanation=if value.trim().is_empty() || valid_contact(value) {
+            let explanation=if value.trim().is_empty() || valid_contact(value) || approved(row,"CONTACT") {
                 Value::Null
             }else{
                 json!(contact_problem(value,is_mobile))
@@ -235,7 +274,10 @@ fn emit(result:&mut Vec<Value>,order:&Value,info:Info<'_>){
     let id=issue_id(order,row,item,kind);
     let evidence=js_evidence(evidence);
     let decision=field(order,"issueResolutions").get(&id);
-    let status=resolution.unwrap_or_else(||{
+    let basis=row.and_then(|r|approval_basis(r,kind));
+    let user_approval=row.filter(|r|approved(r,kind))
+        .and_then(|r|field(r,"validationApprovals").get(kind));
+    let status=if user_approval.is_some(){"USER_APPROVED"}else{resolution.unwrap_or_else(||{
         let approved=kind=="QUANTITY_MISSING"&&item.is_some_and(|i|{
             field(field(i,"quantityApproval"),"quantity").as_i64()==Some(1)&&
             field(i,"quantity").as_i64()==Some(1)&&
@@ -249,21 +291,28 @@ fn emit(result:&mut Vec<Value>,order:&Value,info:Info<'_>){
              && str_field(d,"resolution")=="PENDING_CUSTOMER") {
             "PENDING_CUSTOMER"
         }else{"UNRESOLVED"}
-    });
-    let detail=if kind=="UNASSIGNED_EVIDENCE" {
+    })};
+    let detail=if status=="USER_APPROVED" {
+        let target=match kind{"ADDRESS"=>"배송주소","CONTACT"=>"연락처",
+            "CANDIDATE_name"=>"수취인명","CANDIDATE_address"=>"배송주소",
+            "CANDIDATE_phone"=>"전화번호","CANDIDATE_mobile"=>"휴대폰 번호",_=>"현재 정보"};
+        format!("{} — {target} 사용자 승인",row.map(|r|str_field(r,"name"))
+            .filter(|name|!name.is_empty()).unwrap_or("수취인"))
+    }else if kind=="UNASSIGNED_EVIDENCE" {
         row.map(unassigned_detail).unwrap_or_else(||title.clone())
     }else if let Some(row)=row {
         format!("{} / {}",if str_field(row,"name").is_empty(){"수취인"}else{str_field(row,"name")},
             item.map(|i|internal_model(str_field(i,"name"))).unwrap_or_else(||title.clone()))
     }else{title.clone()};
-    let resolution_source=decision
-        .and_then(|d|d.get("resolutionSource")).filter(|v|!v.is_null()).cloned()
+    let resolution_source=user_approval.and_then(|d|d.get("approvedBy")).cloned().or_else(||decision
+        .and_then(|d|d.get("resolutionSource")).cloned()).filter(|v|!v.is_null())
         .unwrap_or_else(||json!(match status {
             "AUTO_APPLIED"=>"코어","PROVISIONALLY_APPROVED"=>item
                 .map(|i|str_field(field(i,"quantityApproval"),"actor"))
                 .filter(|v|!v.is_empty()).unwrap_or("사용자"),_=>"미확인"
         }));
-    let updated_at=decision.and_then(|d|d.get("updatedAt")).filter(|v|!v.is_null())
+    let updated_at=user_approval.and_then(|d|d.get("approvedAt"))
+        .or_else(||decision.and_then(|d|d.get("updatedAt"))).filter(|v|!v.is_null())
         .or_else(||item.and_then(|i|field(i,"quantityApproval").get("at"))
             .filter(|v|!v.is_null()))
         .unwrap_or_else(||field(order,"updatedAt")).clone();
@@ -273,10 +322,15 @@ fn emit(result:&mut Vec<Value>,order:&Value,info:Info<'_>){
         "recipientId":row.map(|r|str_field(r,"id")).unwrap_or(""),
         "kind":kind,"title":title,"detail":detail,
         "blockingStage":stage,
-        "severity":if ["AUTO_APPLIED","PROVISIONALLY_APPROVED","RESOLVED"].contains(&status){"INFO"}else{"ACTION"},
+        "severity":if ["AUTO_APPLIED","PROVISIONALLY_APPROVED","RESOLVED","USER_APPROVED"].contains(&status){"INFO"}else{"ACTION"},
         "resolution":status,"resolutionSource":resolution_source,"updatedAt":updated_at
     });
     if let Some(e)=evidence {let _=set(&mut issue,"evidence",json!(e));}
+    if let Some(basis)=basis {
+        issue["approvalBasis"]=basis;
+        issue["canApproveCurrent"]=json!(status!="USER_APPROVED");
+        issue["canCancelCurrent"]=json!(status=="USER_APPROVED");
+    }
     if let Some(item)=item {let _=set(&mut issue,"itemId",field(item,"id").clone());}
     if let Some(row)=row{
         let key=item.map(|i|str_field(i,"id")).unwrap_or_else(||str_field(row,"id"));
@@ -371,9 +425,7 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
         }
         let address=str_field(row,"address");
         let legacy=field(o,"receptionVersion").as_i64()!=Some(1);
-        let address_ok=!address.trim().is_empty() &&
-          ((legacy&&str_field(row,"addressStatus")=="CONFIRMED")||
-           (str_field(row,"addressStatus")!="INCOMPLETE"&&valid_address(address)));
+        let address_ok=address_format_ok(row,legacy);
         if !address_ok{
             let evidence=json!([field(row,"address"),field(row,"addressStatus")]);
             let customer=format!("{who} {}",if !address.trim().is_empty(){
@@ -384,7 +436,7 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
         }
         let phone=str_field(row,"phone");
         let mobile=str_field(row,"mobile");
-        let contact_ok=valid_contact(phone)||valid_contact(mobile);
+        let contact_ok=contact_format_ok(row);
         if phone.is_empty()&&mobile.is_empty()||!contact_ok{
             let evidence=json!([field(row,"phone"),field(row,"mobile")]);
             let absent=phone.is_empty()&&mobile.is_empty();
@@ -522,7 +574,7 @@ pub(super) fn synchronize(order:&mut Value)->Result<(),String>{
     }
     for (id,prior) in &old{
         if !present.contains(id)&&
-            ["PENDING_CUSTOMER","UNRESOLVED","PROVISIONALLY_APPROVED","AUTO_APPLIED"]
+            ["PENDING_CUSTOMER","UNRESOLVED","PROVISIONALLY_APPROVED","AUTO_APPLIED","USER_APPROVED"]
                 .contains(&str_field(prior,"resolution")){
             let mut updated=prior.clone();
             set(&mut updated,"resolution",json!("RESOLVED"))?;
@@ -541,6 +593,34 @@ pub(super) fn issue_action(payload:&Value)->Result<Value,String> {
     let action=required_str(payload,"action")?;
     let mut order=req(payload,"order")?.clone();
     match action {
+        "approve_current_information"|"cancel_current_information"=>{
+            let id=required_str(payload,"issueId")?;
+            let rid=required_str(payload,"recipientId")?;
+            let basis=req(payload,"approvalBasis")?;
+            let issue=order_issues(&order).into_iter().find(|issue|
+                str_field(issue,"issueId")==id && str_field(issue,"recipientId")==rid
+                && field(issue,"approvalBasis")==basis
+                && field(issue,if action=="approve_current_information"{
+                    "canApproveCurrent"}else{"canCancelCurrent"})==&Value::Bool(true))
+                .ok_or("현재 정보가 변경되었거나 승인할 수 없는 검증 항목입니다.")?;
+            let kind=str_field(&issue,"kind");
+            let row=order["recipients"].as_array_mut().ok_or("배송 정보 누락")?
+                .iter_mut().find(|row|str_field(row,"id")==rid)
+                .ok_or("승인할 수취인을 찾을 수 없습니다.")?;
+            if action=="approve_current_information"{
+                if !field(row,"validationApprovals").is_object(){
+                    set(row,"validationApprovals",json!({}))?;
+                }
+                set(&mut row["validationApprovals"],kind,json!({
+                    "basis":basis,"approvedAt":required_str(payload,"now")?,
+                    "approvedBy":required_str(payload,"actor")?
+                }))?;
+            }else if let Some(records)=row["validationApprovals"].as_object_mut(){
+                records.remove(kind);
+            }
+            synchronize(&mut order)?;
+            Ok(json!({"order":order}))
+        }
         "approve_missing_quantity"=>{
             let rid=required_str(payload,"recipientId")?;
             let iid=required_str(payload,"itemId")?;
@@ -807,5 +887,51 @@ mod native_contact_detail_tests {
         let view=delivery_requirements_with_messages(&valid).unwrap();
         assert_eq!(view["results"][0]["contact"],true);
         assert!(view["results"][0]["mobileProblem"].is_string());
+    }
+}
+
+#[cfg(test)]
+mod current_information_approval_tests {
+    use super::*;
+    fn sample()->Value{
+        json!({"id":"o","clientId":"c","receptionVersion":1,"recipients":[
+            {"id":"r","name":"가상 수취인","address":"가평군 문화로 120 #별관",
+             "mobile":"0101234567","phone":"","items":[]}]})
+    }
+    fn action(order:&Value,kind:&str,operation:&str)->Result<Value,String>{
+        let issue=order_issues(order).into_iter().find(|i|str_field(i,"kind")==kind).unwrap();
+        issue_action(&json!({"order":order,"action":operation,"issueId":issue["issueId"],
+            "recipientId":"r","approvalBasis":issue["approvalBasis"],"actor":"사용자",
+            "now":"2026-11-27T00:00:00Z"})).map(|v|v["order"].clone())
+    }
+    #[test]
+    fn approvals_are_value_bound_and_shared_by_delivery_and_order_gates(){
+        let o=sample();
+        let a=action(&o,"ADDRESS","approve_current_information").unwrap();
+        let mut a=action(&a,"CONTACT","approve_current_information").unwrap();
+        assert!(order_issues(&a).iter().filter(|i|["ADDRESS","CONTACT"].contains(&str_field(i,"kind")))
+            .all(|i|i["severity"]=="INFO" && i["resolution"]=="USER_APPROVED"));
+        let d=delivery_requirements(&json!({"rows":a["recipients"]})).unwrap();
+        assert_eq!(d["results"][0]["address"],true);
+        assert_eq!(d["results"][0]["contact"],true);
+        a["recipients"][0]["address"]=json!("다른 주소");
+        prune_validation_approvals(&mut a["recipients"][0]);
+        assert!(order_issues(&a).iter().any(|i|i["kind"]=="ADDRESS"&&i["severity"]=="ACTION"));
+        assert!(order_issues(&a).iter().any(|i|i["kind"]=="CONTACT"&&i["severity"]=="INFO"));
+        a["recipients"][0]["address"]=o["recipients"][0]["address"].clone();
+        assert!(order_issues(&a).iter().any(|i|i["kind"]=="ADDRESS"&&i["severity"]=="ACTION"));
+        let a=action(&a,"CONTACT","cancel_current_information").unwrap();
+        assert!(order_issues(&a).iter().any(|i|i["kind"]=="CONTACT"&&i["severity"]=="ACTION"));
+    }
+    #[test]
+    fn missing_data_and_stale_basis_cannot_be_approved(){
+        let mut o=sample();
+        let issue=order_issues(&o).into_iter().find(|i|i["kind"]=="ADDRESS").unwrap();
+        o["recipients"][0]["address"]=json!("");
+        assert!(action(&o,"ADDRESS","approve_current_information").is_err());
+        o["recipients"][0]["address"]=json!("changed address");
+        assert!(issue_action(&json!({"order":o,"action":"approve_current_information",
+            "issueId":issue["issueId"],"recipientId":"r","approvalBasis":issue["approvalBasis"],
+            "actor":"사용자","now":"2026-11-27T00:00:00Z"})).is_err());
     }
 }
