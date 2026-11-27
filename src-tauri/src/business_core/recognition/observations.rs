@@ -1851,13 +1851,18 @@ impl FieldCalibration{
     }
     fn blend_sample(&self,r:&FieldBlendRecord)->Option<BlendSample>{
         let (p,(t,s))=self.parameters()?;
-        let n=r.shadow.distribution.len().checked_sub(1)?;
-        if n<2||r.old>=n{return None;}
-        let mut legacy=vec![p[1]/(n-1) as f64;n+1];
-        legacy[r.old]=p[0];legacy[n]=p[2];
-        Some(BlendSample{legacy,shadow:shadow_transform(&r.shadow.distribution,t,s),
-            actual:r.shadow.actual,label:r.shadow.label,legacy_choice:r.old,transfer_block:None})
+        field_sample_with_parameters(r,p,t,s)
     }
+}
+fn field_sample_with_parameters(r:&FieldBlendRecord,p:[f64;3],t:f64,s:f64)->Option<BlendSample>{
+    let n=r.shadow.distribution.len().checked_sub(1)?;
+    if n<2||r.old>=n||p.iter().any(|v|!v.is_finite()||!(0.0..=1.0).contains(v))||
+        (p.iter().sum::<f64>()-1.0).abs()>1e-8||
+        !SHADOW_TEMPERATURES.contains(&t)||!SHADOW_SMOOTHING.contains(&s){return None;}
+    let mut legacy=vec![p[1]/(n-1) as f64;n+1];
+    legacy[r.old]=p[0];legacy[n]=p[2];
+    Some(BlendSample{legacy,shadow:shadow_transform(&r.shadow.distribution,t,s),
+        actual:r.shadow.actual,label:r.shadow.label,legacy_choice:r.old,transfer_block:None})
 }
 fn field_blend_top(sample:&BlendSample,w:f64)->Option<usize>{
     if !(0.0..=1.0).contains(&w){return None;}
@@ -2023,6 +2028,79 @@ pub(super) fn learn_field_blend_weights(payload:&Value)->Result<Value,String>{
         "coverageByTask":coverage,"excludedOrders":excluded,"clientBuildVersion":build,
         "representativeLabelsVerified":false,"sourceProvenanceVerified":false,
         "automaticChangeAuthorized":false,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
+}
+
+// R01-R04 frozen inference. The dummy actual index is never consulted
+// by candidate ranking, and no confirmed label is accepted by this path.
+pub(super) fn run_field_blend_shadow(payload:&Value)->Result<Value,String>{
+    let raw=payload["raw"].as_str().filter(|s|!s.is_empty()&&s.len()<=128*1024).ok_or("필드 예측 원문 오류")?;
+    let first=&payload["initialAnalysis"];let shadow=&payload["learningShadow"];
+    let models=payload["models"].as_array().filter(|v|v.len()<=4).ok_or("필드 모델 목록 오류")?;
+    let date=|v:&Value|v.as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
+    let now=date(&payload["predictionAt"]).ok_or("필드 예측 시각 오류")?;
+    if shadow["status"]!="captured_shadow_support"||shadow["captureVersion"]!=4||
+        shadow["sourceDigestsMatched"]!=true||shadow["decisionChanged"]!=false{
+        return Err("필드 예측 원본 지지도 검증 필요".into());
+    }
+    let units=raw.encode_utf16().collect::<Vec<_>>();
+    let projection=super::learning_context::lookup(&json!({"raw":raw,"initialAnalysis":first}))?;
+    let mut tasks=BTreeSet::new();
+    for m in models{
+        let task=m["model"]["task"].as_str().filter(|v|matches!(*v,"type"|"product"|"variant"|"quantity")).ok_or("필드 모델 작업 오류")?;
+        if !tasks.insert(task){return Err("필드 모델 작업 중복".into());}
+        let model=&m["model"];
+        if model["schemaVersion"]!=1||model["clientBuildVersion"]!=payload["clientBuildVersion"]||
+            model["automaticChangeAuthorized"]!=false||model["selectionAuthorized"]!=false||
+            date(&model["evaluationAsOf"]).is_none_or(|v|v>=now)||
+            date(&m["createdAt"]).is_none_or(|v|v>=now)||
+            m["modelId"].as_str().is_none_or(|v|v.len()!=76||!v.starts_with("field-blend-")||!v[12..].bytes().all(|b|b.is_ascii_hexdigit())){
+            return Err("필드 모델 시각 또는 규격 오류".into());
+        }
+    }
+    let mut decisions=Vec::new();
+    for entry in rows(&projection["fieldEntries"]){
+        let task=entry["task"].as_str().ok_or("필드 작업 오류")?;
+        let Some(s)=position(&units,&entry["source"])else{continue;};
+        let Some(m)=models.iter().find(|m|m["model"]["task"]==task)else{continue;};
+        let old=field_state(&units,&first["recipients"],s,task);
+        let result=(||->Option<Value>{
+            let old=old.as_deref()?;
+            let obs=json!({"task":task,"source":entry["source"],"initialCandidates":[old],"finalCandidates":[old]});
+            let (group,record)=field_blend_record(&units,first,&projection,shadow,&obs,"runtime_unlabeled")?;
+            let mut rows=rows(&m["model"]["models"]).filter(|v|v["task"]==task&&v["contextLevel"]==group.1&&v["candidateCoverage"]==group.2);
+            let params=rows.next()?;if rows.next().is_some()||params["automaticChangeAuthorized"]!=false||
+                params["calibrationOrders"].as_u64()?<MIN_CALIBRATION_ORDERS as u64||
+                params["weightFitOrders"].as_u64()?<MIN_BLEND_ORDERS as u64{return None;}
+            let p=params["legacyReliabilityProxy"].as_array()?;
+            if p.len()!=3{return None;}
+            let sample=field_sample_with_parameters(&record,[p[0].as_f64()?,p[1].as_f64()?,p[2].as_f64()?],
+                params["shadowTemperature"].as_f64()?,params["shadowUniformSmoothing"].as_f64()?)?;
+            let w=params["learningWeight"].as_f64().filter(|w|(0.0..=1.0).contains(w)&&(w*10.0-(w*10.0).round()).abs()<1e-8)?;
+            let ids=rows_ids(entry)?;
+            let top=field_blend_top(&sample,w).and_then(|i|ids.get(i).copied());
+            let proposed=top.filter(|id|*id!=old).filter(|id|match task{
+                "type"=>!(contact(old)&&contact(id)),
+                // A source quantity is authoritative; statistics cannot
+                // substitute a different number. Keep diagnostic scores.
+                "quantity"=>false,_=>true
+            });
+            Some(json!({"task":task,"source":entry["source"],"modelId":m["modelId"],"contextLevel":group.1,
+                "legacyCandidate":old,"candidateIds":ids,"learningWeight":w,
+                "legacyProxy":sample.legacy,"learningProxy":sample.shadow,
+                "combinedProxy":blend_distribution(&sample.legacy,&sample.shadow,w),
+                "diagnosticCandidate":proposed,"status":if proposed.is_some(){"diagnostic_proposal_only"}else{"retain_legacy"},
+                "jointValidationRequired":true,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
+        })();
+        decisions.push(result.unwrap_or_else(||json!({"task":task,"source":entry["source"],"modelId":m["modelId"],
+            "legacyCandidate":old,"status":"unavailable_or_ineligible","eligibleForAutomaticDecision":false,"decisionChanged":false})));
+    }
+    Ok(json!({"schemaVersion":1,"status":"field_runtime_shadow_only","predictionAt":payload["predictionAt"],
+        "decisions":decisions,"automaticChangeAuthorized":false,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
+}
+fn rows_ids(entry:&Value)->Option<Vec<&str>>{
+    let ids=entry["shadowCandidates"].as_array()?;
+    let set=ids.iter().map(Value::as_str).collect::<Option<BTreeSet<_>>>()?;
+    (set.len()==ids.len()).then(||set.into_iter().collect())
 }
 
 // P07-05: read-only runtime inference on initial recognition. The optional
