@@ -1,4 +1,6 @@
 //! Shared card surfaces, measured layout and reusable card content profiles.
+use crate::ui_layout::SharedUiClipExt as _;
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Color32,Frame,Layout,Rect,Stroke,Ui,UiBuilder,Vec2};
@@ -231,14 +233,14 @@ pub(crate) fn fixed_scroll_panel(
         .id_salt(heading_id)
         .aligned_max_rect(title_rect)
         .layout(Layout::top_down(Align::Min)),|heading|{
-            heading.set_clip_rect(title_rect.intersect(parent_clip));
+            heading.restrict_shared_clip(title_rect.intersect(parent_clip));
             heading.label(typography::section_heading(title));
         });
     ui.scope_builder(UiBuilder::new()
         .id_salt(scroll_id)
         .aligned_max_rect(scroll_rect)
         .layout(Layout::top_down(Align::Min)),|content|{
-            content.set_clip_rect(scroll_rect.intersect(parent_clip));
+            content.restrict_shared_clip(scroll_rect.intersect(parent_clip));
             content.apply_shared_width(CardWidthPolicy::Fixed,scroll_rect.width());
             content.spacing_mut().item_spacing.y=0.0;
             scroll_area(ScrollAxes::Vertical)
@@ -325,8 +327,8 @@ pub(crate) fn management_summary_card_with_role_and_state(
                 if role==SummaryCardRole::Settlement{
                     let overflow=crate::ui_primitives::text_exceeds_rect(
                         number.size(),number_row.intersect(cell.clip_rect()));
-                    cell.painter().with_clip_rect(number_row).galley(number_pos,number,ink);
-                    cell.painter().with_clip_rect(label_row).galley(label_pos,caption,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
+                    cell.painter().with_shared_clip(number_row).galley(number_pos,number,ink);
+                    cell.painter().with_shared_clip(label_row).galley(label_pos,caption,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
                     crate::ui_primitives::overflow_tooltip(number_response,overflow,value);
                 }else{
                     cell.painter().galley(number_pos,number,ink);
@@ -521,7 +523,7 @@ pub(crate) fn reception_document_viewport<R>(
         UiBuilder::new().id_salt(canvas_id).aligned_max_rect(inner)
             .layout(Layout::top_down(Align::Min))
     );
-    canvas.set_clip_rect(clip);
+    canvas.restrict_shared_clip(clip);
     canvas.apply_shared_width(CardWidthPolicy::Fixed,inner.width());
     crate::ui_layout::set_fixed_height(&mut canvas,inner.height());
     Some(scroll_area(ScrollAxes::Vertical).id_salt(scroll_id)
@@ -565,5 +567,5 @@ pub(crate) fn workflow_group_card<R>(
 
 /// Divider inside the existing workflow card band, not an extra frame.
 pub(crate) fn paint_workflow_band_divider(ui:&Ui,rect:Rect){
-    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).rect_filled(rect,0.0,theme::WORKFLOW_CARD_BORDER);
+    ui.painter().with_shared_clip(rect.intersect(ui.clip_rect())).rect_filled(rect,0.0,theme::WORKFLOW_CARD_BORDER);
 }
