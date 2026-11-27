@@ -962,25 +962,17 @@ impl ClientManager {
         }
         if self.confirm_discard {
             crate::popup::modal_backdrop(ctx,"client-manager-discard-backdrop",true);
-            crate::popup::show_decision_window(ctx,"변경사항 확인","client-manager-discard-confirm",work_area,|ui|{
-                crate::popup::decision_workspace(ui,|decision|{
-                    let cancel=decision.header("변경사항 확인","취소",true);
-                    decision.body(|ui|{
-                        ui.label("거래처의 수정 내용을 버릴까요?");
-                    });
-                    let approve=decision.actions(|buttons|{
-                            crate::button::action(
-                                buttons,"변경 취소",ButtonRole::Danger,true
-                            ).clicked()
-                        }
-                    ).inner;
-                    if cancel {self.confirm_discard=false;}
-                    if approve {
-                        self.confirm_discard=false;self.draft=None;self.original=None;
-                        self.tag_input.clear();self.tag_notice=None;
-                    }
-                });
-            });
+            match crate::popup::show_discard_confirmation(
+                ctx,work_area,"client-manager-discard-confirm","변경사항 확인",
+                "거래처의 수정 내용을 버릴까요?","취소","변경 취소",true
+            ){
+                crate::popup::ChangeDecision::Cancel=>self.confirm_discard=false,
+                crate::popup::ChangeDecision::Discard=>{
+                    self.confirm_discard=false;self.draft=None;self.original=None;
+                    self.tag_input.clear();self.tag_notice=None;
+                }
+                _=>{}
+            }
         }
     }
 }
