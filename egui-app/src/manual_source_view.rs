@@ -2,7 +2,7 @@
 //! reception intake. This module owns only the worksheet's click-to-assign
 //! action; linked spans, hover timing, visual blocks and hit testing are shared.
 
-use crate::ui_layout::SharedAllocationExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
 use std::collections::HashSet;
 use eframe::egui::{self, Align, FontId, Sense, Ui};
 use crate::{source_highlight::{self,LinkKey,LinkedSpan},theme,typography};
