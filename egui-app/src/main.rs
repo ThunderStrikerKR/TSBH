@@ -95,6 +95,7 @@ mod excel_manager;
 mod excel_service;
 mod management_queries;
 
+use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self, Align, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use crate::ui_primitives::UiWidthPolicyExt;
 use theme::ButtonRole;
@@ -5300,7 +5301,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     let left_clip=left_header.intersect(master_ui.clip_rect());
                     master_ui.scope_builder(
                         UiBuilder::new().id_salt("ocr-review-image-toolbar")
-                            .max_rect(left_header)
+                            .aligned_max_rect(left_header)
                             .layout(Layout::left_to_right(Align::Center)),
                         |toolbar|{
                             toolbar.set_clip_rect(left_clip);
@@ -5325,7 +5326,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     let right_clip=right_header.intersect(master_ui.clip_rect());
                     master_ui.scope_builder(
                         UiBuilder::new().id_salt("ocr-review-text-toolbar")
-                            .max_rect(right_header)
+                            .aligned_max_rect(right_header)
                             .layout(Layout::left_to_right(Align::Center)),
                         |toolbar|{
                             toolbar.set_clip_rect(right_clip);
@@ -5450,7 +5451,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     let image_clip=image_scroll_rect.intersect(master_ui.clip_rect());
                     master_ui.scope_builder(
                         UiBuilder::new().id_salt("ocr-image-fixed-viewport")
-                            .max_rect(image_scroll_rect)
+                            .aligned_max_rect(image_scroll_rect)
                             .layout(Layout::top_down(Align::Min)),
                         |viewport|{
                             viewport.set_clip_rect(image_clip);
@@ -5509,7 +5510,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     let text_clip=text_view_rect.intersect(master_ui.clip_rect());
                     master_ui.scope_builder(
                         UiBuilder::new().id_salt("ocr-text-fixed-viewport")
-                            .max_rect(text_view_rect)
+                            .aligned_max_rect(text_view_rect)
                             .layout(Layout::top_down(Align::Min)),
                         |editor|{
                             editor.set_clip_rect(text_clip);
@@ -5564,7 +5565,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         let clip=hint_rect.intersect(master_ui.clip_rect());
                         master_ui.scope_builder(
                             UiBuilder::new().id_salt("ocr-review-footer-error")
-                                .max_rect(hint_rect),
+                                .aligned_max_rect(hint_rect),
                             |hint|{
                                 hint.set_clip_rect(clip);
                                 hint.label(typography::ocr_validation_hint(
@@ -6021,7 +6022,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 );
                 pane.scope_builder(
                     UiBuilder::new().id_salt("kakao-native-toolbar")
-                        .max_rect(toolbar_rect)
+                        .aligned_max_rect(toolbar_rect)
                         .layout(Layout::left_to_right(Align::Center)),
                     |toolbar|{
                         toolbar.set_clip_rect(toolbar_rect);
@@ -6063,7 +6064,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 // Connect control stays centered in the actual slot.
                 pane.scope_builder(
                     UiBuilder::new().id_salt("kakao-native-connect")
-                        .max_rect(slot)
+                        .aligned_max_rect(slot)
                         .layout(Layout::top_down(Align::Center)),
                     |center|{
                         center.set_clip_rect(slot);
@@ -6150,7 +6151,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             let _pane_output=ui.scope_builder(
                                 UiBuilder::new()
                                     .id_salt(("reception-pane", index,self.navigation_snapshots.epoch(Page::Reception as usize)))
-                                    .max_rect(rect)
+                                    .aligned_max_rect(rect)
                                     .layout(Layout::top_down(Align::Min)),
                                 |pane| {
                                     pane.set_clip_rect(rect);
@@ -6285,7 +6286,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let source_height=source_rect.height();
         let message_height=message_rect.height();
         ui.scope_builder(
-            UiBuilder::new().id_salt("source-top").max_rect(source_rect),
+            UiBuilder::new().id_salt("source-top").aligned_max_rect(source_rect),
             |child| {
                 child.set_clip_rect(source_rect);
                 child.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,source_rect.width());
@@ -6330,7 +6331,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
 
         ui.scope_builder(
-            UiBuilder::new().id_salt("message-bottom").max_rect(message_rect),
+            UiBuilder::new().id_salt("message-bottom").aligned_max_rect(message_rect),
             |child| {
                 child.set_clip_rect(message_rect);
                 child.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,message_rect.width());
@@ -6664,7 +6665,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 ui.scope_builder(
                     UiBuilder::new()
                         .id_salt("source-ocr-processing-blocker")
-                        .max_rect(body_rect)
+                        .aligned_max_rect(body_rect)
                         .layout(Layout::top_down(Align::Center)),
                     |progress| {
                         progress.set_clip_rect(clip);
@@ -6762,7 +6763,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 );
                 ui.scope_builder(
                     UiBuilder::new().id_salt("direct-input-resume-action")
-                        .max_rect(actions_rect)
+                        .aligned_max_rect(actions_rect)
                         .layout(Layout::right_to_left(Align::Center)),
                     |actions|{
                         actions.set_clip_rect(actions_rect);
@@ -7037,7 +7038,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     ui.scope_builder(
                         UiBuilder::new()
                             .id_salt("source-manual-action-fixed-slot")
-                            .max_rect(actions_rect)
+                            .aligned_max_rect(actions_rect)
                             .layout(Layout::right_to_left(Align::Center)),
                         |actions| {
                             actions.set_clip_rect(actions_rect);
@@ -7521,7 +7522,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             // editing actions or section boundary changes on hover.
             ui.scope_builder(
                 UiBuilder::new().id_salt("native-workflow-review")
-                    .max_rect(review_rect).layout(Layout::top_down(Align::Min)),
+                    .aligned_max_rect(review_rect).layout(Layout::top_down(Align::Min)),
                 |pane|{
                     pane.set_clip_rect(review_rect);
                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,review_rect.width());
@@ -7627,7 +7628,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             );
             ui.scope_builder(
                 UiBuilder::new().id_salt("native-workflow-recipient")
-                    .max_rect(recipient_rect).layout(Layout::top_down(Align::Min)),
+                    .aligned_max_rect(recipient_rect).layout(Layout::top_down(Align::Min)),
                 |pane|{
                     pane.set_clip_rect(recipient_rect);
                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,recipient_rect.width());
@@ -7720,7 +7721,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             );
             ui.scope_builder(
                 UiBuilder::new().id_salt("native-workflow-items")
-                    .max_rect(bottom_rect).layout(Layout::top_down(Align::Min)),
+                    .aligned_max_rect(bottom_rect).layout(Layout::top_down(Align::Min)),
                 |pane|{
                     pane.set_clip_rect(bottom_rect);
                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,bottom_rect.width());
@@ -7926,7 +7927,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             );
             ui.scope_builder(
                 UiBuilder::new().id_salt("native-workflow-order-total")
-                    .max_rect(summary_rect).layout(Layout::top_down(Align::Min)),
+                    .aligned_max_rect(summary_rect).layout(Layout::top_down(Align::Min)),
                 |pane|{
                     pane.set_clip_rect(summary_rect);
                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,summary_rect.width());
@@ -8111,7 +8112,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 preview_source,draft.review_analysis.as_ref());
             ui.scope_builder(
                 UiBuilder::new().id_salt("pending-hover-review")
-                    .max_rect(review_rect).layout(Layout::top_down(Align::Min)),
+                    .aligned_max_rect(review_rect).layout(Layout::top_down(Align::Min)),
                 |pane|{
                     pane.set_clip_rect(review_rect);
                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,review_rect.width());
@@ -8133,7 +8134,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             );
             ui.scope_builder(
                 UiBuilder::new().id_salt("pending-hover-recipient")
-                    .max_rect(recipient_rect).layout(Layout::top_down(Align::Min)),
+                    .aligned_max_rect(recipient_rect).layout(Layout::top_down(Align::Min)),
                 |pane|{
                     pane.set_clip_rect(recipient_rect);
                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,recipient_rect.width());
@@ -8185,7 +8186,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             );
             ui.scope_builder(
                 UiBuilder::new().id_salt("pending-hover-goods")
-                    .max_rect(bottom_rect).layout(Layout::top_down(Align::Min)),
+                    .aligned_max_rect(bottom_rect).layout(Layout::top_down(Align::Min)),
                 |pane|{
                     pane.set_clip_rect(bottom_rect);
                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,bottom_rect.width());
@@ -8263,7 +8264,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             );
             ui.scope_builder(
                 UiBuilder::new().id_salt("pending-hover-total")
-                    .max_rect(summary_rect).layout(Layout::top_down(Align::Min)),
+                    .aligned_max_rect(summary_rect).layout(Layout::top_down(Align::Min)),
                 |pane|{
                     pane.set_clip_rect(summary_rect);
                     pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,summary_rect.width());
@@ -8329,7 +8330,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let linked_active=self.active_id.as_deref()
             .and_then(|id|self.link_hover.active_for(id)).cloned();
         ui.scope_builder(
-            UiBuilder::new().id_salt("details-review").max_rect(review_rect)
+            UiBuilder::new().id_salt("details-review").aligned_max_rect(review_rect)
                 .layout(Layout::top_down(Align::Min)),
             |pane| {
                 pane.set_clip_rect(review_rect);
@@ -8411,7 +8412,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             });
         ui.scope_builder(
             UiBuilder::new().id_salt("details-recipient")
-                .max_rect(recipient_rect).layout(Layout::top_down(Align::Min)),
+                .aligned_max_rect(recipient_rect).layout(Layout::top_down(Align::Min)),
             |pane| {
                 pane.set_clip_rect(recipient_rect);
                 pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,recipient_rect.width());
@@ -8537,7 +8538,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
 
         let remaining = bottom_rect.height();
         ui.scope_builder(
-            UiBuilder::new().id_salt("details-items").max_rect(bottom_rect)
+            UiBuilder::new().id_salt("details-items").aligned_max_rect(bottom_rect)
                 .layout(Layout::top_down(Align::Min)),
             |pane| {
                 pane.set_clip_rect(bottom_rect);
@@ -8820,7 +8821,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         );
         ui.scope_builder(
             UiBuilder::new().id_salt("details-order-total")
-                .max_rect(summary_rect).layout(Layout::top_down(Align::Min)),
+                .aligned_max_rect(summary_rect).layout(Layout::top_down(Align::Min)),
             |pane|{
                 pane.set_clip_rect(summary_rect);
                 pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,summary_rect.width());
@@ -10231,7 +10232,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         );
                         host.scope_builder(
                             UiBuilder::new().id_salt("management-kakao-pane")
-                                .max_rect(left).layout(Layout::top_down(Align::Min)),
+                                .aligned_max_rect(left).layout(Layout::top_down(Align::Min)),
                             |pane|{
                                 pane.set_clip_rect(left);
                                 pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,left.width());
@@ -10281,7 +10282,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         );
                         host.scope_builder(
                             UiBuilder::new().id_salt(("management-page",self.page.label(),self.navigation_snapshots.epoch(self.page as usize)))
-                                .max_rect(right).layout(Layout::top_down(Align::Min)),
+                                .aligned_max_rect(right).layout(Layout::top_down(Align::Min)),
                             |main|{
                                 main.set_clip_rect(right);
                                 main.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,right.width());
