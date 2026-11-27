@@ -1,6 +1,6 @@
 //! Shared tag block geometry. Read-only and removable tags differ only
 //! by the reserved action slot and the caller's display policy.
-use eframe::egui::{self,Align,Layout,Rect,Response,Sense,Ui,Vec2};
+use eframe::egui::{self,Rect,Response,Sense,Ui,Vec2};
 use crate::{theme,typography};
 
 pub(crate) struct TagChip{
@@ -43,12 +43,11 @@ pub(crate) fn removable_tag_chip(ui:&mut Ui,tag:&str)->Response{
     crate::ui_primitives::shortened_text_tooltip(label,&visible,tag);
     let icon=theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
     let inner=rect.shrink2(chip.inset);
-    let icon_rect=Rect::from_min_size(egui::pos2(inner.right()-icon,inner.top()),Vec2::splat(icon));
-    let mut action=ui.new_child(egui::UiBuilder::new().id_salt(("tag-remove",tag))
-        .max_rect(icon_rect).layout(Layout::left_to_right(Align::Center)));
-    action.set_clip_rect(icon_rect.intersect(ui.clip_rect()));
-    action.spacing_mut().interact_size=Vec2::splat(icon);
-    let response=crate::button::icon_action_button(&mut action,"×",true);
+    let icon_rect=Rect::from_center_size(
+        egui::pos2(inner.right()-icon*0.5,rect.center().y),Vec2::splat(icon));
+    let response=crate::button::remove_at_response(
+        ui,icon_rect,ui.make_persistent_id(("tag-remove",tag)),true);
+    let response=response.on_hover_text("태그 삭제");
     #[cfg(test)]
     {
         crate::ui_test_support::record("tag chip",rect);

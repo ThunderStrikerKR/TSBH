@@ -19,6 +19,12 @@ pub(crate) fn paint_button_hover(ui:&Ui,response:&Response,radius:f32){
 
 /// Fixed-rectangle remove action for compact rows.
 pub(crate) fn remove_at(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->bool{
+    remove_at_response(ui,hit,id,enabled).clicked()
+}
+
+/// The response form lets tag editors reuse the same vector glyph and hit
+/// geometry as compact table rows, without a font baseline or nested button.
+pub(crate) fn remove_at_response(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->Response{
     let enabled=enabled && ui.is_enabled();
     let response=ui.interact(hit,id,if enabled{Sense::click()}else{Sense::hover()});
     let ink=if enabled{theme::SECONDARY}else{theme::DISABLED_ACTION_TEXT};
@@ -26,12 +32,12 @@ pub(crate) fn remove_at(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->bool{
     let center=hit.center();
     let stroke=Stroke::new(1.5_f32,ink);
     for sign in [-1.0_f32,1.0]{
-        ui.painter().line_segment([
+        ui.painter().with_clip_rect(hit.intersect(ui.clip_rect())).line_segment([
             center+egui::vec2(-4.0,-4.0*sign),
             center+egui::vec2(4.0,4.0*sign)
         ],stroke);
     }
-    enabled && response.clicked()
+    response
 }
 
 /// Shared disclosure chevron, overflow tooltip and hover policy.

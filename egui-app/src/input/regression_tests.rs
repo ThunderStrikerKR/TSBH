@@ -650,7 +650,7 @@ fn tag_blocks_share_top_bottom_and_vertical_centers_even_when_wrapped(){
         let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(width,500.0));
         let mut entry=String::new();
         crate::ui_test_support::TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
-        let _=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+        let output=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
                 crate::input::tag_block_editor(ui,&tags,&mut entry,"검색 태그 입력");
             });
@@ -665,7 +665,31 @@ fn tag_blocks_share_top_bottom_and_vertical_centers_even_when_wrapped(){
         assert_eq!(labels.len(),chips.len());
         assert_eq!(actions.len(),chips.len());
         let close=|a:f32,b:f32|assert!((a-b).abs()<=0.5,"{a} != {b}");
+        // Measure actual painted diagonals, not only the button's hit box.
+        fn crosses(shape:&egui::Shape,hit:Rect,out:&mut Vec<[egui::Pos2;2]>){
+            match shape{
+                egui::Shape::LineSegment{points,stroke} if
+                    (stroke.width-1.5).abs()<0.01 && stroke.color==theme::SECONDARY
+                    && hit.contains(points[0]) && hit.contains(points[1])=>out.push(*points),
+                egui::Shape::Vec(shapes)=>for shape in shapes{crosses(shape,hit,out);},
+                _=>{}
+            }
+        }
+        assert!(crate::ui_test_support::painted_text_rects(&output,"×").is_empty());
         for index in 0..chips.len(){
+            let hit=actions[index];
+            let mut strokes=Vec::new();
+            for clipped in &output.shapes{crosses(&clipped.shape,hit,&mut strokes);}
+            assert_eq!(strokes.len(),2,"tag remove must paint exactly two diagonals");
+            for [a,b] in &strokes{
+                close((a.x+b.x)*0.5,hit.center().x);
+                close((a.y+b.y)*0.5,hit.center().y);
+                close((b.x-a.x).abs(),8.0);
+                close((b.y-a.y).abs(),8.0);
+            }
+            assert!((strokes[0][1].y-strokes[0][0].y)*(strokes[1][1].y-strokes[1][0].y)<0.0);
+            close(hit.width(),theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH);
+            close(hit.height(),theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH);
             let chip=chips[index];
             close(chip.height(),34.0);
             close(chip.center().y,labels[index].center().y);
