@@ -18,13 +18,11 @@ pub fn management_chooser_row(
     let (rect,response)=ui.allocate_exact_size(
         Vec2::new(width,theme::MANAGEMENT_CHOOSER_ROW_HEIGHT),Sense::click()
     );
-    let background=if selected {
-        theme::SELECTION.linear_multiply(0.22)
-    }else if response.hovered(){theme::INPUT}else{theme::PANEL};
-    let painter=ui.painter().with_clip_rect(rect);
-    painter.rect_filled(rect,theme::CONTROL_RADIUS as f32,background);
+    let painter=ui.painter().clone();
     if selected{
-        crate::ui_primitives::paint_selection_outline(&painter,rect.shrink(0.5),theme::CONTROL_RADIUS as f32);
+        crate::highlight::paint(ui,rect,theme::CONTROL_RADIUS,crate::highlight::Role::ChooserSelected);
+    }else{
+        painter.rect_filled(rect,theme::CONTROL_RADIUS,theme::PANEL);
     }
     let primary=typography::management_table_cell_galley(
         ui,title,typography::ManagementTableCellRole::ClientName
