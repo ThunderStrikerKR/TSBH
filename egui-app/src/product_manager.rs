@@ -745,7 +745,7 @@ impl ProductManager {
     fn start_write(
         &mut self,action:&str,mut data:Value,key:Option<String>,ctx:Context
     ){
-        if matches!(action,"upsert_product"|"archive_product"){
+        if matches!(action,"upsert_product"|"archive_product")&&data.get("expectedEntity").is_none(){
             data["expectedEntity"]=self.original_selected.as_ref()
                 .filter(|row|!field(row,"id").is_empty()).cloned().unwrap_or(Value::Null);
         }
@@ -1233,7 +1233,13 @@ impl ProductManager {
                 let blocked=saving||self.selected.is_some()||self.category_manager.has_overlay();
                 self.category_manager.show_page(ui,catalog,can_edit,blocked);
                 let requested=self.category_manager.take_product_request();
-                if let Some(id)=requested.filter(|_|!blocked){
+                let move_request=self.category_manager.take_product_move();
+                if let Some(request)=move_request.filter(|_|can_edit&&!blocked){
+                    let change=Self::category_move_candidate(catalog,&request);
+                    if let Some((original,candidate))=change{
+                        self.start_write("upsert_product",json!({"product":candidate,"expectedEntity":original}),None,ui.ctx().clone());
+                    }
+                }else if let Some(id)=requested.filter(|_|!blocked){
                     let product=rows(&catalog["products"]).iter().find(|product|
                         field(product,"id")==id.as_str()&&field(product,"deletedAt").is_empty()
                             &&field(product,"supersededBy").is_empty()
@@ -1971,6 +1977,29 @@ impl ProductManager {
             }
         });
     }
+    fn assign_product_category(draft:&mut Value,id:&str,choices:&[(String,String)]){
+        draft["categories"]=if id.is_empty(){json!([])}else{json!([id])};
+        draft["category"]=json!(choices.iter().find(|(key,_)|key==id)
+            .map(|(_,name)|name.as_str()).unwrap_or(""));
+    }
+
+    fn category_move_candidate(catalog:&Value,request:&crate::category_tree::ProductMove)->Option<(Value,Value)>{
+        if request.id.is_empty()||request.source.is_empty()||request.target.is_empty()
+            ||request.source==request.target{return None;}
+        let choices=category_choices(catalog);
+        if !choices.iter().any(|(id,_)|id==&request.target){return None;}
+        if rows(&catalog["categories"]).iter().any(|c|
+            field(c,"id")==request.target.as_str()&&c["active"]==false){return None;}
+        let original=rows(&catalog["products"]).iter().find(|product|
+            field(product,"id")==request.id.as_str()&&field(product,"deletedAt").is_empty()
+                &&field(product,"supersededBy").is_empty()
+                &&rows(&product["categories"]).iter().any(|id|id.as_str()==Some(request.source.as_str()))
+        )?.clone();
+        let mut candidate=original.clone();
+        Self::assign_product_category(&mut candidate,&request.target,&choices);
+        Some((original,candidate))
+    }
+
     fn detail_overview_column(
         ui:&mut Ui,draft:&mut Value,
         brands:&[Value],categories:&[(String,String)],
@@ -1994,12 +2023,7 @@ impl ProductManager {
                 );
             });
             if category_id!=before{
-                draft["categories"]=if category_id.is_empty(){
-                    json!([])
-                }else{json!([category_id.clone()])};
-                draft["category"]=json!(categories.iter().find(|(id,_)|
-                    id==&category_id).map(|(_,name)|name.as_str())
-                    .unwrap_or(""));
+                Self::assign_product_category(draft,&category_id,categories);
             }
         });
         crate::popup::modal_labeled_row(ui,"브랜드",|row|{

@@ -99,22 +99,52 @@ fn paint_category_tree_folder(painter:&egui::Painter,rect:Rect,open:bool,ink:Col
 }
 
 pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
-    tree_row(ui,item,false,true)
+    tree_row(ui,item,false,true,false)
 }
 
 /// Product leaf opens the existing product detail; it never changes
 /// category selection or expansion.
-pub(crate) fn product_tree_row(ui:&mut Ui,name:&str,depth:usize,ancestor_guides:&[bool],is_last:bool,enabled:bool)->Response{
+pub(crate) fn product_tree_row(ui:&mut Ui,name:&str,depth:usize,ancestor_guides:&[bool],is_last:bool,enabled:bool,draggable:bool)->Response{
     tree_row(ui,CategoryTreeRow{
         name,summary:"",depth,ancestor_guides,is_last,
         root:false,has_children:false,open:false,selected:false,
-    },true,enabled)
+    },true,enabled,draggable)
 }
 
-fn tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>,product:bool,enabled:bool)->Response{
+#[derive(Clone)]
+struct ProductDrag { id:String, source:String }
+
+pub(crate) struct ProductMove {
+    pub(crate) id:String,
+    pub(crate) source:String,
+    pub(crate) target:String,
+}
+
+pub(crate) fn start_product_drag(ui:&Ui,response:&Response,id:&str,source:&str,enabled:bool){
+    if enabled&&ui.is_enabled()&&!id.is_empty()&&!source.is_empty(){
+        response.dnd_set_drag_payload(ProductDrag{id:id.to_owned(),source:source.to_owned()});
+        if response.dragged(){ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);}
+    }
+}
+
+/// Native typed drag/drop; only real folders are accepted. The source
+/// remains untouched until ProductManager commits a Rust mutation.
+pub(crate) fn product_drop_target(ui:&Ui,response:&Response,target:&str,enabled:bool)->Option<ProductMove>{
+    if !enabled||!ui.is_enabled()||target.is_empty(){return None;}
+    let valid=response.dnd_hover_payload::<ProductDrag>()
+        .is_some_and(|drag|drag.source!=target);
+    if valid{
+        crate::highlight::paint(ui,response.rect.intersect(ui.clip_rect()),
+            crate::highlight::Geometry::Control,crate::highlight::Role::DropHovered);
+    }
+    response.dnd_release_payload::<ProductDrag>().filter(|drag|drag.source!=target)
+        .map(|drag|ProductMove{id:drag.id.clone(),source:drag.source.clone(),target:target.to_owned()})
+}
+
+fn tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>,product:bool,enabled:bool,draggable:bool)->Response{
     let (rect,response)=ui.shared_allocate_exact_size(
         Vec2::new(ui.available_width().max(1.0),theme::CATALOG_TREE_ROW_HEIGHT),
-        if enabled{Sense::click()}else{Sense::hover()}
+        if enabled&&draggable{Sense::click_and_drag()}else if enabled{Sense::click()}else{Sense::hover()}
     );
     #[cfg(test)]
     if !product{crate::ui_test_support::record_highlight_target("category row",rect,ui.clip_rect());}

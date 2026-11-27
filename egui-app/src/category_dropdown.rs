@@ -233,6 +233,11 @@ fn crumb_text(ui:&mut Ui,name:&str,width:f32,current:bool,enabled:bool)->Respons
 }
 pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryNode>,
     path:&[String],enabled:bool,alpha:f32,slide:f32)->Option<Vec<String>>{
+    crumbs_row_with_drop(ui,state,index,path,enabled,alpha,slide,None)
+}
+
+fn crumbs_row_with_drop(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryNode>,
+    path:&[String],enabled:bool,alpha:f32,slide:f32,mut product_move:Option<&mut Option<category_tree::ProductMove>>)->Option<Vec<String>>{
     let mut next=None;
     let height=theme::CATEGORY_EXPLORER_CRUMB_HEIGHT;
     let (nav_rect,_)=ui.shared_allocate_exact_size(Vec2::new(ui.available_width().max(1.0),height),egui::Sense::hover());
@@ -243,7 +248,15 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
     let mut back=ui.new_child(egui::UiBuilder::new().id_salt("category-back")
         .aligned_max_rect(back_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
     back.restrict_shared_clip(back_rect.intersect(ui.clip_rect()));
-    if category_back_button(&mut back,enabled&&!path.is_empty()).clicked(){
+    let back_response=category_back_button(&mut back,enabled&&!path.is_empty());
+    if let Some(output)=product_move.as_deref_mut(){
+        if path.len()>1{
+            if let Some(request)=category_tree::product_drop_target(&back,&back_response,&path[path.len()-2],enabled){
+                *output=Some(request);
+            }
+        }
+    }
+    if back_response.clicked(){
         next=Some(path[..path.len().saturating_sub(1)].to_vec());
     }
     let rail=(back_width+theme::SPACE_8).min((nav_rect.width()-1.0).max(0.0));
@@ -271,7 +284,15 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
         separator(&mut bar);
     }
     for i in omitted..last{
-        if crumb_text(&mut bar,names[i],widths[i],false,enabled).clicked(){next=Some(path[..i].to_vec());}
+        let response=crumb_text(&mut bar,names[i],widths[i],false,enabled);
+        if let Some(output)=product_move.as_deref_mut(){
+            if i>0{
+                if let Some(request)=category_tree::product_drop_target(&bar,&response,&path[i-1],enabled){
+                    *output=Some(request);
+                }
+            }
+        }
+        if response.clicked(){next=Some(path[..i].to_vec());}
         separator(&mut bar);
     }
     let remaining=(width-(if omitted>0{dots+sep}else{0.0})-
@@ -321,7 +342,7 @@ fn menu_body(
     ).inner;
     let list_height=theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT
         .min((menu.ctx().content_rect().height()-270.0).max(100.0));
-    let _=explorer_body(menu,nodes,index,state,enabled,list_height,search_response.has_focus(),None,None);
+    let _=explorer_body(menu,nodes,index,state,enabled,list_height,search_response.has_focus(),None,None,false);
     let busy=state.moving();
     crate::ui_primitives::soft_divider(menu);
     let mut applied=false;
@@ -339,8 +360,10 @@ fn menu_body(
 /// Shared focused explorer: the manager uses this without an Apply footer.
 pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&str,&CategoryNode>,
     state:&mut ExplorerState,enabled:bool,list_height:f32,search_focused:bool,
-    totals:Option<&HashMap<String,usize>>,products:Option<&HashMap<String,Vec<(String,String)>>>)->Option<String>{
+    totals:Option<&HashMap<String,usize>>,products:Option<&HashMap<String,Vec<(String,String)>>>,move_enabled:bool)
+    ->(Option<String>,Option<category_tree::ProductMove>){
     let mut product_request=None;
+    let mut product_move=None;
     let now=menu.input(|i|i.time);
     if state.motion.as_ref().is_some_and(|m|m.elapsed(now)>=450.0){state.finish_motion();menu.ctx().request_repaint();}
     else if state.motion.is_some(){menu.ctx().request_repaint();}
@@ -361,11 +384,15 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
     }).unwrap_or(1.0);
     let nav_slide=motion.as_ref().map(|m|if final_phase{(1.0-alpha)*if m.reverse{-8.0}else{8.0}}
         else{(1.0-alpha)*if m.reverse{8.0}else{-8.0}}).unwrap_or(0.0);
-    if let Some(p)=crumbs_row(menu,state,index,&visual_path,enabled&&!busy,alpha,nav_slide){next_path=Some(p);}
+    if let Some(p)=crumbs_row_with_drop(menu,state,index,&visual_path,enabled&&!busy,alpha,nav_slide,
+        if move_enabled&&enabled&&!busy{Some(&mut product_move)}else{None}){next_path=Some(p);}
     if totals.is_some(){crate::ui_primitives::section_divider(menu);}
     else{crate::ui_primitives::soft_divider(menu);}
     let searching=!state.search.trim().is_empty();
-    let context=context_path(nodes,&visual_path);
+    let context=if visual_path.last().is_some_and(|id|
+        products.is_some_and(|rows|rows.get(id).is_some_and(|p|!p.is_empty()))){
+        visual_path.clone()
+    }else{context_path(nodes,&visual_path)};
     let current=context.last().map(String::as_str).unwrap_or("");
     let items=if searching{search_results(nodes,index,&state.search)}else{direct_children(nodes,index,current)};
     // Only management supplies product leaves. Category choice popups
@@ -419,7 +446,11 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                             })
                         }else{category_option_row(row,name,depth,last,has_children,open,path==visual_path)}
                     }).inner;
-                    if enabled&&!busy&&response.clicked(){
+                    if let Some(target)=path.last(){
+                        if let Some(request)=category_tree::product_drop_target(list,&response,target,
+                            move_enabled&&enabled&&!busy&&!hide){product_move=Some(request);}
+                    }
+                    if enabled&&!busy&&response.clicked()&&product_move.is_none(){
                         source=Some((response.rect.top()-clip.top(),(clip.top()-top).max(0.0)));
                         next_path=Some(path);
                     }
@@ -445,10 +476,11 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                 for (i,(id,name)) in product_rows.iter().enumerate(){
                     list.scope(|row|{
                         if alpha<1.0{row.set_opacity(alpha);}
-                        if category_tree::product_tree_row(row,name,1,&[],i+1==product_rows.len(),
-                            enabled&&!busy&&!id.is_empty()).clicked(){
-                            product_request=Some(id.clone());
-                        }
+                        let active=enabled&&!busy&&!id.is_empty();
+                        let response=category_tree::product_tree_row(row,name,1,&[],i+1==product_rows.len(),
+                            active,move_enabled);
+                        category_tree::start_product_drag(row,&response,id,current,active&&move_enabled);
+                        if response.clicked(){product_request=Some(id.clone());}
                     });
                 }
             });
@@ -473,7 +505,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
         begin_move(state,path,nodes,index,now,source,list_height);
         menu.ctx().request_repaint();
     }
-    product_request
+    (product_request,product_move)
 }
 
 type PopupStates=crate::view_state::TimedViewStore<(ExplorerState,std::time::Instant)>;

@@ -64,6 +64,7 @@ pub struct CategoryManager {
     scroll_epoch:u64,
     scroll_to:Option<String>,
     product_request:Option<String>,
+    product_move:Option<category_tree::ProductMove>,
     name:String,
     editor:bool,
     expected_scope:Option<String>,
@@ -85,7 +86,7 @@ impl Default for CategoryManager {
             expanded:ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect(),
             query:String::new(),focused:false,focus:Default::default(),crumbs:Default::default(),
             tree_motion:None,nav_motion:None,mode_motion:None,map_cache:None,node_cache:Default::default(),scroll_epoch:0,scroll_to:None,
-            product_request:None,
+            product_request:None,product_move:None,
             name:String::new(),editor:false,expected_scope:None,
             operation:None,new_name:String::new(),target:String::new(),
             transfer:false,confirm:None,after_save:None,
@@ -324,6 +325,9 @@ impl CategoryManager {
     pub(crate) fn take_product_request(&mut self)->Option<String>{
         self.product_request.take()
     }
+    pub(crate) fn take_product_move(&mut self)->Option<category_tree::ProductMove>{
+        self.product_move.take()
+    }
     pub fn take_switch_to_list(&mut self)->bool{
         std::mem::take(&mut self.switch_to_list)
     }
@@ -549,7 +553,7 @@ impl CategoryManager {
         }).sum()
     }
     fn node(&mut self,ui:&mut Ui,cats:&[Category],index:&CategoryMapIndex,
-        item:&Category,depth:usize,ancestor_guides:&[bool],is_last:bool,ancestors:&mut HashSet<String>,product_enabled:bool){
+        item:&Category,depth:usize,ancestor_guides:&[bool],is_last:bool,ancestors:&mut HashSet<String>,product_enabled:bool,move_enabled:bool){
         if !ancestors.insert(item.id.clone()){return;}
         if !index.shows(&item.id){ancestors.remove(&item.id);return;}
         let branches=index.branches(&item.id);
@@ -576,7 +580,11 @@ impl CategoryManager {
         if self.scroll_to.as_deref()==Some(item.id.as_str()){
             response.scroll_to_me(None);self.scroll_to=None;
         }
-        if response.clicked()&&!locked{
+        if let Some(request)=category_tree::product_drop_target(ui,&response,&item.id,
+            move_enabled&&product_enabled&&!locked&&item.active){
+            self.product_move=Some(request);
+        }
+        if response.clicked()&&!locked&&self.product_move.is_none(){
             self.select_map(cats,&item.id,ui.input(|i|i.time));
             ui.ctx().request_repaint();
             if has_children && self.query.trim().is_empty(){
@@ -593,13 +601,14 @@ impl CategoryManager {
             let draw=|this:&mut Self,rows:&mut Ui,ancestors:&mut HashSet<String>|{
                 for (position,&child) in visible_children.iter().enumerate(){
                     this.node(rows,cats,index,&cats[child],depth+1,&child_guides,
-                        position+1==visible_children.len()&&products.is_empty(),ancestors,product_enabled);
+                        position+1==visible_children.len()&&products.is_empty(),ancestors,product_enabled,move_enabled);
                 }
                 for (position,(id,name)) in products.iter().enumerate(){
-                    if category_tree::product_tree_row(rows,name,depth+1,&child_guides,
-                        position+1==products.len(),product_enabled&&!locked&&!id.is_empty()).clicked(){
-                        this.product_request=Some(id.clone());
-                    }
+                    let enabled=product_enabled&&!locked&&!id.is_empty();
+                    let response=category_tree::product_tree_row(rows,name,depth+1,&child_guides,
+                        position+1==products.len(),enabled,move_enabled);
+                    category_tree::start_product_drag(rows,&response,id,&item.id,enabled&&move_enabled);
+                    if response.clicked(){this.product_request=Some(id.clone());}
                 }
             };
             if let Some(m)=motion{
@@ -649,6 +658,7 @@ impl CategoryManager {
     }
     pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,editable:bool,busy:bool){
         self.product_request=None;
+        self.product_move=None;
         let revision=catalog["revision"].as_u64();
         if revision.is_none(){self.node_cache.invalidate();}
         let projection=self.node_cache.get(revision,||{
@@ -726,8 +736,10 @@ impl CategoryManager {
                 let height=(panel.available_height()-theme::CATEGORY_EXPLORER_CRUMB_HEIGHT-theme::SECTION_DIVIDER_HEIGHT)
                     .max(theme::CATALOG_TREE_ROW_HEIGHT);
                 let search_focused=panel.ctx().memory(|mem|mem.focused().is_some());
-                self.product_request=category_dropdown::explorer_body(panel,&nodes,&node_index,&mut self.focus,
-                    !busy,height,search_focused,Some(&index.totals),Some(&index.products));
+                let (request,product_move)=category_dropdown::explorer_body(panel,&nodes,&node_index,&mut self.focus,
+                    !busy,height,search_focused,Some(&index.totals),Some(&index.products),editable);
+                self.product_request=request;
+                self.product_move=product_move;
                 if !self.focus.moving(){
                     let new=self.focus.path.last().cloned().unwrap_or_default();
                     if self.selected!=new{
@@ -780,7 +792,7 @@ impl CategoryManager {
                     let roots=ROOTS.iter().filter_map(|(id,_)|cats.iter().find(|c|c.id==*id))
                         .filter(|c|index.shows(&c.id)).collect::<Vec<_>>();
                     for (i,current) in roots.iter().enumerate(){
-                        self.node(tree,&cats,&index,current,1,&[],i+1==roots.len(),&mut HashSet::new(),!busy);
+                        self.node(tree,&cats,&index,current,1,&[],i+1==roots.len(),&mut HashSet::new(),!busy,editable);
                     }
                     let legacy=cats.iter().filter(|c|c.parent.is_empty()&&!is_root(&c.id))
                         .cloned().collect::<Vec<_>>();
@@ -790,7 +802,7 @@ impl CategoryManager {
                             &format!("상위 분류 소속 확인 ({})",legacy.len())
                         ));
                         for row in &legacy{
-                            self.node(tree,&cats,&index,row,0,&[],true,&mut HashSet::new(),!busy);
+                            self.node(tree,&cats,&index,row,0,&[],true,&mut HashSet::new(),!busy,editable);
                         }
                     }
                 });

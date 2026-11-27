@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "category-product-move-157",
+  "screen": "상품 관리 / 카테고리 관리 / 상품 드래그 이동",
+  "files": [
+    "egui-app/src/category_manager.rs",
+    "egui-app/src/category_tree/mod.rs",
+    "egui-app/src/category_dropdown.rs",
+    "egui-app/src/product_manager.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "상품 클릭/드래그 분리, 일반·집중 탐색의 표시 폴더 및 집중 탐색 상위 경로 드롭, 기존 공통 드롭 강조, 상품 상세와 동일한 카테고리 변경 규격 및 expectedEntity 저장. 실제 Rust 컴파일, CI, Windows 드래그 동작 미확인.",
+  "defects": [],
+  "releaseDecision": "NOT_APPROVED"
+}
