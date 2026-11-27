@@ -1233,6 +1233,30 @@ mod reception_edit_audit_tests {
     use super::*;
 
     #[test]
+    fn audit_batch_reads_complete_selected_pages_and_rejects_oversized_history(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE reception_edit_audit(
+            id TEXT PRIMARY KEY,order_id TEXT,source_raw TEXT,initial_analysis_json TEXT,
+            before_rows_json TEXT,after_rows_json TEXT,recorded_at TEXT,context_json TEXT);").unwrap();
+        for i in 0..251{
+            conn.execute("INSERT INTO reception_edit_audit VALUES (?1,'o','709','{}','[]','[]','t',NULL)",
+                params![format!("e{i:04}")]).unwrap();
+        }
+        conn.execute("INSERT INTO reception_edit_audit VALUES ('other','other','709','{}','[]','[]','t',NULL)",[]).unwrap();
+        let batch=query_reception_audit_batch(&conn,&["o".into(),"o".into(),"empty".into()]).unwrap();
+        assert_eq!(batch.len(),2);
+        assert_eq!(batch["o"].len(),251);
+        assert_eq!(batch["o"][250]["id"],"e0250");
+        assert!(batch["empty"].is_empty());
+        assert!(!batch.contains_key("other"));
+        for i in 251..1001{
+            conn.execute("INSERT INTO reception_edit_audit VALUES (?1,'o','709','{}','[]','[]','t',NULL)",
+                params![format!("e{i:04}")]).unwrap();
+        }
+        assert!(query_reception_audit_batch(&conn,&["o".into()]).is_err());
+    }
+
+    #[test]
     fn correction_query_pages_and_filters_without_inventing_legacy_context(){
         let conn=Connection::open_in_memory().unwrap();
         conn.execute_batch("CREATE TABLE reception_edit_audit(
