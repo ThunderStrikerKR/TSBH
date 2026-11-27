@@ -55,6 +55,14 @@ mod logical_alignment_tests{
                     reference.set_width(target.round_ui());
                     assert_eq!(width.min_rect(),reference.min_rect());
                     assert_eq!(width.max_rect(),reference.max_rect());
+                    let mut bounded=child(root,"bounded width");
+                    let mut old_bounded=child(root,"previous bounded width");
+                    apply_width_policy(&mut bounded,CardWidthPolicy::Bounded,target);
+                    old_bounded.set_width(target.round_ui());
+                    old_bounded.set_max_width(target.round_ui());
+                    assert_eq!(bounded.min_rect(),old_bounded.min_rect());
+                    assert_eq!(bounded.max_rect(),old_bounded.max_rect());
+                    assert_eq!(bounded.cursor(),old_bounded.cursor());
                 }
             });
         });
