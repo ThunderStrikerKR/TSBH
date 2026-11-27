@@ -1869,6 +1869,92 @@ pub(super) fn run_blend_shadow(payload:&Value)->Result<Value,String>{
         "automaticChangeAuthorized":false,"decisionChanged":false,"eligibleForAutomaticDecision":false}))
 }
 
+// P07-06: compare frozen runtime proposals, never rerun a model with final labels.
+pub(super) fn evaluate_combined_confirmation(order:&Value)->Result<Value,String>{
+    let snap=&order["confirmationSnapshot"];
+    let first=&snap["recognitionBaseline"]["initialAnalysis"];
+    let cap=&first["initialPredictionCapture"];
+    let shadow=&cap["learningShadow"];
+    let combined=&shadow["combinedShadow"];
+    let empty=|status:&str|json!({"schemaVersion":1,"status":status,"groups":[],
+        "eligibleForAutomaticDecision":false,"decisionChanged":false});
+    if combined["status"]!="runtime_shadow_only"{return Ok(empty("no_combined_prediction"));}
+    let date=|v:&Value|v.as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
+    let (Some(a),Some(b),Some(c),Some(d),Some(e))=(date(&cap["analysisStartedAt"]),date(&cap["analysisCompletedAt"]),
+        date(&shadow["capturedAt"]),date(&combined["predictionAt"]),date(&order["confirmedAt"]))
+        else{return Ok(empty("unverified_prediction_time"));};
+    if order["learningActive"]!=true||cap["origin"]!="native_reception_worker"||cap["schemaVersion"]!=1||
+        cap["orderId"]!=order["id"]||shadow["captureVersion"]!=4||shadow["sourceDigestsMatched"]!=true||
+        combined["schemaVersion"]!=1||combined["currentModelSourceDigestsMatched"]!=true||
+        combined["automaticChangeAuthorized"]!=false||combined["decisionChanged"]!=false||
+        snap["at"]!=order["confirmedAt"]||!(a<=b&&b<=c&&c<=d&&d<e){
+        return Ok(empty("unverified_prediction_provenance"));
+    }
+    let Some(model)=combined["modelId"].as_str().filter(|s|s.len()==70&&s.starts_with("blend-")&&s[6..].bytes().all(|b|b.is_ascii_hexdigit()))
+        else{return Ok(empty("unverified_model_identity"));};
+    let Some(events)=order["recognitionAuditEvents"].as_array()else{return Ok(empty("unverified_audit"));};
+    if events.iter().any(|v|date(&v["at"]).is_none_or(|t|t<=d||t>e)){return Ok(empty("unverified_audit_time"));}
+    let compared=compare(order)?;
+    if compared["auditCoverage"]!="verified_manifest"{return Ok(empty("unverified_audit"));}
+    let units=snap["raw"].as_str().ok_or("평가 원문 누락")?.encode_utf16().collect::<Vec<_>>();
+    let decisions=combined["decisions"].as_array().filter(|v|v.len()<=64).ok_or("결합 예측 목록 오류")?;
+    let mut seen=BTreeSet::new();
+    for v in decisions{if !seen.insert(position(&units,v).ok_or("결합 예측 위치 오류")?){return Err("결합 예측 중복".into());}}
+    let mut groups=BTreeMap::<(&str,&str,&str,&str),[u64;7]>::new();
+    let (mut eligible,mut missing,mut excluded)=(0u64,0u64,0u64);
+    for obs in rows(&compared["observations"]).filter(|o|o["task"]=="recipient_ownership"){
+        let label=match obs["outcome"].as_str(){
+            Some("explicit_correction_observed") if obs["eligibleForCandidateLearning"]==true=>"explicit_correction",
+            Some("unchanged_observed") if obs["eligibleForCandidateLearning"]==true=>"unchanged_proxy",
+            _=>{excluded+=1;continue;}
+        };
+        let (Some(old),Some(actual),Some(s))=(singleton(&obs["initialCandidates"]),singleton(&obs["finalCandidates"]),position(&units,&obs["source"]))
+            else{excluded+=1;continue;};
+        if !matches!(old,"previous"|"next")||!matches!(actual,"previous"|"next"|"outside_traced_candidates")||
+            (label=="explicit_correction"&&(old==actual||singleton(&obs["positiveCandidates"])!=Some(actual)||
+                singleton(&obs["negativeCandidates"])!=Some(old)))||(label=="unchanged_proxy"&&old!=actual){
+            excluded+=1;continue;
+        }
+        eligible+=1;
+        let Some(v)=decisions.iter().find(|v|position(&units,v)==Some(s))else{missing+=1;continue;};
+        let parsed=(||->Option<(&str,&str,&str,Option<&str>)>{
+            if v["legacyCandidate"].as_str()!=Some(old)||v["decisionChanged"]!=false||
+                v["eligibleForAutomaticDecision"]!=false||v["candidateOrder"]!=json!(["next","previous","outside"]){return None;}
+            let kind=v["sourceKind"].as_str().filter(|s|matches!(*s,"address"|"contact"))?;
+            let route=v["legacyRoute"].as_str().filter(|s|matches!(*s,"gate"|"score"))?;
+            let level=v["contextLevel"].as_str().filter(|s|matches!(*s,"base"|"structure"|"client_structure"))?;
+            let vector=|key:&str|->Option<Vec<f64>>{
+                let a=v[key].as_array().filter(|a|a.len()==3)?;
+                let p=a.iter().map(|v|v.as_f64().filter(|x|x.is_finite()&&(0.0..=1.0).contains(x))).collect::<Option<Vec<_>>>()?;
+                ((p.iter().sum::<f64>()-1.0).abs()<1e-8).then_some(p)
+            };
+            let legacy=vector("legacyProxy")?;let learning=vector("learningProxy")?;let combined=vector("combinedProxy")?;
+            let w=v["learningWeight"].as_f64().filter(|w|w.is_finite()&&(0.0..=1.0).contains(w))?;
+            if blend_distribution(&legacy,&learning,w).iter().zip(&combined).any(|(a,b)|(a-b).abs()>1e-8){return None;}
+            let proposal=v["diagnosticCandidate"].as_str();
+            if let Some(p)=proposal{
+                let target=if p=="next"{0}else if p=="previous"{1}else{return None;};
+                if p==old||v["status"]!="diagnostic_proposal_only"||combined[target]<MIN_CHANGE_PROXY-1e-10||
+                    combined[2]>MAX_CHANGE_OUTSIDE+1e-10||combined[target]-combined[1-target].max(combined[2])<MIN_CHANGE_MARGIN-1e-10||
+                    learning[target]<=learning[1-target].max(learning[2])+1e-10||w<=0.0{return None;}
+            }else if v["status"]=="diagnostic_proposal_only"{return None;}
+            Some((kind,route,level,proposal))
+        })();
+        let Some((kind,route,level,proposal))=parsed else{missing+=1;continue;};
+        let c=groups.entry((kind,route,level,label)).or_default();
+        let predicted=proposal.unwrap_or(old);
+        c[0]+=1;c[1]+=u64::from(old==actual);c[2]+=u64::from(predicted==actual);
+        c[3]+=u64::from(proposal.is_some());c[4]+=u64::from(old!=actual&&predicted==actual);
+        c[5]+=u64::from(old==actual&&predicted!=actual);c[6]+=u64::from(actual=="outside_traced_candidates");
+    }
+    let groups=groups.into_iter().map(|((kind,route,level,label),c)|json!({
+        "sourceKind":kind,"legacyRoute":route,"contextLevel":level,"labelKind":label,"evaluated":c[0],
+        "legacyAgrees":c[1],"screenedCombinedAgrees":c[2],"proposals":c[3],"improved":c[4],"worsened":c[5],"outsideLabels":c[6]})).collect::<Vec<_>>();
+    Ok(json!({"schemaVersion":1,"status":"compared_diagnostic_only","modelId":model,"groups":groups,
+        "eligibleObservations":eligible,"missingOrIneligiblePredictions":missing,"excludedLabels":excluded,
+        "representativeLabelsVerified":false,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
@@ -2093,6 +2179,16 @@ mod tests{
         assert_eq!(result["decisionChanged"],false);
         model["automaticChangeAuthorized"]=json!(true);
         assert!(run_blend_shadow(&payload(&model)).is_err());
+    }
+    #[test]
+    fn combined_confirmation_missing_or_unverified_prediction_never_becomes_a_label(){
+        let mut p=owner_fixture();
+        assert_eq!(evaluate_combined_confirmation(&p).unwrap()["status"],"no_combined_prediction");
+        p["confirmationSnapshot"]["recognitionBaseline"]["initialAnalysis"]["initialPredictionCapture"]=json!({
+            "learningShadow":{"combinedShadow":{"status":"runtime_shadow_only"}}});
+        let r=evaluate_combined_confirmation(&p).unwrap();
+        assert_eq!(r["status"],"unverified_prediction_time");
+        assert_eq!(r["groups"],json!([]));assert_eq!(r["decisionChanged"],false);
     }
     fn owner_fixture()->Value{
         // Emoji makes the UTF-16 positions differ from byte offsets.
