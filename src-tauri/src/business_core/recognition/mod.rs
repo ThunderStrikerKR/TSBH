@@ -284,6 +284,51 @@ fn physical_lines(raw: &str) -> Vec<Line<'_>> {
     }).collect()
 }
 
+// Split only explicit semicolon-separated records whose boundaries can be
+// established independently. Preserve physical line, paragraph and byte
+// offsets; never rewrite the input or split on ordinary address commas,
+// slashes, or table columns. Uncertain records stay intact.
+fn split_explicit_records<'a>(lines:Vec<Line<'a>>,state:&Value)->Vec<Line<'a>>{
+    let label=recipient_label();
+    let phone=phone_regex();
+    let mut out=Vec::new();
+    for line in lines{
+        if !line.text.contains([';','；'])||line.text.contains('|'){
+            out.push(line);continue;
+        }
+        let mut parts=Vec::new();
+        let mut start=0;
+        for (i,c) in line.text.char_indices().filter(|(_,c)|matches!(*c,';'|'；')){
+            parts.push((start,i));start=i+c.len_utf8();
+        }
+        parts.push((start,line.text.len()));
+        if parts.len()>16||parts.iter().any(|(a,b)|line.text[*a..*b].trim().is_empty()){
+            out.push(line);continue;
+        }
+        let names=parts.iter().all(|(a,b)|{
+            let t=&line.text[*a..*b];
+            let explicit_colon=label.find(t).is_some_and(|m|m.as_str().contains([':', '：']));
+            explicit_colon&&explicit_recipient_span(t,&label,&phone).is_some()&&
+                delivery_boundary(t,&phone)
+        });
+        let products=!names&&parts.iter().all(|(a,b)|{
+            let t=line.text[*a..*b].trim();
+            if phone.is_match(t)||address_begin(t).is_some(){return false;}
+            let qs=quantity::extract(t);
+            qs.len()==1&&t[qs[0].end..].trim().is_empty()&&
+                model::products(state).iter().any(|p|model::model_names(p).iter().any(|n|
+                    model::find_term(t,n,true).is_some_and(|(start,end)|start==0&&end<=qs[0].start)))
+        });
+        if names||products{
+            for (a,b) in parts{
+                out.push(Line{text:&line.text[a..b],start:line.start+a,
+                    number:line.number,paragraph:line.paragraph});
+            }
+        }else{out.push(line);}
+    }
+    out
+}
+
 // Source geometry stays independent of source-value interpretation. Preserve
 // source spans and distinguish textual distance from empty-line separators.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -1436,7 +1481,7 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
     collect_owner_trace:bool,collect_candidate_trace:bool,
     overrides:&std::collections::BTreeMap<(usize,usize),(usize,usize)>,compare_owner_policy:bool)->Result<Value,String>{
     let client_id = client_id(client);
-    let lines = physical_lines(raw);
+    let lines = split_explicit_records(physical_lines(raw),state);
     let geometry=SourceGeometry::new(raw);
     let mut events: Vec<Evidence> = Vec::new();
     let mut product_hits: Vec<ProductHit> = Vec::new();
@@ -1462,6 +1507,7 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
     ).expect("note");
     let mut note_continuation: Option<usize>=None;
     let mut sender_section = false;
+    let mut sender_segments=HashSet::new();
     for (line_index,line) in lines.iter().enumerate() {
         let text = line.text.trim();
         let explicit_name=explicit_recipient_span(line.text,&person_label,&phone);
@@ -1476,7 +1522,16 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
             .expect("sender prefix").is_match(text) {
             sender_section = true;
         }
-        if sender_section { record_type(line.number,line.start,line.start+line.text.len(),"line","sender_section");continue; }
+        else if sender_section&&(explicit_name.is_some()||
+            Regex::new(r"^(?:받는\s*곳|수취인\s*주소|배송지(?:\s*주소)?)\s*[:：]").expect("recipient section").is_match(text)){
+            sender_section=false;
+            note_continuation=None;
+        }
+        if sender_section {
+            sender_segments.insert(line.start);
+            note_continuation=None;
+            record_type(line.number,line.start,line.start+line.text.len(),"line","sender_section");continue;
+        }
         if postcode::labelled_line(text).is_some() {
             record_type(line.number,line.start,line.start+line.text.len(),"line","labelled_postcode");
             note_continuation=None;
@@ -1768,9 +1823,10 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
     }
     // A generic quantity line is evidence but cannot itself prove which SKU was ordered.
     for line in &lines {
-        if events.iter().any(|e| e.kind == "quantity" && e.line == line.number) { continue; }
+        if sender_segments.contains(&line.start){continue;}
+        if events.iter().any(|e| e.kind == "quantity" && e.start>=line.start&&e.end<=line.start+line.text.len()) { continue; }
         if is_money_or_header(line.text) { continue; }
-        if product_hits.iter().any(|h| h.line == line.number) { continue; }
+        if product_hits.iter().any(|h| h.source_start>=line.start&&h.source_start<line.start+line.text.len()) { continue; }
         let capture=collect_candidate_trace&&candidate_trace.len()<64;
         let mut extraction_trace=quantity::QuantityTrace::default();
         let extracted=quantity::extract_with_trace(line.text,capture.then_some(&mut extraction_trace));
@@ -1801,7 +1857,8 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
     let mut anchors: Vec<usize> = events.iter().enumerate()
         .filter_map(|(i,e)| (e.kind == "name").then_some(i)).collect();
     anchors.sort_by_key(|i| events[*i].start);
-    anchors.dedup_by_key(|i| events[*i].line);
+    // Distinct explicit records may share one physical line.
+    anchors.dedup_by_key(|i| (events[*i].start,events[*i].end));
     if anchors.is_empty() {
         anchors = events.iter().enumerate()
             .filter_map(|(i,e)| (e.kind=="address").then_some(i)).collect();
@@ -2428,6 +2485,33 @@ mod tests {
             {"id":"pgt","code":"GT-1","name":"GT-1 / 기타 스탠드","category":"기타",
              "origin":"FACTORY","active":true,"variants":[{"id":"vgt","color":"Black"}]}
         ],"aliases":[],"clients":[]})
+    }
+    #[test]
+    fn explicit_same_line_records_preserve_physical_coordinates(){
+        let raw="수취인: 김가상 010-1234-5678; 수취인: 박가상 010-2345-6789\n709 2개； GT-1 3개";
+        let parts=split_explicit_records(physical_lines(raw),&state());
+        assert_eq!(parts.len(),4);
+        assert_eq!(parts.iter().map(|p|p.number).collect::<Vec<_>>(),vec![0,0,1,1]);
+        for p in &parts{assert_eq!(&raw[p.start..p.start+p.text.len()],p.text);}
+        let names=execute("analyze_order",json!({"raw":"수취인: 김가상 010-1234-5678; 수취인: 박가상 010-2345-6789","state":state()})).unwrap();
+        assert_eq!(names["recipients"].as_array().unwrap().len(),2);
+        assert_eq!(names["recipients"][0]["name"],"김가상");
+        assert_eq!(names["recipients"][1]["name"],"박가상");
+        let products=execute("analyze_order",json!({"raw":"김가상\n010-1234-5678\n709 2개; GT-1 3개","state":state()})).unwrap();
+        let items=products["recipients"][0]["items"].as_array().unwrap();
+        assert_eq!(items.len(),2);
+        assert_eq!(items[0]["quantity"],2);
+        assert_eq!(items[1]["quantity"],3);
+        assert_eq!(split_explicit_records(physical_lines("메모: 문 앞; 연락 부탁"),&state()).len(),1);
+        assert_eq!(split_explicit_records(physical_lines("709 2개; 알 수 없는 메모"),&state()).len(),1);
+    }
+    #[test]
+    fn sender_scope_excludes_detached_quantities_and_can_resume_explicit_recipient(){
+        let raw="송하인: 가상상호\n2개\n수취인: 김가상 010-1234-5678\n709 1개";
+        let result=execute("analyze_order",json!({"raw":raw,"state":state(),"collectCandidateTrace":true})).unwrap();
+        assert_eq!(result["recipients"][0]["name"],"김가상");
+        assert_eq!(result["recipients"][0]["items"][0]["quantity"],1);
+        assert!(!result["candidates"].as_array().unwrap().iter().any(|c|c["kind"]=="quantity"&&c["value"]=="2"));
     }
     #[test]
     fn contract_rejects_incomplete_state() {
