@@ -250,23 +250,6 @@ mod management_toolbar_geometry_tests {
         assert_eq!(ManagementTableColumnLabel::ProductName.text(),"상품명");
     }
 
-    #[test]
-    fn table_checkbox_is_centered_for_freight_and_excel_column_widths(){
-        // The 44pt and 48pt first columns differ in width but NOT their
-        // widget-centering rule; no 8pt/4pt shrink offsets are permitted.
-        for width in [44.0,48.0] {
-            let cell=Rect::from_min_size(
-                egui::pos2(100.0,200.0),Vec2::new(width,42.0)
-            );
-            let rect=management_table_checkbox_rect(cell,cell,18.0,4.0);
-            assert_eq!(rect.center(),cell.center());
-            assert_eq!(rect.height(),theme::INPUT_HEIGHT);
-            assert_eq!(rect.width(),22.0);
-            assert_eq!(rect.left()-cell.left(),cell.right()-rect.right());
-            assert_eq!(rect.top()-cell.top(),cell.bottom()-rect.bottom());
-            assert!(cell.contains(rect.min)&&cell.contains(rect.max));
-        }
-    }
 
     #[test]
     fn recipient_focus_preserves_original_cell_geometry_and_contact_font_token(){
@@ -478,23 +461,6 @@ mod management_toolbar_geometry_tests {
         assert_eq!(reception_ellipsized_product("긴품목",0.0,measure),"");
     }
 
-    #[test]
-    fn table_header_checkbox_is_centered_above_inner_two_point_rule(){
-        let first_col=Rect::from_min_size(
-            egui::pos2(100.0,300.0),Vec2::new(48.0,36.0)
-        );
-        let text_area=Rect::from_min_max(
-            egui::pos2(0.0,300.0),
-            egui::pos2(600.0,336.0-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT)
-        );
-        let rect=management_table_checkbox_rect(first_col,text_area,18.0,4.0);
-        assert_eq!(rect.center().x,first_col.center().x);
-        assert_eq!(rect.center().y,text_area.center().y);
-        assert_eq!(rect.height(),34.0);
-        assert_eq!(rect.bottom(),text_area.bottom());
-        assert_eq!(rect.left()-first_col.left(),first_col.right()-rect.right());
-        assert!(rect.bottom()<=first_col.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT);
-    }
 
     #[test]
     fn management_table_scroll_policy_is_identical_for_every_table(){
@@ -555,27 +521,6 @@ mod management_toolbar_geometry_tests {
         assert_eq!(management_remaining_predivider_gap(0.0),12.0);
     }
 
-    #[test]
-    fn single_list_scroll_height_reserves_footer_and_uses_card_bottom() {
-        // 200pt card top + 600pt card height = 800pt bottom.
-        // The toolbar and sticky header have already used 60pt.
-        let full=management_single_list_scroll_height_geometry(
-            800.0,260.0,700.0,0.0
-        );
-        let with_footer=management_single_list_scroll_height_geometry(
-            800.0,260.0,700.0,72.0
-        );
-        let capped_by_actual_window=management_single_list_scroll_height_geometry(
-            800.0,260.0,300.0,0.0
-        );
-        let very_short=management_single_list_scroll_height_geometry(
-            410.0,402.0,20.0,36.0
-        );
-        assert_eq!(full,540.0);
-        assert_eq!(with_footer,468.0);
-        assert_eq!(capped_by_actual_window,300.0);
-        assert_eq!(very_short,1.0);
-    }
 
     #[test]
     fn trailing_slot_ends_at_card_inner_edge_without_scrollbar_subtraction() {

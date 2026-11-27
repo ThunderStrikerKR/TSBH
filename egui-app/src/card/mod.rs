@@ -109,7 +109,7 @@ pub(crate) fn parallel_frames(
     rects
 }
 
-pub(crate) fn workflow_group_card_frame(highlighted:bool)->Frame{
+fn workflow_group_card_frame(highlighted:bool)->Frame{
     role_surface_frame(SurfaceRole::WorkflowCard,if highlighted{VisualState::Selected}else{VisualState::Normal},WORKFLOW_CARD_RADIUS)
         .inner_margin(0)
 }

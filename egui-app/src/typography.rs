@@ -520,7 +520,8 @@ impl ManagementTableCellRole {
     const fn emphasized(self) -> bool { false }
 }
 
-pub fn management_table_cell_color(role:ManagementTableCellRole)->Color32 {
+#[cfg(test)]
+fn management_table_cell_color(role:ManagementTableCellRole)->Color32 {
     management_table_cell_color_with_state(role,TextState::Normal)
 }
 
@@ -672,7 +673,8 @@ pub fn fit_category_path(
 pub fn table_cell(text: &str) -> RichText { render(text, Role::TableCell) }
 /// Standalone freight metric number (e.g. 358). Keep the named bold
 /// family, independent of the older small one-line SummaryValue role.
-pub fn freight_summary_large_number_galley(
+#[cfg(test)]
+fn freight_summary_large_number_galley(
     ui: &egui::Ui, text: &str
 ) -> std::sync::Arc<egui::Galley> {
     freight_summary_large_number_galley_with_state(ui,text,TextState::Normal)

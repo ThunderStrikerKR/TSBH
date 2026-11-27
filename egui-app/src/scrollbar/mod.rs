@@ -27,7 +27,7 @@ fn apply_rail_geometry(style:&mut egui::style::ScrollStyle,role:ManagementScroll
     style.foreground_color=true;
 }
 
-pub(crate) fn management_scroll_style() -> egui::style::ScrollStyle {
+fn management_scroll_style() -> egui::style::ScrollStyle {
     let mut style=egui::style::ScrollStyle::solid();
     apply_rail_geometry(&mut style,ManagementScrollRole::Standard);
     style
@@ -66,7 +66,7 @@ pub(crate) fn management_single_list_scroll_height(
 /// Pure calculation used by the management list geometry check. A 1pt
 /// minimum avoids requesting an invalid/negative scroll area when a split
 /// window is shorter than its non-scrolling toolbar and reserved footer.
-pub(crate) fn management_single_list_scroll_height_geometry(
+fn management_single_list_scroll_height_geometry(
     card_bottom:f32,rows_top:f32,available_height:f32,reserve_below:f32
 )->f32 {
     let remaining=(card_bottom-rows_top-reserve_below.max(0.0)).max(0.0);
@@ -335,5 +335,56 @@ mod snapshot_tests{
         s.observe(false,egui::Vec2::ZERO,None);
         assert_eq!(s.restore(Some(ScrollRows{count:keys.len(),key:&key,geometry:RowGeometry::Variable(&[0.0,70.0,90.0])})).y,76.0);
         assert_eq!(s.restore(Some(ScrollRows{count:1,key:&key,geometry:RowGeometry::Fixed(40.0)})).y,56.0);
+    }
+}
+
+#[cfg(test)]
+mod private_api_contract_single_list_scroll_height_reserves_footer_and_uses_card_bottom {
+    use super::*;
+
+    #[test]
+    fn single_list_scroll_height_reserves_footer_and_uses_card_bottom() {
+        // 200pt card top + 600pt card height = 800pt bottom.
+        // The toolbar and sticky header have already used 60pt.
+        let full=management_single_list_scroll_height_geometry(
+            800.0,260.0,700.0,0.0
+        );
+        let with_footer=management_single_list_scroll_height_geometry(
+            800.0,260.0,700.0,72.0
+        );
+        let capped_by_actual_window=management_single_list_scroll_height_geometry(
+            800.0,260.0,300.0,0.0
+        );
+        let very_short=management_single_list_scroll_height_geometry(
+            410.0,402.0,20.0,36.0
+        );
+        assert_eq!(full,540.0);
+        assert_eq!(with_footer,468.0);
+        assert_eq!(capped_by_actual_window,300.0);
+        assert_eq!(very_short,1.0);
+    }
+}
+
+#[cfg(test)]
+mod private_api_contract_general_screen_master_geometry_and_scroll_tokens_stay_approved {
+    use super::*;
+    use crate::theme;
+    #[test]
+    fn general_screen_master_geometry_and_scroll_tokens_stay_approved(){
+        assert_eq!(theme::SECTION_PADDING,12.0);
+        assert_eq!(theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING,12.0);
+        assert_eq!(theme::MANAGEMENT_TABLE_HEADER_HEIGHT,36.0);
+        assert_eq!(theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT,2.0);
+        assert_eq!(theme::SECTION_DIVIDER_GAP,12.0);
+        assert_eq!(theme::SECTION_DIVIDER_HEIGHT,25.0);
+        assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION,0.0);
+        assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET,0.0);
+        let standard=management_scroll_style();
+        let table=crate::scrollbar::management_table_scroll_style();
+        assert_eq!(standard.bar_width,10.0);
+        assert_eq!(table.bar_width,standard.bar_width);
+        assert_eq!(table.handle_min_length,standard.handle_min_length);
+        assert_eq!(table.bar_inner_margin,0.0);
+        assert_eq!(table.bar_outer_margin,0.0);
     }
 }

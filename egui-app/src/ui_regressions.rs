@@ -606,13 +606,6 @@ mod common_action_tooltip_tests{
         assert!(text_exceeds_rect(Vec2::new(80.0,21.0),rect));
     }
 
-    #[test]
-    fn overflow_tooltip_policy_rejects_blank_and_fitting_text(){
-        assert!(!overflow_tooltip_needed(false,"상품명"));
-        assert!(!overflow_tooltip_needed(true,""));
-        assert!(!overflow_tooltip_needed(true,"  "));
-        assert!(overflow_tooltip_needed(true,"상품명 전체"));
-    }
 
     #[test]
     fn positioned_overflow_detects_clipping_and_elision(){
@@ -1078,24 +1071,6 @@ mod shared_general_screen_audit_tests {
         assert!(violations.is_empty(),"general screen UI bypass:\n{}",violations.join("\n"));
     }
 
-    #[test]
-    fn general_screen_master_geometry_and_scroll_tokens_stay_approved(){
-        assert_eq!(theme::SECTION_PADDING,12.0);
-        assert_eq!(theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING,12.0);
-        assert_eq!(theme::MANAGEMENT_TABLE_HEADER_HEIGHT,36.0);
-        assert_eq!(theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT,2.0);
-        assert_eq!(theme::SECTION_DIVIDER_GAP,12.0);
-        assert_eq!(theme::SECTION_DIVIDER_HEIGHT,25.0);
-        assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION,0.0);
-        assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET,0.0);
-        let standard=crate::scrollbar::management_scroll_style();
-        let table=crate::scrollbar::management_table_scroll_style();
-        assert_eq!(standard.bar_width,10.0);
-        assert_eq!(table.bar_width,standard.bar_width);
-        assert_eq!(table.handle_min_length,standard.handle_min_length);
-        assert_eq!(table.bar_inner_margin,0.0);
-        assert_eq!(table.bar_outer_margin,0.0);
-    }
 
     #[test]
     fn all_reception_source_entry_points_share_the_native_editor_configuration(){

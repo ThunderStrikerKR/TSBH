@@ -232,7 +232,7 @@ pub(crate) fn source_block_rect(text_left:f32,text_right:f32,row_top:f32,row_hei
 }
 /// Resolve a single fill/stroke pair. Focus and hover replace the resting
 /// outline; they are never painted over it. Text is rendered afterwards.
-pub(crate) fn action_surface(rest:Color32,rest_stroke:Stroke,light:bool,hovered:bool,focused:bool)->(Color32,Stroke){
+fn action_surface(rest:Color32,rest_stroke:Stroke,light:bool,hovered:bool,focused:bool)->(Color32,Stroke){
     let role=if light{Role::LightHover}else{Role::Hover};
     let p=palette(role);
     let fill=if hovered{

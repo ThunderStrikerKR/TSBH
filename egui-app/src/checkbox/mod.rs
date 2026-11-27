@@ -10,7 +10,7 @@ use crate::theme;
  * The checkbox always follows Freight Assignment's centered 36pt/34pt
  * hit-box policy rather than a caller-specific `shrink2` or `Ui::put`.
  */
-pub(crate) fn management_table_checkbox_rect(
+fn management_table_checkbox_rect(
     cell:Rect,vertical_area:Rect,icon_width:f32,icon_spacing:f32
 )->Rect{
     debug_assert!(icon_width>=0.0&&icon_spacing>=0.0);
@@ -88,3 +88,44 @@ pub(crate) fn checkbox_list_row(
 
 #[cfg(test)]
 mod regression_tests;
+
+#[cfg(test)]
+mod private_api_contract_table_checkbox_is_centered_for_freight_and_excel_column_widths {
+    use super::*;
+
+    #[test]
+    fn table_checkbox_is_centered_for_freight_and_excel_column_widths(){
+        // The 44pt and 48pt first columns differ in width but NOT their
+        // widget-centering rule; no 8pt/4pt shrink offsets are permitted.
+        for width in [44.0,48.0] {
+            let cell=Rect::from_min_size(
+                egui::pos2(100.0,200.0),Vec2::new(width,42.0)
+            );
+            let rect=management_table_checkbox_rect(cell,cell,18.0,4.0);
+            assert_eq!(rect.center(),cell.center());
+            assert_eq!(rect.height(),theme::INPUT_HEIGHT);
+            assert_eq!(rect.width(),22.0);
+            assert_eq!(rect.left()-cell.left(),cell.right()-rect.right());
+            assert_eq!(rect.top()-cell.top(),cell.bottom()-rect.bottom());
+            assert!(cell.contains(rect.min)&&cell.contains(rect.max));
+        }
+    }
+
+    #[test]
+    fn table_header_checkbox_is_centered_above_inner_two_point_rule(){
+        let first_col=Rect::from_min_size(
+            egui::pos2(100.0,300.0),Vec2::new(48.0,36.0)
+        );
+        let text_area=Rect::from_min_max(
+            egui::pos2(0.0,300.0),
+            egui::pos2(600.0,336.0-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT)
+        );
+        let rect=management_table_checkbox_rect(first_col,text_area,18.0,4.0);
+        assert_eq!(rect.center().x,first_col.center().x);
+        assert_eq!(rect.center().y,text_area.center().y);
+        assert_eq!(rect.height(),34.0);
+        assert_eq!(rect.bottom(),text_area.bottom());
+        assert_eq!(rect.left()-first_col.left(),first_col.right()-rect.right());
+        assert!(rect.bottom()<=first_col.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT);
+    }
+}

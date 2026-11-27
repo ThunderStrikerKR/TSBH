@@ -17,7 +17,7 @@ pub fn text_exceeds_rect(size:Vec2,rect:Rect)->bool{
 }
 
 /// One eligibility rule for all explicit overflow tooltips.
-pub(crate) fn overflow_tooltip_needed(overflow:bool,full:&str)->bool{
+fn overflow_tooltip_needed(overflow:bool,full:&str)->bool{
     overflow&&!full.trim().is_empty()
 }
 
@@ -282,11 +282,6 @@ pub fn form_field_label(ui:&mut Ui,label:&str)->Response {
     form_field_label_sized(ui,label,width)
 }
 
-/// A selected item's fixed blue outline, with caller-owned inset and corner geometry.
-pub(crate) fn paint_selection_outline(painter:&egui::Painter,rect:Rect,geometry:crate::highlight::Geometry){
-    crate::highlight::paint_outline(painter,rect,geometry,crate::highlight::Role::ChooserSelected);
-}
-
 pub(crate) use crate::highlight::button_hover_palette;
 pub(crate) fn paint_action_hover_corners(ui:&Ui,response:&Response,geometry:crate::highlight::Geometry){
     crate::highlight::action_hover(ui,response,geometry,false);
@@ -352,3 +347,16 @@ impl UiWidthPolicyExt for Ui {
     }
 }
 
+
+#[cfg(test)]
+mod private_api_contract_overflow_tooltip_policy_rejects_blank_and_fitting_text {
+    use super::*;
+
+    #[test]
+    fn overflow_tooltip_policy_rejects_blank_and_fitting_text(){
+        assert!(!overflow_tooltip_needed(false,"상품명"));
+        assert!(!overflow_tooltip_needed(true,""));
+        assert!(!overflow_tooltip_needed(true,"  "));
+        assert!(overflow_tooltip_needed(true,"상품명 전체"));
+    }
+}
