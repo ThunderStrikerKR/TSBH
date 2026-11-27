@@ -1226,7 +1226,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         let e = &events[index];
         let kind = e.kind;
         if kind=="address" {
-            if let Some((line_index,line))=lines.iter().enumerate()
+            if let Some((line_index,line))=rows.iter().map(|row|&row.line).enumerate()
                 .find(|(_,line)|line.number==e.line){
                 let prefix=&raw[line.start..e.start];
                 if let Some(code)=postcode::before_address(prefix){
@@ -1239,7 +1239,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                 // A standalone labelled code belongs only to an unambiguous
                 // immediately adjacent address in the same paragraph.
                 for adjacent in [line_index.checked_sub(1),line_index.checked_add(1)]
-                    .into_iter().flatten().filter_map(|i|lines.get(i)){
+                    .into_iter().flatten().filter_map(|i|rows.get(i).map(|row|&row.line)){
                     if adjacent.paragraph!=line.paragraph ||
                         adjacent.number.abs_diff(line.number)!=1{continue;}
                     if let Some(code)=postcode::labelled_line(adjacent.text){
