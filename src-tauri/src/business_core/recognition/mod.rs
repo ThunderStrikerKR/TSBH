@@ -512,10 +512,14 @@ struct CachedProductDecision{
     candidates:Vec<model::SourceCandidate>,
     truncated:bool,
 }
+enum ProductSearchEntry<'s>{
+    Collected(model::ProductHypotheses<'s>),
+    Evaluated{result:CachedProductDecision,registered_model:bool},
+}
 struct ProductSearch<'a,'s>{
     state:&'s Value,
     client_id:&'s str,
-    decisions:HashMap<&'a str,CachedProductDecision>,
+    decisions:HashMap<&'a str,ProductSearchEntry<'s>>,
     quantities:HashMap<&'a str,Vec<quantity::Quantity>>,
 }
 impl<'a,'s> ProductSearch<'a,'s>{
@@ -528,33 +532,48 @@ impl<'a,'s> ProductSearch<'a,'s>{
     fn result(&mut self,text:&'a str)->&CachedProductDecision{
         self.result_with_registration(text,None)
     }
-    // If the slice is first encountered here, register the raw hypotheses
-    // before evaluation. If segmentation already needed a decision, reuse
-    // its exact retained hypothesis pool instead of another catalog scan.
-    fn result_with_registration(&mut self,text:&'a str,
-        registration:Option<(&str,usize,&mut CommonCandidates)>)->&CachedProductDecision{
-        let state=self.state;
-        let client=self.client_id;
+    fn ensure_collected(&mut self,text:&'a str){
         if self.decisions.len()>=512&&!self.decisions.contains_key(text){
             self.decisions.clear();
         }
-        match self.decisions.entry(text){
-            std::collections::hash_map::Entry::Occupied(entry)=>{
-                let result=entry.into_mut();
-                if let Some((raw,offset,candidates))=registration{
-                    candidates.record_products(raw,offset,text.len(),&result.candidates,result.truncated);
-                }
-                result
-            }
-            std::collections::hash_map::Entry::Vacant(entry)=>{
-                let batch=model::collect(text,state,client);
-                if let Some((raw,offset,candidates))=registration{
-                    candidates.record_products(raw,offset,text.len(),&batch.source_candidates,batch.source_truncated);
-                }
-                let decision=model::evaluate(text,state,batch);
-                entry.insert(CachedProductDecision{output:model::decision_json(&decision),
-                    candidates:decision.source_candidates,truncated:decision.source_truncated})
-            }
+        let state=self.state;
+        let client=self.client_id;
+        self.decisions.entry(text).or_insert_with(||
+            ProductSearchEntry::Collected(model::collect(text,state,client)));
+    }
+    fn source(&mut self,text:&'a str)->(&[model::SourceCandidate],bool){
+        self.ensure_collected(text);
+        match &self.decisions[text]{
+            ProductSearchEntry::Collected(batch)=>(&batch.source_candidates,batch.source_truncated),
+            ProductSearchEntry::Evaluated{result,..}=>(&result.candidates,result.truncated),
+        }
+    }
+    fn has_registered_model(&mut self,text:&'a str)->bool{
+        self.ensure_collected(text);
+        match &self.decisions[text]{
+            ProductSearchEntry::Collected(batch)=>batch.registered_model,
+            ProductSearchEntry::Evaluated{registered_model,..}=>*registered_model,
+        }
+    }
+    fn result_with_registration(&mut self,text:&'a str,
+        registration:Option<(&str,usize,&mut CommonCandidates)>)->&CachedProductDecision{
+        self.ensure_collected(text);
+        if let Some((raw,offset,candidates))=registration{
+            let (source,truncated)=self.source(text);
+            candidates.record_products(raw,offset,text.len(),source,truncated);
+        }
+        if matches!(self.decisions.get(text),Some(ProductSearchEntry::Collected(_))){
+            let Some(ProductSearchEntry::Collected(batch))=self.decisions.remove(text)else{unreachable!()};
+            let registered_model=batch.registered_model;
+            let decision=model::evaluate(text,self.state,batch);
+            self.decisions.insert(text,ProductSearchEntry::Evaluated{
+                result:CachedProductDecision{output:model::decision_json(&decision),
+                    candidates:decision.source_candidates,truncated:decision.source_truncated},
+                registered_model});
+        }
+        match &self.decisions[text]{
+            ProductSearchEntry::Evaluated{result,..}=>result,
+            ProductSearchEntry::Collected(_)=>unreachable!(),
         }
     }
     fn quantities(&mut self,text:&'a str)->&[quantity::Quantity]{
@@ -627,18 +646,15 @@ fn split_product_records<'a>(lines:Vec<Line<'a>>,label:&Regex,phone:&Regex,
             if begin>=q.start||(i>0&&leading==0){valid=false;break;}
             let segment=&t[begin..q.end];
             let qty_start=q.start-begin;
-            let result=search.result(segment);
-            let decision=&result.output;
-            let evidence=&decision["evidence"];
-            let end=evidence["end"].as_u64().and_then(|v|usize::try_from(v).ok());
-            let registered=decision["productId"].as_str().is_some_and(|v|!v.is_empty());
-            let bounded=evidence["start"].as_u64()==Some(0)&&end.is_some_and(|end|
-                end>0&&end<=qty_start&&segment.get(end..qty_start).is_some_and(|tail|
-                    tail.chars().all(|c|c.is_whitespace()||c=='/')));
-            let independently_grounded=decision["productId"].as_str().is_some_and(|id|
-                result.candidates.iter().any(|c|c.literal&&c.product_id==id&&
-                    c.span.0==0&&Some(c.span.1)==end));
-            if result.truncated||!registered||!bounded||!independently_grounded{valid=false;break;}
+            let (source,truncated)=search.source(segment);
+            // Distinguish an item boundary from its eventual SKU identity.
+            let bounded=source.iter().filter(|c|c.literal&&c.span.0==0)
+                .map(|c|c.span.1).filter(|&end|end>0&&end<=qty_start&&
+                    segment.get(end..qty_start).is_some_and(|tail|
+                        tail.chars().all(|c|c.is_whitespace()||c=='/')))
+                .max();
+            if truncated||bounded.is_none()||source.iter().any(|c|
+                c.span.1>bounded.unwrap_or(0)){valid=false;break;}
             ranges.push((begin,q.end));start=q.end;
         }
         if valid{
@@ -714,7 +730,10 @@ fn unlabelled_recipient_proposal<'a>(
     // Preserve the ENTIRE suffix, including company and English names.
     for q in search.quantities(prefix).to_vec().into_iter().rev(){
         let before=&prefix[..q.end];
-        if !product_signal(before,search.decision(before),state){continue;}
+        // Recognize lexical model/category signals without choosing a SKU.
+        // The legacy semantic/alias fallback still needs evaluation.
+        if !product_signal(before,&Value::Null,state)&&
+            !product_signal(before,search.decision(before),state){continue;}
         let tail=&prefix[q.end..];
         let tail=tail.trim_start_matches(|c:char|c.is_whitespace()||c=='|'||c=='ㅣ');
         let a=q.end+prefix[q.end..].len()-tail.len();
@@ -1842,7 +1861,9 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         // a recognized/quantity-qualified SKU precedes the address.
         // Never infer a product from an address's five-digit postal code.
         if let Some(begin)=address {
-            if !ts_semantics::model_before_address(&line.text[..begin],state) {continue;}
+            let prefix=&line.text[..begin];
+            let known=search.has_registered_model(prefix);
+            if !ts_semantics::model_before_address(prefix,known) {continue;}
         }
         let product_end=address.unwrap_or(line.text.len());
         let product_end=name_span.map_or(product_end,|(a,_)|a.min(product_end));
@@ -1888,9 +1909,8 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         } else {
             let explicit=search.quantities(skip_until).to_vec();
             if !explicit.is_empty(){explicit}else{
-                quantity::for_product(skip_until,false,
-                    model::products(state).iter().any(|p|model::model_names(p).iter()
-                        .any(|name|model::find_term(skip_until,name,true).is_some())))
+                let known=search.has_registered_model(skip_until);
+                quantity::for_product(skip_until,false,known)
             }
         };
         // parser.ts:537-552: a compound sale-unit phrase containing
@@ -3128,6 +3148,19 @@ mod tests {
                 candidates:vec![model::SourceCandidate{product_id:"pgt".into(),span,literal}],truncated:false};
             assert!(!name_beats_partial_alias("김가상님",true,&matched));
         }
+    }
+    #[test]
+    fn split_item_boundaries_do_not_evaluate_product_identity(){
+        let state=state();
+        let raw="709 2개 GT-1 3개";
+        let mut search=ProductSearch::new(&state,"");
+        let lines=split_product_records(physical_lines(raw),&recipient_label(),&phone_regex(),&mut search);
+        assert_eq!(lines.iter().map(|l|l.text).collect::<Vec<_>>(),vec!["709 2개","GT-1 3개"]);
+        assert!(search.decisions.values().all(|entry|matches!(entry,ProductSearchEntry::Collected(_))));
+        assert!(search.has_registered_model("709 2개"));
+        assert!(matches!(search.decisions.get("709 2개"),Some(ProductSearchEntry::Collected(_))));
+        assert_eq!(search.decision("709 2개")["productId"],"p709");
+        assert!(matches!(search.decisions.get("709 2개"),Some(ProductSearchEntry::Evaluated{..})));
     }
     #[test]
     fn registration_reuses_the_same_cached_product_hypotheses(){

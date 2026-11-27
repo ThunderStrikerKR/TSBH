@@ -396,13 +396,14 @@ fn retain_occurrence(pool:&mut Vec<SourceCandidate>,truncated:&mut bool,
     true
 }
 fn evidence<'a>(text: &str, p: &'a Value, verified: &HashSet<String>,
-    pool:&mut Vec<SourceCandidate>,truncated:&mut bool) -> Option<Entry<'a>> {
+    pool:&mut Vec<SourceCandidate>,truncated:&mut bool,registered_model:&mut bool) -> Option<Entry<'a>> {
     let mut selected=None;
     let mut seen=HashSet::new();
     let id=str_field(p,"id");
     for (term, priority, model) in terms(p) {
         let first=visit_term(text,&term,model,|span|
             retain_occurrence(pool,truncated,&mut seen,id,span,true));
+        if model&&first.is_some(){*registered_model=true;}
         if selected.is_none(){
             if let Some(span)=first{selected=Some(Entry{p,priority,span});}
         }
@@ -549,6 +550,7 @@ pub(super) struct ProductHypotheses<'a>{
     aliases:Vec<(&'a Value,&'a Value,(usize,usize))>,
     literal_count:usize,
     literal_truncated:bool,
+    pub(super) registered_model:bool,
     pub(super) source_candidates:Vec<SourceCandidate>,
     pub(super) source_truncated:bool,
 }
@@ -557,22 +559,28 @@ pub(super) fn collect<'a>(text:&str,state:&'a Value,client_id:&str)->ProductHypo
     let verified=verified_bases(&ps);
     let mut source_candidates=Vec::new();
     let mut source_truncated=false;
+    let mut registered_model=false;
     let raw_entries=ps.iter().filter_map(|p|
-        evidence(text,p,&verified,&mut source_candidates,&mut source_truncated)).collect();
+        evidence(text,p,&verified,&mut source_candidates,&mut source_truncated,&mut registered_model)).collect();
+    // Only a truncated scan can omit a later literal model term.
+    if source_truncated&&!registered_model{
+        registered_model=ps.iter().any(|p|model_names(p).iter()
+            .any(|name|find_term(text,name,true).is_some()));
+    }
     // Preserve the original literal-only rank input and budget. Aliases
     // are collected before ranking but must not change literal ranking.
     let literal_count=source_candidates.len();
     let literal_truncated=source_truncated;
     let aliases=alias_entries(text,state,client_id,&ps,&mut source_candidates,&mut source_truncated);
     ProductHypotheses{ps,verified,raw_entries,aliases,literal_count,literal_truncated,
-        source_candidates,source_truncated}
+        registered_model,source_candidates,source_truncated}
 }
 pub(crate) fn decide(text:&str,state:&Value,client_id:&str)->Decision{
     evaluate(text,state,collect(text,state,client_id))
 }
 pub(super) fn evaluate<'a>(text:&str,state:&'a Value,hypotheses:ProductHypotheses<'a>)->Decision{
     let ProductHypotheses{ps,verified,raw_entries,aliases,literal_count,literal_truncated,
-        source_candidates,source_truncated}=hypotheses;
+        registered_model:_,source_candidates,source_truncated}=hypotheses;
     let entries=name_entries(text,raw_entries,&verified,&source_candidates[..literal_count],literal_truncated);
     // parser.ts:487-510 filters brand/catalog and DEMO before options.
     let (mut entries,known_brand)=filter_business_candidates(text,state,&ps,entries);
