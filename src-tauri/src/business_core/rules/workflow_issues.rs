@@ -167,9 +167,9 @@ fn active_shipments<'a>(state:&'a Value,group_id:&str)->Result<(usize,Vec<&'a Va
 }
 fn context<'a>(state:&'a Value,ship:&Value)->Result<(&'a Value,&'a Value),String>{
     let order=find_by_id(field(state,"orders"),str_field(ship,"orderId"))
-        .ok_or("배송 건의 발주서 / 수취인 / 거래처 연결을 확인하세요.")?;
+        .ok_or(super::terminology::SHIPMENT_LINK_REQUIRED)?;
     let recipient=find_by_id(field(order,"recipients"),str_field(ship,"recipientId"))
-        .ok_or("배송 건의 발주서 / 수취인 / 거래처 연결을 확인하세요.")?;
+        .ok_or(super::terminology::SHIPMENT_LINK_REQUIRED)?;
     Ok((order,recipient))
 }
 /// Copy-time billing evidence uses the same integer shipment totals as the
@@ -395,7 +395,7 @@ pub(super) fn workflow_issues(state:&Value,group_id:&str)->Result<Vec<Value>,Str
         issues.retain(|i|!["PRICE","FREIGHT"].contains(&str_field(i,"kind")));
         return Ok(issues);
     }
-    let client=w::party(state,order).ok_or("배송 건의 발주서 / 수취인 / 거래처 연결을 확인하세요.")?;
+    let client=w::party(state,order).ok_or(super::terminology::SHIPMENT_LINK_REQUIRED)?;
     let account=w::account_for(state,group,order,client);
     if account.is_none_or(|a|["bank","number","holder"].iter().any(|key|
         str_field(a,key).trim().is_empty())){
@@ -436,7 +436,7 @@ pub(super) fn stage_issues(state:&Value,group_id:&str,next:i64)->Result<Vec<Stri
     let retail_company=json!({"payment":"POSTPAID"});
     let client=w::party(state,first_order).or_else(||{
         (str_field(first_order,"orderType")=="RETAIL").then_some(&retail_company)
-    }).ok_or("배송 건의 발주서 / 수취인 / 거래처 연결을 확인하세요.")?;
+    }).ok_or(super::terminology::SHIPMENT_LINK_REQUIRED)?;
     let wf_issues=workflow_issues(state,group_id)?;
     let mut messages=Vec::new();
     let mut group_due=Some(0_i64);

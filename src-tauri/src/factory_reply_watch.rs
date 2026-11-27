@@ -223,7 +223,7 @@ fn validate_automatic_change(before: &Value, next: &Value, id: &str, name: &str)
             return Err("같은 배송 건에 중복 회신을 자동 반영할 수 없습니다.".into());
         }
         let tracking = row["tracking"].as_str().ok_or("운송장번호가 없습니다.")?;
-        let actual = row["actual"].as_u64().ok_or("출고 운임을 확인하세요.")?;
+        let actual = row["actual"].as_u64().ok_or(bando_data_access::terminology::DISPATCH_FREIGHT_REQUIRED)?;
         if !(8..=30).contains(&tracking.len())
             || !tracking.bytes().all(|b| b.is_ascii_digit()) || actual > i64::MAX as u64 {
             return Err("자동 회신 운송장번호 또는 운임이 올바르지 않습니다.".into());

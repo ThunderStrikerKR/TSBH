@@ -807,7 +807,7 @@ impl ExcelManager{
             if approve{
                 self.reply_confirm=None;
                 self.task("reply-correction",ctx.clone(),move|gateway|{
-                    if !gateway.excel_write_enabled(){return Err("공장 회신 저장 권한 없음".into())}
+                    if !gateway.excel_write_enabled(){return Err(bando_data_access::terminology::FACTORY_REPLY_WRITE_DENIED.into())}
                     let state=crate::factory_reply_inbox::approve(review)?;
                     let projection=gateway.execute(ReadOperation::ReadShipments,json!({"state":&state}));
                     // The transaction has committed. A failed view projection
@@ -1204,7 +1204,7 @@ impl ExcelManager{
                                         ));
                                     }else{
                                         self.error=Some(
-                                            "출고 운임을 확인하세요.".into()
+                                            bando_data_access::terminology::DISPATCH_FREIGHT_REQUIRED.into()
                                         );
                                     }
                                 }
