@@ -1359,7 +1359,7 @@ impl PreviewStore {
         // their source records. Never use a pre-change model as a baseline.
         if let Some(id)=selected.as_deref(){
             let model=read_blend_model_payload(&tx,&scope,id)?;
-            if model["calibrationScope"]!=OWNER_CALIBRATION_SCOPE{
+            if !blend_model_versions_compatible(&model){
                 let expected=blend_governance_state(&tx,&scope)?;
                 tx.commit().map_err(|e|e.to_string())?;
                 let write=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
@@ -1917,13 +1917,17 @@ fn blend_model_identity(model:&Value)->Result<(String,String),String>{
     if encoded.len()>256*1024{return Err("결합 모델 저장 한도 초과".into());}
     Ok((format!("blend-{:x}",Sha256::digest(encoded.as_bytes())),encoded))
 }
+// Registration and automatic retirement must use the same version contract.
+fn blend_model_versions_compatible(model:&Value)->bool{
+    model["schemaVersion"]==1&&model["clientBuildVersion"].as_str()==Some(env!("CARGO_PKG_VERSION"))&&
+        model["scorePolicyVersion"]=="owner-margin-30-v1"&&model["calibrationScope"]==OWNER_CALIBRATION_SCOPE&&
+        model["captureVersion"]==4&&model["supportVersion"]==4&&
+        model["featureVersion"]==1&&model["contributionVersion"]==2&&model["safetyPolicyVersion"]==1&&
+        model["explicitToWeakRatio"].as_f64()==Some(3.0)
+}
 fn validate_registry_model(scope:&str,model:&Value)->Result<(),String>{
-    if model["businessScope"].as_str()!=Some(scope)||model["schemaVersion"]!=1||
-        model["automaticChangeAuthorized"]!=false||model["clientBuildVersion"].as_str()!=Some(env!("CARGO_PKG_VERSION"))||
-        model["scorePolicyVersion"]!="owner-margin-30-v1"||model["calibrationScope"]!=OWNER_CALIBRATION_SCOPE||
-        model["captureVersion"]!=4||model["supportVersion"]!=4||
-        model["featureVersion"]!=1||model["contributionVersion"]!=2||model["safetyPolicyVersion"]!=1||
-        model["explicitToWeakRatio"].as_f64()!=Some(3.0){
+    if model["businessScope"].as_str()!=Some(scope)||model["automaticChangeAuthorized"]!=false||
+        !blend_model_versions_compatible(model){
         return Err("결합 모델 규격 또는 업무 DB 불일치".into());
     }
     let available=chrono::DateTime::parse_from_rfc3339(model["availableAfter"].as_str().ok_or("모델 시각 누락")?)
@@ -1969,8 +1973,10 @@ fn read_registered_blend_model(conn:&Connection,scope:&str,id:&str)->Result<Valu
     Ok(model)
 }
 fn retire_incompatible_blend_selection(conn:&Connection,scope:&str,id:&str)->Result<(),String>{
+    let model=read_blend_model_payload(conn,scope,id)?;
     if selected_blend_model(conn,scope)?.as_deref()!=Some(id)||
-        read_blend_model_payload(conn,scope,id)?["calibrationScope"]==OWNER_CALIBRATION_SCOPE{
+        model["businessScope"].as_str()!=Some(scope)||model["automaticChangeAuthorized"]!=false||
+        blend_model_versions_compatible(&model){
         return Err("호환 불가 모델 선택 상태 불일치".into());
     }
     set_selected_blend_model(conn,scope,None)?;
@@ -2855,6 +2861,25 @@ mod reception_edit_audit_tests {
         tx.commit().unwrap();
         assert!(selected_blend_model(&conn,"scope").unwrap().is_none());
         assert_eq!(read_blend_model_payload(&conn,"scope",&old_id).unwrap(),obsolete);
+        // Every incompatible recognition contract must retire its selection,
+        // not merely fail validation while blocking a fresh baseline comparison.
+        for field in ["schemaVersion","clientBuildVersion","scorePolicyVersion","captureVersion",
+            "supportVersion","featureVersion","contributionVersion","safetyPolicyVersion","explicitToWeakRatio"]{
+            let mut obsolete=model.clone();
+            obsolete[field]=Value::Null;
+            let (old_id,old_payload)=blend_model_identity(&obsolete).unwrap();
+            conn.execute("INSERT INTO recognition_blend_models(scope,model_id,registry_version,payload,created_at,available_after)
+                VALUES('scope',?1,1,?2,'2020-01-01T00:00:00Z','2020-01-01T00:00:00Z')",
+                params![old_id,old_payload]).unwrap();
+            assert!(!blend_model_versions_compatible(&obsolete));
+            assert!(read_registered_blend_model(&conn,"scope",&old_id).is_err());
+            let tx=conn.unchecked_transaction().unwrap();
+            set_selected_blend_model(&tx,"scope",Some(&old_id)).unwrap();
+            retire_incompatible_blend_selection(&tx,"scope",&old_id).unwrap();
+            tx.commit().unwrap();
+            assert_eq!(selected_blend_model(&conn,"scope").unwrap(),None);
+            assert_eq!(read_blend_model_payload(&conn,"scope",&old_id).unwrap(),obsolete);
+        }
         set_selected_blend_model(&conn,"scope",Some(&b)).unwrap();
         assert!(retire_incompatible_blend_selection(&conn,"scope",&b).is_err());
         assert_eq!(selected_blend_model(&conn,"scope").unwrap(),Some(b));
