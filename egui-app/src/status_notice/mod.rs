@@ -15,6 +15,8 @@ pub(crate) fn management_body_state_overlay(
     let Some(caption)=caption else {return};
     let visible=viewport.intersect(ui.clip_rect());
     if visible.width()<=0.0 || visible.height()<=0.0{return;}
+    #[cfg(test)]
+    crate::ui_test_support::record_component_geometry("notice",visible,ui.clip_rect(),None);
     ui.painter().with_clip_rect(visible).text(
         visible.center(),egui::Align2::CENTER_CENTER,caption,
         egui::FontId::proportional(typography::FONT_METADATA),
@@ -27,6 +29,8 @@ pub(crate) fn management_body_state_overlay(
 pub(crate) fn body_error_overlay(ui:&Ui,viewport:Rect,context:&str,error:&str){
     let visible=viewport.intersect(ui.clip_rect());
     if visible.width()<=0.0||visible.height()<=0.0{return;}
+    #[cfg(test)]
+    crate::ui_test_support::record_component_geometry("notice",visible,ui.clip_rect(),None);
     let display=crate::user_error::display(context,error);
     let painter=ui.painter().with_clip_rect(visible);
     let galley=painter.layout(display.as_ref().to_owned(),
