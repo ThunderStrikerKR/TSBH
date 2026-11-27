@@ -28,24 +28,24 @@ struct Evidence {
 // the current assignment. Keep offsets, not duplicate raw text. These
 // are distinct from missing/unknown fields and must not become anchors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CandidateExclusion {
+enum CandidateDisposition {
     SaleUnit, OverlappingField, SenderSection, EmbeddedDigits,
     // These two are not hard exclusions. They preserve evidence the
     // legacy policy did not use without turning it into a confirmed field.
-    CompetingType, UnclassifiedSegment,
+    CompetingType, CompetingQuantity, UnclassifiedSegment,
 }
-impl CandidateExclusion {
+impl CandidateDisposition {
     fn hard(self)->bool{
-        !matches!(self,Self::CompetingType|Self::UnclassifiedSegment)
+        !matches!(self,Self::CompetingType|Self::CompetingQuantity|Self::UnclassifiedSegment)
     }
 }
 #[derive(Default)]
-struct CandidateExclusions {
-    entries:HashMap<(&'static str,usize,usize),CandidateExclusion>,
+struct DeferredCandidates {
+    entries:HashMap<(&'static str,usize,usize),CandidateDisposition>,
     truncated:bool,
 }
-impl CandidateExclusions {
-    fn record(&mut self,raw:&str,kind:&'static str,start:usize,end:usize,reason:CandidateExclusion){
+impl DeferredCandidates {
+    fn record(&mut self,raw:&str,kind:&'static str,start:usize,end:usize,reason:CandidateDisposition){
         if start>=end||raw.get(start..end).is_none(){self.truncated=true;return;}
         let key=(kind,start,end);
         if let Some(existing)=self.entries.get_mut(&key){
@@ -1012,7 +1012,7 @@ struct ExtractedDocument<'a>{
     product_hits:Vec<ProductHit>,
     geometry:SourceGeometry,
     delivery:DeliveryGeometry,
-    exclusions:CandidateExclusions,
+    exclusions:DeferredCandidates,
 }
 fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->ExtractedDocument<'a>{
     let client_id = client_id(client);
@@ -1024,7 +1024,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         &person_label,&phone,&mut search);
     let geometry=SourceGeometry::new(raw);
     let mut events: Vec<Evidence> = Vec::new();
-    let mut exclusions=CandidateExclusions::default();
+    let mut exclusions=DeferredCandidates::default();
     let mut product_hits: Vec<ProductHit> = Vec::new();
     // Direct translation of order-evidence.ts:140-170: parenthesized
     // delivery requests and note continuation remain separate evidence.
@@ -1168,7 +1168,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
             }
         });
         for (a,b) in competing_names{
-            exclusions.record(raw,"name",line.start+a,line.start+b,CandidateExclusion::CompetingType);
+            exclusions.record(raw,"name",line.start+a,line.start+b,CandidateDisposition::CompetingType);
         }
         if let Some((begin,end))=name_span{
             add_match(&mut events,line,begin,end,"name",line.text[begin..end].to_owned(),
@@ -1179,8 +1179,8 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
             let full = c.get(0).expect("phone match");
             let kind=if c[1].starts_with("01"){"mobile"}else{"phone"};
             if name_span.is_some_and(|(a,b)|a<full.end()&&full.start()<b){
-                let reason=if explicit_name.is_some()||after_label{CandidateExclusion::OverlappingField}
-                    else{CandidateExclusion::CompetingType};
+                let reason=if explicit_name.is_some()||after_label{CandidateDisposition::OverlappingField}
+                    else{CandidateDisposition::CompetingType};
                 exclusions.record(raw,kind,line.start+full.start(),line.start+full.end(),reason);
                 continue;
             }
@@ -1188,7 +1188,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
             if (full.start() > 0 && line.text[..full.start()].chars().next_back()
                 .map_or(false, |v| v.is_ascii_digit()))
                 || line.text[full.end()..].chars().next().map_or(false, |v|v.is_ascii_digit()) {
-                exclusions.record(raw,kind,line.start+full.start(),line.start+full.end(),CandidateExclusion::EmbeddedDigits);
+                exclusions.record(raw,kind,line.start+full.start(),line.start+full.end(),CandidateDisposition::EmbeddedDigits);
                 continue;
             }
             let value = format!("{}-{}-{}", &c[1], &c[2], &c[3]);
@@ -1276,7 +1276,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
                     && option.map_or(false,|o|!o.is_empty() && trimmed.contains(o)) {
                     for q in &quantity_values{
                         exclusions.record(raw,"quantity",line.start+offset+q.start,
-                            line.start+offset+q.end,CandidateExclusion::SaleUnit);
+                            line.start+offset+q.end,CandidateDisposition::SaleUnit);
                     }
                     quantity_values.clear();
                 }
@@ -1328,31 +1328,46 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         }
     }
     // A generic quantity line is evidence but cannot itself prove which SKU was ordered.
+    // Preserve other quantity candidates on product/quantity rows without
+    // changing the current assignment policy or scanning the event list
+    // for the same line and span repeatedly.
+    let mut quantity_lines:HashSet<_>=events.iter().filter(|e|e.kind=="quantity")
+        .map(|e|e.line).collect();
+    let mut quantity_spans:HashSet<_>=events.iter().filter(|e|e.kind=="quantity")
+        .map(|e|(e.start,e.end)).collect();
+    let product_lines:HashSet<_>=product_hits.iter().map(|h|h.line).collect();
     for line in &lines {
         if sender_lines.contains(&line.start){
             for q in search.quantities(line.text){
-                exclusions.record(raw,"quantity",line.start+q.start,line.start+q.end,CandidateExclusion::SenderSection);
+                exclusions.record(raw,"quantity",line.start+q.start,line.start+q.end,CandidateDisposition::SenderSection);
             }
             continue;
         }
-        if events.iter().any(|e| e.kind == "quantity" && e.line == line.number) { continue; }
         if is_money_or_header(line.text) { continue; }
-        if product_hits.iter().any(|h| h.line == line.number) { continue; }
+        let already_handled=quantity_lines.contains(&line.number)||product_lines.contains(&line.number);
         for q in search.quantities(line.text) {
             // An independently scanned quantity must not reuse characters
             // already owned by a recognized address/name/contact/memo span.
             // Preserve separately positioned quantities in mixed-field rows.
             let start=line.start+q.start;
             let end=line.start+q.end;
+            if quantity_spans.contains(&(start,end)){continue;}
+            if exclusions.excludes("quantity",start,end){continue;}
             let overlaps_field=events.iter().any(|e|
                 matches!(e.kind,"address"|"name"|"phone"|"mobile"|"note")
                     && e.start < end && start < e.end);
             if overlaps_field {
-                exclusions.record(raw,"quantity",start,end,CandidateExclusion::OverlappingField);
+                exclusions.record(raw,"quantity",start,end,CandidateDisposition::OverlappingField);
+                continue;
+            }
+            if already_handled{
+                exclusions.record(raw,"quantity",start,end,CandidateDisposition::CompetingQuantity);
                 continue;
             }
             add_match(&mut events,line,q.start,q.end,"quantity",q.value.to_string(),
                 "독립 수량 원문; 상품 연결은 별도 판정");
+            quantity_spans.insert((start,end));
+            quantity_lines.insert(line.number);
         }
     }
 
@@ -1368,7 +1383,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         }
         if covered_end<=line.start&&!non_delivery_segments.contains(&line.start){
             if let Some((a,b))=trim_span(line.text,0,line.text.len()){
-                exclusions.record(raw,"segment",line.start+a,line.start+b,CandidateExclusion::UnclassifiedSegment);
+                exclusions.record(raw,"segment",line.start+a,line.start+b,CandidateDisposition::UnclassifiedSegment);
             }
         }
     }
@@ -2207,13 +2222,25 @@ mod tests {
         assert_eq!(result["recipients"][0]["items"][0]["quantity"],1);
     }
     #[test]
+    fn table_quantity_policy_preserves_unused_explicit_quantity_candidate(){
+        let raw="709 | 2 | 3개";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        let start=raw.find("3개").unwrap();
+        assert_eq!(doc.exclusions.entries.get(&("quantity",start,raw.len())),
+            Some(&CandidateDisposition::CompetingQuantity));
+        assert!(!doc.exclusions.excludes("quantity",start,raw.len()));
+        let result=assign_document(doc,&state,None).unwrap();
+        assert_eq!(result["recipients"][0]["items"][0]["quantity"],2);
+    }
+    #[test]
     fn unclassified_records_are_not_promoted_to_fields(){
         let raw="ABCDEF";
         let state=state();
         let doc=extract_document(raw,&state,None);
         assert!(doc.events.is_empty());
         assert_eq!(doc.exclusions.entries.get(&("segment",0,raw.len())),
-            Some(&CandidateExclusion::UnclassifiedSegment));
+            Some(&CandidateDisposition::UnclassifiedSegment));
         assert!(!doc.exclusions.excludes("segment",0,raw.len()));
         let result=assign_document(doc,&state,None).unwrap();
         assert_eq!(result["recipients"][0]["items"].as_array().unwrap().len(),0);
@@ -2225,7 +2252,7 @@ mod tests {
         let doc=extract_document(raw,&state,None);
         assert!(!doc.exclusions.truncated);
         let (&(kind,start,end),_)=doc.exclusions.entries.iter()
-            .find(|(_,reason)|**reason==CandidateExclusion::SenderSection).unwrap();
+            .find(|(_,reason)|**reason==CandidateDisposition::SenderSection).unwrap();
         assert_eq!(&raw[start..end],"7개");
         assert_eq!(kind,"quantity");
         assert!(doc.events.iter().all(|e|!doc.exclusions.excludes(e.kind,e.start,e.end)));
