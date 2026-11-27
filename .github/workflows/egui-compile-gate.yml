@@ -59,6 +59,7 @@ jobs:
             'product_manager::tests::brand_selector_supports_korean_names_and_registered_aliases',
             'freight_manager::group_editor_renames_and_changes_rates_in_one_command',
             'freight_manager::group_and_combination_tables_open_details_without_action_columns',
+            'freight_manager::freight_group_and_combination_cell_click_opens_existing_record',
             'catalog_query_bridge::native_queries::tests::brand_filter_distinguishes_all_unassigned_and_registered',
             'popup::regression_tests::shared_editor_footer_keeps_delete_left_and_save_right',
             'popup::regression_tests::actual_common_popup_families_keep_geometry_during_feedback_and_permissions',
