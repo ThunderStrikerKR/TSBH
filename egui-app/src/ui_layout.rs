@@ -17,6 +17,18 @@ pub(crate) fn aligned_rect(rect:Rect)->Rect{
     rect.round_ui()
 }
 
+/// The only production owner of explicit UiBuilder rectangle placement.
+/// Native flow layout remains egui-owned. Callers that also paint or clip
+/// the same slot should use aligned_rect before sharing the rectangle.
+pub(crate) trait AlignedUiBuilderExt{
+    fn aligned_max_rect(self,rect:Rect)->Self;
+}
+impl AlignedUiBuilderExt for UiBuilder{
+    fn aligned_max_rect(self,rect:Rect)->Self{
+        self.max_rect(aligned_rect(rect))
+    }
+}
+
 #[cfg(test)]
 mod logical_alignment_tests{
     use super::*;
@@ -101,7 +113,7 @@ pub fn fixed_row<R>(
     // Render in a detached child Ui: its content can grow internally, but
     // it cannot advance the parent's cursor or move the next sibling.
     let mut row=ui.new_child(
-        UiBuilder::new().max_rect(rect).layout(layout)
+        UiBuilder::new().aligned_max_rect(rect).layout(layout)
     );
     row.set_clip_rect(rect.intersect(ui.clip_rect()));
     row.spacing_mut().item_spacing.y=0.0;
@@ -169,7 +181,7 @@ pub fn reception_goods_viewport(
     if !rect.is_positive(){return;}
     let mut child=ui.new_child(UiBuilder::new()
         .id_salt("reception-goods-viewport")
-        .max_rect(rect).layout(Layout::top_down(Align::Min)));
+        .aligned_max_rect(rect).layout(Layout::top_down(Align::Min)));
     child.set_clip_rect(rect.intersect(ui.clip_rect()));
     child.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());
     child.set_height(rect.height());
@@ -191,7 +203,7 @@ pub fn reception_section_scroll(
     let rect=aligned_rect(rect);
     if !rect.is_positive(){return;}
     let mut child=ui.new_child(UiBuilder::new().id_salt("reception-section-viewport")
-        .max_rect(rect).layout(Layout::top_down(Align::Min)));
+        .aligned_max_rect(rect).layout(Layout::top_down(Align::Min)));
     child.set_clip_rect(rect.intersect(ui.clip_rect()));
     child.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());
     child.set_height(rect.height());
@@ -407,7 +419,7 @@ pub(crate) fn management_toolbar_slot<R>(
     clip:bool,fixed_height:bool,draw:impl FnOnce(&mut Ui)->R
 )->R{
     let rect=aligned_rect(rect);
-    ui.scope_builder(UiBuilder::new().id_salt(id).max_rect(rect).layout(layout),|slot|{
+    ui.scope_builder(UiBuilder::new().id_salt(id).aligned_max_rect(rect).layout(layout),|slot|{
         if clip{slot.set_clip_rect(rect.intersect(slot.clip_rect()));}
         slot.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());
         if fixed_height{slot.set_height(rect.height());}
