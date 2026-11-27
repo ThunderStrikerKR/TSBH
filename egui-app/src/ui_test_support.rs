@@ -160,13 +160,68 @@ pub(crate) fn assert_rect_inside(role:&str,inner:Rect,outer:Rect,tolerance:f32){
         &&inner.top()>=outer.top()-tolerance&&inner.bottom()<=outer.bottom()+tolerance,
         "{role}: {inner:?} escapes {outer:?}");
 }
+/// Inspect the ordered paint stream, not merely a widget's allocated Rect.
+#[derive(Clone,Copy)]
+enum CaptionPaint {
+    Text{rect:Rect,clip:Rect,elided:bool},
+    OpaqueRect(Rect),
+}
+fn caption_paint(output:&egui::FullOutput,label:&str)->Vec<CaptionPaint>{
+    fn visit(shape:&egui::Shape,clip:Rect,label:&str,out:&mut Vec<CaptionPaint>){
+        match shape{
+            egui::Shape::Text(text) if text.galley.text()==label=>{
+                out.push(CaptionPaint::Text{
+                    rect:text.galley.rect.translate(text.pos.to_vec2()),clip,elided:text.galley.elided
+                });
+            }
+            // Only prove complete occlusion by a solid rectangular fill.
+            // Rounded corners, translucent fills, strokes and arbitrary
+            // meshes are intentionally not treated as opaque rectangles.
+            egui::Shape::Rect(shape) if shape.fill.a()==255
+                &&shape.corner_radius==egui::CornerRadius::ZERO=>{
+                let visible=shape.rect.intersect(clip);
+                if visible.is_positive(){out.push(CaptionPaint::OpaqueRect(visible));}
+            }
+            egui::Shape::Vec(shapes)=>for shape in shapes{visit(shape,clip,label,out);},
+            _=>{}
+        }
+    }
+    let mut out=Vec::new();
+    for shape in &output.shapes{visit(&shape.shape,shape.clip_rect,label,&mut out);}
+    out
+}
+/// Check a named caption within a known visible slot. Horizontal clipping is
+/// allowed only for an explicitly overflow-capable value; vertical clipping
+/// and full occlusion remain failures. This is not a global text audit:
+/// offscreen scroll rows and editable text have distinct visibility policies.
+pub(crate) fn assert_caption_visibility(output:&egui::FullOutput,label:&str,widget:Rect,
+    allow_horizontal_overflow:bool)->Rect{
+    let paint=caption_paint(output,label);
+    let mut failure="missing painted caption";
+    for (index,entry) in paint.iter().enumerate(){
+        let CaptionPaint::Text{rect,clip,elided}=*entry else{continue};
+        if !rect.intersect(widget).is_positive(){continue;}
+        let visible=rect.intersect(clip).intersect(widget);
+        if !visible.is_positive(){failure="fully clipped caption";continue;}
+        if rect.top()<clip.top()-1.0||rect.bottom()>clip.bottom()+1.0
+            ||rect.top()<widget.top()-1.0||rect.bottom()>widget.bottom()+1.0{
+            failure="vertically clipped caption";continue;
+        }
+        if !allow_horizontal_overflow && (elided||
+            rect.left()<clip.left()-1.0||rect.right()>clip.right()+1.0||
+            rect.left()<widget.left()-1.0||rect.right()>widget.right()+1.0){
+            failure="horizontally clipped or elided required caption";continue;
+        }
+        if paint[index+1..].iter().any(|entry|matches!(entry,CaptionPaint::OpaqueRect(cover)
+            if cover.contains_rect(visible))){
+            failure="fully occluded caption";continue;
+        }
+        return rect;
+    }
+    panic!("{failure}: {label} in {widget:?}");
+}
 pub(crate) fn assert_painted_caption(output:&egui::FullOutput,label:&str,widget:Rect)->Rect{
-    let (ink,clip)=painted_text_rects(output,label).into_iter()
-        .find(|(r,_)|widget.contains(r.center()))
-        .unwrap_or_else(||panic!("missing painted caption {label} in {widget:?}"));
-    assert_rect_inside(label,ink,widget,1.0);
-    assert_rect_inside(label,ink,clip,1.0);
-    ink
+    assert_caption_visibility(output,label,widget,false)
 }
 
 
@@ -220,6 +275,60 @@ pub(crate) fn assert_component_roles(samples:&[ComponentGeometry],required:&[&st
 #[cfg(test)]
 mod shared_component_screen_trace_tests{
     use super::*;
+    fn paint_case(mode:&str)->(egui::FullOutput,Rect){
+        let ctx=test_context();
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(500.0,300.0));
+        let widget=Rect::from_min_size(egui::pos2(30.0,30.0),egui::vec2(220.0,40.0));
+        let output=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let painter=ui.painter();
+                let galley=painter.layout_no_wrap("검증 라벨".to_owned(),
+                    egui::FontId::proportional(18.0),egui::Color32::WHITE);
+                let pos=widget.center()-galley.size()/2.0;
+                let ink=galley.rect.translate(pos.to_vec2());
+                let clip=match mode{
+                    "vertical"=>Rect::from_min_max(egui::pos2(widget.left(),ink.center().y),widget.max),
+                    "horizontal"=>Rect::from_min_max(widget.min,egui::pos2(ink.center().x,widget.bottom())),
+                    "hidden"=>Rect::from_min_max(widget.min,egui::pos2(ink.left()-2.0,widget.bottom())),
+                    _=>widget,
+                };
+                if mode=="background"{painter.rect_filled(widget,0.0,egui::Color32::BLACK);}
+                painter.with_clip_rect(clip).galley(pos,galley,egui::Color32::WHITE);
+                if mode=="covered"{painter.rect_filled(widget,0.0,egui::Color32::BLACK);}
+                if mode=="translucent"{painter.rect_filled(widget,0.0,egui::Color32::from_black_alpha(80));}
+            });
+        });
+        (output,widget)
+    }
+    #[test]
+    fn caption_detector_accepts_visible_background_and_explicit_horizontal_overflow(){
+        for mode in ["normal","background","translucent","horizontal"]{
+            let (output,widget)=paint_case(mode);
+            assert_caption_visibility(&output,"검증 라벨",widget,mode=="horizontal");
+        }
+    }
+    #[test]
+    fn caption_detector_rejects_clipped_missing_and_opaque_covered_text(){
+        for (mode,allow,expected) in [
+            ("vertical",true,"vertically clipped"),
+            ("horizontal",false,"horizontally clipped"),
+            ("hidden",true,"fully clipped"),
+            ("covered",true,"fully occluded"),
+        ]{
+            let (output,widget)=paint_case(mode);
+            let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
+                assert_caption_visibility(&output,"검증 라벨",widget,allow)));
+            let error=result.expect_err("caption detector accepted malformed paint");
+            let message=error.downcast_ref::<String>().map(String::as_str)
+                .or_else(||error.downcast_ref::<&str>().copied()).unwrap_or("");
+            // egui may omit a completely clipped paint command.
+            assert!(message.contains(expected)||(mode=="hidden"&&message.contains("missing painted caption")),
+                "{mode}: unexpected failure {message}");
+        }
+        let (output,widget)=paint_case("normal");
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
+            assert_painted_caption(&output,"존재하지 않는 라벨",widget))).is_err());
+    }
     #[test]
     #[should_panic(expected="below shared minimum")]
     fn detector_rejects_visible_control_height_regression(){
