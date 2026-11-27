@@ -213,6 +213,7 @@ pub(crate) fn date_navigation_segmented_surface_with_state<R>(
 pub(crate) fn navigation_segment_child(
     parent:&mut Ui,id:impl std::hash::Hash,rect:Rect,layout:Layout
 )->Ui{
+    let rect=crate::ui_layout::aligned_rect(rect);
     let mut child=parent.new_child(UiBuilder::new().id_salt(id)
         .max_rect(rect).layout(layout));
     child.set_clip_rect(rect.intersect(parent.clip_rect()));
