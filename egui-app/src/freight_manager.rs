@@ -1822,11 +1822,10 @@ impl FreightManager {
                                 // Use current (including pending autosave) so
                                 // the button hides immediately on selection.
                                 if current.is_empty(){
-                                    // Keep the 34pt button target and full
-                                    // label, but treat this repeated action as
-                                    // secondary to selecting a shipping group.
+                                    // Use the shared standard action surface (#292929).
+                                    // Keep the existing visibility and 34pt geometry.
                                     if crate::button::action(actions,"기본 운임 설정",
-                                        theme::ButtonRole::TableSecondary,editable)
+                                        theme::ButtonRole::Standard,editable)
                                         
                                         .clicked(){
                                         let initial=effective

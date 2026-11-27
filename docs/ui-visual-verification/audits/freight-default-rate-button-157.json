@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "freight-default-rate-button-157",
+  "screen": "운임 관리 / 배송 그룹 편성 / 기본 운임 설정",
+  "files": [
+    "egui-app/src/freight_manager.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "사용자 지정 #292929 기존 Standard 버튼 역할 적용. 표시 조건, 비활성 팔레트, 버튼 크기 및 운임 설정 동작 유지. Windows 실화면과 CI 미검증.",
+  "defects": [],
+  "releaseDecision": "NOT_APPROVED",
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "noClipping",
+      "footerVisible",
+      "scrollReachable",
+      "inputReadable",
+      "alignment",
+      "interaction",
+      "hoverAndFocus"
+    ]
+  }
+}
