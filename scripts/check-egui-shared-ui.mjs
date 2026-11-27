@@ -1794,19 +1794,20 @@ function auditGlobImports(source){
   for(let i=0;i<v.length;i++){
     if(v[i]==="#"&&v[i+1]==="["&&pairs.has(i+1)){
       // Consume adjacent attributes, including allow/derive, before the item.
-      let j=i,onlyTest=false;
+      let j=i,onlyTest=false,testFunction=false;
       while(v[j]==="#"&&v[j+1]==="["&&pairs.has(j+1)){
         onlyTest ||= testAttribute(j+1);
+        testFunction ||= v[j+2]==="test"&&pairs.get(j+1)===j+3;
         j=pairs.get(j+1)+1;
       }
-      if(onlyTest){
+      if(onlyTest||testFunction){
         if(v[j]==="pub"){j++;if(v[j]==="("&&pairs.has(j))j=pairs.get(j)+1;}
         while(["async","unsafe","const","extern"].includes(v[j])){j++;if(v[j]==="<literal>")j++;}
-        if(v[j]==="use"){
+        if(onlyTest&&v[j]==="use"){
           while(j<v.length&&v[j]!==";")j++;
           i=j;continue;
         }
-        if(["mod","fn","impl","struct","enum","trait"].includes(v[j])){
+        if((onlyTest&&["mod","fn","impl","struct","enum","trait"].includes(v[j]))||(testFunction&&v[j]==="fn")){
           for(;j<v.length&&v[j]!==";";j++){
             if(v[j]==="{"&&pairs.has(j)){j=pairs.get(j);break;}
             if(["(","["].includes(v[j])&&pairs.has(j))j=pairs.get(j);
@@ -1838,6 +1839,8 @@ function globImportSelfTest(){
     ["// use a::*;\nfn f(){let x=2*3;let s=\"use a::*;\";}",0],
     ["fn f(){let x=*ptr;}",0],
     ["#[cfg(test)] mod tests{use super::*;}",0],
+    ["#[test] fn unit(){use super::*;}",0],
+    ["use crate::{theme::{\n*, TextRole}, popup};",1],
     ["#[allow(unused_imports)] #[cfg(test)] pub(crate) use crate::{a::*};",0],
     ["#[cfg(test)] #[allow(unused_imports)] use a::*; use b::*;",1],
     ["#![cfg(test)]\nuse a::*;",0],
