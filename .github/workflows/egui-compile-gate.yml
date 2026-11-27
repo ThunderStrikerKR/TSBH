@@ -249,6 +249,15 @@ jobs:
           if (-not ($listed | Where-Object { $_ -like "*category_assignment::tests::*: test" })) { throw "Missing category assignment regression" }
           cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Mandatory drag write replay safety
+        shell: pwsh
+        run: |
+          $filter = 'product_commands::drag_write_replay_tests::'
+          $listed = cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($listed | Where-Object { $_ -like "*product_commands::drag_write_replay_tests::*: test" })) { throw "Missing drag write replay regression" }
+          cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib $filter -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Mandatory native brand deletion safety
         if: ${{ !cancelled() && steps.compile_source.outcome == 'success' }}
         shell: pwsh
