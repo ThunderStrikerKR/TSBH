@@ -130,3 +130,22 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
     Ok(json!({"phase":phase,"requestText":request_text,
         "requiresCustomerResponse":requires_response}))
 }
+
+#[cfg(test)]
+mod inquiry_tests{
+    use super::*;
+    #[test]
+    fn explicit_candidate_inquiry_is_included_and_approved_issue_is_not(){
+        let order=json!({"recipients":[{"id":"r","name":"가상 수취인","items":[]}]});
+        let issue=json!({"recipientId":"r","kind":"CANDIDATE_name","severity":"ACTION",
+            "blockingStage":1,"inquiryRequested":true});
+        let message=execute(&json!({"settings":{},"order":order,"step":0,"issues":[issue]})).unwrap();
+        assert!(message["requestText"].as_str().unwrap().contains("수취인명"));
+        assert_eq!(message["requiresCustomerResponse"],true);
+        let mut approved=issue;
+        approved["severity"]=json!("INFO");
+        let message=execute(&json!({"settings":{},"order":order,"step":0,"issues":[approved]})).unwrap();
+        assert_eq!(message["requiresCustomerResponse"],false);
+        assert_eq!(message["requestText"],"");
+    }
+}

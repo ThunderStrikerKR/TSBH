@@ -56,6 +56,7 @@ pub enum ReadOperation {
     ProductFreightView,
     DefaultProductRule,
     RenderAutomaticMessage,
+    RenderAutomaticRequest,
     DecorateAutomaticCopy,
     ValidateAutomaticTemplates,
     ValidateProvisionalProductNotices,
@@ -79,7 +80,7 @@ impl ReadOperation {
             | Self::ReadShipments | Self::ListOrderHistoryView | Self::ListOrderHistory
             | Self::FactoryReplyReviewStatuses | Self::ShippingManagerView
             | Self::ProductFreightView | Self::DefaultProductRule => "rules",
-            Self::RenderAutomaticMessage | Self::DecorateAutomaticCopy
+            Self::RenderAutomaticMessage | Self::RenderAutomaticRequest | Self::DecorateAutomaticCopy
             | Self::PrepareSettlement | Self::PrepareFactoryExport | Self::PrepareStoreExport
             | Self::ReviewExportSender => "output",
         }
@@ -119,6 +120,7 @@ impl ReadOperation {
             Self::ProductFreightView => "apply_shipping_action",
             Self::DefaultProductRule => "apply_shipping_action",
             Self::RenderAutomaticMessage => "render_automatic_message",
+            Self::RenderAutomaticRequest => "render_automatic_request",
             Self::DecorateAutomaticCopy => "decorate_automatic_copy",
             Self::ValidateAutomaticTemplates => "validate_automatic_templates",
             Self::ValidateProvisionalProductNotices => "validate_provisional_product_notices",
@@ -1003,7 +1005,7 @@ impl BandoGateway for LocalGateway {
             ReadOperation::ManagementProducts => {
                 crate::catalog_query_bridge::management_products(&payload)
             }
-            ReadOperation::RenderAutomaticMessage | ReadOperation::DecorateAutomaticCopy
+            ReadOperation::RenderAutomaticMessage | ReadOperation::RenderAutomaticRequest | ReadOperation::DecorateAutomaticCopy
             | ReadOperation::PrepareSettlement
             | ReadOperation::PrepareFactoryExport | ReadOperation::PrepareStoreExport
             | ReadOperation::ReviewExportSender => {

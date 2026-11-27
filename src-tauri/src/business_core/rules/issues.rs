@@ -1058,6 +1058,29 @@ mod current_information_approval_tests {
             "recipientId":"r","approvalBasis":issue["approvalBasis"],"actor":"사용자",
             "now":"2026-11-27T00:00:00Z"})).map(|v|v["order"].clone())
     }
+    fn inquiry_action(order:&Value,kind:&str,action:&str)->Result<Value,String>{
+        let issue=order_issues(order).into_iter().find(|i|str_field(i,"kind")==kind).unwrap();
+        issue_action(&json!({"order":order,"action":action,"issueId":issue["issueId"],
+            "recipientId":"r","inquiryBasis":issue["inquiryBasis"],"actor":"사용자",
+            "now":"2026-11-27T00:00:00Z"})).map(|v|v["order"].clone())
+    }
+    #[test]
+    fn customer_inquiry_is_reversible_and_never_passes_validation(){
+        let mut o=sample();
+        o=inquiry_action(&o,"ADDRESS","request_customer_inquiry").unwrap();
+        let issue=order_issues(&o).into_iter().find(|i|i["kind"]=="ADDRESS").unwrap();
+        assert_eq!(issue["severity"],"ACTION");
+        assert_eq!(issue["resolution"],"PENDING_CUSTOMER");
+        assert_eq!(issue["canCancelInquiry"],true);
+        assert_eq!(delivery_requirements(&json!({"rows":o["recipients"]})).unwrap()["results"][0]["address"],false);
+        assert!(inquiry_action(&o,"ADDRESS","request_customer_inquiry").is_err());
+        o=inquiry_action(&o,"ADDRESS","cancel_customer_inquiry").unwrap();
+        assert!(order_issues(&o).iter().any(|i|i["kind"]=="ADDRESS"&&i["resolution"]=="UNRESOLVED"));
+        o=inquiry_action(&o,"ADDRESS","request_customer_inquiry").unwrap();
+        o["recipients"][0]["address"]=json!("경기도 가평군 문화로 120");
+        prune_validation_approvals(&mut o["recipients"][0]);
+        assert!(o["recipients"][0]["customerInquiries"].as_object().unwrap().is_empty());
+    }
     #[test]
     fn approvals_are_value_bound_and_shared_by_delivery_and_order_gates(){
         let o=sample();

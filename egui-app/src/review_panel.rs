@@ -44,7 +44,8 @@ impl ReviewKey {
 #[derive(Default)]
 pub struct ReviewPanel {
     key:Option<ReviewKey>,
-    pending:crate::screen_refresh::ReadRefresh<Vec<Value>>,
+    pending:crate::screen_refresh::ReadRefresh<(Vec<Value>,Result<String,String>)>,
+    draft_message:Option<Result<String,String>>,
     issues:Vec<Value>,
     action_indices:Vec<usize>,
     fact_indices:Vec<usize>,
@@ -108,7 +109,8 @@ impl ReviewPanel {
             self.key=Some(key.clone());
             let saved=source.clone();
             let matched_name=analysis.matched_client_name.clone();
-            self.pending.submit_required(ctx.clone(),move||->Result<Vec<Value>,String>{
+            self.draft_message=None;
+            self.pending.submit_required(ctx.clone(),move||->Result<(Vec<Value>,Result<String,String>),String>{
                     let mut order=if direct{
                         manual_workspace::native_direct_order(gateway.as_ref(),&saved)?
                     }else{
@@ -158,19 +160,30 @@ impl ReviewPanel {
                             }
                         }
                     }
-                    let mut request=json!({"order":order});
+                    let mut request=json!({"order":&order});
                     // Sale status requires the live catalog; do not infer it
                     // from a previously recognized product label.
                     if let Ok(catalog)=gateway.load_catalog(){request["state"]=catalog;}
                     let response=gateway.execute(ReadOperation::OrderIssuesWithActions,request)?;
-                    response.get("issues").and_then(Value::as_array)
-                        .cloned().ok_or_else(||
-                            "확인할 내용을 불러오지 못했습니다.".into())
+                    let issues=response.get("issues").and_then(Value::as_array)
+                        .cloned().ok_or("확인할 내용을 불러오지 못했습니다.")?;
+                    let message=(||->Result<String,String>{
+                        let settings=gateway.load_settings()?;
+                        let settings=settings.get("settings").filter(|v|v.is_object())
+                            .ok_or("자동 메시지 설정을 확인할 수 없습니다.")?;
+                        let rendered=gateway.execute(ReadOperation::RenderAutomaticRequest,json!({
+                            "settings":settings,"order":&order,"issues":&issues,"step":0
+                        }))?;
+                        rendered["requestText"].as_str().map(str::to_owned)
+                            .ok_or_else(||"문의 메시지 생성 결과를 확인할 수 없습니다.".into())
+                    })();
+                    Ok((issues,message))
             });
         }
         match self.pending.poll(){
-            Some(Ok(items))=>{
-                self.replace_issues(items);self.pending.verified();self.ready=true;self.error=None;
+            Some(Ok((items,message)))=>{
+                self.replace_issues(items);self.draft_message=Some(message);
+                self.pending.verified();self.ready=true;self.error=None;
             }
             Some(Err(error))=>{
                 // A failed projection cannot authorize an action against old issues.
@@ -180,6 +193,11 @@ impl ReviewPanel {
         }
     }
     pub fn ready(&self)->bool{self.ready && !self.pending.required() && self.error.is_none()}
+    pub fn draft_message(&self,source:&WorkingReception,analysis:&ReceptionAnalysis)
+        ->Option<&Result<String,String>>{
+        if !self.ready() || !self.key.as_ref().is_some_and(|key|key.matches(source,analysis)){return None;}
+        self.draft_message.as_ref()
+    }
     /// None means the exact current native projection is not ready.
     pub fn input_targets(&self,source:&WorkingReception,
         analysis:&ReceptionAnalysis,error:Option<&str>)->Option<Vec<(String,Option<String>,&'static str,String)>>{

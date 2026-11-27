@@ -7345,6 +7345,18 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             .is_some_and(|target|self.drafts.iter().any(|draft|draft.id==target.order_id));
         let awaiting_order = !pending_order_visible && self.raw_source.trim().is_empty()
             && self.analysis.is_none();
+        // A draft can require an answer BEFORE it can enter workflow.
+        // Use the exact source-bound native review result, never the stale
+        // message from a hovered or previously selected order.
+        let draft_message=if !pending_order_visible && self.inline_change.is_none()
+            && !self.analysis_pending && self.inline_editor.is_none(){
+            self.active_id.as_deref().and_then(|id|self.drafts.iter().find(|r|r.id==id))
+                .zip(self.analysis.as_ref()).and_then(|(source,analysis)|
+                    self.review_panel.draft_message(source,analysis)).cloned()
+        }else{None};
+        let can_copy=draft_message.as_ref().and_then(|result|result.as_ref().ok())
+            .is_some_and(|text|!text.trim().is_empty());
+        let mut copy_with_greeting=None;
         Self::section_with_header(ui, "복사용 자동 메시지", height, |ui| {
             if !awaiting_order {
                 let mut include_link = false;
@@ -7370,10 +7382,33 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 Sense::hover(),
             );
             let _=crate::card::reception_document_viewport(ui,field_rect,
-                "pending-message-canvas","pending-message-scroll",|_|{});
+                "pending-message-canvas","pending-message-scroll",|content|{
+                    match draft_message.as_ref(){
+                        Some(Ok(message))=>{one_touch::payment_message(content,message,"",false);},
+                        Some(Err(_))=>{content.label(typography::body("문의 메시지를 생성하지 못했습니다. 자동 메시지 설정을 확인하세요."));},
+                        None=>{}
+                    }
+                });
             crate::ui_layout::reception_message_footer_gap(ui);
-            let _=crate::composite_reception::reception_message_copy_actions(ui,false);
+            copy_with_greeting=crate::composite_reception::reception_message_copy_actions(ui,can_copy);
         });
+        if let Some(include_greeting)=copy_with_greeting{
+            floating_notice::dispatch_pointer(ui.ctx(),"reception.automatic.copy");
+            let result=(||->Result<(),String>{
+                let text=draft_message.as_ref().and_then(|r|r.as_ref().ok())
+                    .ok_or("복사할 문의 메시지가 없습니다.")?;
+                let rendered=self.gateway.execute(gateway::ReadOperation::DecorateAutomaticCopy,
+                    serde_json::json!({"text":text,"includeGreeting":include_greeting}))?;
+                let text=rendered["text"].as_str().filter(|s|!s.trim().is_empty())
+                    .ok_or("복사할 메시지가 없습니다.")?;
+                arboard::Clipboard::new().and_then(|mut clipboard|clipboard.set_text(text.to_owned()))
+                    .map_err(|error|format!("클립보드 복사 실패: {error}"))
+            })();
+            if let Err(error)=result{
+                floating_notice::publish(ui.ctx(),"reception.automatic.copy",floating_notice::Tone::Error,error);
+            }
+            // Draft clipboard copy is not a workflow commit or a send receipt.
+        }
     }
 
     fn details_and_freight(&mut self, ui: &mut Ui) {
