@@ -64,7 +64,11 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
                         .is_some_and(|variants|variants.iter().any(|variant|
                             variant.get("source").and_then(Value::as_str)==Some("DEMO")))
                 });
-            analyze(raw, &reception, payload.get("client"))
+            if payload["collectOwnerTrace"]==true {
+                analyze_with_owner_trace(raw,&reception,payload.get("client"),true)
+            }else{
+                analyze(raw,&reception,payload.get("client"))
+            }
         }
         "match_products" => {
             let state = required_state(&payload)?;
@@ -544,12 +548,11 @@ fn owner_index(anchors: &[usize], events: &[Evidence], offset: usize) -> usize {
     anchors.iter().enumerate().rev().find(|(_, i)| events[**i].start <= offset)
         .map(|(idx,_)|idx).unwrap_or(0)
 }
-// Recipient identity boundaries are stronger than a raw character offset.
-// A delivery address/contact placed BEFORE the next person's name can belong
-// to that next recipient when the preceding name is in another paragraph.
-// Distances are supporting evidence only: they never create recipients.
+// Existing ownership is the baseline policy, not the learned decision.
+// Record only the two adjacent anchors; no full-document candidate search.
 fn recipient_owner_index(
-    anchors: &[usize], events: &[Evidence], evidence_index: usize, raw: &str
+    anchors: &[usize], events: &[Evidence], evidence_index: usize, raw: &str,
+    trace: Option<&mut Vec<Value>>,
 ) -> usize {
     let candidate=&events[evidence_index];
     let previous=owner_index(anchors,events,candidate.start);
@@ -562,49 +565,92 @@ fn recipient_owner_index(
     if candidate.start<=preceding.start || candidate.start>=following.start {
         return previous;
     }
-    // Keep existing ownership inside the preceding named person's paragraph.
-    // This protects multiple phone numbers for the same recipient.
-    if candidate.paragraph==preceding.paragraph || candidate.paragraph!=following.paragraph {
-        return previous;
-    }
-    // The prior named recipient must already have independent delivery
-    // evidence before its blank-line boundary. Otherwise an address after
-    // that blank line may still be the FIRST recipient's own address, not
-    // an address preceding the next recipient's name. Prefer preserving
-    // ownership over an unsupported automatic handoff.
+
+    // On ordinary analysis preserve the original short-circuit costs.
+    // In observation mode collect features even for locally rejected
+    // alternatives, without changing the legacy decision.
+    let same_previous=candidate.paragraph==preceding.paragraph;
+    let same_following=candidate.paragraph==following.paragraph;
+    let paragraph_blocked=same_previous || !same_following;
+    if trace.is_none() && paragraph_blocked {return previous;}
     let previous_has_delivery=events.iter().any(|e|
         e.start>preceding.start && e.start<candidate.start
             && e.paragraph==preceding.paragraph
             && matches!(e.kind,"address"|"phone"|"mobile")
     );
-    if !previous_has_delivery {return previous;}
-    // A separating line containing only spaces/tabs counts as a block
-    // boundary too. This is a conservative overlay on the existing gates.
+    if trace.is_none() && !previous_has_delivery {return previous;}
     let previous_gap=intervening_lines(raw,preceding.line,candidate.line);
     let following_gap=intervening_lines(raw,candidate.line,following.line);
-    if following_gap.blank_lines>0 {return previous;}
+    if trace.is_none() && following_gap.blank_lines>0 {return previous;}
     let next_distance=following.line.saturating_sub(candidate.line);
-    if next_distance>3 {return previous;}
+    if trace.is_none() && next_distance>3 {return previous;}
     let has_nearby_address=events.iter().any(|e|
         e.kind=="address" && e.paragraph==candidate.paragraph
             && e.line.abs_diff(candidate.line)<=4
     );
-    // A phone just before the next name is not sufficient on its own.
-    // A nearby Korean delivery address is independent corroboration.
-    if matches!(candidate.kind,"phone"|"mobile") && !has_nearby_address {
-        return previous;
-    }
+    let contact_without_address=matches!(candidate.kind,"phone"|"mobile") &&
+        !has_nearby_address;
+    let blocked=if paragraph_blocked {Some("paragraph_boundary")}
+        else if !previous_has_delivery {Some("prior_delivery_missing")}
+        else if following_gap.blank_lines>0 {Some("blank_before_next")}
+        else if next_distance>3 {Some("next_distance_exceeds_3")}
+        else if contact_without_address {Some("contact_without_nearby_address")}
+        else {None};
+
     let preceding_distance=candidate.line.saturating_sub(preceding.line);
-    let previous_score=(if preceding.paragraph==candidate.paragraph {80usize} else {0})
-        + 20usize.saturating_sub(preceding_distance.saturating_mul(5));
-    // Blank-line and content-line evidence are distinct. Their bounded
-    // adjustment must not override paragraph identity or address support.
-    let following_score=(80usize
-        + 20usize.saturating_sub(next_distance.saturating_mul(5))
-        + if has_nearby_address {20} else {0}
-        + previous_gap.blank_lines.min(2)*5)
-        .saturating_sub(following_gap.content_lines.min(2)*5);
-    if following_score >= previous_score+30 {previous+1} else {previous}
+    // These are the original score components, not probabilities. No
+    // score is fabricated for a candidate the original gates rejected.
+    let previous_paragraph=if same_previous {80usize} else {0};
+    let previous_distance=20usize.saturating_sub(preceding_distance.saturating_mul(5));
+    let next_distance_score=20usize.saturating_sub(next_distance.saturating_mul(5));
+    let address_score=if has_nearby_address {20usize} else {0};
+    let blank_score=previous_gap.blank_lines.min(2)*5;
+    let content_penalty=following_gap.content_lines.min(2)*5;
+    let previous_score=previous_paragraph+previous_distance;
+    let following_score=(80usize+next_distance_score+address_score+blank_score)
+        .saturating_sub(content_penalty);
+    let selected=if blocked.is_none() && following_score>=previous_score+30 {
+        previous+1
+    } else {previous};
+    if let Some(trace)=trace {
+        let location=|e:&Evidence|json!({
+            "start":utf16(raw,e.start),"end":utf16(raw,e.end),
+            "kind":e.kind
+        });
+        let gap=|g:&InterveningLines|json!({
+            "contentLines":g.content_lines,"blankLines":g.blank_lines,
+            "maxConsecutiveBlankLines":g.max_consecutive_blank_lines
+        });
+        let previous_components=blocked.is_none().then(||json!({
+            "sameParagraph":previous_paragraph,"distance":previous_distance
+        }));
+        let following_components=blocked.is_none().then(||json!({
+            "sameParagraph":80,"distance":next_distance_score,
+            "nearbyAddress":address_score,"previousBlankLines":blank_score,
+            "contentPenalty":content_penalty
+        }));
+        trace.push(json!({
+            "source":location(candidate),
+            "selectedAnchor":location(&events[anchors[selected]]),
+            "legacyFirstBlockingReason":blocked,
+            "legacyRequiredMargin":30,
+            "previousHasDelivery":previous_has_delivery,
+            "nearbyAddress":has_nearby_address,
+            "candidates":[
+                {"relation":"previous","anchor":location(preceding),
+                 "sameParagraph":same_previous,"lineDistance":preceding_distance,
+                 "gap":gap(&previous_gap),
+                 "legacyScore":blocked.is_none().then_some(previous_score),
+                 "legacyComponents":previous_components},
+                {"relation":"next","anchor":location(following),
+                 "sameParagraph":same_following,"lineDistance":next_distance,
+                 "gap":gap(&following_gap),
+                 "legacyScore":blocked.is_none().then_some(following_score),
+                 "legacyComponents":following_components}
+            ]
+        }));
+    }
+    selected
 }
 /// Original TypeScript resolvePrice for the recognition Item shape.
 /// The separate pricing migration remains authoritative for business rules.
@@ -797,6 +843,11 @@ fn dated_dispatch_instruction(text:&str)->bool{
     re.is_match(text)
 }
 fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, String> {
+    analyze_with_owner_trace(raw,state,client,false)
+}
+
+fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
+    collect_owner_trace:bool)->Result<Value,String>{
     let client_id = client_id(client);
     let lines = physical_lines(raw);
     let mut events: Vec<Evidence> = Vec::new();
@@ -1107,10 +1158,11 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     if recipients.is_empty() {
         recipients.push(blank_recipient("recognition:recipient:0","",None,raw));
     }
+    let mut owner_trace=collect_owner_trace.then(Vec::new);
     let mut postcodes=vec![HashSet::<String>::new();recipients.len()];
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
-        let row_index = recipient_owner_index(&anchors,&events,index,raw);
+        let row_index = recipient_owner_index(&anchors,&events,index,raw,owner_trace.as_mut());
         let rid = recipients[row_index]["id"].as_str().unwrap_or("").to_owned();
         let e = &events[index];
         let kind = e.kind;
@@ -1418,7 +1470,11 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         }
         candidate
     }).collect();
-    Ok(json!({"recipients":recipients,"candidates":candidates,"unassigned":unassigned}))
+    let mut result=json!({"recipients":recipients,"candidates":candidates,"unassigned":unassigned});
+    if let Some(trace)=owner_trace {
+        result["recipientOwnerTrace"]=json!({"schemaVersion":1,"decisions":trace});
+    }
+    Ok(result)
 }
 
 fn reanalyze(payload: &Value) -> Result<Value, String> {
