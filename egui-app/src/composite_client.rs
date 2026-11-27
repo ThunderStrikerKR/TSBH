@@ -1,4 +1,6 @@
 //! Shared client summaries, tier badges and client rows.
+use crate::ui_layout::SharedUiClipExt as _;
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Ui,Vec2};
@@ -40,7 +42,7 @@ pub fn management_chooser_row(
     let content_rect=Rect::from_min_max(
         egui::pos2(x,rect.top()),egui::pos2(rect.right()-theme::SPACE_12,rect.bottom())
     );
-    let ink=painter.with_clip_rect(content_rect);
+    let ink=painter.with_shared_clip(content_rect);
     ink.galley(egui::pos2(x,y),primary,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
     ink.galley(
         egui::pos2(x,y+lines-secondary.size().y),
@@ -130,7 +132,7 @@ fn paint_client_tier_badge(ui:&Ui,cell:Rect,label:&str,tier:&str)->Rect{
         egui::pos2(cell.left(),cell.center().y-height/2.0),
         Vec2::new(width,height)
     );
-    ui.painter().with_clip_rect(cell).rect_filled(
+    ui.painter().with_shared_clip(cell).rect_filled(
         badge,theme::CONTROL_RADIUS as f32,fill
     );
     paint_table_galley(
@@ -246,7 +248,7 @@ pub fn reception_client_summary_card_editable(
             .aligned_max_rect(button_rect)
             .layout(Layout::left_to_right(Align::Center)),
         |buttons|{
-            buttons.set_clip_rect(clip);
+            buttons.restrict_shared_clip(clip);
             crate::button::action_with_min_width(
                 buttons,button_label,theme::ButtonRole::Standard,
                 editable,button_width
