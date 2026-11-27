@@ -629,7 +629,7 @@ pub(crate) fn workflow_review_text(issue:&Value,label:&str,recognition:&Value)->
     if let Some(caption)=unidentified_product_caption(issue,recognition){return caption;}
     let old=text(issue,"title");
     let caption=review_caption(issue,recognition);
-    if old.is_empty()||caption.as_ref()==old{return label.to_owned();}
+    if old.is_empty(){return label.to_owned();}
     if label==old{return caption.into_owned();}
     if let Some(prefix)=label.strip_suffix(old){
         if prefix.ends_with(" / ")||prefix.ends_with(": "){
