@@ -1366,3 +1366,59 @@ fn shared_confirmation_requires_explicit_action_and_cancel_wins(){
     });
     assert_eq!(value,"   ");
 }
+
+
+#[test]
+fn shared_editor_footer_keeps_delete_left_and_save_right(){
+    for width in [440.0,740.0]{
+        let ctx=test_context();
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(1000.0,700.0));
+        let mut baseline:Option<(Rect,Rect)>=None;
+        for show_delete in [true,false,true]{
+            let mut measured=None;
+            for _ in 0..3{
+                let _=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        ui.set_width(width);
+                        let mut delete=None;
+                        let mut save=None;
+                        let (_,geometry)=modal_flow_workspace_measured(ui,|workspace|{
+                            workspace.header("상세 편집","닫기",true);
+                            workspace.body_region(|body|{body.allocate_exact_size(Vec2::new(80.0,80.0),Sense::hover());});
+                            workspace.footer(
+                                |left|{if show_delete{
+                                    delete=Some(crate::button::action(left,"삭제",theme::ButtonRole::Danger,true).rect);
+                                }},
+                                |right|{save=Some(crate::button::action(right,"저장",theme::ButtonRole::Primary,true).rect);}
+                            );
+                        });
+                        measured=Some((geometry.footer.unwrap(),delete,save.unwrap()));
+                    });
+                });
+            }
+            let (footer,delete,save)=measured.unwrap();
+            let area=modal_master_action_area(footer,theme::ACTION_PRIMARY_HEIGHT.max(theme::ACTION_STANDARD_HEIGHT));
+            assert!((save.right()-area.right()).abs()<=1.0,"save must anchor to right: {save:?}, {area:?}");
+            if let Some(delete)=delete{
+                assert!((delete.left()-area.left()).abs()<=1.0,"delete must anchor to left: {delete:?}, {area:?}");
+                assert!((delete.center().y-save.center().y).abs()<=1.0,"footer actions must share vertical center");
+                assert!(delete.right()<save.left(),"actions must not overlap");
+            }
+            if let Some((before_footer,before_save))=baseline{
+                assert_layout_rects_invariant(&[("footer",before_footer),("save",before_save)],
+                    &[("footer",footer),("save",save)]);
+            }else{baseline=Some((footer,save));}
+        }
+    }
+    // The three editor consumers must not revert to the right-only footer.
+    for source in [include_str!("../brand_manager.rs"),include_str!("../alias_manager.rs"),
+        include_str!("../model_group_manager.rs")]{
+        let editor=source.split("fn show_editor(").nth(1).unwrap().split("pub fn show_dialogs(").next().unwrap();
+        assert!(editor.contains("workspace.footer("));
+        assert!(!editor.contains("workspace.footer_single("));
+        if let Some(delete)=editor.find("theme::ButtonRole::Danger"){
+            assert!(delete>editor.find("workspace.footer(").unwrap(),
+                "entity delete action must live in the footer");
+        }
+    }
+}
