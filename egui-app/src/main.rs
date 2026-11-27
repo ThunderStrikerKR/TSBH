@@ -240,83 +240,6 @@ struct PendingClientChange {
     receiver: Receiver<Result<native_order_change::ChangeResult, String>>,
 }
 
-// Each calculation carries the complete source before-image. Publication
-// is allowed only if that exact draft still exists and has not been edited.
-type DraftTariffResult=(WorkingReception,Result<serde_json::Value,String>);
-
-fn same_draft_tariff_input(before:&WorkingReception,current:&WorkingReception)->bool{
-    before.id==current.id && before.raw==current.raw &&
-    before.order_type==current.order_type && before.client_id==current.client_id &&
-    before.client_selection==current.client_selection &&
-    before.analysis_raw==current.analysis_raw && before.analysis_evidence==current.analysis_evidence &&
-    before.analysis_view==current.analysis_view && before.manual_model==current.manual_model &&
-    before.pricing_preview==current.pricing_preview && before.working_version==current.working_version &&
-    before.working_synced==current.working_synced && before.chat_handle==current.chat_handle &&
-    before.chat_title==current.chat_title && before.edit_history==current.edit_history &&
-    before.client_match==current.client_match &&
-    before.source_input_method==current.source_input_method &&
-    before.last_input_method==current.last_input_method
-}
-
-fn tariff_draft_order(draft:&WorkingReception)->Option<serde_json::Value>{
-    let direct=draft.raw.is_empty()&&draft.manual_model.as_ref()
-        .is_some_and(|model|model["mode"]=="DIRECT");
-    if !direct&&(draft.analysis_raw.as_deref()!=Some(draft.raw.as_str())||
-        draft.analysis_evidence.is_none()){return None;}
-    let rows=draft.manual_model.as_ref().and_then(|model|model.pointer("/model/rows"))
-        .or_else(||draft.analysis_view.as_ref().and_then(|view|view.pointer("/recognition/recipients")))
-        .or_else(||draft.analysis_evidence.as_ref().and_then(|evidence|evidence.get("recipients")))
-        .filter(|rows|rows.as_array().is_some_and(|rows|!rows.is_empty()))?;
-    Some(serde_json::json!({"recipients":rows}))
-}
-
-fn calculate_affected_draft_tariffs(
-    gateway:&dyn gateway::BandoGateway,baselines:&[serde_json::Value],drafts:Vec<WorkingReception>
-)->Result<Vec<DraftTariffResult>,String>{
-    use serde_json::Value;
-    if gateway.isolated_client_identity_link(){return Ok(Vec::new());}
-    let state=gateway.load_business_state()?;
-    let mut results=Vec::new();
-    for draft in drafts{
-        if draft.order_type=="RETAIL"||state["orders"].as_array().is_some_and(|orders|
-            orders.iter().any(|order|order["id"].as_str()==Some(draft.id.as_str()))){continue;}
-        let Some(client_id)=draft.client_id.as_deref() else{continue};
-        let Some(client)=state["clients"].as_array().and_then(|clients|clients.iter()
-            .find(|client|client["id"].as_str()==Some(client_id)&&client["deletedAt"].is_null()
-                &&client["active"]!=false))else{continue};
-        let Some(order)=tariff_draft_order(&draft)else{continue};
-        if !pricing_basis::affected_by_tariff_change(
-            baselines,&state,client,&order,draft.pricing_preview.as_ref()){continue;}
-        let calculated=(||->Result<Value,String>{
-            let result=native_order_change::prepare(gateway,&draft,client_id)?;
-            let native=result.order.as_ref().ok_or("자동 운임 계산 주문이 없습니다.")?;
-            let quote=result.pricing_preview.ok_or("자동 운임 계산 결과가 없습니다.")?;
-            if result.client_id!=client_id||!confirmable_reception_quote(&draft,&quote){
-                return Err("자동 운임 계산 대상이 현재 접수 초안과 일치하지 않습니다.".into());
-            }
-            // Do not replace the employee's rows or OCR evidence with a
-            // fresh recognition that happens to choose another product.
-            if pricing_basis::order_inputs(&order)!=pricing_basis::order_inputs(native){
-                return Err("상품·수량·발송지가 변경되어 기존 초안의 운임만 갱신할 수 없습니다.".into());
-            }
-            let old=order["recipients"].as_array().ok_or("수취인 목록 오류")?;
-            let new=native["recipients"].as_array().ok_or("자동 운임 계산 수취인 목록 오류")?;
-            if old.len()!=new.len(){return Err("수취인 목록이 변경되었습니다.".into());}
-            for (before,after) in old.iter().zip(new){
-                for origin in ["FACTORY","STORE"]{
-                    let amount=gateway::rules::manual_amount(&before["shippingCharges"][origin])?;
-                    if amount.is_some()&&amount!=gateway::rules::manual_amount(&after["shippingCharges"][origin])?{
-                        return Err("기존 수동 운임을 보존하지 못한 계산 결과입니다.".into());
-                    }
-                }
-            }
-            Ok(quote)
-        })();
-        results.push((draft,calculated));
-    }
-    Ok(results)
-}
-
 struct PendingPricingBasisCheck {
     order_id:String,
     source_raw:String,
@@ -1168,8 +1091,6 @@ struct BandoEgui {
     client_change: Option<PendingClientChange>,
     auto_client_change: Option<PendingAutomaticClient>,
     pricing_basis_check: Option<PendingPricingBasisCheck>,
-    draft_tariff_baselines:Vec<serde_json::Value>,
-    draft_tariff_refresh:screen_refresh::ReadRefresh<Vec<DraftTariffResult>>,
     working_sync: Option<PendingWorkingSync>,
     working_sync_error: Option<String>,
     analysis: Option<reception_service::ReceptionAnalysis>,
@@ -1310,8 +1231,6 @@ impl BandoEgui {
             client_change: None,
             auto_client_change: None,
             pricing_basis_check: None,
-            draft_tariff_baselines:Vec::new(),
-            draft_tariff_refresh:Default::default(),
             working_sync: None,
             working_sync_error: None,
             analysis: None,
@@ -1705,87 +1624,6 @@ impl BandoEgui {
     /// A cache hit is rendered immediately. Only the selected client's
     /// relevant product/variant and freight masters are compared off-thread.
     /// Unrelated state revisions and contact edits never trigger repricing.
-    fn enqueue_draft_tariff_refresh(&mut self,before:serde_json::Value,ctx:&egui::Context){
-        // A newer master write invalidates every older in-flight batch.
-        // Retain the earlier baselines until the latest batch is published.
-        self.draft_tariff_refresh.cancel();
-        self.draft_tariff_baselines.push(before);
-        ctx.request_repaint();
-    }
-
-    fn poll_draft_tariff_refresh(&mut self,ctx:&egui::Context){
-        if self.draft_tariff_baselines.is_empty(){return;}
-        // Never race a user edit, source replacement, deletion, or native
-        // confirmation. The batch is advisory until the before-image check.
-        if self.reception_modal_open()||self.workflow_action.is_some()||
-            self.pending_draft_delete.is_some()||self.pending_draft_confirmation.is_some()||
-            self.reception_job_admission(ReceptionJob::PricingBasis,self.pricing_basis_check.is_some())!=JobAdmission::Start{
-            return;
-        }
-        if let Some(result)=self.draft_tariff_refresh.poll(){
-            match result{
-                Ok(results)=>{
-                    let mut changed=false;
-                    let mut stale=false;
-                    let mut failures=Vec::new();
-                    let mut active_changed=false;
-                    for (before,calculated) in results{
-                        if self.confirming_order()==Some(before.id.as_str()){continue;}
-                        let Some(row)=self.drafts.iter_mut().find(|row|row.id==before.id)else{continue};
-                        if !same_draft_tariff_input(&before,row){
-                            stale=true;continue;
-                        }
-                        match calculated{
-                            Ok(quote)=>{
-                                row.pricing_preview=Some(quote);
-                                row.working_synced=false;
-                                changed=true;
-                            }
-                            Err(error)=>{
-                                // Never keep displaying a verified-looking
-                                // stale amount after a failed dependent quote.
-                                row.pricing_preview=None;
-                                row.working_synced=false;
-                                failures.push(error);
-                                changed=true;
-                            }
-                        }
-                        active_changed|=self.active_id.as_deref()==Some(row.id.as_str());
-                    }
-                    if changed{
-                        self.pending_display=None;
-                        self.pending_review_panel.clear();
-                        if active_changed{self.review_panel.clear();}
-                        clear_quote_display_cache();
-                        // Reuse the single CAS-serialized source autosave;
-                        // do not select, reopen or rewrite the active draft.
-                        self.queue_source_save();
-                    }
-                    if !failures.is_empty(){
-                        floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Error,
-                            format!("운임 자동 갱신 실패 {}건: {}",failures.len(),failures[0]));
-                    }
-                    if !stale{self.draft_tariff_baselines.clear();}
-                    ctx.request_repaint();
-                }
-                Err(error)=>{
-                    // No authoritative dependency read: do not invalidate
-                    // unrelated drafts or publish a speculative price.
-                    self.draft_tariff_baselines.clear();
-                    floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Error,
-                        format!("운임 기준 갱신 확인 실패: {error}"));
-                }
-            }
-        }
-        if !self.draft_tariff_refresh.pending()&&!self.draft_tariff_baselines.is_empty(){
-            let gateway=Arc::clone(&self.gateway);
-            let baselines=self.draft_tariff_baselines.clone();
-            let drafts=self.drafts.clone();
-            self.draft_tariff_refresh.submit(ctx.clone(),move||
-                calculate_affected_draft_tariffs(gateway.as_ref(),&baselines,drafts));
-        }
-    }
-
     fn start_pricing_basis_check(&mut self,ctx:&egui::Context){
         if self.reception_job_admission(
             ReceptionJob::PricingBasis,self.pricing_basis_check.is_some()
@@ -10597,8 +10435,6 @@ impl eframe::App for BandoEgui {
             self.client_manager=None;
             self.freight_manager=None;
             self.reception_rate_editor=None;
-            self.draft_tariff_refresh.reset();
-            self.draft_tariff_baselines.clear();
             self.order_history_manager=None;
             self.client_chooser=None;
             self.item_editor=None;
@@ -10636,10 +10472,6 @@ impl eframe::App for BandoEgui {
             self.start_remote_recheck(ctx);
         }
         self.poll_source_saves(ctx);
-        if let Some(before)=self.freight_manager.as_mut().and_then(|manager|manager.take_tariff_before()){
-            self.enqueue_draft_tariff_refresh(before,ctx);
-        }
-        self.poll_draft_tariff_refresh(ctx);
         self.poll_clipboard_intake(ctx);
         if self.page==Page::Reception &&
             self.client_manager.as_mut().is_some_and(|manager|manager.take_changed()) {
@@ -10722,7 +10554,6 @@ impl eframe::App for BandoEgui {
             self.show_edit_history(ctx,work_area);
             self.show_workflow_dialog(ctx,work_area);
             if let Some(result)=self.reception_rate_editor.as_mut().and_then(|editor|editor.show(ctx,work_area)){
-                let before=self.reception_rate_editor.as_mut().and_then(|editor|editor.take_tariff_before());
                 self.reception_rate_editor=None;
                 if result{
                     // Use the native workflow freight projection after the
@@ -10734,8 +10565,7 @@ impl eframe::App for BandoEgui {
                     self.workflow_last_fetch=None;
                     self.review_panel.clear();
                     if let Some(manager)=self.freight_manager.as_mut(){manager.refresh(ctx.clone());}
-                    if let Some(before)=before{self.enqueue_draft_tariff_refresh(before,ctx);}
-                    else if self.active_id.is_some(){self.start_pricing_basis_check(ctx);}
+                    if self.active_id.is_some(){self.start_pricing_basis_check(ctx);}
                 }
                 ctx.request_repaint();
             }
@@ -11609,54 +11439,6 @@ mod reception_workflow_admission_integration_tests {
             chosen_client_name:None,directory_count:0,
             linked_spans:Vec::new(),
         }
-    }
-
-    #[test]
-    fn tariff_batch_updates_other_drafts_without_changing_active_selection_or_manual_rows(){
-        let ctx=egui::Context::default();
-        let mut app=app();
-        app.drafts.push(draft("unrelated"));
-        app.selected_recipient=1;
-        app.drafts[0].pricing_preview=Some(serde_json::json!({"total":3000}));
-        app.drafts[1].pricing_preview=Some(serde_json::json!({"total":7000}));
-        app.drafts[2].pricing_preview=Some(serde_json::json!({"total":2500}));
-        app.drafts[1].manual_model=Some(serde_json::json!({"model":{"rows":[
-            {"id":"r","shippingCharges":{"STORE":0,"FACTORY":7000}}
-        ]}}));
-        let manual=app.drafts[1].manual_model.clone();
-        let a=app.drafts[0].clone();
-        let b=app.drafts[1].clone();
-        app.draft_tariff_baselines.push(serde_json::json!({}));
-        app.draft_tariff_refresh.test_advisory_read()(Ok(vec![
-            (a,Ok(serde_json::json!({"total":4500}))),
-            (b,Ok(serde_json::json!({"total":7000,"freightLines":[{"appliedCharge":7000}]})))
-        ]));
-        app.poll_draft_tariff_refresh(&ctx);
-        assert_eq!(app.active_id.as_deref(),Some("draft-1"));
-        assert_eq!(app.selected_recipient,1);
-        assert_eq!(app.drafts[0].pricing_preview.as_ref().unwrap()["total"],4500);
-        assert_eq!(app.drafts[1].pricing_preview.as_ref().unwrap()["freightLines"][0]["appliedCharge"],7000);
-        assert_eq!(app.drafts[1].manual_model,manual);
-        assert_eq!(app.drafts[2].pricing_preview.as_ref().unwrap()["total"],2500);
-        assert!(app.draft_tariff_baselines.is_empty());
-    }
-
-    #[test]
-    fn tariff_batch_rejects_newer_manual_edits_and_different_draft_identity(){
-        let mut before=draft("a");
-        before.manual_model=Some(serde_json::json!({"model":{"rows":[
-            {"shippingCharges":{"FACTORY":7000}}
-        ]}}));
-        let mut current=before.clone();
-        assert!(same_draft_tariff_input(&before,&current));
-        current.manual_model.as_mut().unwrap()["model"]["rows"][0]["shippingCharges"]["FACTORY"]=serde_json::json!(0);
-        assert!(!same_draft_tariff_input(&before,&current));
-        current=before.clone();
-        current.id="b".into();
-        assert!(!same_draft_tariff_input(&before,&current));
-        current=before.clone();
-        current.working_version=Some(2);
-        assert!(!same_draft_tariff_input(&before,&current));
     }
 
     #[test]

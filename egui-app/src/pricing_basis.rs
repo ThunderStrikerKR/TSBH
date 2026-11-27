@@ -163,68 +163,8 @@ pub fn snapshot(state:&Value,client:&Value,order:&Value)->Value{
     })
 }
 
-/// Compare only the tariff dependencies of an actual draft. Master revision,
-/// client contact edits and prices outside the shipping basis are irrelevant.
-fn freight_inputs(basis:&Value)->Value{
-    json!({
-        "products":list(basis,"products").iter().map(|product|json!({
-            "id":value(product,"id"),"origin":value(product,"origin"),
-            "shippingGroupId":value(product,"shippingGroupId"),
-            "productRule":value(product,"productRule")
-        })).collect::<Vec<_>>(),
-        "groups":value(basis,"groups"),
-        "combinationEpoch":value(basis,"combinationEpoch"),
-        "combinations":value(basis,"combinations")
-    })
-}
-
-pub(crate) fn affected_by_tariff_change(
-    baselines:&[Value],state:&Value,client:&Value,order:&Value,saved_quote:Option<&Value>
-)->bool{
-    let current=freight_inputs(&snapshot(state,client,order));
-    // No change for this particular order, even if another group's tariff
-    // or an unrelated product's price changed in the same transaction.
-    if !baselines.iter().any(|before|
-        freight_inputs(&snapshot(before,client,order))!=current){return false;}
-    // An independently refreshed draft already carries the new tariff.
-    !saved_quote.and_then(|quote|quote.get("pricingBasis"))
-        .is_some_and(|basis|basis["schema"]==5&&freight_inputs(basis)==current)
-}
-
 #[cfg(test)]
 mod tests{
-    #[test]
-    fn tariff_change_targets_only_dependent_drafts_and_skips_fresh_quotes(){
-        let before=json!({"products":[
-            {"id":"p1","shippingGroupId":"g","origin":"FACTORY","variants":[{"id":"v1"}]},
-            {"id":"p2","shippingGroupId":"g","origin":"FACTORY","variants":[{"id":"v2"}]},
-            {"id":"p3","origin":"STORE","variants":[{"id":"v3"}]},
-            {"id":"p4","origin":"STORE","variants":[{"id":"v4"}]}
-        ],"shipping":{"epoch":1,"groups":[{"id":"g","current":{"version":"old","fees":{"1":null}}}],
-            "productRules":{"p3":{"version":"a","fees":{"1":3000}},"p4":{"version":"b","fees":{"1":2500}}},
-            "combinations":[]}});
-        let client=json!({"id":"c","tier":"wholesale"});
-        let order=|id:&str,variant:&str,origin:&str|json!({"recipients":[{"items":[
-            {"productId":id,"variantId":variant,"quantity":1,"origin":origin}
-        ]}]});
-        let a=order("p1","v1","FACTORY");
-        let b=order("p2","v2","FACTORY");
-        let c=order("p3","v3","STORE");
-        let d=order("p4","v4","STORE");
-        let mut after=before.clone();
-        after["shipping"]["groups"][0]["current"]=json!({"version":"new","fees":{"1":4500}});
-        after["shipping"]["productRules"]["p3"]=json!({"version":"a2","fees":{"1":3500}});
-        let baselines=[before.clone()];
-        for dependent in [&a,&b,&c]{
-            let old=json!({"pricingBasis":snapshot(&before,&client,dependent)});
-            assert!(affected_by_tariff_change(&baselines,&after,&client,dependent,Some(&old)));
-            assert!(affected_by_tariff_change(&baselines,&after,&client,dependent,None));
-            let fresh=json!({"pricingBasis":snapshot(&after,&client,dependent)});
-            assert!(!affected_by_tariff_change(&baselines,&after,&client,dependent,Some(&fresh)));
-        }
-        assert!(!affected_by_tariff_change(&baselines,&after,&client,&d,None));
-    }
-
     use super::*;
     #[test]
     fn unrelated_master_changes_do_not_invalidate_receipt_basis(){
