@@ -277,6 +277,8 @@ impl ReviewPanel {
             issue_card(ui,issue,analysis,if is_client{client_interactive}else{interactive},&mut selected);
         }
         if let Some(remote)=remote{
+            // Locality uncertainty remains a blue advisory per reception
+            // policy; the user chooses the checkbox, not a new stage gate.
             let tone=ReviewTone::Info;
             crate::card::review_issue_card(ui,tone,|content|{
                     content.add(egui::Label::new(typography::review_title(
@@ -479,7 +481,8 @@ fn review_item_context<'a>(issue:&Value,recognition:&'a Value)->Option<(&'a Valu
     Some((row,item))
 }
 fn unidentified_product_caption(issue:&Value,recognition:&Value)->Option<String>{
-    if text(issue,"kind")!="MODEL"||text(issue,"severity")=="INFO"{return None;}
+    if text(issue,"kind")!="MODEL"||text(issue,"severity")=="INFO"||
+        text(issue,"title")=="등록된 상품과 옵션을 확인하세요"{return None;}
     let (row,item)=review_item_context(issue,recognition)?;
     let who=text(row,"name").trim();
     let product=text(item,"name").trim();
@@ -593,7 +596,7 @@ fn review_instruction(kind:&str)->Option<&'static str>{
         "CANDIDATE_name"|"CANDIDATE_address"|"CANDIDATE_phone"|"CANDIDATE_mobile"=>
             Some("올바른 후보를 적용하거나 입력 위치에서 직접 수정하세요."),
         "ITEM"=>Some("배송할 상품과 수량을 추가하세요."),
-        "MODEL_CHOICE"=>Some("발주원문에 맞는 상품 모델을 선택하세요."),
+        "MODEL"|"MODEL_CHOICE"=>Some("발주원문에 맞는 상품 모델을 선택하세요."),
         "ALIAS_CONFLICT"=>Some("서로 다른 상품으로 연결된 별칭입니다. 실제 주문 상품을 선택하세요."),
         "CATEGORY_CONFLICT"=>Some("발주서의 상품 종류와 인식된 모델이 다릅니다. 실제 상품을 선택하세요."),
         "QUANTITY_LINK"=>Some("원문의 수량이 어느 상품에 해당하는지 확인하고 연결하세요."),
@@ -623,6 +626,7 @@ pub(crate) fn workflow_review_text(issue:&Value,label:&str,recognition:&Value)->
     if text(issue,"resolution")=="USER_APPROVED"||text(issue,"severity")=="INFO"{
         return label.to_owned();
     }
+    if let Some(caption)=unidentified_product_caption(issue,recognition){return caption;}
     let old=text(issue,"title");
     let caption=review_caption(issue,recognition);
     if old.is_empty()||caption.as_ref()==old{return label.to_owned();}
@@ -631,6 +635,11 @@ pub(crate) fn workflow_review_text(issue:&Value,label:&str,recognition:&Value)->
         if prefix.ends_with(" / ")||prefix.ends_with(": "){
             return format!("{prefix}{caption}");
         }
+    }
+    // Item details often contain recipient/product only, not the actual
+    // issue title. Keep the evidence and make the reason visible as well.
+    if !text(issue,"itemId").is_empty()&&!old.is_empty()&&!label.contains(caption.as_ref()){
+        return format!("{label} — {caption}");
     }
     label.to_owned()
 }
@@ -853,6 +862,22 @@ fn issue_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn confirmed_product_captions_retain_reason_and_exact_identity(){
+        let recognition=json!({"recipients":[{"id":"r","name":"가상 수취인",
+            "items":[{"id":"i","name":"709"}]}]});
+        let mut issue=json!({"kind":"MODEL","severity":"ACTION","recipientId":"r","itemId":"i",
+            "title":"미등록 상품입니다."});
+        assert_eq!(workflow_review_text(&issue,"가상 수취인 / 709",&recognition),
+            "가상 수취인 \"709\" 제품 선택 필요");
+        issue["title"]=json!("등록된 상품과 옵션을 확인하세요");
+        assert_eq!(workflow_review_text(&issue,"가상 수취인 / 709",&recognition),
+            "가상 수취인 / 709 — 상품·옵션 연결 오류");
+        issue["kind"]=json!("PRICE");
+        issue["title"]=json!("판매가를 등록하세요");
+        assert_eq!(workflow_review_text(&issue,"가상 수취인 / 709",&recognition),
+            "가상 수취인 / 709 — 판매가 미등록");
+    }
     #[test]
     fn unified_calculation_card_keeps_scope_and_requires_real_resolution(){
         let issue=json!({"kind":"CHARGE_CALCULATION","severity":"ACTION","detail":"가상 거래처 입금 청구액 확인 필요",
