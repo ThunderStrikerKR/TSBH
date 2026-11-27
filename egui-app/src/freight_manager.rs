@@ -1412,6 +1412,8 @@ impl FreightManager {
             );
             // The right controls (including optional help) own the full
             // trailing slot; only the TABLE body/header reserve scroll space.
+            let left_rect=crate::ui_layout::aligned_rect(left_rect);
+            let right_rect=crate::ui_layout::aligned_rect(right_rect);
             let right_controls_rect=right_rect;
             section.scope_builder(
                 egui::UiBuilder::new()
@@ -1704,6 +1706,7 @@ impl FreightManager {
                                 theme::ACTION_STANDARD_HEIGHT
                             )
                         );
+                        let selector_rect=crate::ui_layout::aligned_rect(selector_rect);
                         let selector_clip=cells[4].intersect(row.clip_rect());
                         let mut selector_builder=egui::UiBuilder::new()
                             .id_salt(("freight-selector",id))
@@ -1764,6 +1767,7 @@ impl FreightManager {
                         let actions_rect=cells[5].shrink2(
                             egui::vec2(theme::SPACE_12,0.0)
                         );
+                        let actions_rect=crate::ui_layout::aligned_rect(actions_rect);
                         let actions_clip=actions_rect.intersect(row.clip_rect());
                         // Center the single "기본 운임 설정" action within
                         // the 120pt inset slot, preserving its 34pt height
