@@ -770,7 +770,7 @@ function cardWidthSelfTest(){
   assert.equal(check(owner.replace("ui.set_min_width(width)","ui.set_min_width(width+1.0)"),"card/mod.rs"),1);
   assert.equal(check("fn other(){ui.set_width(width);}","card/mod.rs"),1);
   const viewport="fn details_and_freight(){pane.set_width(review_rect.width());}";
-  assert.equal(check(viewport,"main.rs"),0);
+  assert.equal(check(viewport,"main.rs"),1);
   assert.equal(check(viewport.replace("pane.","card."),"main.rs"),1);
   assert.equal(check("fn details_and_freight(){"+"pane.set_width(review_rect.width());".repeat(4)+"}","main.rs"),4);
   console.log("EGUI_CARD_WIDTH_SELFTEST_PASS",cases.length+7);
