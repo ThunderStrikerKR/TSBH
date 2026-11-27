@@ -280,8 +280,7 @@ pub(crate) fn paint_selection_outline(painter:&egui::Painter,rect:Rect,radius:im
 
 pub(crate) fn button_hover_palette(hovered:bool,focused:bool)->(Option<Color32>,Option<Stroke>){
     let fill=hovered.then_some(BUTTON_HOVER_TINT);
-    let border=if focused{Some(Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION))}
-        else if hovered{Some(Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.82)))}
+    let border=if focused||hovered{Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,SELECTION))}
         else{None};
     (fill,border)
 }
@@ -295,13 +294,21 @@ pub(crate) fn button_hover_palette(hovered:bool,focused:bool)->(Option<Color32>,
 pub(crate) fn paint_action_hover_corners(
     ui:&Ui,response:&Response,corners:egui::CornerRadius
 ){
+    paint_action_hover_surface(ui,response,corners,false);
+}
+/// Preserve full widget geometry; parent scroll/pane clipping remains the
+/// only clipping boundary. Light buttons paint their blue fill behind text.
+pub(crate) fn paint_action_hover_surface(
+    ui:&Ui,response:&Response,corners:egui::CornerRadius,light_surface:bool
+){
     if !response.hovered() && !response.has_focus(){return;}
-    let rect=response.rect.shrink(0.5);
-    if rect.width()<=1.0 || rect.height()<=1.0{return;}
-    let paint=ui.painter().with_clip_rect(
-        ui.clip_rect().intersect(response.rect)
-    );
-    let (fill,border)=button_hover_palette(response.hovered(),response.has_focus());
+    let rect=response.rect;
+    let Some(paint)=highlight_painter(ui,rect)else{return;};
+    let (mut fill,mut border)=button_hover_palette(response.hovered(),response.has_focus());
+    if light_surface{
+        fill=None;
+        border=Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::BUTTON_HOVER_LIGHT_BORDER));
+    }
     if let Some(fill)=fill{
         paint.rect_filled(rect,corners,fill);
     }
@@ -310,3 +317,28 @@ pub(crate) fn paint_action_hover_corners(
     }
 }
 
+
+/// Keep antialiasing and the complete inside stroke; never shrink or
+/// intersect the drawing geometry with its own tight text/widget clip.
+pub(crate) fn highlight_painter(ui:&Ui,rect:Rect)->Option<egui::Painter>{
+    (rect.is_positive()&&rect.intersects(ui.clip_rect()))
+        .then(||ui.painter().clone())
+}
+
+#[cfg(test)]
+mod shared_hover_clip_tests{
+    use super::*;
+    #[test]
+    fn highlight_preserves_parent_clip_without_tight_widget_scissor(){
+        let ctx=egui::Context::default();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let widget=Rect::from_min_size(ui.min_rect().min,Vec2::splat(16.0));
+                let painter=highlight_painter(ui,widget).unwrap();
+                assert_eq!(painter.clip_rect(),ui.clip_rect());
+                assert_ne!(painter.clip_rect(),widget);
+                assert!(highlight_painter(ui,Rect::NOTHING).is_none());
+            });
+        });
+    }
+}
