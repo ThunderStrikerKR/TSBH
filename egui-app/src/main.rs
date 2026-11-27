@@ -7225,7 +7225,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 && (group.automatic_phase.as_deref()!=Some("payment")
                     ||(group.automatic_payment_issues.is_empty()
                         && group.automatic_signature.as_deref().is_some_and(|value|!value.is_empty())));
-            let hover_stage=if self.workflow_ui.active_preview()==Some(group.id.as_str()) && self.workflow_freight_editor.is_none(){one_touch::Stage::from_step(group.step)}else{one_touch::Stage::None};
+            let hover_stage=if self.workflow_ui.active_stage_preview()==Some(group.id.as_str()) && self.workflow_freight_editor.is_none(){one_touch::Stage::from_step(group.step)}else{one_touch::Stage::None};
             let payment_emphasis=can_copy && group.automatic_phase.as_deref()==Some("payment") && matches!(hover_stage,one_touch::Stage::PaymentCopy|one_touch::Stage::PaymentConfirm);
             let mut copy_with_greeting=None;
             // A presentation preference survives frames and hover transitions.
@@ -7461,7 +7461,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let group=&board.groups[group_index];
             let ship=&group.shipments[ship_index];
             let required=review_panel::RequiredFields::from_issues(&group.issues,&ship.order_id,&ship.recipient_id);
-            let hover_stage=if self.workflow_ui.active_preview()==Some(group.id.as_str()) && self.workflow_freight_editor.is_none(){one_touch::Stage::from_step(group.step)}else{one_touch::Stage::None};
+            let hover_stage=if self.workflow_ui.active_stage_preview()==Some(group.id.as_str()) && self.workflow_freight_editor.is_none(){one_touch::Stage::from_step(group.step)}else{one_touch::Stage::None};
             let remote=ship.remote.as_ref().and_then(|r|r["status"].as_str()).is_some_and(|s|matches!(s,"auto"|"review"));
             one_touch::set(ui.ctx(),hover_stage,remote);
             one_touch::prepare_reveal(ui.ctx(),hover_stage,&group.id,&ship.id);
