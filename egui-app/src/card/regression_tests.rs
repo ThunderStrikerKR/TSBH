@@ -498,3 +498,35 @@ mod shared_card_rendered_geometry_tests {
         }
     }
 }
+
+
+#[test]
+fn shared_card_height_is_absolute_after_multiple_rows_and_idempotent(){
+    let ctx=test_context();
+    for gap in [0.0,theme::SPACE_8]{
+        for (policy,target,expected) in [
+            (CardHeightPolicy::FitContent,400.0,350.0+gap),
+            (CardHeightPolicy::MatchTallest,400.0,400.0),
+            (CardHeightPolicy::FillAvailable,400.0,400.0),
+            (CardHeightPolicy::FillAvailable,100.0,350.0+gap),
+        ]{
+            let _=ctx.run(egui::RawInput::default(),|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.add_space(77.0);
+                    let measured=ui.scope(|body|{
+                        body.spacing_mut().item_spacing.y=gap;
+                        let first=body.allocate_exact_size(Vec2::new(100.0,150.0),Sense::hover()).0;
+                        let last=body.allocate_exact_size(Vec2::new(100.0,200.0),Sense::hover()).0;
+                        assert!((last.bottom()-first.top()-(350.0+gap)).abs()<1.0);
+                        for _ in 0..3{
+                            apply_height_policy(body,policy,target);
+                            assert!((body.min_rect().bottom()-first.top()-expected).abs()<1.0,
+                                "absolute height {policy:?}, target {target}: {:?}",body.min_rect());
+                        }
+                    });
+                    assert!((measured.response.rect.height()-expected).abs()<1.0);
+                });
+            });
+        }
+    }
+}

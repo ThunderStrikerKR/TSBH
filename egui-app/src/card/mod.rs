@@ -29,10 +29,16 @@ impl CardHeightPolicy {
 /// The target is a minimum, not a maximum: long content must never clip.
 /// FitContent does not reserve unused vertical space.
 pub(crate) fn apply_height_policy(ui:&mut Ui,policy:CardHeightPolicy,target:f32){
-    let natural=ui.min_rect().height();
+    let used=ui.min_rect();
+    let natural=used.height();
     let height=policy.resolve(natural,target,target);
     if height>natural{
-        ui.set_min_height(height);
+        // egui 0.33 Placer::set_min_height measures from the next widget
+        // position, not the start of the used region. After rendering,
+        // passing a total height there adds another full-height tail.
+        // Expand to the absolute bottom instead; this never moves or
+        // reruns the controls, and repeated applications are idempotent.
+        ui.expand_to_include_y(used.top()+height);
     }
 }
 

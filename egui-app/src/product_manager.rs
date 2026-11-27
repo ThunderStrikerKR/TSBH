@@ -2147,7 +2147,7 @@ impl ProductManager {
                             // Render each interactive column exactly once; no cached height.
                             measured.cards=crate::popup::modal_parallel_sections(
                                 body,&[("상품 이미지",image_width),("상품 개요",overview_width)],
-                                crate::card::CardHeightPolicy::MatchTallest,
+                                crate::card::CardHeightPolicy::FitContent,
                                 |index,content|{
                                     if index==0{
                                         self.detail_image_column(
@@ -2445,7 +2445,8 @@ mod tests {
         let composition=source.split("    pub fn show_detail(").nth(1).unwrap()
             .split("        self.selected=Some(draft.clone());").next().unwrap();
         assert!(composition.contains("crate::popup::modal_parallel_sections("));
-        assert!(composition.contains("CardHeightPolicy::MatchTallest"));
+        assert!(composition.contains("CardHeightPolicy::FitContent"));
+        assert!(!composition.contains("CardHeightPolicy::MatchTallest"));
         assert!(!composition.contains("product-detail-paired-height"));
         assert!(!composition.contains("set_min_height("));
         assert_eq!(theme::PRODUCT_DETAIL_IMAGE_SIZE,320.0);
@@ -2526,7 +2527,7 @@ mod tests {
             assert!(!section.contains("\"판매 · 가격\""));
         }
         assert_eq!(theme::PRODUCT_DETAIL_IMAGE_SIZE,320.0);
-        assert!(horizontal.contains("CardHeightPolicy::MatchTallest"));
+        assert!(horizontal.contains("CardHeightPolicy::FitContent"));
     }
     #[test]
     fn brand_selector_supports_korean_names_and_registered_aliases(){
@@ -3005,12 +3006,14 @@ mod tests {
         manager.begin_edit(manager.products[0].clone());
         let work=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(1760.0,1000.0));
         let mut text=Vec::new();
+        let mut last_components=Vec::new();
         for frame in 0..6{
             crate::ui_test_support::begin_component_geometry();
             let output=ctx.run(egui::RawInput{screen_rect:Some(work),..Default::default()},
                 |ctx|manager.show_detail(ctx,work));
             let components=crate::ui_test_support::finish_component_geometry(work);
             if frame==5{crate::ui_test_support::assert_component_roles(&components,&["popup","button","input"]);}
+            last_components=components;
             text.clear();
             for shape in &output.shapes{collect_product_text(&shape.shape,&mut text);}
         }
@@ -3029,20 +3032,24 @@ mod tests {
         assert!(cards.windows(2).all(|pair|pair[0].right()<pair[1].left()));
         assert!((cards[0].top()-cards[1].top()).abs()<=1.0,
             "card tops must align: {cards:?}");
-        assert!((cards[0].bottom()-cards[1].bottom()).abs()<=1.0,
-            "card bottoms must align: {cards:?}");
+        // Independent card heights: no sibling-imposed blank tail.
         for label in ["상품명","상품 옵션","카테고리","브랜드","판매 상태","도매가","반도매가","소매가"]{
             assert!(text.iter().any(|(s,rect)|s==label&&cards[1].contains(rect.center())),
                 "field {label} must stay inside the compact overview");
         }
-        // The last visible field/action must remain near the bottom of
-        // at least one card, not hundreds of points above both borders.
-        let last=text.iter().filter(|(label,rect)|
-            ["이미지 등록","이미지 제거","소매가"].contains(&label.as_str())
-            && cards.iter().any(|card|card.contains(rect.center()))
-        ).map(|(_,rect)|rect.bottom()).fold(f32::NEG_INFINITY,f32::max);
-        assert!(last.is_finite());
-        assert!(cards[0].bottom()-last<=40.0,"excess card tail: {cards:?}, last={last}");
+        // Actual control bounds, independently for each card. Text ink
+        // alone does not measure the height of a button or a price editor.
+        for (index,role) in ["button","input"].into_iter().enumerate(){
+            let card=cards[index];
+            let last=last_components.iter().filter(|sample|
+                sample.role==role&&card.contains(sample.rect.center())
+            ).map(|sample|sample.rect.bottom()).fold(f32::NEG_INFINITY,f32::max);
+            assert!(last.is_finite(),"missing {role} in card {index}");
+            let tail=card.bottom()-last;
+            let expected=theme::MODAL_SECTION_PADDING+theme::FRAME_STROKE_WIDTH;
+            assert!((tail-expected).abs()<=2.0,
+                "card {index} tail {tail}pt, expected {expected}pt; card {card:?}, last {last}");
+        }
         assert!(geometry.header.is_some()&&geometry.footer.is_some());
         assert!(geometry.content.divider.is_some()&&geometry.content.advanced_header.is_some());
         let gaps=geometry.gaps();
