@@ -40,3 +40,5 @@
 정적 CI 22건: 이전 리스트 편집 버튼 계약을 직접 행/셀 연결 계약으로 갱신, 공통 입력/태그/툴팁 소유권 정리, 카드->상위 ui_layout 순환 제거. 151차 병행 커밋 보존한 57e4e017에서 egui conditional layout allocation gate 실제 성공(45941469777). 27dabc08 Rust 테스트 빌드에 남은 삭제된 manual_product_search.rs 3개 include_str!를 현재 통합 ProductManager chooser 계약으로 수정. 최종 Rust/GUI 테스트 실행 결과 미확인.
 
 311ab2db: 정적 CI 및 Rust 성능 통과, Windows cargo check 성공. 실제 brand 팝업 입력 23pt(최소 36pt) 실패 및 manual workspace 이전 여백 검증 실패 확인. 공통 TextEdit min_size 높이 보장, 현행 shared spacing 계약 검증, 팝업/디자인 CI fail-fast 제거(누락/실패는 최종 실패 유지) 적용. 수정 후 실제 테스트 미확인.
+
+150차 CI 4affbb67 완료 결과: 7 실패 (모델군 팝업 이동, 플로팅 알림 색상, 구분선 계약, 태그 계약, 툴팁 실측, 버튼 중심, 수동분류 수량 테두리 계약). b9db5cc8 기준 수정: 선택 모델군 고정 body footprint, native symmetric grow atoms, 알림/툴팁 실시간 egui 입력 프레임 검증, 실제 소유 모듈/공통 테두리 계약 갱신. 새 CI 및 실화면 미검증.

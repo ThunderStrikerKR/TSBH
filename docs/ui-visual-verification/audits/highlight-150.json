@@ -29,8 +29,9 @@
     "egui-app/src/input/regression_tests.rs",
     "egui-app/src/dropdown/regression_tests.rs",
     "egui-app/src/screen_refresh.rs",
-    "egui-app/src/manual_workspace.rs"
+    "egui-app/src/manual_workspace.rs",
+    "egui-app/src/model_group_manager.rs"
   ],
   "visualStatus": "NOT_VERIFIED",
-  "reason": "311ab2db 실제 CI에서 Rust 컴파일 통과, 팝업 23pt 입력 및 수동분류 이전 계약 실패 확인. 공통 입력 최소높이와 검증 계약 수정. 최종 CI 및 Windows 실화면 미검증."
+  "reason": "4affbb67 실제 CI 7개 실패 기반 수정. 최신 CI 및 Windows 실화면은 미검증."
 }

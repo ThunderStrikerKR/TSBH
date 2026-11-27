@@ -291,6 +291,11 @@ impl ModelGroupManager {
                 crate::popup::modal_flow_workspace(modal,|workspace|{
                     close=workspace.header(title,"닫기",!busy&&!nested);
                     workspace.body_region(|body|{
+                        // Keep the selected-record workspace footprint fixed.
+                        // A fitting/empty table and optional guidance must not
+                        // resize a center-pivoted window when state changes.
+                        let editing=self.draft.get(&self.selected).is_some();
+                        let mut render=|body:&mut Ui|{
                         body.add_enabled_ui(!nested,|body|{
                             let body_top=body.cursor().top();
                             if let Some(g)=self.draft.get(&self.selected).cloned(){
@@ -380,6 +385,12 @@ impl ModelGroupManager {
                                 });
                             }
                         });
+                        };
+                        if editing{
+                            let width=body.available_width();
+                            crate::ui_layout::fixed_row(body,egui::vec2(width,body_height),
+                                egui::Layout::top_down(egui::Align::Min),render);
+                        }else{render(body);}
                     });
                     let mut request_delete=false;
                     workspace.footer(

@@ -629,12 +629,15 @@ mod common_action_tooltip_tests{
         for explicit in [false,true]{
             for width in [48.0,400.0]{
                 let ctx=test_context();
-                ctx.memory_mut(|memory|memory.set_everything_is_visible(true));
                 let mut count=0usize;
-                // The tooltip Area measures its size before the visible pass.
-                for _ in 0..3{
+                let mut pointer=egui::pos2(20.0,20.0);
+                // Real pointer and elapsed hover time exercise the overlay
+                // ownership guard, unlike forcing every popup visible.
+                for frame in 0..16{
                     let output=ctx.run(egui::RawInput{
                         screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(800.0,500.0))),
+                        time:Some(frame as f64*0.1),predicted_dt:0.1,
+                        events:vec![egui::Event::PointerMoved(pointer)],
                         ..Default::default()
                     },|ctx|{
                         egui::CentralPanel::default().show(ctx,|ui|{
@@ -642,6 +645,7 @@ mod common_action_tooltip_tests{
                                 truncated_label_for_explicit_tooltip(typography::body(full))
                             }else{truncated_label(typography::body(full))};
                             let response=ui.add_sized(Vec2::new(width,32.0),label);
+                            pointer=response.rect.center();
                             if explicit{overflow_tooltip(response,width<100.0,full);}
                         });
                     });
@@ -984,14 +988,14 @@ mod shared_tag_chip_contract_tests {
         let source=include_str!("client_manager.rs");
         let editor=source.split("fn search_tag_editor(").nth(1).unwrap()
             .split("fn editor_fields(").next().unwrap();
-        assert!(editor.contains("crate::input::tag_block_editor("));
+        assert!(editor.contains("crate::ui_layout::tag_block_editor("));
         assert!(!editor.contains("take_delimited("));
         let brand=include_str!("brand_manager.rs");
-        assert!(brand.contains("crate::input::tag_block_editor("));
+        assert!(brand.contains("crate::ui_layout::tag_block_editor("));
         assert!(!brand.contains("쉼표 구분"));
-        let input=include_str!("input/mod.rs");
-        let shared=input.split("fn tag_block_editor(").nth(1).unwrap()
-            .split("fn form_field_width(").next().unwrap();
+        let layout=include_str!("ui_layout.rs");
+        let shared=layout.split("fn tag_block_editor(").nth(1).unwrap()
+            .split("\n}").next().unwrap();
         assert!(shared.contains("crate::popup::removable_tag_chip("));
         assert!(shared.contains("crate::button::action(entry,\"추가\""));
         assert!(!shared.contains("split("));
@@ -2111,6 +2115,7 @@ mod structural_divider_contract_tests {
             ("excel_manager.rs",1), // repeated reply rows
             ("workflow_board_ui.rs",2), // compact expanded card boundaries
             ("category_dropdown.rs",2), // compact menu
+            ("navigation.rs",1), // compact calendar header/grid boundary
         ];
         let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut violations=Vec::new();
@@ -2123,12 +2128,15 @@ mod structural_divider_contract_tests {
             if source.starts_with("#![cfg(test)]"){continue;}
             let production=production_source_for_contract(&source);
             let count=production.lines().filter(|line|!line.trim_start().starts_with("//"))
+                .filter(|line|!(name=="ui_primitives.rs"&&line.trim_start().starts_with("pub fn soft_divider(")))
                 .map(|line|line.matches("soft_divider(").count()).sum::<usize>();
             let limit=allowed.iter().find(|(file,_)|*file==name).map(|(_,n)|*n).unwrap_or(0);
             if count>limit{violations.push(format!("{name}: {count} compact dividers, reviewed maximum {limit}"));}
             for (line_no,line) in production.lines().enumerate(){
                 if line.trim_start().starts_with("//"){continue;}
-                if line.contains("theme::soft_rule(")||line.contains("theme::divider(")||line.contains(".separator("){
+                if (line.contains("theme::soft_rule(")
+                    && !(name=="ui_primitives.rs"&&line.trim()=="theme::soft_rule(ui);"))
+                    ||line.contains("theme::divider(")||line.contains(".separator("){
                     violations.push(format!("{name}:{}: raw divider bypass",line_no+1));
                 }
             }

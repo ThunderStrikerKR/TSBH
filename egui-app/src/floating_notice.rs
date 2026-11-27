@@ -710,8 +710,12 @@ mod shared_floating_notice_rendered_geometry_tests{
             for message in [None,Some("저장 완료"),Some("배송 정보 확인이 필요합니다. 변경된 정보를 확인해 주세요."),None]{
                 let mut geometry=None;
                 let mut last=None;
-                for _ in 0..4{
-                    last=Some(ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+                // Area visibility fades in using egui's frame clock. Measure
+                // the settled palette, not an intermediate alpha sample.
+                for _ in 0..12{
+                    let time=ctx.input(|input|input.time)+0.1;
+                    last=Some(ctx.run(egui::RawInput{screen_rect:Some(screen),time:Some(time),
+                        predicted_dt:0.1,..Default::default()},|ctx|{
                         egui::CentralPanel::default().show(ctx,|ui|{
                             let action=crate::button::action(ui,"검증",theme::ButtonRole::Standard,true);
                             let next=ui.allocate_exact_size(Vec2::new(80.0,20.0),Sense::hover()).0;

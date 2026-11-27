@@ -144,9 +144,13 @@ fn action_with_palette(
             _ => 6.0,
         };
         ui.spacing_mut().button_padding = Vec2::new(padding_x, padding_y);
-        let mut button = egui::Button::new(
-            typography::action_label(label, font_size, important, color)
-        )
+        // Equal flexible atoms center the native caption within its actual
+        // minimum-width allocation, retaining native accessibility and focus.
+        let mut button = egui::Button::new((
+            egui::Atom::grow(),
+            typography::action_label(label, font_size, important, color),
+            egui::Atom::grow(),
+        ))
             .corner_radius(geometry.corners())
             .min_size(Vec2::new(min_width, height));
         if effective_enabled{

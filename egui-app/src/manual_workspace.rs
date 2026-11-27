@@ -3438,8 +3438,10 @@ mod manual_workspace_modal_routing_tests {
             .expect("shared segmented surface must be owned by ui_primitives")
             .split("/// A fixed segment").next().unwrap();
         assert!(segmented.contains("rect_filled("));
-        assert!(segmented.contains("rect_stroke("));
-        assert!(segmented.contains("StrokeKind::Inside"));
+        assert!(segmented.contains("highlight::prioritized_stroke("));
+        assert_eq!(segmented.matches("highlight::paint_parts(").count(),1);
+        assert!(segmented.contains("highlight::segment_outline_rect(outer)"));
+        assert!(!segmented.contains("rect_stroke("));
 
         let control=navigation.split("pub fn date_navigation_count_control(").nth(1).unwrap()
             .split("/// Shared calendar navigation").next().unwrap();
