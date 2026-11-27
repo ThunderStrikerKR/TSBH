@@ -341,6 +341,23 @@ impl CombinedPerformance{
         for (label,c) in local{m.labels.entry(label).or_default().add_order(c)?;}
         Ok(())
     }
+    pub(super) fn compare_models(&self,baseline:&str,candidate:&str)->Result<Value,String>{
+        if baseline==candidate{return Err("서로 다른 모델을 선택하세요.".into());}
+        let a=self.models.get(baseline).ok_or("기존 모델 평가 없음")?;
+        let b=self.models.get(candidate).ok_or("신규 모델 평가 없음")?;
+        let keys=a.strata.keys().chain(b.strata.keys()).collect::<BTreeSet<_>>();
+        let strata=keys.into_iter().map(|key|{
+            let x=a.strata.get(key);let y=b.strata.get(key);
+            let delta=|v:&PerformanceCounts|(v.combined as f64-v.legacy as f64)/v.observations as f64;
+            json!({"sourceKind":key.0,"legacyRoute":key.1,"contextLevel":key.2,"labelKind":key.3,
+                "baseline":x.map(PerformanceCounts::wire),"candidate":y.map(PerformanceCounts::wire),
+                "descriptiveImprovementDifference":x.zip(y).map(|(a,b)|delta(b)-delta(a)),
+                "sameOrders":false})
+        }).collect::<Vec<_>>();
+        Ok(json!({"baselineModelId":baseline,"candidateModelId":candidate,"strata":strata,
+            "comparisonKind":"unpaired_observed_cohorts","sameOrders":false,
+            "winner":null,"eligibleForAutomaticDecision":false}))
+    }
     pub(super) fn wire(&self)->Value{
         let models=self.models.iter().map(|(id,m)|json!({"modelId":id,"evaluatedOrders":m.orders,
             "eligibleObservations":m.eligible,"missingOrIneligiblePredictions":m.missing,"excludedLabels":m.excluded,
@@ -599,6 +616,33 @@ pub(super) fn rebuild_totals(tx:&Transaction<'_>,scope:&str)->Result<Value,Strin
 #[cfg(test)]
 mod recognition_learning_store_tests{
     use super::*;
+    #[test]
+    fn cumulative_model_performance_counts_orders_once_per_label_and_never_ranks_unpaired_cohorts(){
+        let mut totals=CombinedPerformance::default();
+        let id1=format!("blend-{}","a".repeat(64));let id2=format!("blend-{}","b".repeat(64));
+        let group=|kind:&str,n:u64,better:u64|json!({"sourceKind":kind,"legacyRoute":"gate",
+            "contextLevel":"base","labelKind":"explicit_correction","evaluated":n,"legacyAgrees":0,
+            "screenedCombinedAgrees":better,"proposals":better,"improved":better,"worsened":0,"outsideLabels":0});
+        let report=|id:&str,groups:Vec<Value>,n:u64|json!({"schemaVersion":1,"status":"compared_diagnostic_only",
+            "eligibleForAutomaticDecision":false,"decisionChanged":false,"modelId":id,"groups":groups,
+            "eligibleObservations":n,"missingOrIneligiblePredictions":0,"excludedLabels":0});
+        totals.add(&report(&id1,vec![group("address",1,1),group("contact",9,0)],10)).unwrap();
+        totals.add(&report(&id1,vec![group("address",1,1)],1)).unwrap();
+        totals.add(&report(&id2,vec![group("address",2,1)],2)).unwrap();
+        let v=totals.wire();
+        assert_eq!(v["models"][0]["labelGroups"][0]["metrics"]["orders"],2);
+        assert_eq!(v["models"][0]["labelGroups"][0]["metrics"]["observations"],11);
+        assert!((v["models"][0]["labelGroups"][0]["metrics"]["orderMacroCombinedAgreement"].as_f64().unwrap()-0.55).abs()<1e-10);
+        let cmp=totals.compare_models(&id1,&id2).unwrap();
+        assert!(cmp["winner"].is_null());assert_eq!(cmp["sameOrders"],false);
+        assert_eq!(cmp["strata"][0]["descriptiveImprovementDifference"],-0.5);
+        assert!(cmp["strata"][1]["candidate"].is_null());
+        assert!(totals.compare_models(&id1,&id1).is_err());
+        let mut bad=report(&id1,vec![group("address",1,1)],2);
+        assert!(CombinedPerformance::default().add(&bad).is_err());
+        bad["eligibleObservations"]=json!(1);bad["groups"][0]["improved"]=json!(0);
+        assert!(CombinedPerformance::default().add(&bad).is_err());
+    }
     #[test]
     fn combined_evaluation_is_replaced_verified_and_revoked_with_fingerprint(){
         let mut c=conn();
