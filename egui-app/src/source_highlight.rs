@@ -390,9 +390,7 @@ pub fn is_active_field(active:Option<&LinkKey>,recipient:&str,target:&str,field:
 /// Fill must be painted before the value text. For TextEdit use its
 /// background_color() instead, so the native editor paints behind glyphs.
 pub fn paint_active_background(ui:&egui::Ui,rect:egui::Rect) {
-    if let Some(painter)=crate::ui_primitives::highlight_painter(ui,rect){
-        painter.rect_filled(rect,ACTIVE_RADIUS,ACTIVE_FILL);
-    }
+    crate::highlight::paint_fill(ui.painter(),rect,ACTIVE_RADIUS,crate::highlight::Role::LinkedPreview);
 }
 
 /// Draw the same 2pt outline whenever the shared visible projection
@@ -400,10 +398,7 @@ pub fn paint_active_background(ui:&egui::Ui,rect:egui::Rect) {
 /// hover MUST produce exactly the same border, even when no LinkKey has
 /// completed its 50ms entrance timer yet.
 pub(crate) fn paint_active_outline(ui:&egui::Ui,rect:egui::Rect,radius:impl Into<egui::CornerRadius>){
-    if let Some(painter)=crate::ui_primitives::highlight_painter(ui,rect){
-        painter.rect_stroke(rect,radius,
-            egui::Stroke::new(ACTIVE_BORDER_WIDTH,ACTIVE_BORDER),egui::StrokeKind::Inside);
-    }
+    crate::highlight::paint_outline(ui.painter(),rect,radius,crate::highlight::Role::LinkedPreview);
 }
 pub fn paint_active_if(ui:&egui::Ui, response:&egui::Response, highlighted:bool) {
     if highlighted {
@@ -945,14 +940,11 @@ fn block_shapes_with_states(
                 }
                 if !rect.intersects(clip) {continue;}
                 let radius=theme::SOURCE_BLOCK_RADIUS;
-                let background=egui::Shape::rect_filled(rect,radius,block.fill);
+                let background=crate::highlight::fill_shape(rect,radius,block.fill);
                 if block.focused {
                     focused.push(background);
-                    focused_outlines.push(egui::Shape::rect_stroke(
-                        rect,radius,egui::Stroke::new(
-                            ACTIVE_BORDER_WIDTH,ACTIVE_BORDER
-                        ),
-                        egui::StrokeKind::Inside
+                    focused_outlines.push(crate::highlight::outline_shape(
+                        rect,radius,egui::Stroke::new(ACTIVE_BORDER_WIDTH,ACTIVE_BORDER)
                     ));
                 } else {
                     normal.push(background);
@@ -973,9 +965,8 @@ fn block_shapes_with_states(
                             theme::SOURCE_RECOGNIZED_BORDER_WIDTH
                         ),
                     };
-                    outlines.push(egui::Shape::rect_stroke(
-                        rect,radius,egui::Stroke::new(width,border),
-                        egui::StrokeKind::Inside
+                    outlines.push(crate::highlight::outline_shape(
+                        rect,radius,egui::Stroke::new(width,border)
                     ));
                 }
             }
