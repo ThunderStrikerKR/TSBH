@@ -3,6 +3,7 @@
 mod model;
 mod quantity;
 mod corrections;
+mod observations;
 mod ts_semantics;
 #[path = "../postcode.rs"]
 mod postcode;
@@ -85,6 +86,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         }
         "reanalyze_order" => reanalyze(&payload),
         "extract_correction_candidates" => corrections::extract(&payload),
+        "compare_confirmation_observations" => observations::compare(&payload),
         _ => Err(format!("unknown recognition operation: {operation}")),
     }
 }
