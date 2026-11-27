@@ -116,6 +116,15 @@ fn preflight(conn:&Connection,dir:&Path,path:&Path,file_id:&str)->Result<(u64,bo
 }
 /// Stable bytes have already been parsed by the scanner. The only hydrated
 /// before-image is the CAS transaction's authoritative state.
+fn aggregate_target(conn:&Connection,date:&str)->Result<Option<String>,String>{
+    let state=bando_data_access::read_v2_export_metadata(conn)?;
+    let raw=text(&state["settings"],"excelDirectory").trim();
+    if raw.is_empty(){return Ok(None)}
+    let path=PathBuf::from(raw);
+    let root=path.canonicalize().unwrap_or(path);
+    let target=bando_data_access::excel_aggregate_jobs::target(&root,date,"REPLY")?;
+    Ok(Some(target.to_str().ok_or("취합 경로 인코딩 오류")?.to_owned()))
+}
 fn import(conn:&mut Connection,base:&Path,dir:&Path,path:&Path,bytes:&[u8],rev:u64,mut source:Value)->Result<Value,String>{
     check_source_path(dir,path)?;
     if configured(conn)?.as_deref()!=Some(dir){
@@ -123,7 +132,9 @@ fn import(conn:&mut Connection,base:&Path,dir:&Path,path:&Path,bytes:&[u8],rev:u
     }
     let at=Utc::now().to_rfc3339();
     let n=source["sourceRows"].as_array().map(Vec::len).unwrap_or(0);
-    source["businessDate"]=json!(today());
+    let day=today();
+    source["businessDate"]=json!(day);
+    if let Some(path)=aggregate_target(conn,&day)?{source["aggregateTargetPath"]=json!(path);}
     source["at"]=json!(at);
     source["freightAt"]=json!(at);
     source["freightEventIds"]=json!(ids(n));
@@ -156,7 +167,9 @@ fn approve_with_db(conn:&mut Connection,base:&Path,review:Value)->Result<Value,S
     let correction=format!("factory-correction-{}",Uuid::new_v4());
     let at=Utc::now().to_rfc3339();
     let mut payload=review;
-    payload["correctionId"]=json!(correction);payload["businessDate"]=json!(today());
+    let day=today();
+    payload["correctionId"]=json!(correction);payload["businessDate"]=json!(day);
+    if let Some(path)=aggregate_target(conn,&day)?{payload["aggregateTargetPath"]=json!(path);}
     payload["freightAt"]=json!(at);payload["freightEventIds"]=json!(ids(1));
     payload["replyEventIds"]=json!(ids(1));
     bando_data_access::update_v2_factory_correction_snapshot(conn,revision,&payload)

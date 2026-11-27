@@ -426,6 +426,7 @@ fn parse_reply(payload:&Value)->Result<Value,String>{
         let mut row=json!({"row":n,"name":name,"address":address,
             "contacts":contacts,"goods":goods,"matchDate":field(payload,"businessDate"),
             "tracking":tracking,"actual":freight});
+        if let Some(values)=source.get("aggregateValues"){row["aggregateValues"]=values.clone();}
         if let Some(issue)=issue{row["issue"]=json!(issue)}
         parsed.push(row);
     }
@@ -700,6 +701,15 @@ pub(crate) fn approve_factory_conflict_for_state(state:&Value,payload:&Value)->R
     let target=if selection{
         s(&selected_ambiguity(state,payload,&reply_row_with_date(original,source))?,"shipmentId").to_owned()
     }else{s(source,"shipmentId").to_owned()};
+    // A delayed approval must not reverse a later valid original reply.
+    let history=rows(state,"factoryReplies");
+    let original_pos=history.iter().position(|r|s(r,"id")==s(original,"id")).ok_or("원본 회신 순서 누락")?;
+    for (i,record) in history.iter().enumerate(){
+        let pos=history.iter().position(|r|s(r,"id")==s(field(record,"resolves"),"id")).unwrap_or(i);
+        if pos>original_pos && rows(record,"rows").iter().any(|r|r["applied"]==true && s(r,"shipmentId")==target && s(r,"tracking")!=s(source,"tracking")){
+            return Err("더 최근 공장 회신의 운송장번호가 이미 적용되었습니다.".into());
+        }
+    }
     let mut clean=reply_row_with_date(original,source);
     for k in ["issue","applied","shipmentId","orderId"]{
         clean.as_object_mut().ok_or("회신 행 형식 오류")?.remove(k);

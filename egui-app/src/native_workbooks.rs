@@ -239,6 +239,8 @@ pub fn read_factory_reply(filename:&str,bytes:&[u8])->Result<Value,String>{
             "rawFreight":values[1],"tracking":values[2],
             "trackingNumeric":tracking_numeric,"trackingNumberFormat":"",
             "reservedJ":false,"extraAfterQ":false});
+        let aggregate_values:Vec<String>=(0..17).map(evidence).collect();
+        row["aggregateValues"]=json!(aggregate_values);
         if !problems.is_empty(){row["sourceIssue"]=json!(format!("{}행: {}",r+1,problems.join("; ")));}
         rows.push(row);
     }

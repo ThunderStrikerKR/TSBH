@@ -159,6 +159,8 @@ pub fn create(origin:&str,ids:&[String])->Result<Value,String>{
     let bytes=encode(&preview)?;
     let path=save(&root,origin,&bytes)?;
     let saved=path.to_string_lossy().to_string();
+    let (date,aggregate)=bando_data_access::excel_aggregate_jobs::export_target(&path,origin)?;
+    let aggregate=aggregate.to_str().ok_or("취합 경로 인코딩 오류")?;
     let outcome=||->Result<Value,String>{
         let mut db=conn()?;
         let current=bando_data_access::read_v2_snapshot(&db)?;
@@ -172,7 +174,7 @@ pub fn create(origin:&str,ids:&[String])->Result<Value,String>{
         }))?;
         let mut next=result["next"].clone();
         next["revision"]=json!(revision);
-        let commit=bando_data_access::write_v2_snapshot(&mut db,next,revision,true)?;
+        let commit=bando_data_access::write_v2_export_with_aggregate(&mut db,next,revision,&date,origin,aggregate)?;
         let new_rev=commit["revision"].as_u64().ok_or("출력 이력 revision 누락")?;
         drop(db);
         let fresh=business_state::load()?;

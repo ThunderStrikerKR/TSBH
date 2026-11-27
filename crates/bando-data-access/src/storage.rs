@@ -40,6 +40,18 @@ pub fn write_v2_snapshot(conn: &mut Connection, mut state: Value, expected_revis
     Ok(written)
 }
 
+/// Export-specific transaction: business history and derived work reservation commit together.
+pub fn write_v2_export_with_aggregate(conn:&mut Connection,mut state:Value,expected_revision:u64,date:&str,origin:&str,target:&str)->Result<Value,String>{
+    crate::product_colors::normalize_products(&mut state)?;
+    crate::valid_state(&state)?;
+    let tx=conn.transaction().map_err(err)?;
+    let current=read_current(&tx,expected_revision)?;
+    let (written,_)=write_validated(&tx,&current,state,expected_revision,true,false)?;
+    crate::excel_aggregate_jobs::enqueue(&tx,date,origin,target,written["revision"].as_u64().ok_or("출력 revision 누락")?)?;
+    tx.commit().map_err(err)?;
+    Ok(written)
+}
+
 /// A native read-modify-write uses one consistent before-image for the
 /// reducer AND all write validations. No UI-supplied snapshot is trusted.
 /// The deferred transaction rolls back on reducer/validation errors or if
@@ -141,7 +153,9 @@ where F:FnOnce(&Value)->Result<String,String>{
     next["factoryReplies"].as_array_mut().and_then(|rows|rows.last_mut())
         .ok_or("회신 이력 누락")?["archivedPath"]=json!(archived);
 
+    attach_aggregate_target(&mut next,source)?;
     let verified=finish_factory_scope(&tx,before,next,&ids,expected_revision)?;
+    reserve_reply_aggregate(&tx,&verified)?;
     crate::notification_store::record_factory_reply(&tx,&verified)?;
     tx.commit().map_err(err)?;
     result["next"]=verified;
@@ -158,14 +172,32 @@ pub fn update_v2_factory_correction_snapshot(
     let mut before=read_current_envelope(&tx,expected_revision)?;
     let ids=crate::rules::factory_correction_order_scope(&before,review)?;
     hydrate_factory_scope(&tx,&mut before,&ids)?;
-    let next=crate::rules::approve_factory_conflict_for_state(&before,review)?;
+    let mut next=crate::rules::approve_factory_conflict_for_state(&before,review)?;
     validate_factory_scope(&before,&next)?;
+    attach_aggregate_target(&mut next,review)?;
     let verified=finish_factory_scope(&tx,before,next,&ids,expected_revision)?;
+    reserve_reply_aggregate(&tx,&verified)?;
     crate::notification_store::record_factory_reply(&tx,&verified)?;
     tx.commit().map_err(err)?;
     Ok(verified)
 }
 
+fn attach_aggregate_target(next:&mut Value,payload:&Value)->Result<(),String>{
+    if let Some(path)=payload["aggregateTargetPath"].as_str(){
+        let record=next["factoryReplies"].as_array_mut().and_then(|r|r.last_mut()).ok_or("회신 이력 누락")?;
+        record["aggregateTargetPath"]=json!(path);
+    }
+    Ok(())
+}
+fn reserve_reply_aggregate(tx:&Transaction<'_>,state:&Value)->Result<(),String>{
+    let record=state["factoryReplies"].as_array().and_then(|r|r.last()).ok_or("회신 이력 누락")?;
+    if let Some(path)=record["aggregateTargetPath"].as_str(){
+        if record["rows"].as_array().is_some_and(|r|r.iter().any(|v|v["applied"]==true)){
+            crate::excel_aggregate_jobs::enqueue(tx,record["businessDate"].as_str().ok_or("회신 날짜 누락")?,"REPLY",path,state["revision"].as_u64().ok_or("회신 revision 누락")?)?;
+        }
+    }
+    Ok(())
+}
 fn hydrate_factory_scope(tx:&Transaction<'_>,before:&mut Value,ids:&[String])->Result<(),String>{
     // Partitioned item queries would otherwise hide orphan items in a
     // pre-existing damaged database. Preserve full-reader failure semantics.
