@@ -1117,6 +1117,7 @@ pub(crate) mod general_screen_geometry_tests {
     }
     fn render_observed(ctx:&egui::Context,screen:Vec2,work:Rect,
         mut page:impl FnMut(&mut Ui),mut observe:impl FnMut(usize,&[Sample]))->Vec<Sample>{
+        crate::ui_test_support::enable_unaligned_diagnostics(ctx);
         let mut measured=Vec::new();
         // egui solid scrollbars interpolate their reserved space. Three
         // frames at 60 Hz captured different fractions (e.g. 8.75/10pt)
@@ -1129,7 +1130,7 @@ pub(crate) mod general_screen_geometry_tests {
             time+=0.05;
             TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
             crate::ui_test_support::begin_component_geometry();
-            let _=ctx.run(egui::RawInput{
+            let output=ctx.run(egui::RawInput{
                 screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,screen)),
                 time:Some(time),predicted_dt:0.05,
                 ..Default::default()
@@ -1146,6 +1147,7 @@ pub(crate) mod general_screen_geometry_tests {
             });
             let next=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
             let components=crate::ui_test_support::finish_component_geometry(Rect::from_min_size(egui::Pos2::ZERO,screen));
+            crate::ui_test_support::assert_no_unaligned(&output,&format!("{} {screen:?} frame {frame}",std::thread::current().name().unwrap_or("management page")));
             if frame==11&&next.iter().any(|(role,_)|*role=="top content"){
                 assert!(!components.is_empty(),"actual management page did not reach a shared component renderer");
                 if next.iter().any(|(role,_)|*role=="table perimeter"){
@@ -1269,16 +1271,18 @@ pub(crate) mod general_screen_geometry_tests {
                 gateway,ctx.clone(),0,true);
             let work=Rect::from_min_size(egui::pos2(120.0,60.0),Vec2::new(width,height));
             let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(width+160.0,height+100.0));
+            crate::ui_test_support::enable_unaligned_diagnostics(&ctx);
             let mut measured=Vec::new();
             for frame in 0..12{
                 TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
-                let _=ctx.run(egui::RawInput{
+                let output=ctx.run(egui::RawInput{
                     screen_rect:Some(screen),time:Some(frame as f64*0.05),
                     predicted_dt:0.05,..Default::default()
                 },|ctx|{
                     let _=picker.show_selection_modal(ctx,work,"geometry-product-chooser");
                 });
                 measured=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
+                crate::ui_test_support::assert_no_unaligned(&output,&format!("product chooser {width}x{height} frame {frame}"));
             }
             assert!(!measured.iter().any(|(kind,_)|*kind=="top content"),
                 "modal must not render the management title or KPI strip");
@@ -1293,6 +1297,28 @@ pub(crate) mod general_screen_geometry_tests {
                 "popup rows exceeded the card: {rows:?} {card:?}");
         }
     }
+
+    fn audit_unaligned_management(name:&str,tabs:usize){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),egui::pos2(screen.x-18.0,screen.y-18.0));
+            for tab in 0..tabs{
+                for loaded in [false,true]{
+                    let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||screen_trace(name,tab,loaded,screen,work)));
+                    if let Err(error)=result{
+                        eprintln!("UNALIGNED_AUDIT_CASE {name}/{tab} loaded={loaded} screen={screen:?}");
+                        std::panic::resume_unwind(error);
+                    }
+                }
+            }
+        }
+    }
+    #[test] fn unaligned_freight(){audit_unaligned_management("freight",4);}
+    #[test] fn unaligned_history(){audit_unaligned_management("history",1);}
+    #[test] fn unaligned_products(){audit_unaligned_management("products",5);}
+    #[test] fn unaligned_clients(){audit_unaligned_management("clients",3);}
+    #[test] fn unaligned_excel(){audit_unaligned_management("excel",3);}
+    #[test] fn unaligned_settings(){audit_unaligned_management("settings",4);}
+    #[test] fn unaligned_settlement(){audit_unaligned_management("settlement",1);}
 
     #[test]
     fn actual_management_pages_allocate_valid_geometry_at_three_work_area_sizes(){
