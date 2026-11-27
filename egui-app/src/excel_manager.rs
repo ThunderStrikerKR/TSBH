@@ -1,6 +1,7 @@
 //! React WorkflowQueue's Excel management view, now native egui.
 //! Export, sender validation, workflow state and file history remain owned by
 //! the original Rust business core and Tauri's existing SQLite database.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::{gateway::{BandoGateway,ReadOperation},order_history_manager,settings_help,theme,typography};
 use chrono::{DateTime,FixedOffset,NaiveDate,Utc};
 use eframe::egui::{self,Align,Align2,Rect,Sense,Ui,Vec2};
@@ -923,7 +924,7 @@ impl ExcelManager{
             }else if stacked{
                 theme::INPUT_HEIGHT*2.0+theme::SPACE_8
             }else{theme::INPUT_HEIGHT};
-            let (toolbar_rect,_)=section.allocate_exact_size(
+            let (toolbar_rect,_)=section.shared_allocate_exact_size(
                 Vec2::new(toolbar_width,toolbar_height),Sense::hover()
             );
             let search_width=if history_tab{
