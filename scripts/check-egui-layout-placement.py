@@ -1,4 +1,4 @@
-"""Reject direct positioned UI builders outside the shared layout owner.
+"""Reject direct positioned UI builders and explicit allocations outside the shared layout owner.
 
 This is a lexical guard for explicit rectangle placement, not a Rust type
 checker. Native flow layout and paint-only physical-pixel snapping are not
@@ -62,6 +62,8 @@ RULES = (
     ("UiBuilder struct max_rect", re.compile(r"\bUiBuilder\s*\{[^{}]*\bmax_rect\s*:")),
     ("raw positioned UI helper", re.compile(r"\.\s*(?:place|allocate_ui_at_rect|allocate_new_ui)\s*\(")),
     ("associated positioned UI helper", re.compile(r"\bUi\s*::\s*(?:place|put|allocate_ui_at_rect|allocate_new_ui)\s*\(")),
+    ("raw UI allocation", re.compile(r"\.\s*(?:allocate_exact_size|allocate_space|allocate_ui_with_layout|allocate_at_least|add_sized|allocate_response|allocate_painter|allocate_ui)\s*(?:::<[^>]*>\s*)?\(")),
+    ("associated UI allocation", re.compile(r"\bUi\s*::\s*(?:allocate_exact_size|allocate_space|allocate_ui_with_layout|allocate_at_least|add_sized|allocate_response|allocate_painter|allocate_ui)\s*\(")),
     ("raw Ui.put", re.compile(r"\b(?:ui|root|pane|child|row|body|host|slot|cell|panel|content|parent|control)\s*\.\s*put\s*\(")),
 )
 
@@ -76,6 +78,11 @@ def violations(name, source):
                 tail = code[match.start():]
                 if prefix.endswith("self") and re.match(r"\.\s*max_rect\s*\(\s*aligned_rect\s*\(\s*rect\s*\)\s*\)", tail):
                     owner_calls += 1
+                    continue
+            if name == OWNER and rule == "raw UI allocation":
+                prefix = code[max(0, match.start()-5):match.start()]
+                tail = code[match.start():]
+                if prefix.endswith("self") and re.match(r"\.\s*(?:allocate_exact_size|allocate_space|allocate_ui_with_layout|add_sized|allocate_response)\s*\(\s*aligned_allocation_size\s*\(", tail):
                     continue
             findings.append((code.count("\n", 0, match.start()) + 1, rule))
     if name == OWNER and owner_calls != 1:
@@ -94,6 +101,14 @@ def self_test():
     assert violations("screen.rs", "ui.place(rect, widget);")
     assert violations("screen.rs", "ui.put(rect, widget);")
     assert not violations("screen.rs", "states.put(id, state);")
+    assert not violations("screen.rs", "ui.shared_allocate_exact_size(size, sense);")
+    for api in ("allocate_exact_size", "allocate_space", "allocate_ui_with_layout",
+                "allocate_at_least", "add_sized", "allocate_response", "allocate_painter", "allocate_ui"):
+        assert violations("screen.rs", f"ui.{api}(size);")
+        assert violations("screen.rs", f"Ui::{api}(ui, size);")
+    assert not violations("screen.rs", "#[cfg(test)] mod t { fn f() { ui.allocate_exact_size(size, sense); } }")
+    assert not violations(OWNER, "self.max_rect(aligned_rect(rect)); self.allocate_exact_size(aligned_allocation_size(size),sense);")
+    assert violations(OWNER, "self.max_rect(aligned_rect(rect)); self.allocate_exact_size(size,sense);")
     assert not violations(OWNER, "self.max_rect(aligned_rect(rect))")
     assert violations(OWNER, "self.max_rect(aligned_rect(rect)); builder.max_rect(rect);")
 
