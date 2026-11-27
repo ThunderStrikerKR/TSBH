@@ -19,7 +19,7 @@ permissions:
   contents: read
 concurrency:
   group: security-lock-bootstrap-${{ github.event_name }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   resolve:
     if: >-
@@ -97,6 +97,9 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git -c core.hooksPath=/dev/null commit -m 'security: register resolved SQLite and XLSX lockfiles'
           git push origin HEAD:refs/heads/security/v0.8.0-pre-release
+          git fetch origin refs/heads/security/v0.8.0-pre-release
+          test "$(git rev-parse FETCH_HEAD)" = "$(git rev-parse HEAD)"
+          git log -1 --format='Registered lockfiles at %H'
   windows-regression:
     needs: resolve
     runs-on: windows-latest
