@@ -2874,6 +2874,54 @@ mod tests{
         assert_eq!(evaluated["combinedEvaluation"]["groups"][0]["evaluated"],1);
     }
     #[test]
+    fn field_runtime_shadow_uses_frozen_model_and_preserves_initial_product(){
+        let first=json!({"candidates":[{"start":0,"end":3,"text":"709","kind":"product","line":0,"paragraph":0}],
+            "recipients":[{"items":[{"id":"i","productId":"old","sources":[{"start":0,"end":3,"text":"709","field":"product"}]}]}],
+            "classificationCandidateTrace":{"schemaVersion":1,"decisions":[{"line":0,"source":{"start":0,"end":3},
+                "productStages":[{"candidates":[{"productId":"old"},{"productId":"new"}]}]}],
+                "itemDecisions":[{"itemId":"i","productId":"old","productTraceLine":0,"productTraceStart":0}]}});
+        let projection=super::super::learning_context::lookup(&json!({"raw":"709","initialAnalysis":first})).unwrap();
+        let entry=rows(&projection["fieldEntries"]).find(|v|v["task"]=="product").unwrap();
+        assert_eq!(entry["shadowCandidates"],json!(["new","old"]));
+        let key=entry["contexts"][0]["key"].clone();
+        let shadow=json!({"status":"captured_shadow_support","captureVersion":4,"sourceDigestsMatched":true,"decisionChanged":false,
+            "locations":[{"task":"product","start":0,"end":3,"candidateCoverage":"traced_partial",
+                "contextKeys":[key],"candidates":["new","old"]}],
+            "contextSelection":[{"task":"product","start":0,"end":3,"status":"diagnostic_context_selected",
+                "contextConflict":false,"selectedContextKey":key,"diagnosticCandidate":"new"}],
+            "contexts":[{"task":"product","contextKey":key,"supportVersion":4,"featureVersion":1,"contributionVersion":2,
+                "candidateIds":["new","old"],"contextQuality":{"status":"diagnostic_screen_pass"},
+                "totalSupportMass":100.0,"outsideCandidateSupportMass":1.0,
+                "candidates":[{"candidate":"new","supportMass":98.0},{"candidate":"old","supportMass":1.0}]}]});
+        let model=json!({"modelId":format!("field-blend-{}","a".repeat(64)),"createdAt":"2026-01-02T00:00:00Z",
+            "model":{"task":"product","schemaVersion":1,"clientBuildVersion":"test","evaluationAsOf":"2026-01-01T00:00:00Z",
+                "automaticChangeAuthorized":false,"selectionAuthorized":false,"models":[{"task":"product","contextLevel":"base",
+                    "candidateCoverage":"traced_partial","calibrationOrders":10,"weightFitOrders":10,
+                    "legacyReliabilityProxy":[0.9,0.1,0.0],"shadowTemperature":1.0,"shadowUniformSmoothing":0.0,
+                    "learningWeight":1.0,"automaticChangeAuthorized":false}]}});
+        let mut payload=json!({"raw":"709","initialAnalysis":first,"learningShadow":shadow,"models":[model],
+            "predictionAt":"2026-01-03T00:00:00Z","clientBuildVersion":"test"});
+        let result=run_field_blend_shadow(&payload).unwrap();
+        assert_eq!(result["decisions"][0]["legacyCandidate"],"old");
+        assert_eq!(result["decisions"][0]["diagnosticCandidate"],"new");
+        assert_eq!(result["decisionChanged"],false);
+        assert_eq!(payload["initialAnalysis"]["recipients"][0]["items"][0]["productId"],"old");
+        payload["models"][0]["createdAt"]=json!("2026-01-04T00:00:00Z");
+        assert!(run_field_blend_shadow(&payload).is_err());
+    }
+    #[test]
+    fn field_paired_replay_excludes_training_orders_and_duplicate_ids(){
+        let baseline=json!({"modelId":"a","model":{"task":"product","sourceDigests":{"training":"digest"}}});
+        let candidate=json!({"modelId":"b","model":{"task":"product","sourceDigests":{}}});
+        let mut payload=json!({"baseline":baseline,"candidate":candidate,"clientBuildVersion":"test",
+            "evaluationAsOf":"2026-01-03T00:00:00Z","orders":[{"id":"training"}]});
+        let result=compare_field_models(&payload).unwrap();
+        assert_eq!(result["excludedOrders"],1);assert_eq!(result["groups"],json!([]));
+        assert!(result["winner"].is_null());assert_eq!(result["decisionChanged"],false);
+        payload["orders"]=json!([{"id":"training"},{"id":"training"}]);
+        assert!(compare_field_models(&payload).is_err());
+    }
+    #[test]
     fn field_blend_calibration_weights_and_outside_are_independent(){
         for task in ["type","product","variant","quantity"]{
             let group=(task.to_owned(),"base".to_owned(),"traced_partial".to_owned());
