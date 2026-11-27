@@ -144,15 +144,25 @@ mod tests {
         enabled:bool,
     )->SourceInteraction{
         let mut interaction=SourceInteraction::default();
-        let _=ctx.run(raw_input,|ctx|{
+        let output=ctx.run(raw_input,|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
                 ui.set_width(320.0);
-                *origin=ui.cursor().min;
                 interaction=source_document(
                     ui,raw,spans,&HashSet::new(),None,None,None,enabled,None,&HashSet::new()
                 );
             });
         });
+        // Use the actual painted galley origin, not the outer allocation
+        // cursor. Source-document padding separates those two coordinates.
+        fn painted_origin(shape:&egui::Shape,raw:&str)->Option<egui::Pos2>{
+            match shape{
+                egui::Shape::Text(text) if text.galley.text()==raw=>Some(text.pos),
+                egui::Shape::Vec(shapes)=>shapes.iter().find_map(|shape|painted_origin(shape,raw)),
+                _=>None,
+            }
+        }
+        *origin=output.shapes.iter().find_map(|shape|painted_origin(&shape.shape,raw))
+            .expect("source document must actually paint its text");
         interaction
     }
 
@@ -171,10 +181,10 @@ mod tests {
         let mut origin=egui::Pos2::ZERO;
         let mut initial=egui::RawInput::default();
         initial.screen_rect=Some(screen);
-        draw(&ctx,initial,raw,&spans,&mut origin,true);
+        let initial=draw(&ctx,initial,raw,&spans,&mut origin,true);
 
-        let job=source_highlight::layout(
-            raw,&spans,None,None,320.0,
+        let job=source_highlight::layout_manual(
+            raw,&spans,None,None,&HashSet::new(),initial.drag_layout_width,
             FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),
             theme::text_ink(theme::TextRole::Value,theme::TextState::Normal),
         );
@@ -226,11 +236,11 @@ mod tests {
         }];
         let ctx=egui::Context::default();
         let mut origin=egui::Pos2::ZERO;
-        draw(&ctx,egui::RawInput{
+        let initial=draw(&ctx,egui::RawInput{
             screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(600.0,400.0))),
             ..Default::default()
         },raw,&spans,&mut origin,true);
-        let job=source_highlight::layout(raw,&spans,None,None,320.0,
+        let job=source_highlight::layout_manual(raw,&spans,None,None,&HashSet::new(),initial.drag_layout_width,
             FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
         let galley=ctx.fonts_mut(|fonts|fonts.layout_job(job));
         let glyph=&galley.rows[0].row.glyphs[0];
@@ -290,9 +300,9 @@ mod tests {
         let mut origin=egui::Pos2::ZERO;
         let mut initial=egui::RawInput::default();
         initial.screen_rect=Some(screen);
-        draw(&ctx,initial,raw,&spans,&mut origin,false);
-        let job=source_highlight::layout(
-            raw,&spans,None,None,320.0,
+        let initial=draw(&ctx,initial,raw,&spans,&mut origin,false);
+        let job=source_highlight::layout_manual(
+            raw,&spans,None,None,&HashSet::new(),initial.drag_layout_width,
             FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),
             theme::text_ink(theme::TextRole::Value,theme::TextState::Normal),
         );
