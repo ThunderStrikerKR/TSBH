@@ -120,7 +120,7 @@ pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
     // No full-width row dividers: hierarchy rails own the grouping.
     let right=(rect.right()-theme::CATALOG_TREE_INSET).max(rect.left());
     let name_x=geo.name_x.min(right);
-    let summary_galley=typography::client_table_metadata_galley(ui,item.summary,theme::SECONDARY);
+    let summary_galley=typography::client_table_metadata_galley(ui,item.summary,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
     let summary_reserve=if item.summary.is_empty(){0.0}else{theme::CATALOG_TREE_GAP+summary_galley.size().x};
     let name_width=(right-name_x-summary_reserve).max(0.0);
     let font=if item.root{typography::CategoryPathFont::Subsection}else{typography::CategoryPathFont::Body};
@@ -131,14 +131,14 @@ pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
         painter.with_clip_rect(Rect::from_min_max(egui::pos2(name_x,rect.top()),
             egui::pos2(name_end,rect.bottom()))).galley(
             egui::pos2(name_x,rect.center().y-name_galley.size().y/2.0),
-            name_galley,theme::TEXT);
+            name_galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
     }
     let summary_x=(name_end+theme::CATALOG_TREE_GAP).min(right);
     if !item.summary.is_empty()&&right>summary_x{
         painter.with_clip_rect(Rect::from_min_max(egui::pos2(summary_x,rect.top()),
             egui::pos2(right,rect.bottom()))).galley(
             egui::pos2(summary_x,rect.center().y-summary_galley.size().y/2.0),
-            summary_galley,theme::SECONDARY);
+            summary_galley,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
     }
     overflow_tooltip(response,visible!=item.name,item.name)
 }

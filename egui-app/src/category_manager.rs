@@ -853,7 +853,7 @@ impl CategoryManager {
                                         location.painter().with_clip_rect(text_rect).galley(
                                             egui::pos2(text_rect.left(),
                                                 text_rect.center().y-galley.size().y/2.0),
-                                            galley,theme::TEXT
+                                            galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
                                         );
                                         crate::ui_primitives::overflow_tooltip(text_response,visible!=parent_label,&parent_label);
                                         if crate::button::action(location,"위치 변경",
@@ -870,7 +870,7 @@ impl CategoryManager {
                                     let notice_width=body.available_width();
                                     crate::ui_layout::fixed_status_slot(
                                         body,notice_width,typography::METADATA_LINE_HEIGHT,
-                                        legacy_notice,legacy_notice,theme::MUTED
+                                        legacy_notice,legacy_notice,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)
                                     );
                                 }
                             });

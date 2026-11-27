@@ -33,7 +33,7 @@ fn header_begin(ui:&Ui,header:Rect,content:Rect)->Rect{
     let text=Rect::from_min_max(content.min,egui::pos2(
         content.right(),content.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT
     ));
-    ui.painter().with_clip_rect(header).rect_filled(header,0.0,theme::surface_palette(theme::SurfaceRole::Button,theme::VisualState::Normal).fill);
+    ui.painter().with_clip_rect(header).rect_filled(header,0.0,theme::surface_palette(theme::SurfaceRole::TableHeader,theme::VisualState::Normal).fill);
     text
 }
 

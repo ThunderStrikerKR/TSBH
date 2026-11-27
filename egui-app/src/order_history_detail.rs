@@ -78,7 +78,8 @@ fn section_panel(
     );
 }
 fn overview(ui:&mut Ui,rect:Rect,row:&Value,shipment_count:usize){
-    theme::paint_bordered_surface(ui.painter(),rect,theme::CONTROL_RADIUS as f32,theme::RAISED,theme::DIVIDER);
+    let palette=theme::surface_palette(theme::SurfaceRole::RaisedInset,theme::VisualState::Normal);
+    theme::paint_bordered_surface(ui.painter(),rect,theme::CONTROL_RADIUS as f32,palette.fill,palette.border);
     let inner=rect.shrink2(Vec2::new(theme::SPACE_12,theme::SPACE_8));
     let clip=inner.intersect(ui.clip_rect());
     let order=&row["order"];

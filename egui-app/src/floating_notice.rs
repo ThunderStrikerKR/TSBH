@@ -483,7 +483,8 @@ pub fn show(ctx: &Context) {
                     theme::FLOATING_NOTICE_SHADOW_ALPHA
                 ),
             }.as_shape(rect,theme::CONTROL_RADIUS));
-            theme::paint_bordered_surface(&painter,rect,theme::CONTROL_RADIUS,theme::FLOATING_NOTICE_BG,theme::BORDER);
+            let palette=theme::surface_palette(theme::SurfaceRole::Notice,theme::VisualState::Normal);
+            theme::paint_bordered_surface(&painter,rect,theme::CONTROL_RADIUS,palette.fill,palette.border);
             paint_tail(&painter,rect,if above{active.at}else{active.below},above);
             // All rows use the same notice font; average laid-out row height
             // is stable even when egui has wrapped a long message.
@@ -510,7 +511,7 @@ pub fn show(ctx: &Context) {
                 Vec2::new((text_right - text_left).max(1.0),text_visible_height),
             );
             if galley.size().y <= text_visible_height {
-                painter.galley(text_rect.min,galley.clone(),theme::TEXT);
+                painter.galley(text_rect.min,galley.clone(),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
             } else {
                 // Only exceptionally long failure details scroll INSIDE the
                 // floating box. Never increase the underlying page height.

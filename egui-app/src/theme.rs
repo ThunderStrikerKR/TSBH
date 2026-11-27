@@ -870,7 +870,7 @@ impl VisualState{
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub(crate) enum SurfaceRole{
     Workspace,Header,Panel,Section,Summary,Input,Inset,Modal,ModalSection,
-    AlternateRow,Button,WorkflowCard,FieldAction,NavigationSegment,
+    AlternateRow,Button,WorkflowCard,FieldAction,NavigationSegment,TableHeader,RaisedInset,Notice,
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -888,7 +888,9 @@ pub(crate) const fn surface_palette(role:SurfaceRole,state:VisualState)->Surface
         Inset=>(INPUT,DIVIDER),
         ModalSection=>(MODAL_SECTION_BG,DIVIDER),
         AlternateRow=>(TABLE_ROW_ALT_BG,Color32::TRANSPARENT),
-        Button=>(RAISED,BORDER),
+        Button|TableHeader=>(RAISED,BORDER),
+        RaisedInset=>(RAISED,DIVIDER),
+        Notice=>(FLOATING_NOTICE_BG,BORDER),
         WorkflowCard=>(WORKFLOW_CARD_BG,WORKFLOW_CARD_BORDER),
         NavigationSegment=>(INPUT,Color32::TRANSPARENT),
     };
@@ -988,6 +990,9 @@ mod shared_visual_role_contract_tests{
             (SurfaceRole::Modal,PANEL,BORDER),
             (SurfaceRole::ModalSection,MODAL_SECTION_BG,DIVIDER),
             (SurfaceRole::AlternateRow,TABLE_ROW_ALT_BG,Color32::TRANSPARENT),
+            (SurfaceRole::TableHeader,RAISED,BORDER),
+            (SurfaceRole::RaisedInset,RAISED,DIVIDER),
+            (SurfaceRole::Notice,FLOATING_NOTICE_BG,BORDER),
         ]{
             assert_eq!(surface_palette(role,VisualState::Normal),SurfacePalette{fill,border});
             assert_eq!(role_surface_frame(role,VisualState::Normal,CONTROL_RADIUS).fill,fill);

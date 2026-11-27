@@ -624,7 +624,7 @@ impl ClientManager {
                 (!self.tag_input.trim().is_empty()).then_some("입력한 태그는 추가 버튼으로 등록하세요."));
             crate::ui_layout::fixed_status_slot(
                 panel,status_width,typography::METADATA_LINE_HEIGHT,
-                notice,notice,theme::MUTED
+                notice,notice,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)
             );
             });
         });

@@ -326,7 +326,7 @@ impl ModelGroupManager {
                                 .then(||format!("이전 대표색상: {} · 대표모델 재지정 필요",text(&g,"representativeColor")));
                             let width=heading.available_width();
                             crate::ui_layout::fixed_status_slot(heading,width,typography::METADATA_LINE_HEIGHT,
-                                guidance.as_deref(),guidance.as_deref(),theme::MUTED);
+                                guidance.as_deref(),guidance.as_deref(),theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal));
                         });
                         let body_height=(body_height-(body.cursor().top()-body_top)-theme::MANAGEMENT_TABLE_HEADER_HEIGHT-theme::SPACE_8).max(theme::MANAGEMENT_COMPACT_ROW_HEIGHT);
                         let rect=crate::table::registry_table(body,("model-group-registered-products",self.selected.clone()),

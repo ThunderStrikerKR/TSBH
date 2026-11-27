@@ -294,7 +294,7 @@ impl ProductExcelUi {
                         let missing_width=ui.available_width();
                         crate::ui_layout::fixed_status_slot(
                             ui,missing_width,typography::METADATA_LINE_HEIGHT,
-                            missing_note.as_deref(),missing_note.as_deref(),theme::SECONDARY
+                            missing_note.as_deref(),missing_note.as_deref(),theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)
                         );
                         ui.horizontal_wrapped(|filters|{
                             for (value,label) in ReviewFilter::options(){
@@ -327,7 +327,7 @@ impl ProductExcelUi {
                         let table_note_width=ui.available_width();
                         crate::ui_layout::fixed_status_slot(
                             ui,table_note_width,typography::METADATA_LINE_HEIGHT,
-                            large_table_note,large_table_note,theme::MUTED
+                            large_table_note,large_table_note,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)
                         );
                         ui.label(typography::caption(
                             if self.client{"기존 거래처 ID, 특수 단가 및 주문 이력을 유지합니다. 누락 행은 삭제하지 않습니다."}else{"홈페이지 등록 여부와 관계없이 신규 등록 및 수정할 수 있습니다. 기존 상품 ID와 가격 기록 ID, 주문 이력, 이미지 및 홈페이지 연결 정보는 보존됩니다."}

@@ -6650,7 +6650,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Vec2::new(ui.available_width(), available_body),
                     Sense::hover(),
                 );
-                ui.painter().rect_filled(body_rect, 0.0, theme::CANVAS);
+                ui.painter().rect_filled(body_rect, 0.0, theme::surface_palette(theme::SurfaceRole::Workspace,theme::VisualState::Normal).fill);
                 let clip = body_rect.intersect(ui.clip_rect());
                 ui.scope_builder(
                     UiBuilder::new()
@@ -6887,7 +6887,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             let job=source_highlight::layout(
                                 buffer.as_str(),&spans,
                                 selected_id.as_deref(),active_link.as_ref(),
-                                width,typography::reception_source_font(),theme::TEXT,
+                                width,typography::reception_source_font(),theme::text_ink(theme::TextRole::Value,theme::TextState::Normal),
                             );
                             lay_ui.fonts_mut(|fonts|fonts.layout_job(job))
                         };
@@ -7139,7 +7139,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         let folder_status_width=intake.available_width();
                         crate::ui_layout::fixed_status_slot(
                             intake,folder_status_width,typography::METADATA_LINE_HEIGHT,
-                            folder_message,folder_message,theme::MUTED
+                            folder_message,folder_message,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)
                         );
                         intake.add_space(theme::SPACE_8);
                         let folder_actions_width=intake.available_width();

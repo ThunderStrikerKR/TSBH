@@ -433,7 +433,7 @@ fn workflow_header(
     let galley=typography::workflow_dealer_galley(ui,&visible);
     ui.painter().with_clip_rect(text_rect).galley(
         Pos2::new(text_rect.left(),text_rect.center().y-galley.size().y/2.0),
-        galley,theme::TEXT
+        galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
     );
     let title_response=crate::button::disclosure_at(ui,arrow.union(title_rect),
         workflow_widget_id("workflow-header",id,in_preview),arrow.center(),None,
@@ -566,7 +566,7 @@ fn workflow_action_line(
     let shipping_clipped=crate::ui_primitives::text_exceeds_rect(ship_galley.size(),shipping.intersect(ui.clip_rect()));
     ui.painter().with_clip_rect(shipping).galley(
         Pos2::new(shipping.left(),bottom_y-ship_galley.size().y),
-        ship_galley,theme::SECONDARY
+        ship_galley,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)
     );
     crate::ui_primitives::overflow_region_tooltip(ui,shipping,
         workflow_widget_id("workflow-shipping",id,in_preview),shipping_clipped,&shipping_text);

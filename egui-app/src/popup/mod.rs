@@ -489,7 +489,7 @@ pub(crate) fn modal_master_workspace_background(
 )->ModalMasterWorkspace {
     let ppp=ui.ctx().pixels_per_point().max(1.0);
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
-    ui.painter().rect_filled(rect,theme::CONTROL_RADIUS,theme::PANEL);
+    ui.painter().rect_filled(rect,theme::CONTROL_RADIUS,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
     let snap=|v:f32|(v*ppp).round()/ppp;
     let toolbar_bottom=snap((rect.top()+toolbar_height.max(0.0)).min(rect.bottom()));
     let divider_x=split_ratio.map(|share|{
@@ -615,7 +615,7 @@ pub(crate) fn modal_master_header_in_rect(
 )->bool {
     let ppp=ui.ctx().pixels_per_point().max(1.0);
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
-    ui.painter().rect_filled(rect,0.0,theme::PANEL);
+    ui.painter().rect_filled(rect,0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
     // A centered line at rect.bottom() is half clipped and can appear
     // darker at one end. Fill exactly one pixel-aligned INNER rule instead.
     ui.painter().rect_filled(
@@ -665,7 +665,7 @@ pub(crate) fn modal_master_header_with_toolbar_in_rect<R>(
 )->(bool,R){
     let ppp=ui.ctx().pixels_per_point().max(1.0);
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
-    ui.painter().rect_filled(rect,0.0,theme::PANEL);
+    ui.painter().rect_filled(rect,0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
     ui.painter().rect_filled(
         modal_master_toolbar_rule_rect(rect,ppp),0.0,theme::DIVIDER
     );
@@ -693,7 +693,7 @@ pub(crate) fn modal_master_header_with_toolbar_in_rect<R>(
 fn paint_modal_master_footer_surface(ui:&Ui,rect:Rect) {
     let ppp=ui.ctx().pixels_per_point().max(1.0);
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
-    ui.painter().rect_filled(rect,0.0,theme::PANEL);
+    ui.painter().rect_filled(rect,0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
     ui.painter().rect_filled(
         modal_master_rule_rect(rect,ppp,false),0.0,theme::DIVIDER
     );
@@ -959,7 +959,7 @@ pub(crate) fn modal_master_body<R>(
     let inset=theme::MODAL_SECTION_PADDING;
     let width=(ui.available_width()-2.0*inset
         -2.0*theme::FRAME_STROKE_WIDTH).max(1.0);
-    theme::bordered_surface(theme::PANEL,theme::DIVIDER,theme::CONTROL_RADIUS)
+    theme::role_surface_frame(theme::SurfaceRole::Section,theme::VisualState::Normal,theme::CONTROL_RADIUS)
         .inner_margin(inset)
         .show(ui,|body|{
             body.apply_shared_width(crate::card::CardWidthPolicy::FillAvailable,width);

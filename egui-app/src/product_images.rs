@@ -163,7 +163,8 @@ pub struct ProductImageCache{
 impl ProductImageCache {
     pub fn clear(&mut self){self.textures.clear();}
     pub fn paint(&mut self,ui:&mut Ui,product:&Value,rect:Rect){
-        ui.painter().rect_filled(rect,theme::CONTROL_RADIUS as f32,theme::INPUT);
+        let palette=theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal);
+        ui.painter().rect_filled(rect,theme::CONTROL_RADIUS as f32,palette.fill);
         let key=cache_identity(product);
         if !self.textures.contains_key(&key){
             let texture=bytes_for_product(product).and_then(|bytes|decode(&bytes))
@@ -182,10 +183,10 @@ impl ProductImageCache {
                 Color32::WHITE);
         }else{
             ui.painter().text(rect.center(),egui::Align2::CENTER_CENTER,
-                "상품 사진 없음",typography::product_image_placeholder_font(),theme::SECONDARY);
+                "상품 사진 없음",typography::product_image_placeholder_font(),theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
         }
         // Draw the inside border last, including the missing-photo surface.
-        theme::paint_surface_outline(ui.painter(),rect,theme::CONTROL_RADIUS,theme::BORDER);
+        theme::paint_surface_outline(ui.painter(),rect,theme::CONTROL_RADIUS,palette.border);
     }
     pub fn photo(&mut self,ui:&mut Ui,product:&Value,size:f32){
         let (rect,_)=ui.allocate_exact_size(Vec2::splat(size),egui::Sense::hover());
