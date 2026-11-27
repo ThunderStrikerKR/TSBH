@@ -21,6 +21,8 @@ mod category_tree;
 mod status_notice;
 mod ui_primitives;
 mod highlight;
+#[path="highlight/native.rs"]
+mod highlight_native;
 mod display_format;
 mod ui_tokens;
 #[cfg(test)]
