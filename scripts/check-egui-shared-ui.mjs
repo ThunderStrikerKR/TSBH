@@ -1261,6 +1261,11 @@ const dependencyLayers=[
 ];
 const dependencyRank=new Map(dependencyLayers.flatMap((layer,index)=>layer.map(name=>[name,index])));
 const dependencyOwners=new Set(dependencyRank.keys());
+// #[path] gives this adapter a separate crate-level identity.
+function dependencyOwner(file){
+  if(file==="highlight/native.rs")return "highlight_native";
+  return file.includes("/")?file.split("/")[0]:file.replace(/\.rs$/,"");
+}
 function sharedDependencies(source,owner,includeExternal=false){
   const v=productionTokens(source).map(t=>t.v),out=new Set();
   const add=(name,explicit=false)=>{
@@ -1297,6 +1302,13 @@ function dependencyBoundaryViolations(owner,deps){
   return hits;
 }
 function dependencyBoundarySelfTest(){
+  assert.equal(dependencyOwner("highlight/native.rs"),"highlight_native");
+  assert.equal(dependencyOwner("highlight/mod.rs"),"highlight");
+  assert.equal(dependencyOwner("table/mod.rs"),"table");
+  assert.equal(dependencyCycles(new Map([
+    ["theme",new Set(["highlight_native"])],
+    ["highlight_native",new Set(["theme"])]
+  ])).length,1);
   assert.deepEqual([...sharedDependencies("use crate::{theme as colors, gateway::{X,Y}};","button",true)],["theme","gateway"]);
   assert.deepEqual(dependencyBoundaryViolations("button",new Set(["theme","gateway"])),["button: shared UI imports non-UI module gateway"]);
   assert.deepEqual(dependencyBoundaryViolations("input",new Set(["popup"])),["input: upward UI dependency on popup"]);
@@ -1697,7 +1709,7 @@ function main(){
     const file=relative(resolve(root,"egui-app/src"),path).replaceAll("\\","/");
     const source=readFileSync(path,"utf8");
     if(source.startsWith("#![cfg(test)]"))continue;
-    const owner=file.includes("/")?file.split("/")[0]:file.replace(/\.rs$/,"");
+    const owner=dependencyOwner(file);
     // Merge all production submodules instead of overwriting their root.
     // Explicit regression-test files are not production dependencies.
     if(dependencyOwners.has(owner)&&!/(?:^|\/)(?:regression_tests|tests)\.rs$/.test(file)){
