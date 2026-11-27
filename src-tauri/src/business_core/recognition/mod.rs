@@ -289,6 +289,7 @@ fn physical_lines(raw: &str) -> Vec<Line<'_>> {
 // offsets; never rewrite the input or split on ordinary address commas,
 // slashes, or table columns. Uncertain records stay intact.
 fn split_explicit_records<'a>(lines:Vec<Line<'a>>,state:&Value)->Vec<Line<'a>>{
+    if !lines.iter().any(|line|line.text.contains([';','；'])){return lines;}
     let label=recipient_label();
     let phone=phone_regex();
     let mut out=Vec::new();
@@ -820,6 +821,17 @@ fn raw_candidate_inventory(raw:&str,events:&[Evidence],hits:&[ProductHit],lines:
                 let to=from+value.encode_utf16().count();
                 add(from,to,"product",candidate["productId"].as_str().unwrap_or(""),json!({
                     "stage":stage["stage"],"status":"observed_candidate","decisionIndex":i,"stageIndex":j}),&mut truncated,&mut invalid);
+            }
+        }
+        // Table quantities and sale-unit filtered candidates may have no
+        // regex extraction record. Preserve their already captured offsets.
+        for (field,status) in [("quantityBeforeSaleUnitFilter","pre_sale_unit_filter"),
+            ("quantityAfterSaleUnitFilter","post_sale_unit_filter")]{
+            for (j,q) in decision[field].as_array().into_iter().flatten().enumerate(){
+                if let Some((a,b))=observations::position(&units,q){
+                    add(a,b,"quantity","",json!({"stage":status,"status":"observed_candidate",
+                        "decisionIndex":i,"quantityIndex":j}),&mut truncated,&mut invalid);
+                }
             }
         }
         let quantities=&decision["quantityExtraction"];
@@ -1619,8 +1631,7 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
             .expect("sender prefix").is_match(text) {
             sender_section = true;
         }
-        else if sender_section&&(explicit_name.is_some()||
-            Regex::new(r"^(?:받는\s*곳|수취인\s*주소|배송지(?:\s*주소)?)\s*[:：]").expect("recipient section").is_match(text)){
+        else if sender_section&&Regex::new(r"(?i)^(?:수취인(?:명|\s*주소)?|수하인(?:명)?|수령자|받(?:는|으시는)\s*(?:곳|분|사람)|배송지(?:\s*주소)?|recipient|consignee)\s*[:：]").expect("recipient section").is_match(text){
             sender_section=false;
             note_continuation=None;
         }
@@ -2628,7 +2639,7 @@ mod tests {
     }
     #[test]
     fn sender_scope_excludes_detached_quantities_and_can_resume_explicit_recipient(){
-        let raw="송하인: 가상상호\n2개\n수취인: 김가상 010-1234-5678\n709 1개";
+        let raw="송하인: 가상상호\n이름: 가상송하인\n2개\n수취인: 김가상 010-1234-5678\n709 1개";
         let result=execute("analyze_order",json!({"raw":raw,"state":state(),"collectCandidateTrace":true})).unwrap();
         assert_eq!(result["recipients"][0]["name"],"김가상");
         assert_eq!(result["recipients"][0]["items"][0]["quantity"],1);
