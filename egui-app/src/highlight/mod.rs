@@ -308,14 +308,20 @@ pub(crate) fn dropdown_options(ui:&mut Ui){
 }
 pub(crate) fn checked_checkbox(ui:&mut Ui){
     let widgets=&mut ui.visuals_mut().widgets;
-    for visual in [&mut widgets.inactive,&mut widgets.hovered,&mut widgets.active,&mut widgets.open]{
-        visual.bg_fill=theme::CHECKBOX_CHECKED_BG;
-        visual.weak_bg_fill=theme::CHECKBOX_CHECKED_BG;
-        visual.bg_stroke=palette(Role::Selected).stroke.unwrap_or(Stroke::NONE);
-        visual.fg_stroke=Stroke::new(theme::CHECKBOX_CHECKED_STROKE_WIDTH,theme::CHECKBOX_CHECKED_MARK);
+    use theme::VisualState;
+    for (visual,state) in [
+        (&mut widgets.inactive,VisualState::Selected),
+        (&mut widgets.hovered,VisualState::Hovered),
+        (&mut widgets.active,VisualState::Focused),
+        (&mut widgets.open,VisualState::Selected),
+    ]{
+        if let Some(p)=theme::checkbox_palette(true,state){
+            visual.bg_fill=p.fill;
+            visual.weak_bg_fill=p.fill;
+            visual.bg_stroke=p.outline;
+            visual.fg_stroke=p.mark;
+        }
     }
-    // Keep the orange checked fill and check mark; blue outline is hover only.
-    widgets.hovered.bg_stroke=palette(Role::Hover).stroke.unwrap_or(Stroke::NONE);
 }
 #[cfg(test)]
 mod tests{
