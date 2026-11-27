@@ -11612,6 +11612,54 @@ mod reception_workflow_admission_integration_tests {
     }
 
     #[test]
+    fn tariff_batch_updates_other_drafts_without_changing_active_selection_or_manual_rows(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.drafts.push(draft("unrelated"));
+        app.selected_recipient=1;
+        app.drafts[0].pricing_preview=Some(serde_json::json!({"total":3000}));
+        app.drafts[1].pricing_preview=Some(serde_json::json!({"total":7000}));
+        app.drafts[2].pricing_preview=Some(serde_json::json!({"total":2500}));
+        app.drafts[1].manual_model=Some(serde_json::json!({"model":{"rows":[
+            {"id":"r","shippingCharges":{"STORE":0,"FACTORY":7000}}
+        ]}}));
+        let manual=app.drafts[1].manual_model.clone();
+        let a=app.drafts[0].clone();
+        let b=app.drafts[1].clone();
+        app.draft_tariff_baselines.push(serde_json::json!({}));
+        app.draft_tariff_refresh.test_advisory_read()(Ok(vec![
+            (a,Ok(serde_json::json!({"total":4500}))),
+            (b,Ok(serde_json::json!({"total":7000,"freightLines":[{"appliedCharge":7000}]})))
+        ]));
+        app.poll_draft_tariff_refresh(&ctx);
+        assert_eq!(app.active_id.as_deref(),Some("draft-1"));
+        assert_eq!(app.selected_recipient,1);
+        assert_eq!(app.drafts[0].pricing_preview.as_ref().unwrap()["total"],4500);
+        assert_eq!(app.drafts[1].pricing_preview.as_ref().unwrap()["freightLines"][0]["appliedCharge"],7000);
+        assert_eq!(app.drafts[1].manual_model,manual);
+        assert_eq!(app.drafts[2].pricing_preview.as_ref().unwrap()["total"],2500);
+        assert!(app.draft_tariff_baselines.is_empty());
+    }
+
+    #[test]
+    fn tariff_batch_rejects_newer_manual_edits_and_different_draft_identity(){
+        let mut before=draft("a");
+        before.manual_model=Some(serde_json::json!({"model":{"rows":[
+            {"shippingCharges":{"FACTORY":7000}}
+        ]}}));
+        let mut current=before.clone();
+        assert!(same_draft_tariff_input(&before,&current));
+        current.manual_model.as_mut().unwrap()["model"]["rows"][0]["shippingCharges"]["FACTORY"]=serde_json::json!(0);
+        assert!(!same_draft_tariff_input(&before,&current));
+        current=before.clone();
+        current.id="b".into();
+        assert!(!same_draft_tariff_input(&before,&current));
+        current=before.clone();
+        current.working_version=Some(2);
+        assert!(!same_draft_tariff_input(&before,&current));
+    }
+
+    #[test]
     fn pending_display_cache_reuses_exact_projection_and_rejects_edited_receipt(){
         let mut row=draft("synthetic");
         row.analysis_evidence=Some(serde_json::json!({"recipients":[{"id":"r","name":"가상"}]}));
