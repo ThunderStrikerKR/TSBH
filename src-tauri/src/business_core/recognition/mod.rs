@@ -152,11 +152,15 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
                 });
             // Optional offline evaluation reads the same extracted
             // feature object as production assignment, with no reparse.
-            if payload.get("includeDocumentFeatures").and_then(Value::as_bool)==Some(true){
+            let detailed=payload.get("includeDocumentFeatures").and_then(Value::as_bool)==Some(true);
+            let pattern=payload.get("includePatternIdentity").and_then(Value::as_bool)==Some(true);
+            if detailed||pattern{
                 let document=extract_document(raw,&reception,payload.get("client"));
-                let evaluation=document.features.evaluation(&document.events,&document.geometry);
-                let mut result=assign_document_with_trace(document,&reception,payload.get("client"),true)?;
-                result["documentFeatures"]=evaluation;
+                let evaluation=detailed.then(||document.features.evaluation(&document.events,&document.geometry));
+                let identity=pattern.then(||document.features.pattern_identity());
+                let mut result=assign_document_with_trace(document,&reception,payload.get("client"),detailed)?;
+                if let Some(v)=evaluation{result["documentFeatures"]=v;}
+                if let Some(v)=identity{result["patternIdentity"]=v;}
                 Ok(result)
             }else{
                 analyze(raw, &reception, payload.get("client"))
@@ -1247,6 +1251,10 @@ struct DocumentFeatures{
     period:usize,
     exact_repeat:usize,
     incomplete_tail:usize,
+    candidate_truncated:bool,
+    competing_candidates:bool,
+    unclassified_segments:bool,
+    overlapping_roles:bool,
     ambiguous:bool,
 }
 fn structural_role(kind:&str)->Option<&'static str>{
@@ -1320,11 +1328,20 @@ impl DocumentFeatures{
         let mut roles=Vec::new();
         let mut ranges:Vec<(usize,usize)>=Vec::new();
         let mut last_end=0usize;
-        let mut ambiguous=invalid_positions||deferred.truncated||deferred.entries.values().any(|r|r.disposition.is_some_and(|d|!d.hard()));
+        let mut competing_candidates=false;
+        let mut unclassified_segments=false;
+        for record in deferred.entries.values(){
+            match record.disposition{
+                Some(CandidateDisposition::UnclassifiedSegment)=>unclassified_segments=true,
+                Some(d) if !d.hard()=>competing_candidates=true,
+                _=>{}
+            }
+        }
+        let mut overlapping_roles=false;
         for (rank,&i) in ordered.iter().enumerate(){
             let event=&events[i];
             let Some(role)=event_roles[i]else{continue};
-            if event.start<last_end{ambiguous=true;}
+            if event.start<last_end{overlapping_roles=true;}
             last_end=last_end.max(event.end);
             // Collapse adjacent product/quantity runs, retaining the raw
             // event sequence and section bounds for individual decisions.
@@ -1371,8 +1388,10 @@ impl DocumentFeatures{
         let repeat_segments=if period>0&&(exact_repeat>1||incomplete_tail>0){
             (0..roles.len()/period).map(|i|(i*period,(i+1)*period)).collect()
         }else{Vec::new()};
+        let ambiguous=invalid_positions||deferred.truncated||competing_candidates||unclassified_segments||overlapping_roles;
         Self{ordered,ranks,positions,positions_valid:!invalid_positions,anchors,roles,event_roles,ranges,
-            partial_order,local_blocks,repeat_segments,period,exact_repeat,incomplete_tail,ambiguous}
+            partial_order,local_blocks,repeat_segments,period,exact_repeat,incomplete_tail,
+            candidate_truncated:deferred.truncated,competing_candidates,unclassified_segments,overlapping_roles,ambiguous}
     }
     fn utf16_span(&self,index:usize)->(usize,usize){
         (self.positions[index][0].1,self.positions[index][1].1)
@@ -1433,12 +1452,41 @@ impl DocumentFeatures{
         if count(pair)>count(reverse){support+=w.order;}
         support
     }
-    // An evaluation identity, NOT a training key. Incomplete coverage
-    // and unknown roles cannot be promoted to independent learning.
+    // Version 3 is an observed structural identity, not the v1 learned
+    // context key or the v2 strict evaluation key. Preserve incomplete
+    // layouts separately until independent equivalence is validated.
+    fn pattern_identity(&self)->Value{
+        let unavailable=if !self.positions_valid{Some("invalid_source_positions")}
+            else if self.candidate_truncated{Some("candidate_budget_exceeded")}
+            else if self.ordered.len()>4096{Some("event_budget_exceeded")}
+            else if self.roles.is_empty(){Some("no_structural_roles")}
+            else{None};
+        let key=if unavailable.is_some(){Value::Null}
+            else if self.incomplete_tail>0{
+                json!([3,"incomplete_role_cycle",&self.roles[..self.period],
+                    &self.roles[self.roles.len()-self.incomplete_tail..]])
+            }else{
+                let cycle=if self.exact_repeat>0{&self.roles[..self.period]}else{self.roles.as_slice()};
+                json!([3,"role_cycle",cycle])
+            };
+        let mut reasons=Vec::new();
+        if self.competing_candidates{reasons.push("competing_candidates");}
+        if self.unclassified_segments{reasons.push("unclassified_segments");}
+        if self.overlapping_roles{reasons.push("overlapping_roles");}
+        if self.incomplete_tail>0{reasons.push("incomplete_repeat");}
+        let status=if unavailable.is_some(){"unavailable"}
+            else if reasons.is_empty(){"observed"}else{"provisional"};
+        json!({"identityVersion":3,"patternKey":key,"status":status,
+            "unavailableReason":unavailable,"uncertaintyReasons":reasons,
+            "scope":"observed_structure_only","learningEligible":false,"trainingKey":null,
+            "learningBlockers":["candidate_coverage_and_pattern_validation_pending"]})
+    }
+    // Preserve the strict v2 evaluation contract for existing baseline
+    // consumers. New consumers use the single v3 identity above.
     fn evaluation(&self,events:&[Evidence],geometry:&SourceGeometry)->Value{
         if events.len()>4096{
             return json!({"version":2,"evaluationKey":null,"trainingKey":null,
-                "status":"event_budget_exceeded"});
+                "status":"event_budget_exceeded","patternIdentity":self.pattern_identity()});
         }
         let cycle=if self.exact_repeat>0{&self.roles[..self.period]}else{self.roles.as_slice()};
         let segments=self.ranges.iter().map(|&(a,b)|{
@@ -1474,7 +1522,8 @@ impl DocumentFeatures{
             "roles":self.roles,"observed":observed,"segments":segments,"period":self.period,
             "exactRepeatCount":self.exact_repeat,"incompleteTail":self.incomplete_tail,
             "repeatSegments":repeat_segments,"localBlocks":local,"relations":relations,
-            "partialOrder":partial,"ambiguous":self.ambiguous,"trainingKey":null})
+            "partialOrder":partial,"ambiguous":self.ambiguous,"trainingKey":null,
+            "patternIdentity":self.pattern_identity()})
     }
 }
 fn retain_unclassified_fragments(raw:&str,lines:&[Line<'_>],non_delivery:&HashSet<usize>,
@@ -3051,6 +3100,43 @@ mod tests {
         assert!(!doc.exclusions.excludes("quantity",start,raw.len()));
         let result=assign_document(doc,&state,None).unwrap();
         assert_eq!(result["recipients"][0]["items"][0]["quantity"],2);
+    }
+    #[test]
+    fn pattern_identity_survives_soft_conflicts_without_authorizing_training(){
+        let raw="abcdefghijklmno";
+        let kinds=["name","mobile","product","name","mobile","product"];
+        let events=kinds.iter().enumerate().map(|(i,&kind)|Evidence{
+            kind,value:String::new(),start:i*2,end:i*2+1,line:i,paragraph:0,
+            reason:"synthetic",recipient:None,item_id:None
+        }).collect::<Vec<_>>();
+        let clean=DocumentFeatures::new(raw,&events,&[],&CommonCandidates::default()).pattern_identity();
+        let mut candidates=CommonCandidates::default();
+        candidates.record(raw,"segment",1,2,CandidateDisposition::UnclassifiedSegment);
+        candidates.record(raw,"name",4,5,CandidateDisposition::CompetingType);
+        let uncertain=DocumentFeatures::new(raw,&events,&[],&candidates).pattern_identity();
+        assert_eq!(clean["patternKey"],uncertain["patternKey"]);
+        assert_eq!(uncertain["status"],"provisional");
+        assert_eq!(uncertain["uncertaintyReasons"],json!(["competing_candidates","unclassified_segments"]));
+        assert_eq!(uncertain["learningEligible"],false);
+        assert!(uncertain["trainingKey"].is_null());
+        let incomplete=DocumentFeatures::new(raw,&events[..4],&[],&candidates).pattern_identity();
+        assert_eq!(incomplete["patternKey"],json!([3,"incomplete_role_cycle",["N","T","P"],["N"]]));
+        assert_ne!(incomplete["patternKey"],clean["patternKey"]);
+        candidates.truncated=true;
+        let unavailable=DocumentFeatures::new(raw,&events,&[],&candidates).pattern_identity();
+        assert!(unavailable["patternKey"].is_null());
+        assert_eq!(unavailable["unavailableReason"],"candidate_budget_exceeded");
+    }
+    #[test]
+    fn lightweight_pattern_projection_matches_detailed_projection(){
+        let raw="수취인: 김가상\n010-0000-0001\n709 1개";
+        let state=state();
+        let plain=execute("analyze_order",json!({"raw":raw,"state":state})).unwrap();
+        let mut lightweight=execute("analyze_order",json!({"raw":raw,"state":state,"includePatternIdentity":true})).unwrap();
+        let full=execute("analyze_order",json!({"raw":raw,"state":state,"includeDocumentFeatures":true})).unwrap();
+        assert_eq!(lightweight["patternIdentity"],full["documentFeatures"]["patternIdentity"]);
+        lightweight.as_object_mut().unwrap().remove("patternIdentity");
+        assert_eq!(plain,lightweight);
     }
     #[test]
     fn document_features_reuse_order_and_normalize_item_counts(){
