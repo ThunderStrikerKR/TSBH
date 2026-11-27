@@ -36,21 +36,7 @@ jobs:
             'performance_shadow_grid_matches_reference_losses'
           )
           foreach ($test in $expected) {
-            $pattern = '(^|::)' + [regex]::Escape($test) + ': test      - name: Recognition support and learning ledger regression
-        run: |
-          cargo test --manifest-path egui-app/Cargo.toml recognition_support_tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml recognition_learning_store_tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: First analysis and correction regressions
-        run: |
-          cargo test --manifest-path egui-app/Cargo.toml recognition::observations::tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml recognition::learning_context::tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml learning_lifecycle_excludes_cancelled_deleted_and_partial_orders -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
+            $pattern = '(^|::)' + [regex]::Escape($test) + ': test$'
             $matchesFound = @($listed | Where-Object { $_ -match $pattern })
             if ($matchesFound.Count -ne 1) {
               throw "Expected exactly one performance regression test: $test; found $($matchesFound.Count)"
