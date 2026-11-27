@@ -2,6 +2,32 @@
 //! Every mutation returns a new JSON value; persistence belongs to the integrator.
 use serde_json::{json, Value};
 
+/// Shared copy templates only. Each caller retains its own validation and
+/// legacy-data projection; these functions cannot approve or mutate an order.
+pub(crate) fn correction_message_header(shipment_id:&str)->Vec<String>{
+    vec![
+        "기존 출고 건 정정 요청입니다.".into(),
+        format!("배송 ID: {shipment_id}"),
+        "새 출고 주문이 아닙니다.".into(),
+    ]
+}
+pub(crate) fn correction_change_line(label:&str,before:&str,after:&str)->String{
+    format!("{label}: {before} → {after}")
+}
+pub(crate) fn factory_conflict_message(row:&str,name:&str,current_tracking:&str,
+    current_fee:&str,reply_tracking:&str,reply_fee:&str)->String{
+    format!("{row}행 / {name}\n기존: {current_tracking} / 운임 {current_fee}\n회신: {reply_tracking} / 운임 {reply_fee}\n이 한 행만 정정할까요? 기존 값과 원본 파일은 보존됩니다.")
+}
+#[cfg(test)]
+#[test]
+fn shared_correction_copy_retains_scope_and_before_after_values(){
+    assert_eq!(correction_message_header("s1").join("\n"),
+        "기존 출고 건 정정 요청입니다.\n배송 ID: s1\n새 출고 주문이 아닙니다.");
+    assert_eq!(correction_change_line("공장 운임","미확정","0원"),"공장 운임: 미확정 → 0원");
+    assert_eq!(factory_conflict_message("2","김수취","미등록","미확인","0012345678","3,000원"),
+        "2행 / 김수취\n기존: 미등록 / 운임 미확인\n회신: 0012345678 / 운임 3,000원\n이 한 행만 정정할까요? 기존 값과 원본 파일은 보존됩니다.");
+}
+
 /// Display each correction amount independently, including missing values.
 pub(crate) fn correction_fee_text(value:Option<&Value>)->String {
     let Some(v)=value.filter(|v|!v.is_null()) else {return "미확정".into();};

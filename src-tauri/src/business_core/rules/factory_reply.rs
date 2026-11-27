@@ -656,9 +656,9 @@ fn conflict_confirmation_for_state(state:&Value,payload:&Value)->Result<Value,St
     let old=actual(ship,recipient);
     let current=s(field(ship,"tracking"),"FACTORY");
     let current=if current.is_empty(){"미등록"}else{current};
-    let message=format!("{}행 / {}\n기존: {} / 운임 {}\n회신: {} / 운임 {}\n이 한 행만 정정할까요? 기존 값과 원본 파일은 보존됩니다.",
-        row_num,s(row,"name"),current,grouped_amount(&old),
-        s(row,"tracking"),grouped_amount(field(row,"actual")));
+    let message=super::factory_conflict_message(
+        &row_num.to_string(),s(row,"name"),current,&grouped_amount(&old),
+        s(row,"tracking"),&grouped_amount(field(row,"actual")));
     Ok(json!({"text":message}))
 }
 // Historical review rows are resolved only by a later, successfully

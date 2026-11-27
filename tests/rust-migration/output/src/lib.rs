@@ -456,7 +456,7 @@ mod tests {
         let records=r["records"].as_array().unwrap();
         assert_eq!(records.len(),2);
         assert_eq!(records[0]["status"],"PENDING_FACTORY");
-        assert_eq!(records[0]["text"],"기존 출고 건 정정 요청입니다.\n배송 ID: s\n새 출고 주문이 아닙니다.\n주소: 서울 → 경기\n공장 운임: 3000 → 4000원\n운임 방식: 010 → 020");
+        assert_eq!(records[0]["text"],"기존 출고 건 정정 요청입니다.\n배송 ID: s\n새 출고 주문이 아닙니다.\n주소: 서울 → 경기\n공장 운임: 3,000원 → 4,000원\n운임 방식: 010 → 020");
         assert_eq!(records[1]["id"],"legacy");
         assert_eq!(records[1]["text"],Value::Null);
     }

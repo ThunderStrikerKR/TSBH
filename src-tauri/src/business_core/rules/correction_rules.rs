@@ -74,16 +74,12 @@ fn message(state:&Value,request:&Value)->Result<String,String>{
     if before.is_null() || after.is_null(){
         return Err("구조화된 정정 요청을 선택하세요.".into());
     }
-    let mut lines=vec![
-        "기존 출고 건 정정 요청입니다.".to_string(),
-        format!("배송 ID: {}",str_field(request,"shipmentId")),
-        "새 출고 주문이 아닙니다.".to_string()
-    ];
+    let mut lines=super::correction_message_header(str_field(request,"shipmentId"));
     for (field_name,title) in [("name","수취인"),("address","주소"),
         ("mobile","휴대폰"),("phone","전화"),("note","요청사항")]{
         if before.get(field_name)!=after.get(field_name){
-            lines.push(format!("{title}: {} → {}",
-                js_display(before.get(field_name)),js_display(after.get(field_name))));
+            lines.push(super::correction_change_line(title,
+                &js_display(before.get(field_name)),&js_display(after.get(field_name))));
         }
     }
     if field(before,"items")!=field(after,"items"){
@@ -91,7 +87,7 @@ fn message(state:&Value,request:&Value)->Result<String,String>{
             .map(|item|format!("{} ({}) × {}",internal_model(str_field(item,"name")),
                 js_display(item.get("color")),js_display(item.get("quantity"))))
             .collect::<Vec<_>>().join(" / ");
-        lines.push(format!("품목: {} → {}",display_items(before),display_items(after)));
+        lines.push(super::correction_change_line("품목",&display_items(before),&display_items(after)));
     }
     let ship=rows(field(field(state,"workflow"),"shipments")).iter()
         .find(|s|str_field(s,"id")==str_field(request,"shipmentId"));
@@ -102,16 +98,16 @@ fn message(state:&Value,request:&Value)->Result<String,String>{
         let new_fee=after.get("shippingCharges").and_then(|v|v.get(origin))
             .filter(|v|!v.is_null()).or(old_fee);
         if old_fee!=new_fee {
-            lines.push(format!("{title} 운임: {} → {}",
-                super::correction_fee_text(old_fee),super::correction_fee_text(new_fee)));
+            lines.push(super::correction_change_line(&format!("{title} 운임"),
+                &super::correction_fee_text(old_fee),&super::correction_fee_text(new_fee)));
         }
     }
     if before.get("freightCode")!=after.get("freightCode"){
         let code=|v:Option<&Value>| if v.is_none_or(Value::is_null){
             "010".into()
         }else{js_display(v)};
-        lines.push(format!("운임 방식: {} → {}",
-            code(before.get("freightCode")),code(after.get("freightCode"))));
+        lines.push(super::correction_change_line("운임 방식",
+            &code(before.get("freightCode")),&code(after.get("freightCode"))));
     }
     Ok(lines.join("\n"))
 }

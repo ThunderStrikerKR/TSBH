@@ -72,9 +72,9 @@ fn confirm(state:&Value,row:&Value)->Result<String,String> {
     }else{
         row_number.to_string()
     };
-    Ok(format!("{}행 / {}\n기존: {} / 운임 {}\n회신: {} / 운임 {}\n이 한 행만 정정할까요? 기존 값과 원본 파일은 보존됩니다.",
-        printed_row,s(row,"name"),tracking,amount(old),
-        s(row,"tracking"),amount(field(row,"actual"))))
+    Ok(super::super::rules::factory_conflict_message(
+        &printed_row,s(row,"name"),tracking,&amount(old),
+        s(row,"tracking"),&amount(field(row,"actual"))))
 }
 pub(super) fn project(payload:&Value)->Result<Value,String>{
     let state=payload.get("state").ok_or("공장 회신 데이터가 없습니다.")?;
