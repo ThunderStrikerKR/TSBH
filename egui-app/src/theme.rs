@@ -872,21 +872,9 @@ pub fn install(ctx: &egui::Context) {
     // Native egui controls, selectables, toggles and pop-up options inherit
     // the same clearly visible hover feedback as our authored buttons.
     // Keep hover blue distinct from committed orange order selection.
-    style.visuals.widgets.hovered.bg_fill = BUTTON_HOVER_BG;
-    style.visuals.widgets.hovered.weak_bg_fill = BUTTON_HOVER_BG;
-    style.visuals.widgets.hovered.bg_stroke = Stroke::new(
-        SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.72)
-    );
-    style.visuals.widgets.hovered.fg_stroke=Stroke::new(
-        1.5_f32,TEXT
-    );
-    style.visuals.widgets.hovered.expansion = 0.0;
-    style.visuals.widgets.active.bg_fill = INPUT;
-    style.visuals.widgets.active.bg_stroke = Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION);
+    crate::highlight::native_widgets(&mut style.visuals);
     style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(FRAME_STROKE_WIDTH, BORDER);
     style.visuals.widgets.inactive.bg_stroke = Stroke::new(FRAME_STROKE_WIDTH, BORDER);
-    style.visuals.selection.bg_fill = SELECTION.linear_multiply(0.3);
-    style.visuals.selection.stroke = Stroke::new(SELECTION_STROKE_WIDTH, SELECTION);
     style.spacing.item_spacing = Vec2::new(SPACING, SPACING);
     // Per-role horizontal padding is applied by action() below.
     style.spacing.button_padding = Vec2::new(SPACE_12, SPACE_8);
