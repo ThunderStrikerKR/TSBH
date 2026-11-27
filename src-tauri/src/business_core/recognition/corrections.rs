@@ -58,6 +58,9 @@ fn candidate(raw:&str,event:&Value,cell:&Value,kind:&str,method:&str,
         "source":{"start":utf16(raw,start),"end":utf16(raw,end),"text":&raw[start..end],
             "line":&raw[left..right]},
         "originalField":old_field,"target":cell,"beforeValue":before,"afterValue":after,
+        "productId":if cell["itemId"].is_string(){
+            target(&event["afterRows"],cell).and_then(|item|item.get("productId"))
+        }else{None},
         "initialRecognition":event["context"]["initialRecognition"]})
 }
 fn unique_literal(raw:&str,value:&str)->Option<(usize,usize)>{
@@ -103,6 +106,17 @@ fn direct_span(raw:&str,after:&Value,cell:&Value,value:&Value)->Option<(usize,us
             let right=b+raw[b..].find('\n').unwrap_or(raw.len()-b);
             // Multiple quantities or repeated models are ambiguous. No
             // nearest-neighbour guess becomes a learning label.
+            // If another corrected item is on this line, its quantity could
+            // be the same token. Retain ambiguity for a later explicit link.
+            for row in rows(after){
+                for other in rows(&row["items"]){
+                    if text(row,"id")==text(cell,"recipientId") &&
+                       text(other,"id")==text(cell,"itemId"){continue;}
+                    if unique_model(raw,other).is_some_and(|(start,end)|start>=left && end<=right){
+                        return None;
+                    }
+                }
+            }
             let matches=quantity::extract(&raw[left..right]);
             if matches.len()!=1 || matches[0].value!=q{return None;}
             Some((left+matches[0].start,left+matches[0].end))
@@ -165,8 +179,11 @@ pub(super) fn extract(event:&Value)->Result<Value,String>{
                 let initial=text(prior_block,"field");
                 let kind=if initial!=text(cell,"field"){"type_change"}
                     else if old_assignment.is_some(){"assignment_change"}else{"unbound_assignment"};
-                candidates.push(candidate(raw,event,cell,kind,"explicit_binding",a,b,
-                    Some(initial),&value_at(before,cell),&v));
+                let mut evidence=candidate(raw,event,cell,kind,"explicit_binding",a,b,
+                    Some(initial),&value_at(before,cell),&v);
+                evidence["previousTarget"]=old_assignment.cloned().unwrap_or(Value::Null);
+                evidence["sourceBlockId"]=json!(id);
+                candidates.push(evidence);
                 explicit.insert(cell_key(cell));
             }
         }
