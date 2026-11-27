@@ -1239,11 +1239,12 @@ impl ProductManager {
                 let move_request=self.category_manager.take_product_move();
                 if let Some(requests)=move_request.filter(|_|can_edit&&!blocked){
                     let changes=requests.iter().map(|request|
-                        Self::category_move_candidate(catalog,request).map(|(original,candidate)|
-                            json!({"product":candidate,"expectedEntity":original,"source":request.source,"target":request.target}))
+                        Self::category_move_candidate(catalog,request).map(|original|
+                            json!({"expectedEntity":original,"source":request.source,"target":request.target}))
                     ).collect::<Option<Vec<_>>>();
                     if let Some(changes)=changes.filter(|v|!v.is_empty()){
-                        self.start_write("move_products_to_category",json!({"changes":changes}),None,ui.ctx().clone());
+                        let scope=bando_data_access::management_scope_token(catalog,"categories");
+                        self.start_write("move_products_to_category",json!({"changes":changes,"expectedScope":scope}),None,ui.ctx().clone());
                     }else{self.error=Some("선택 상품 또는 이동 대상이 변경되었습니다. 다시 확인해 주세요.".into());}
                 }else if let Some(id)=requested.filter(|_|!blocked){
                     let product=rows(&catalog["products"]).iter().find(|product|
@@ -1989,7 +1990,7 @@ impl ProductManager {
             .map(|(_,name)|name.as_str()).unwrap_or(""));
     }
 
-    fn category_move_candidate(catalog:&Value,request:&crate::category_tree::ProductMove)->Option<(Value,Value)>{
+    fn category_move_candidate(catalog:&Value,request:&crate::category_tree::ProductMove)->Option<Value>{
         if request.id.is_empty()||request.source.is_empty()||request.target.is_empty()
             ||request.source==request.target{return None;}
         let choices=category_choices(catalog);
@@ -2001,9 +2002,7 @@ impl ProductManager {
                 &&field(product,"supersededBy").is_empty()
                 &&rows(&product["categories"]).iter().any(|id|id.as_str()==Some(request.source.as_str()))
         )?.clone();
-        let mut candidate=original.clone();
-        Self::assign_product_category(&mut candidate,&request.target,&choices);
-        Some((original,candidate))
+        Some(original)
     }
 
     fn detail_overview_column(
@@ -2473,11 +2472,7 @@ mod tests {
             ProductManager::category_move_candidate(&catalog,&crate::category_tree::ProductMove{
                 id:id.into(),source:source.into(),target:target.into()
             });
-        let (original,candidate)=change("p1","from","to").unwrap();
-        let mut expected=original.clone();
-        expected["categories"]=json!(["to"]);
-        expected["category"]=json!("이동 대상");
-        assert_eq!(candidate,expected);
+        let original=change("p1","from","to").unwrap();
         assert_eq!(original,catalog["products"][0]);
         assert!(change("p1","from","from").is_none());
         assert!(change("p1","missing","to").is_none());

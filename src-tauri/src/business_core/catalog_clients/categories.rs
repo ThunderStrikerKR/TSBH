@@ -76,10 +76,24 @@ fn set_product_path(product:&mut Value,cats:&[Value])->Result<(),String>{
 }
 fn change(input:&Value,id:&str,name:&str,parent:Option<&str>,transfer:bool,
     guard_catalog_move:bool,guard_message:&str)->Result<Value,String>{
+    let original_cats=items(input,"categories");
+    let original=original_cats.iter().find(|cat|field(cat,"id")==id);
+    let moving=original.is_some_and(|cat|parent_id(cat)!=parent);
+    if moving{
+        let target=parent.ok_or("이동할 상위 분류가 없습니다.")?;
+        if matches!(id,"catalog-root:BANDOSTAND"|"catalog-root:BANDOMALL")||
+            original.is_some_and(|cat|cat["active"]==false)||
+            !original_cats.iter().any(|cat|field(cat,"id")==target)||
+            descendants(original_cats,id)?.contains(target)||
+            category_path(original_cats,target)?.iter().any(|cat|cat["active"]==false||
+                !field(cat,"deletedAt").is_empty()){
+            return Err("이동할 수 없는 분류입니다.".into());
+        }
+    }
     // This is the original CategoryManager move check, previously in React.
     // Empty/unknown catalog roots impose no additional restriction, matching
     // catalogFromCategory() + categoryProducts() in the original UI.
-    if guard_catalog_move {
+    if guard_catalog_move||moving {
         let cats=items(input,"categories");
         let target_path=category_path(cats,parent.unwrap_or(""))?;
         let destination_catalog=target_path.first().and_then(|root|
@@ -97,7 +111,7 @@ fn change(input:&Value,id:&str,name:&str,parent:Option<&str>,transfer:bool,
                 !field(p,"catalog").is_empty() && field(p,"catalog")!="DEMO" &&
                 field(p,"catalog")!=catalog
             });
-            if mismatch {return Err(guard_message.to_owned())}
+            if mismatch {return Err(if guard_message.is_empty(){"상품 소속 충돌".into()}else{guard_message.to_owned()})}
         }
     }
     let mut next=input.clone();
@@ -142,12 +156,29 @@ fn change(input:&Value,id:&str,name:&str,parent:Option<&str>,transfer:bool,
                 .collect::<Vec<_>>();
             product["categories"]=json!(ids);
         }
-        if existing&&category_ids(product).iter().any(|part|moved.contains(part)){
-            let ids=category_ids(product).into_iter()
-                .filter(|part|!old_ancestors.contains(part)).collect::<Vec<_>>();
-            product["categories"]=json!(ids);
+        let linked=existing&&category_ids(product).iter().any(|part|moved.contains(part));
+        if moving&&linked{
+            // Only remove redundant old path IDs when they no longer belong
+            // to any retained branch. Independent memberships survive.
+            let ids=category_ids(product);
+            let mut kept=Vec::new();
+            for part in &ids{
+                if old_ancestors.contains(part){
+                    let mut still_needed=false;
+                    for leaf in ids.iter().filter(|leaf|!old_ancestors.contains(*leaf)){
+                        if category_path(&cats,leaf)?.iter().any(|node|field(node,"id")==part){
+                            still_needed=true;break;
+                        }
+                    }
+                    if !still_needed{continue;}
+                }
+                kept.push(part.clone());
+            }
+            product["categories"]=json!(kept);
         }
-        set_product_path(product,&cats)?;
+        if linked||affected.contains(field(product,"id")){
+            set_product_path(product,&cats)?;
+        }
     }
     next["categories"]=json!(cats);
     next["products"]=json!(products);
@@ -300,6 +331,27 @@ mod tests{
         assert_eq!(state["products"][0]["categories"],json!(["stand"]));
     }
 
+    #[test]
+    fn category_move_preserves_unrelated_products_and_rejects_invalid_destinations(){
+        let before=json!({"categories":[
+            {"id":"catalog-root:BANDOSTAND","name":"반도스탠드","parentId":null},
+            {"id":"a","name":"A","parentId":"catalog-root:BANDOSTAND"},
+            {"id":"leaf","name":"L","parentId":"a"},
+            {"id":"b","name":"B","parentId":"catalog-root:BANDOSTAND"},
+            {"id":"c","name":"C","parentId":"catalog-root:BANDOSTAND","active":false}
+        ],"products":[
+            {"id":"p","categories":["a","leaf"],"category":"반도스탠드 > A > L"},
+            {"id":"other","categories":["b"],"category":"legacy label","defaultColor":"검정"}
+        ],"orders":[{"id":"o","price":9000}]});
+        let after=change(&before,"leaf","L",Some("b"),false,false,"").unwrap();
+        assert_eq!(after["state"]["products"][0]["categories"],json!(["leaf"]));
+        assert_eq!(after["state"]["products"][0]["category"],"반도스탠드 > B > L");
+        assert_eq!(after["state"]["products"][1],before["products"][1]);
+        assert_eq!(after["state"]["orders"],before["orders"]);
+        assert!(change(&before,"a","A",Some("leaf"),false,false,"").is_err());
+        assert!(change(&before,"leaf","L",Some("c"),false,false,"").is_err());
+        assert!(change(&before,"catalog-root:BANDOSTAND","반도스탠드",Some("b"),false,false,"").is_err());
+    }
     #[test]
     fn category_cross_catalog_move_rejects_existing_product_mismatch(){
         let state=json!({
