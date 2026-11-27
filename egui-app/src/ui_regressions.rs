@@ -928,6 +928,61 @@ mod shared_selection_interaction_tests {
         }
     }
 
+    #[test]
+    fn clipped_controls_reject_clicks_in_hidden_half_of_allocation(){
+        #[derive(Clone,Copy,Debug)]
+        enum Control{Button,Input,Checkbox,Dropdown}
+        for control in [Control::Button,Control::Input,Control::Checkbox,Control::Dropdown]{
+            for scale in [1.0_f32,1.25,1.5]{
+                for visible in [true,false]{
+                    let ctx=test_context();
+                    ctx.set_pixels_per_point(scale);
+                    let mut actions=0;
+                    let mut value=String::new();
+                    let mut checked=false;
+                    let mut draw=|clip:Option<Rect>,events|{
+                        let mut frame=None;
+                        let _=ctx.run(raw(&ctx,events),|ctx|{
+                            egui::CentralPanel::default().show(ctx,|ui|{
+                                if let Some(clip)=clip{ui.set_clip_rect(ui.clip_rect().intersect(clip));}
+                                let response=match control{
+                                    Control::Button=>crate::button::action_with_min_width(ui,
+                                        "적용",theme::ButtonRole::Standard,true,180.0),
+                                    Control::Input=>crate::input::field(ui,&mut value,crate::input::FieldKind::Text,true),
+                                    Control::Checkbox=>checkbox(ui,&mut checked,"전체 배송 건을 선택합니다",true),
+                                    Control::Dropdown=>crate::dropdown::management_dropdown_trigger(ui,"선불",180.0,true,None),
+                                };
+                                if response.clicked(){actions+=1;}
+                                frame=Some((response.rect,response.interact_rect,response.has_focus()));
+                            });
+                        });
+                        frame.unwrap()
+                    };
+                    let base=draw(None,vec![]);
+                    let clip=Rect::from_min_max(egui::pos2(0.0,0.0),
+                        egui::pos2(base.0.center().x,700.0));
+                    let clipped=draw(Some(clip),vec![]);
+                    assert_layout_rects_invariant(&[("allocation",base.0)],&[("allocation",clipped.0)]);
+                    let expected=base.0.intersect(clip);
+                    crate::ui_test_support::assert_rect_geometry("clipped hit region",clipped.1,expected,1.0);
+                    let pos=egui::pos2(base.0.left()+base.0.width()*if visible{0.2}else{0.8},base.0.center().y);
+                    let result=click(pos,|events|draw(Some(clip),events));
+                    if matches!(control,Control::Input){
+                        assert_eq!(result.2,visible,"{control:?}: clipped focus scale {scale}");
+                        draw(Some(clip),vec![egui::Event::Text("7".into())]);
+                    }
+                    drop(draw);
+                    if matches!(control,Control::Input){
+                        assert_eq!(value,if visible{"7"}else{""});
+                    }else{
+                        assert_eq!(actions,if visible{1}else{0},"{control:?}: clipped activation scale {scale}");
+                    }
+                    if matches!(control,Control::Checkbox){assert_eq!(checked,visible);}
+                }
+            }
+        }
+    }
+
     #[derive(Clone,Copy,Debug)]
     enum Selector { Ordinary,Compact,Status }
     struct SelectFrame {
