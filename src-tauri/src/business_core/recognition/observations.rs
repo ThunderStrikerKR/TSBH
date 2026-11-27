@@ -803,11 +803,19 @@ mod tests{
         external["confirmationSnapshot"]["recipients"][1]["mobile"]=json!("010-9999-9999");
         assert_eq!(owner_result(&external)["outcome"],"unresolved_evidence");
     }
+    // Synthetic confirmed records seal their own exact audit IDs. Legacy
+    // fixtures used for first/final comparisons intentionally remain unsealed.
+    fn seal_test_audits(mut p:Value)->Value{
+        let ids=rows(&p["recognitionAuditEvents"]).map(|e|e["id"].clone())
+            .collect::<Vec<_>>();
+        p["confirmationSnapshot"]["recognitionBaseline"]["auditEventIds"]=json!(ids);
+        p
+    }
     #[test]
     fn owner_audit_statistics_separate_positive_negative_and_weak_evidence(){
         let p=audited_reassignment();
         let summary=super::super::learning_context::statistics(&json!({
-            "orders":[p.clone(),p,patterned_order("unchanged")]
+            "orders":[seal_test_audits(p.clone()),seal_test_audits(p),seal_test_audits(patterned_order("unchanged"))]
         })).unwrap();
         for group in summary["statistics"].as_array().unwrap(){
             let c=&group["counts"];
@@ -845,7 +853,7 @@ mod tests{
         rs[1]["mobile"]=json!("010-1234-5678");
         rs[1]["sources"].as_array_mut().unwrap().push(source);
         let result=super::super::learning_context::statistics(&json!({
-            "orders":[a.clone(),a.clone(),b]
+            "orders":[seal_test_audits(a.clone()),seal_test_audits(a.clone()),seal_test_audits(b)]
         })).unwrap();
         assert_eq!(result["uniqueOrders"],2);
         assert_eq!(result["statistics"].as_array().unwrap().len(),3);
@@ -871,13 +879,13 @@ mod tests{
         let a=patterned_order("one");
         let mut b=patterned_order("two");
         b["confirmationSnapshot"]["data"]["clientId"]=json!("different-client");
-        let result=super::super::learning_context::statistics(&json!({"orders":[a.clone(),b]})).unwrap();
+        let result=super::super::learning_context::statistics(&json!({"orders":[seal_test_audits(a.clone()),seal_test_audits(b)]})).unwrap();
         let groups=result["statistics"].as_array().unwrap();
         assert_eq!(groups.len(),3);
         let client=groups.iter().find(|g|g["key"].as_str().unwrap().contains("client_structure")).unwrap();
         assert_eq!(client["counts"]["independentOrders"],1);
         let filtered=super::super::learning_context::statistics(&json!({
-            "orders":[a],"contextKeys":[client["key"]]
+            "orders":[seal_test_audits(a)],"contextKeys":[client["key"]]
         })).unwrap();
         assert_eq!(filtered["statistics"].as_array().unwrap().len(),1);
     }
@@ -946,7 +954,7 @@ mod tests{
         let mut tie=p.clone();
         tie["recognitionAuditEvents"][1]["at"]=final_event["at"].clone();
         assert_eq!(field_observation(&tie,"product")["outcome"],"changed_requires_review");
-        let summary=super::super::learning_context::statistics(&json!({"orders":[p]})).unwrap();
+        let summary=super::super::learning_context::statistics(&json!({"orders":[seal_test_audits(p)]})).unwrap();
         let product=rows(&summary["fieldStatistics"]).find(|v|v["task"]=="product").unwrap();
         assert_eq!(product["counts"]["explicitCorrectionCount"],1);
         assert!(product["counts"]["explicitPositiveCandidates"].get("intermediate").is_none());
@@ -996,7 +1004,7 @@ mod tests{
         assert_eq!(o["outcome"],"explicit_correction_observed");
         assert_eq!(o["negativeCandidates"],json!(["quantity"]));
         assert_eq!(o["positiveCandidates"],json!(["product"]));
-        let summary=super::super::learning_context::statistics(&json!({"orders":[p.clone(),p]})).unwrap();
+        let summary=super::super::learning_context::statistics(&json!({"orders":[seal_test_audits(p.clone()),seal_test_audits(p)]})).unwrap();
         let product=rows(&summary["fieldStatistics"]).find(|v|v["task"]=="product").unwrap();
         assert_eq!(product["counts"]["explicitPositiveCandidates"]["new"],1);
         assert_eq!(product["counts"]["explicitNegativeCandidates"]["old"],1);
