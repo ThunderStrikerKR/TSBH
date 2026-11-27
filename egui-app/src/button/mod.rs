@@ -1,7 +1,9 @@
 //! Shared native button rendering and hover/focus policy.
 use eframe::egui::{self,Color32,CornerRadius,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::{theme,typography};
-use crate::theme::*;
+use crate::theme::{
+    ButtonRole, ACTION_QUIET_HEIGHT, ACTION_STANDARD_HEIGHT, ERROR_TEXT, SPACE_4, SPACE_8,
+};
 use crate::ui_primitives::{paint_workflow_icon,WorkflowIcon,ManagementChevronDirection,paint_management_chevron,paint_management_chevron_with_color,paint_chevron_at_angle_scaled};
 
 /// Register the interaction, then delegate painting to the highlight owner.
@@ -593,6 +595,12 @@ pub(crate) fn dispatch_origin(right:&mut Ui,label:&str,selected:bool,editable:bo
 #[cfg(test)]
 mod shared_action_style_tests{
     use super::*;
+    use crate::theme::{
+        BORDER, BRIGHT, BRIGHT_TEXT, BUTTON_HOVER_BG, BUTTON_HOVER_BORDER_WIDTH,
+        BUTTON_HOVER_LIGHT_BG, BUTTON_HOVER_TINT, DISABLED_ACTION_BG, DISABLED_ACTION_BORDER,
+        DISABLED_ACTION_TEXT, FRAME_STROKE_WIDTH, INPUT, RAISED, SECONDARY, SELECTION,
+        SOFT_DIVIDER_WIDTH, TEXT,
+    };
     use crate::highlight::button_hover_palette;
 
     #[test]

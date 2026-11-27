@@ -907,7 +907,11 @@ pub(crate) enum SurfaceRole{
 pub(crate) struct SurfacePalette{pub fill:Color32,pub border:Color32}
 
 pub(crate) const fn surface_palette(role:SurfaceRole,state:VisualState)->SurfacePalette{
-    use SurfaceRole::*;
+    use SurfaceRole::{
+        Workspace, Header, Panel, Section, Summary, Modal, Input, FieldAction, Inset,
+        ModalSection, AlternateRow, Button, TableHeader, RaisedInset, Notice, WorkflowCard,
+        NavigationSegment,
+    };
     let (fill,border)=match role{
         Workspace=>(CANVAS,Color32::TRANSPARENT),
         Header=>(HEADER_BG,Color32::TRANSPARENT),

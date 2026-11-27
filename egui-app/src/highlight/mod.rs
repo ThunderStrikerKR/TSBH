@@ -100,7 +100,10 @@ pub(crate) struct Palette{
     pub fill:Option<Color32>,pub stroke:Option<Stroke>,pub ink:Option<Color32>,
 }
 pub(crate) fn palette(role:Role)->Palette{
-    use Role::*;
+    use Role::{
+        Hover, LightHover, LinkedPreview, Selected, RequiredReview, RequiredInput, Focus,
+        DropTarget, DropHovered, ReviewTint, RowHover, ChooserSelected,
+    };
     let (fill,stroke,ink)=match role{
         Hover=>(Some(theme::BUTTON_HOVER_TINT),Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::SELECTION)),None),
         LightHover=>(Some(theme::BUTTON_HOVER_LIGHT_BG),Some(Stroke::new(theme::BUTTON_HOVER_BORDER_WIDTH,theme::BUTTON_HOVER_LIGHT_BORDER)),Some(theme::BRIGHT_TEXT)),
@@ -146,7 +149,10 @@ impl Geometry{
     }
 }
 pub(crate) fn button_geometry(role:theme::ButtonRole)->Geometry{
-    use theme::ButtonRole::*;
+    use theme::ButtonRole::{
+        Navigation, ActiveNavigation, ManagementTab, ActiveManagementTab, KakaoControl,
+        ActiveKakaoControl,
+    };
     match role{
         Navigation|ActiveNavigation|ManagementTab|ActiveManagementTab=>Geometry::Navigation,
         KakaoControl|ActiveKakaoControl=>Geometry::Compact,

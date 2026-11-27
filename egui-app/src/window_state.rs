@@ -30,7 +30,8 @@ pub(crate) fn write_atomic(path:&Path,bytes:&[u8])->io::Result<()>{
 
 #[cfg(windows)]
 mod native{
-    use super::*;
+    use super::{ui_state_path,write_atomic};
+    use std::io;
     use std::time::{Duration,Instant};
     type Hwnd=isize;
     #[repr(C)]

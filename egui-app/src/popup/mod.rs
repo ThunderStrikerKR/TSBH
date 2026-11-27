@@ -2,7 +2,10 @@
 use eframe::egui::{self,Align,Frame,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::ui_primitives::UiWidthPolicyExt;
 use crate::{theme,typography};
-use crate::theme::*;
+use crate::theme::{
+    role_surface_frame, SurfaceRole, VisualState, CONTROL_RADIUS, MODAL_PANEL_PADDING_X,
+    MODAL_PANEL_PADDING_Y, PANEL_RADIUS, SPACE_12, SPACE_2, SPACE_8,
+};
 use crate::ui_primitives::{truncated_label,section_divider,form_field_label_sized};
 use crate::scrollbar::{scroll_area,ScrollAxes};
 pub(crate) fn modal_frame() -> Frame {

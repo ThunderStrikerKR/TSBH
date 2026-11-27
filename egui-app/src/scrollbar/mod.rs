@@ -1,6 +1,6 @@
 //! Native scroll construction, rail style and common viewport height policy.
 use eframe::egui::{self,Ui};
-use crate::theme::*;
+use crate::theme::scroll_rail_geometry;
 /// Common native scroll construction. Screen-specific IDs, bounds and shrink
 /// behavior are applied by the caller; shared role policies build on this.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
