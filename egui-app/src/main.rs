@@ -10938,6 +10938,21 @@ fn main() -> eframe::Result<()> {
                     }
                 }
             }
+            // Keep candidate-level catalog IDs internal to the diagnostic
+            // result. The CLI's existing no-ID output contract is unchanged.
+            if let Some(records)=report["fieldStatistics"].as_array_mut(){
+                for record in records{
+                    if matches!(record["task"].as_str(),Some("product"|"variant")){
+                        if let Some(counts)=record["counts"].as_object_mut(){
+                            for key in ["weakCandidates","explicitPositiveCandidates",
+                                "explicitNegativeCandidates","weakCandidateOrders",
+                                "explicitPositiveCandidateOrders","explicitNegativeCandidateOrders"]{
+                                counts.remove(key);
+                            }
+                        }
+                    }
+                }
+            }
             Ok(report)
         })();
         match result{
