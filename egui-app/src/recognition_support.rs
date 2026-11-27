@@ -329,6 +329,31 @@ fn context_quality(report:&Value)->Value{
 }
 // Choose exactly one context, never add correlated tiers together.
 // Qualified disagreements block selection even when one tier is narrower.
+// R01 diagnostic comparison: no fitted legacy score or blend weight is
+// available for type yet. Never treat support share as a probability.
+fn type_comparison(location:&Value,selection:&Value)->Value{
+    let valid_kind=|s:&str|matches!(s,"name"|"address"|"phone"|"mobile"|"product"|"quantity"|"note");
+    let allowed=location["candidates"].as_array().into_iter().flatten()
+        .filter_map(Value::as_str).collect::<BTreeSet<_>>();
+    let baseline=location["legacyTypeCandidate"].as_str().filter(|s|valid_kind(s)&&allowed.contains(s));
+    let top=selection["diagnosticCandidate"].as_str().filter(|s|valid_kind(s)&&allowed.contains(s));
+    let complete=location["candidates"].as_array().is_some_and(|a|a.len()==allowed.len()&&a.len()<=64)
+        &&allowed.iter().all(|s|valid_kind(s));
+    let ready=baseline.is_some()&&complete&&allowed.len()>=2
+        &&location["candidateCoverage"]=="traced_partial"
+        &&selection["status"]=="diagnostic_context_selected"&&selection["contextConflict"]==false
+        &&selection["selectedContextKey"].as_str().is_some()&&top.is_some();
+    let status=if baseline.is_none(){"unverified_legacy_type"}
+        else if !complete||allowed.len()<2||location["candidateCoverage"]!="traced_partial"{"insufficient_traced_alternatives"}
+        else if !ready{"retain_legacy_no_qualified_context"}
+        else if baseline==top{"diagnostic_agreement"}
+        else if matches!(baseline,Some("phone"|"mobile"))&&matches!(top,Some("phone"|"mobile")){"contact_slot_not_type_change"}
+        else{"diagnostic_disagreement"};
+    json!({"schemaVersion":1,"status":status,"legacyCandidate":baseline,
+        "learningCandidate":if ready{top}else{None},"candidateCoverage":location["candidateCoverage"],
+        "selectedContextKey":selection["selectedContextKey"],"blendWeight":null,"calibratedProbability":null,
+        "eligibleForAutomaticDecision":false,"decisionChanged":false})
+}
 pub(super) fn select_contexts(locations:&[Value],reports:&[Value])->Vec<Value>{
     locations.iter().map(|loc|{
         let mut levels=Vec::new();let mut passed=Vec::new();let mut seen=BTreeSet::new();
@@ -352,11 +377,15 @@ pub(super) fn select_contexts(locations:&[Value],reports:&[Value])->Vec<Value>{
         passed.sort_by_key(|r|std::cmp::Reverse(r.0));
         let conflict=passed.first().is_some_and(|first|passed.iter().any(|r|r.1!=first.1));
         let selected=if invalid||conflict{None}else{passed.first()};
-        json!({"start":loc["start"],"end":loc["end"],"task":task,
+        let mut result=json!({"start":loc["start"],"end":loc["end"],"task":task,
             "status":if invalid{"invalid_context_join"}else if conflict{"context_conflict"}else if selected.is_some(){"diagnostic_context_selected"}else{"retain_legacy_no_qualified_context"},
             "contextConflict":conflict,"selectedContextKey":selected.map(|r|&r.2),
             "diagnosticCandidate":selected.map(|r|r.1),"levels":levels,
-            "overlappingContextsCombined":false,"eligibleForAutomaticDecision":false,"decisionChanged":false})
+            "overlappingContextsCombined":false,"eligibleForAutomaticDecision":false,"decisionChanged":false});
+        if task=="type"{
+            result["typeComparison"]=type_comparison(loc,&result);
+        }
+        result
     }).collect()
 }
 
@@ -677,6 +706,32 @@ mod recognition_support_tests{
         assert_eq!(chosen[0]["status"],"context_conflict");
         assert!(chosen[0]["diagnosticCandidate"].is_null());
         assert_eq!(chosen[0]["decisionChanged"],false);
+    }
+    #[test]
+    fn type_comparison_requires_traced_candidates_and_qualified_context(){
+        let key=json!([1,"type","base",null,[]]).to_string();
+        let mut loc=json!({"start":0,"end":3,"task":"type","candidates":["name","product"],
+            "legacyTypeCandidate":"product","candidateCoverage":"traced_partial","contextKeys":[key]});
+        let mut report=json!({"task":"type","contextKey":key,"candidateIds":["name","product"],
+            "contextQuality":{"status":"diagnostic_screen_pass","topCandidate":"name"}});
+        let check=|loc:&Value,r:&Value|select_contexts(std::slice::from_ref(loc),std::slice::from_ref(r))[0]["typeComparison"].clone();
+        let v=check(&loc,&report);
+        assert_eq!(v["status"],"diagnostic_disagreement");
+        assert_eq!(v["legacyCandidate"],"product");assert_eq!(v["learningCandidate"],"name");
+        assert_eq!(v["decisionChanged"],false);assert!(v["blendWeight"].is_null());
+        report["contextQuality"]["topCandidate"]=json!("product");
+        assert_eq!(check(&loc,&report)["status"],"diagnostic_agreement");
+        loc["candidateCoverage"]=json!("observed_only");
+        assert_eq!(check(&loc,&report)["status"],"insufficient_traced_alternatives");
+        loc["candidateCoverage"]=json!("traced_partial");
+        loc["legacyTypeCandidate"]=Value::Null;
+        assert_eq!(check(&loc,&report)["status"],"unverified_legacy_type");
+        loc["legacyTypeCandidate"]=json!("product");
+        report["contextQuality"]["topCandidate"]=json!("outside");
+        assert_eq!(check(&loc,&report)["status"],"retain_legacy_no_qualified_context");
+        loc["candidates"]=json!(["mobile","phone"]);loc["legacyTypeCandidate"]=json!("mobile");
+        report["candidateIds"]=loc["candidates"].clone();report["contextQuality"]["topCandidate"]=json!("phone");
+        assert_eq!(check(&loc,&report)["status"],"contact_slot_not_type_change");
     }
     fn evidence(weak:&[(&str,u64)],positive:&[(&str,u64)],negative:&[(&str,u64)])->Evidence{
         let map=|x:&[(&str,u64)]|x.iter().map(|(k,n)|(k.to_string(),*n)).collect();
