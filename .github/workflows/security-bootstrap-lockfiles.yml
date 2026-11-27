@@ -4,6 +4,12 @@ on:
     branches: [security/v0.8.0-pre-release]
     paths:
       - '.github/workflows/security-bootstrap-lockfiles.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/security-bootstrap-lockfiles.yml'
+      - 'egui-app/Cargo.toml'
+      - 'crates/bando-data-access/Cargo.toml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -12,7 +18,11 @@ concurrency:
   cancel-in-progress: false
 jobs:
   resolve:
-    if: github.ref == 'refs/heads/security/v0.8.0-pre-release'
+    if: >-
+      github.ref == 'refs/heads/security/v0.8.0-pre-release' ||
+      (github.event_name == 'pull_request' &&
+      github.head_ref == 'security/v0.8.0-pre-release' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: windows-latest
     timeout-minutes: 15
     permissions:
@@ -20,6 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Generate genuine Cargo lockfiles
         shell: pwsh
@@ -41,6 +52,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path crates/bando-data-access/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Report exact lockfile bytes for read-only recovery
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          foreach ($path in @('egui-app/Cargo.lock','crates/bando-data-access/Cargo.lock')) {
+            $bytes = [IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $path).Path)
+            $encoded = [Convert]::ToBase64String($bytes)
+            Write-Output "LOCK_BEGIN:$path"
+            Write-Output "LOCK_SHA256:$((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)"
+            for ($i=0; $i -lt $encoded.Length; $i+=1024) {
+              Write-Output ("LOCK_CHUNK:" + $encoded.Substring($i,[Math]::Min(1024,$encoded.Length-$i)))
+            }
+            Write-Output "LOCK_END:$path"
+          }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: resolved-cargo-locks
@@ -51,7 +76,7 @@ jobs:
           retention-days: 3
   commit:
     needs: resolve
-    if: github.ref == 'refs/heads/security/v0.8.0-pre-release'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/security/v0.8.0-pre-release'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
