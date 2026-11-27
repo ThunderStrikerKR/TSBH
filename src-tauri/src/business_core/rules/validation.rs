@@ -41,6 +41,49 @@ fn shipment_for<'a>(state: &'a Value, ship: &Value) -> Result<(&'a Value,&'a Val
     }
     Ok((order,row))
 }
+// Shared semantic validation for one shipment; the general writer still
+// checks all shipments, whereas factory replies check only their targets.
+fn validate_shipment_row(state:&Value,w:&Value,s:&Value)->Result<(),String>{
+    let (order,_recipient) = shipment_for(state,s)?;
+    let group = find_by_id(field(w,"groups"),str_field(s,"groupId"));
+    let step = field(s,"step").as_i64();
+    if str_field(order,"orderType") == "RETAIL" {
+        let has_payment = rows(field(w,"payments")).iter().any(|p|
+            rows(field(p,"allocations")).iter().any(|a| str_field(a,"shipmentId")==str_field(s,"id")));
+        let has_confirmation = rows(field(w,"confirmations")).iter().any(|c|
+            rows(field(c,"shipmentIds")).iter().any(|v|v.as_str()==Some(str_field(s,"id"))));
+        if !flag(s,"transferred") || step != Some(4)
+            || group.is_some_and(|g|!rows(field(g,"notices")).is_empty())
+            || has_payment || has_confirmation {
+            return Err("소매 주문에는 입금 / 계좌 안내 단계를 만들 수 없습니다.".into());
+        }
+    }
+    let source = find_by_id(field(w,"sources"),str_field(s,"sourceId"));
+    let valid_link = match (group,source) {
+        (Some(g),Some(src)) => str_field(src,"orderId") == str_field(order,"id")
+            && str_field(g,"sourceId") == str_field(src,"id")
+            && str_field(g,"dealerId") == str_field(order,"clientId"),
+        _ => false
+    };
+    if !valid_link {return Err("발주서 / 묶음 / 배송 건 연결 오류".into());}
+    if step.is_none_or(|n| !(0..=4).contains(&n)) {
+        return Err("잘못된 진행 단계".into());
+    }
+    if s.get("stageValidity").is_some(){
+        let stages=super::workflow_stages::explicit(s).ok_or("업무 단계 상태 형식 오류")?;
+        if Some(super::workflow_stages::prefix(stages))!=step || (stages[3]&&!stages[2]){
+            return Err("업무 단계 상태 불일치".into());
+        }
+    }
+    for v in field(s,"actualFreight").as_object().into_iter().flat_map(|m|m.values()) {
+        if !v.is_null() && safe(v).is_none() {return Err("출고 운임 금액 오류".into());}
+    }
+    for v in field(s,"charges").as_object().into_iter().flat_map(|m|m.values()) {
+        if !v.is_null() && safe(v).is_none() {return Err("운임 금액 오류".into());}
+    }
+    Ok(())
+}
+
 pub(super) fn validate(state: &Value, before: Option<&Value>) -> Result<(),String> {
     validate_with_prior_core(state,before,before)
 }
@@ -67,43 +110,7 @@ pub(super) fn validate_with_prior_core(state:&Value,before:Option<&Value>,
                     .any(|recipient|str_field(recipient,"id")==str_field(s,"recipientId"))) {
             continue;
         }
-        let (order,_recipient) = shipment_for(state,s)?;
-        let group = find_by_id(field(w,"groups"),str_field(s,"groupId"));
-        let step = field(s,"step").as_i64();
-        if str_field(order,"orderType") == "RETAIL" {
-            let has_payment = rows(field(w,"payments")).iter().any(|p|
-                rows(field(p,"allocations")).iter().any(|a| str_field(a,"shipmentId")==str_field(s,"id")));
-            let has_confirmation = rows(field(w,"confirmations")).iter().any(|c|
-                rows(field(c,"shipmentIds")).iter().any(|v|v.as_str()==Some(str_field(s,"id"))));
-            if !flag(s,"transferred") || step != Some(4)
-                || group.is_some_and(|g|!rows(field(g,"notices")).is_empty())
-                || has_payment || has_confirmation {
-                return Err("소매 주문에는 입금 / 계좌 안내 단계를 만들 수 없습니다.".into());
-            }
-        }
-        let source = find_by_id(field(w,"sources"),str_field(s,"sourceId"));
-        let valid_link = match (group,source) {
-            (Some(g),Some(src)) => str_field(src,"orderId") == str_field(order,"id")
-                && str_field(g,"sourceId") == str_field(src,"id")
-                && str_field(g,"dealerId") == str_field(order,"clientId"),
-            _ => false
-        };
-        if !valid_link {return Err("발주서 / 묶음 / 배송 건 연결 오류".into());}
-        if step.is_none_or(|n| !(0..=4).contains(&n)) {
-            return Err("잘못된 진행 단계".into());
-        }
-        if s.get("stageValidity").is_some(){
-            let stages=super::workflow_stages::explicit(s).ok_or("업무 단계 상태 형식 오류")?;
-            if Some(super::workflow_stages::prefix(stages))!=step || (stages[3]&&!stages[2]){
-                return Err("업무 단계 상태 불일치".into());
-            }
-        }
-        for v in field(s,"actualFreight").as_object().into_iter().flat_map(|m|m.values()) {
-            if !v.is_null() && safe(v).is_none() {return Err("출고 운임 금액 오류".into());}
-        }
-        for v in field(s,"charges").as_object().into_iter().flat_map(|m|m.values()) {
-            if !v.is_null() && safe(v).is_none() {return Err("운임 금액 오류".into());}
-        }
+        validate_shipment_row(state,w,s)?;
     }
     for p in rows(field(w,"payments")) {
         // TypeScript evaluates amount(payment.amount) first, then sum()
@@ -323,6 +330,136 @@ pub(super) fn validate_with_prior_core(state:&Value,before:Option<&Value>,
     }
     Ok(())
 }
+/// Dedicated factory transition. The caller has already proved that the
+/// relational order/catalog trees are unchanged. Never revalidate unrelated
+/// payment, queue, group, delivery or reception records merely on import.
+pub(super) fn validate_factory_transition(state:&Value,before:&Value)->Result<(),String>{
+    let old=field(before,"workflow");
+    let new=field(state,"workflow");
+    let a=old.as_object().ok_or("기존 업무 상태 오류")?;
+    let b=new.as_object().ok_or("업무 상태 형식 오류")?;
+    let protected=|key:&str|!matches!(key,"shipments"|"events");
+    if !a.iter().filter(|(k,_)|protected(k)).eq(b.iter().filter(|(k,_)|protected(k))){
+        return Err("공장 회신이 다른 업무 기록을 변경했습니다.".into());
+    }
+    let prior=field(before,"factoryReplies");
+    let old_replies=if prior.is_null(){&[][..]}else{prior.as_array().ok_or("공장 회신 이력 오류")?.as_slice()};
+    let replies=field(state,"factoryReplies").as_array().ok_or("공장 회신 이력 오류")?;
+    if replies.len()!=old_replies.len()+1||!replies.starts_with(old_replies){
+        return Err("기존 공장 회신 이력은 보존해야 합니다.".into());
+    }
+    let reply=&replies[old_replies.len()];
+    let reply_id=str_field(reply,"id");
+    if reply_id.is_empty()||old_replies.iter().any(|r|str_field(r,"id")==reply_id)
+        || !matches!(str_field(reply,"status"),"APPLIED"|"PARTIAL"|"REVIEW"){
+        return Err("공장 회신 기록 ID 또는 상태 오류".into());
+    }
+    let reply_rows=field(reply,"rows").as_array().ok_or("공장 회신 행 목록 오류")?;
+    let mut applied=HashMap::new();
+    let mut row_numbers=HashSet::new();
+    for row in reply_rows{
+        if !field(row,"row").as_u64().is_some_and(|n|n>=2&&row_numbers.insert(n)){
+            return Err("공장 회신 행 번호 오류".into());
+        }
+        if flag(row,"applied"){
+            let id=str_field(row,"shipmentId");
+            let tracking=str_field(row,"tracking");
+            if id.is_empty()||applied.insert(id,row).is_some()||!(8..=30).contains(&tracking.len())
+                ||!tracking.bytes().all(|v|v.is_ascii_digit())||safe(field(row,"actual")).is_none(){
+                return Err("반영된 공장 회신 행의 배송/송장/운임 오류".into());
+            }
+        }
+    }
+    if !field(reply,"resolves").is_null(){
+        let origin=find_by_id(prior,str_field(field(reply,"resolves"),"id"))
+            .ok_or("원본 공장 회신 누락")?;
+        if !rows(field(origin,"rows")).iter().any(|r|field(r,"row")==field(field(reply,"resolves"),"row")){
+            return Err("원본 공장 회신 행 누락".into());
+        }
+    }
+    let old_events=field(old,"events").as_array().ok_or("기존 업무 이벤트 목록 오류")?;
+    let events=field(new,"events").as_array().ok_or("업무 이벤트 목록 오류")?;
+    if !events.starts_with(old_events){return Err("기존 업무 이벤트는 보존해야 합니다.".into());}
+    let new_events=&events[old_events.len()..];
+    let mut event_ids:HashSet<&str>=old_events.iter().map(|e|str_field(e,"id")).collect();
+    let mut events_by_shipment:HashMap<&str,Vec<&Value>>=HashMap::new();
+    for e in new_events{
+        let id=str_field(e,"id");
+        let targets=rows(field(e,"shipmentIds"));
+        if id.is_empty()||!event_ids.insert(id)||targets.len()!=1
+            || !targets[0].as_str().is_some_and(|id|applied.contains_key(id)){
+            return Err("공장 회신 이벤트 연결 또는 ID 오류".into());
+        }
+        events_by_shipment.entry(targets[0].as_str().unwrap_or("")).or_default().push(e);
+        match str_field(e,"action"){
+            "실제 출고 운임 입력"=>{},
+            "공장 회신 반영"|"공장 송장 / 운임 정정"=>{
+                if str_field(field(e,"after"),"fileId")!=reply_id{return Err("공장 회신 이벤트 원본 연결 오류".into());}
+            },
+            _=>return Err("공장 회신에서 허용되지 않는 이벤트입니다.".into()),
+        }
+    }
+    let old_ships=field(old,"shipments").as_array().ok_or("기존 배송 목록 오류")?;
+    let ships=field(new,"shipments").as_array().ok_or("배송 목록 오류")?;
+    if old_ships.len()!=ships.len(){return Err("배송 건 고유 ID와 최초 연결은 보존해야 합니다.".into());}
+    let mut checked=HashSet::new();
+    // Index all tracking owners to retain collision protection, even outside
+    // the selected order scope. No unrelated shipment semantics are checked.
+    let mut owners:HashMap<&str,usize>=HashMap::new();
+    for ship in ships{
+        let tracking=str_field(field(ship,"tracking"),"FACTORY");
+        if !tracking.is_empty(){*owners.entry(tracking).or_default()+=1;}
+    }
+    for (previous,ship) in old_ships.iter().zip(ships){
+        let id=str_field(ship,"id");
+        let Some(row)=applied.get(id).copied() else{
+            if ship!=previous{return Err("회신 대상이 아닌 배송 건이 변경됐습니다.".into());}
+            continue;
+        };
+        if !checked.insert(id)||str_field(previous,"id")!=id||flag(ship,"legacyArchived"){
+            return Err("공장 회신 배송 연결 오류".into());
+        }
+        // Compare every non-factory field, including stage, charges,
+        // delivery, payment links and other origins.
+        let mut restored=ship.clone();
+        for key in ["tracking","actualFreight"]{
+            let current=field(ship,key);
+            let original=field(previous,key);
+            let other=|value:&Value|value.as_object().map(|m|
+                m.iter().filter(|(k,_)|k.as_str()!="FACTORY").map(|(k,v)|(k.clone(),v.clone())).collect::<serde_json::Map<String,Value>>()).unwrap_or_default();
+            if other(current)!=other(original) {return Err("공장 외 출고 정보는 변경할 수 없습니다.".into());}
+            let map=restored.as_object_mut().ok_or("배송 상태 형식 오류")?;
+            if let Some(value)=previous.get(key){map.insert(key.into(),value.clone());}else{map.remove(key);}
+        }
+        if restored!=*previous{return Err("공장 회신이 다른 배송 정보를 변경했습니다.".into());}
+        validate_shipment_row(state,new,ship)?;
+        let (_,recipient)=shipment_for(state,ship)?;
+        let actual=|s:&Value|field(s,"actualFreight").get("FACTORY").cloned().unwrap_or_else(||field(recipient,"actualFreight").clone());
+        let tracking=str_field(field(ship,"tracking"),"FACTORY");
+        if field(ship,"orderId")!=field(row,"orderId")||tracking!=str_field(row,"tracking")
+            || actual(ship)!=*field(row,"actual")||owners.get(tracking)!=Some(&1){
+            return Err("공장 회신 반영값과 배송 기록 불일치".into());
+        }
+        let evidence=events_by_shipment.get(id).map(Vec::as_slice).unwrap_or(&[]);
+        let previous_actual=actual(previous);
+        if field(previous,"actualFreight").get("FACTORY")!=field(ship,"actualFreight").get("FACTORY")
+            && !evidence.iter().any(|e|str_field(e,"action")=="실제 출고 운임 입력"
+                && field(e,"before")==&previous_actual&&str_field(field(e,"after"),"origin")=="FACTORY"
+                && field(field(e,"after"),"amount")==field(row,"actual")){
+            return Err("출고 운임의 수정 근거를 확인하세요.".into());
+        }
+        if ship!=previous&&!evidence.iter().any(|e|matches!(str_field(e,"action"),"공장 회신 반영"|"공장 송장 / 운임 정정")
+            && field(field(e,"before"),"tracking")==field(field(previous,"tracking"),"FACTORY")
+            && field(field(e,"before"),"actual")==&previous_actual
+            && field(field(e,"after"),"tracking")==field(row,"tracking")
+            && field(field(e,"after"),"actual")==field(row,"actual")){
+            return Err("공장 회신의 변경 근거를 확인하세요.".into());
+        }
+    }
+    if checked.len()!=applied.len(){return Err("공장 회신 배송 연결 오류".into());}
+    Ok(())
+}
+
 /// Exact source-equivalent sender requirements from order-types.ts.
 pub(super) fn company_sender_missing(state:&Value)->Vec<String>{
     let settings=field(state,"settings");
@@ -534,4 +671,60 @@ mod immutable_history_index_tests{
         let duplicate=json!([{"id":"a","value":1},{"id":"a","value":2}]);
         assert!(!unchanged_records(&duplicate,&duplicate));
     }
+}
+
+#[cfg(test)]
+#[test]
+fn factory_scope_ignores_unchanged_unrelated_faults_but_protects_reply_targets(){
+    let old=serde_json::json!({
+        "orders":[{"id":"o","clientId":"c","recipients":[{"id":"r","actualFreight":null}]}],
+        "clients":[{"id":"c"}],"factoryReplies":[],
+        "workflow":{
+            "sources":[{"id":"src","orderId":"o"}],
+            "groups":[{"id":"g","sourceId":"src","dealerId":"c"}],
+            "shipments":[
+                {"id":"s","orderId":"o","recipientId":"r","sourceId":"src","groupId":"g",
+                 "step":4,"charges":{"FACTORY":3000},"tracking":{},"actualFreight":{}},
+                {"id":"unrelated","orderId":"missing","step":99}
+            ],
+            "payments":[{"id":"old-invalid","amount":-1}],"events":[]
+        }
+    });
+    let mut new=old.clone();
+    new["workflow"]["shipments"][0]["tracking"]["FACTORY"]=serde_json::json!("001234567890");
+    new["workflow"]["shipments"][0]["actualFreight"]["FACTORY"]=serde_json::json!(4000);
+    new["factoryReplies"]=serde_json::json!([{"id":"reply","status":"APPLIED","rows":[
+        {"row":2,"applied":true,"shipmentId":"s","orderId":"o","tracking":"001234567890","actual":4000}
+    ]}]);
+    new["workflow"]["events"]=serde_json::json!([
+        {"id":"fee","action":"실제 출고 운임 입력","shipmentIds":["s"],"before":null,
+         "after":{"origin":"FACTORY","amount":4000}},
+        {"id":"reply-event","action":"공장 회신 반영","shipmentIds":["s"],
+         "before":{"tracking":null,"actual":null},
+         "after":{"tracking":"001234567890","actual":4000,"fileId":"reply"}}
+    ]);
+    assert!(validate(&new,Some(&old)).is_err());
+    assert!(validate_factory_transition(&new,&old).is_ok());
+    let mut invalid=new.clone();
+    invalid["workflow"]["payments"][0]["amount"]=serde_json::json!(0);
+    assert!(validate_factory_transition(&invalid,&old).is_err());
+    let mut invalid=new.clone();
+    invalid["workflow"]["shipments"][0]["charges"]["FACTORY"]=serde_json::json!(4000);
+    assert!(validate_factory_transition(&invalid,&old).is_err());
+    let mut invalid=new.clone();
+    invalid["workflow"]["events"].as_array_mut().unwrap().remove(0);
+    assert!(validate_factory_transition(&invalid,&old).is_err());
+    let mut invalid=new.clone();
+    invalid["workflow"]["shipments"][1]["step"]=serde_json::json!(4);
+    assert!(validate_factory_transition(&invalid,&old).is_err());
+    let mut duplicate_old=old.clone();
+    duplicate_old["workflow"]["shipments"][1]["tracking"]=serde_json::json!({"FACTORY":"001234567890"});
+    let mut duplicate_new=new.clone();
+    duplicate_new["workflow"]["shipments"][1]=duplicate_old["workflow"]["shipments"][1].clone();
+    assert!(validate_factory_transition(&duplicate_new,&duplicate_old).is_err());
+    let mut missing_link=old.clone();
+    missing_link["orders"]=serde_json::json!([]);
+    let mut missing_next=new.clone();
+    missing_next["orders"]=serde_json::json!([]);
+    assert!(validate_factory_transition(&missing_next,&missing_link).is_err());
 }
