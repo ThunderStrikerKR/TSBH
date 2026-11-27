@@ -19,9 +19,6 @@ pub const PANEL: Color32 = Color32::from_rgb(24, 24, 24);
 // Never use INPUT/RAISED (fields/buttons) as a table zebra fill.
 pub const TABLE_ROW_ALT_BG: Color32 = Color32::from_rgb(30, 30, 30);
 pub const INPUT: Color32 = Color32::from_rgb(34, 34, 34);
-// Disabled management dropdowns use a darker field surface while keeping
-// the same height, border and split-chevron geometry as enabled dropdowns.
-pub const MANAGEMENT_DROPDOWN_DISABLED_BG: Color32 = DISABLED_ACTION_BG;
 // Strong disabled styling shared by management select and action controls.
 // Avoid changing the approved enabled #292929 field / #303030 button roles.
 pub const DISABLED_ACTION_BG: Color32 = Color32::from_rgb(30, 30, 30);
@@ -108,13 +105,10 @@ pub const fn text_ink(role:TextRole,state:TextState)->Color32{
 }
 pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
 pub const INTERACTION_BLUE_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,20);
-pub const TABLE_SORT_HOVER_TINT:Color32=INTERACTION_BLUE_TINT;
 pub const SOURCE_BLOCK_FILL:Color32=Color32::from_rgb(66,66,66);
 pub const SOURCE_CONTEXT_FILL:Color32=Color32::from_rgb(73,73,73);
 pub const MANUAL_ASSIGNMENT_TINT:Color32=INTERACTION_BLUE_TINT;
-pub const MANUAL_ASSIGNMENT_HOVER_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,42);
 pub const MANUAL_ASSIGNMENT_STROKE_WIDTH:f32=1.25;
-pub const MANUAL_ASSIGNMENT_HOVER_STROKE_WIDTH:f32=2.0;
 pub const CARD_BORDER:Color32=DIVIDER;
 // Restore the original shared blue pointer feedback; focus stays independent.
 pub const BUTTON_HOVER_BG:Color32=Color32::from_rgb(47,62,74);
@@ -189,7 +183,6 @@ pub fn workflow_selected_row_fill() -> Color32 {
 pub const WORKFLOW_CARD_BG: Color32 = INPUT;
 pub const WORKFLOW_SELECTED_BG: Color32 = WORKFLOW_CARD_BG;
 pub const WORKFLOW_CARD_BORDER: Color32 = DIVIDER;
-pub const WORKFLOW_SELECTED_BORDER: Color32 = SELECTED_ORDER;
 pub const WORKFLOW_CARD_PADDING_X: f32 = SPACE_6;
 pub const WORKFLOW_CARD_PADDING_Y: f32 = SPACE_8;
 pub const WORKFLOW_CARD_RADIUS: u8 = 7;
@@ -279,7 +272,6 @@ pub const SETTINGS_BASIC_SPLIT_MIN_WIDTH:f32=1040.0;
 pub const SETTINGS_BASIC_LEFT_PANE_WIDTH:f32=410.0;
 pub const SETTINGS_BASIC_SAVE_RESERVE:f32=50.0;
 pub const SETTINGS_OPERATOR_FIELD_WIDTH:f32=112.0;
-pub const SETTINGS_SENDER_WIDE_MIN_WIDTH:f32=660.0;
 pub const SETTINGS_SENDER_NAME_WIDTH:f32=164.0;
 pub const SETTINGS_SENDER_POSTCODE_WIDTH:f32=106.0;
 pub const SETTINGS_SENDER_PHONE_WIDTH:f32=160.0;
@@ -338,8 +330,6 @@ pub const RECEPTION_RECIPIENT_NAV_WIDTH:f32 =
     +RECEPTION_RECIPIENT_NAV_NAME_WIDTH
     +RECEPTION_RECIPIENT_NAV_COUNT_WIDTH
     +2.0*FRAME_STROKE_WIDTH;
-// The header and the bottom edge must use the same vertical inset.
-pub const RECEPTION_SECTION_HEADER_TOP: f32 = RECEPTION_PANE_PADDING_Y;
 // Compact reception header only; ordinary management/modal rules stay 12pt.
 pub const RECEPTION_SECTION_DIVIDER_GAP: f32 = SPACE_8;
 pub const RECEPTION_SECTION_DIVIDER_HEIGHT: f32 =
@@ -397,7 +387,6 @@ pub const DOCK_SPLITTER_HOVER_LINE: f32 = 2.0;
 pub const SOFT_DIVIDER_WIDTH: f32 = 1.0;
 pub const FRAME_STROKE_WIDTH: f32 = 1.0;
 pub const SELECTION_STROKE_WIDTH:f32=1.0;
-pub const INPUT_FOCUS_STROKE_WIDTH:f32=2.0;
 pub const REQUIRED_INPUT_STROKE_WIDTH:f32=2.0;
 // Radius hierarchy: modal shell 9pt, section cards 8pt, controls 6pt, source chips 4pt.
 pub const CONTROL_RADIUS: u8 = 6;
@@ -566,8 +555,6 @@ pub const CATALOG_TREE_GUIDE_COLOR:Color32 = Color32::from_rgb(74,74,74);
 pub const CATALOG_TREE_GUIDE_WIDTH:f32 = 1.0;
 pub const CATALOG_TREE_FOLDER_STROKE:f32 = 1.5;
 pub const CATALOG_TREE_FOLDER_COLOR:Color32 = SECONDARY;
-pub const CATALOG_TREE_SELECTED_BG:Color32 = ORANGE_EMPHASIS_BG;
-pub const CATALOG_TREE_SELECTED_BORDER:Color32 = SELECTED_ORDER;
 pub const CATALOG_TREE_SELECTED_INK:Color32 = ORANGE_EMPHASIS_TEXT;
 // Keep category search useful without stretching a single field across
 // the full management panel width.
@@ -1083,7 +1070,7 @@ mod shared_visual_role_contract_tests{
         assert_eq!(icon_ink(IconRole::Interactive,VisualState::Normal),SECONDARY);
         assert_eq!(icon_ink(IconRole::Navigation,VisualState::Disabled),RECEPTION_RECIPIENT_NAV_DISABLED_ICON);
         assert_eq!(field_visual(VisualState::Normal,TEXT),(INPUT,TEXT,Stroke::new(SOFT_DIVIDER_WIDTH,BORDER)));
-        assert_eq!(field_visual(VisualState::Disabled,TEXT),(MANAGEMENT_DROPDOWN_DISABLED_BG,DISABLED_ACTION_TEXT,Stroke::new(FRAME_STROKE_WIDTH,DISABLED_ACTION_BORDER)));
+        assert_eq!(field_visual(VisualState::Disabled,TEXT),(DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,Stroke::new(FRAME_STROKE_WIDTH,DISABLED_ACTION_BORDER)));
     }
 }
 

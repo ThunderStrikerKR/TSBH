@@ -373,7 +373,6 @@ pub fn key(recipient:&str,target:&str,field:&str)->LinkKey {
 pub const ACTIVE_FILL:Color32=theme::LINKED_PREVIEW_BG;
 pub const ACTIVE_TEXT:Color32=theme::LINKED_PREVIEW_TEXT;
 pub const ACTIVE_BORDER:Color32=theme::LINKED_PREVIEW_BORDER;
-pub const ACTIVE_RADIUS:f32=crate::highlight::SOURCE_RADIUS;
 pub const ACTIVE_BORDER_WIDTH:f32=theme::LINKED_PREVIEW_BORDER_WIDTH;
 
 pub fn is_active(active:Option<&LinkKey>, key:&LinkKey)->bool {
@@ -387,19 +386,15 @@ pub fn is_active_field(active:Option<&LinkKey>,recipient:&str,target:&str,field:
 }
 
 
-/// Fill must be painted before the value text. For TextEdit use its
-/// background_color() instead, so the native editor paints behind glyphs.
-pub fn paint_active_background(ui:&egui::Ui,rect:egui::Rect) {
-    crate::highlight::paint_fill(ui.painter(),rect,crate::highlight::Geometry::Source,crate::highlight::Role::LinkedPreview);
-}
-
 /// Draw the same 2pt outline whenever the shared visible projection
 /// marks a field active. A board-driven recipient preview and a span-driven
 /// hover MUST produce exactly the same border, even when no LinkKey has
 /// completed its 50ms entrance timer yet.
-pub(crate) fn paint_active_outline(ui:&egui::Ui,rect:egui::Rect,geometry:crate::highlight::Geometry){
+#[cfg(test)]
+fn paint_active_outline(ui:&egui::Ui,rect:egui::Rect,geometry:crate::highlight::Geometry){
     crate::highlight::paint_outline(ui.painter(),rect,geometry,crate::highlight::Role::LinkedPreview);
 }
+#[cfg(test)]
 pub fn paint_active_if(ui:&egui::Ui, response:&egui::Response, highlighted:bool) {
     if highlighted {
         paint_active_outline(ui,response.rect,crate::highlight::Geometry::Source);
@@ -1207,7 +1202,7 @@ mod tests {
         assert_eq!(SOURCE_ACTIVE,ACTIVE_FILL);
         assert_eq!(SOURCE_ACTIVE_TEXT,ACTIVE_TEXT);
         assert_eq!(SOURCE_ACTIVE_BORDER,ACTIVE_BORDER);
-        assert_eq!(ACTIVE_RADIUS,4.0);
+        assert_eq!(crate::highlight::SOURCE_RADIUS,4.0);
         assert_eq!(ACTIVE_BORDER_WIDTH,2.0);
     }
 
@@ -1218,7 +1213,7 @@ mod tests {
         assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_TEXT,theme::BRIGHT_TEXT);
         assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_BORDER,theme::MANUAL_SOURCE_UNASSIGNED_FILL);
         assert_eq!(theme::SOURCE_BLOCK_RADIUS,4.0);
-        assert_eq!(ACTIVE_RADIUS,theme::SOURCE_BLOCK_RADIUS);
+        assert_eq!(crate::highlight::SOURCE_RADIUS,theme::SOURCE_BLOCK_RADIUS);
         assert_eq!(theme::MANUAL_SOURCE_CLASSIFIED_BORDER,theme::SOURCE_RECOGNIZED_BORDER);
         assert_ne!(theme::MANUAL_SOURCE_UNASSIGNED_BORDER,theme::SOURCE_RECOGNIZED_BORDER);
         assert_ne!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,ACTIVE_FILL);

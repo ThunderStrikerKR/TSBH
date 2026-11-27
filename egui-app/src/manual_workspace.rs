@@ -4206,7 +4206,7 @@ mod manual_workspace_layout_tests{
         // Shared section chrome includes the approved 8pt header and divider gaps.
         // Keep explicit geometry expectations independent of the budget helper.
         assert_eq!(theme::SECTION_DIVIDER_GAP,12.0);
-        assert_eq!(theme::RECEPTION_SECTION_HEADER_TOP,8.0);
+        assert_eq!(theme::RECEPTION_PANE_PADDING_Y,8.0);
         assert_eq!(theme::RECEPTION_SECTION_DIVIDER_GAP,8.0);
         assert_eq!(manual_recipient_card_height(),235.0);
         assert_eq!(manual_workspace_columns_height(),591.0);

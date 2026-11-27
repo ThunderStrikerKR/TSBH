@@ -54,6 +54,7 @@ pub(crate) fn management_status_dropdown(
 
 /// Compact, two-option menus such as 선불 / 착불 never grow wider than their
 /// own trigger. Other selectors may expand to fit longer catalog names.
+#[cfg(test)]
 pub(crate) fn management_dropdown_compact(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,
     options:impl FnOnce(&mut Ui)

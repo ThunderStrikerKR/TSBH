@@ -46,14 +46,6 @@ pub(crate) fn body_error_overlay(ui:&Ui,viewport:Rect,context:&str,error:&str){
         clipped,display.as_ref());
 }
 
-/// Untyped recognition notices retain informational coloring. Callers
-/// that actually know an operation failed must use the explicit error path.
-pub(crate) fn reception_review_status(ui:&mut Ui,message:&str){
-    reception_review_notice(ui,"reception.review",message,theme::ReviewTone::Info);
-}
-pub(crate) fn reception_preview_status(ui:&mut Ui,message:&str){
-    reception_review_notice(ui,"reception.preview",message,theme::ReviewTone::Info);
-}
 pub(crate) fn reception_review_error(ui:&mut Ui,context:&str,message:&str){
     reception_review_notice(ui,context,message,theme::ReviewTone::Error);
 }

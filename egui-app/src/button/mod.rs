@@ -406,6 +406,7 @@ fn management_date_segment_geometry(edge:ManagementDateSegmentEdge)->crate::high
         ManagementDateSegmentEdge::Trailing=>crate::highlight::Geometry::DateTrailing,
     }
 }
+#[cfg(test)]
 fn management_date_segment_corners(edge:ManagementDateSegmentEdge)->egui::CornerRadius{
     management_date_segment_geometry(edge).corners()
 }

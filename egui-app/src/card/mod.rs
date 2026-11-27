@@ -279,12 +279,6 @@ pub(crate) fn management_summary_card_with_state(ui:&mut Ui,label:&str,value:&st
 pub(crate) enum SummaryCardRole{Count,Settlement}
 /// Count and monetary summaries share geometry, typography and frame.
 /// Settlement preserves its wider card and explicit amount clipping.
-pub(crate) fn management_summary_card_with_role(
-    ui:&mut Ui,label:&str,value:&str,role:SummaryCardRole
-){
-    management_summary_card_with_role_and_state(ui,label,value,role,theme::TextState::Normal);
-}
-
 pub(crate) fn management_summary_card_with_role_and_state(
     ui:&mut Ui,label:&str,value:&str,role:SummaryCardRole,state:theme::TextState
 ){

@@ -1000,8 +1000,6 @@ const compositeContracts = {
   "table/mod.rs:editable_cell_hit":{
     ".interact":1,"ui_primitives::overflow_tooltip":1,".on_hover_cursor":1
   },
-  "source_highlight.rs:paint_active_if":{"paint_active_outline":1},
-  "source_highlight.rs:paint_active_outline":{"highlight::paint_outline":1}
 };
 const compositeRawBans = {
   "composite_reception.rs:reception_item_row":[
@@ -1073,11 +1071,9 @@ function compositeSelfTest(){
   assert.equal(auditComposite("fn render(){card::paint_source_document_surface(ui,r);}","new_screen.rs").length,1);
   assert.equal(auditComposite("fn render(){card::reception_document_viewport(ui,r,a,b,f);}","new_screen.rs").length,0);
   assert.equal(auditComposite("fn render(){/* card::source_document_frame(); */ let s=\"source_document_frame\";}","new_screen.rs").length,0);
-  assert.equal(auditComposite("fn paint_active_outline(){highlight::paint_outline(p,r,a,b);} fn paint_active_if(){paint_active_outline();}","source_highlight.rs",true).length,0);
-  assert.equal(auditComposite("fn paint_active_outline(){} fn paint_active_if(){paint_active_outline();}","source_highlight.rs",true).length,1);
   assert.equal(auditComposite("fn message_section(){ui.scope_builder(a,b);}","main.rs").length,1);
   assert.equal(auditComposite("fn source_section(){ui.scope_builder(a,b);}","main.rs").length,0);
-  console.log("EGUI_COMPOSITE_UI_SELFTEST_PASS",14);
+  console.log("EGUI_COMPOSITE_UI_SELFTEST_PASS",12);
 }
 
 function selfTest(){
@@ -1343,7 +1339,7 @@ export function designTokenViolations(source,file){
   const code=productionTokens(source).map(t=>t.v).join(" ");
   const required={
     "theme.rs":[
-      "TABLE_SORT_HOVER_TINT : Color32 = INTERACTION_BLUE_TINT",
+      "INTERACTION_BLUE_TINT : Color32 = Color32 :: from_rgba_unmultiplied_const ( 112 , 180 , 255 , 20 )",
       "MANUAL_ASSIGNMENT_TINT : Color32 = INTERACTION_BLUE_TINT",
       "BUTTON_HOVER_TINT : Color32 = Color32 :: from_rgba_unmultiplied_const ( 112 , 180 , 255 , 66 )",
       "BUTTON_HOVER_LIGHT_BG : Color32 = Color32 :: from_rgb ( 143 , 197 , 255 )",
@@ -1485,13 +1481,10 @@ const highlightContracts = {
     "reception_recipient_emphasis":{"highlight :: field_background (":1},
     "reception_item_row":{"highlight :: field_background (":1,"highlight :: field_outline (":1,"highlight :: item_cell_rect (":1}},
   "input/mod.rs":{
-    "paint_required_input":{"highlight :: paint (":1},
     "reception_recipient_inline_cell_editor":{"highlight :: field_background (":1,"highlight :: field_outline (":1},
     "reception_money_editor_at_rect":{"highlight :: field_background (":1,"highlight :: field_outline (":1},
     "reception_freight_money_readonly":{"highlight :: field_background (":1,"highlight :: field_outline (":1}},
   "source_highlight.rs":{
-    "paint_active_background":{"highlight :: paint_fill (":1},
-    "paint_active_outline":{"highlight :: paint_outline (":1},
     "block_shapes_with_states":{"highlight :: fill_shape (":1,"highlight :: outline_shape (":2},
     "compact_block_rect":{"highlight :: source_block_rect (":1},
     "separate_touching_blocks":{"highlight :: separate_source_blocks (":1},
@@ -1502,7 +1495,7 @@ const highlightContracts = {
     "outline_shape":{"highlight :: outline_shape (":1},
     "background":{"highlight :: paint_fill (":1},
     "outline":{"highlight :: paint_outline (":1},
-    "mark":{"highlight :: paint (":1}},
+    },
   "card/mod.rs":{"workflow_group_card":{"highlight :: paint_stripe (":1,"highlight :: card_stripe_rect (":1}},
 };
 // Explicit interaction tokens used by paint/style methods, not ordinary
@@ -1705,6 +1698,12 @@ const retiredProductionUiFunctions={
   "typography.rs":["management_table_cell_color","freight_summary_large_number_galley","numeric_editor_font"],
   "ui_primitives.rs":["paint_selection_outline","paint_action_hover_corners","paint_action_hover_surface"],
   "button/mod.rs":["paint_button_hover_corners"],
+  "status_notice/mod.rs":["reception_review_status","reception_preview_status"],
+  "highlight/mod.rs":["light_button"],
+  "card/mod.rs":["management_summary_card_with_role"],
+  "input/mod.rs":["paint_required_input"],
+  "one_touch.rs":["mark"],
+  "source_highlight.rs":["paint_active_background"],
 };
 // Removed forwarding routes cannot be recreated or called by new screens.
 function forwardingContractViolations(source,file){

@@ -1887,7 +1887,7 @@ mod linked_highlight_palette_tests {
     fn shared_selection_palette_preserves_selection_geometry_and_white_buttons() {
         use egui::Color32;
         assert_eq!(theme::SELECTED_ORDER,Color32::from_rgb(245,158,11));
-        assert_eq!(theme::WORKFLOW_SELECTED_BORDER,theme::SELECTED_ORDER);
+        assert_eq!(crate::highlight::palette(crate::highlight::Role::Selected).stroke.unwrap().color,theme::SELECTED_ORDER);
         assert_eq!(theme::WORKFLOW_SELECTED_STRIPE,2.0);
         assert_eq!(theme::WORKFLOW_SELECTED_BG,theme::WORKFLOW_CARD_BG);
         assert_eq!(theme::WORKFLOW_CARD_BG,theme::INPUT);

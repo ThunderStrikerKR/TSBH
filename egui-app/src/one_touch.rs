@@ -86,10 +86,6 @@ pub fn background(ui:&Ui,rect:Rect){
 pub fn outline(ui:&Ui,rect:Rect){
     crate::highlight::paint_outline(ui.painter(),rect,crate::highlight::Geometry::Control,crate::highlight::Role::RequiredReview);
 }
-/// Existing widgets with their own fill: tint lightly without covering text.
-pub fn mark(ui:&Ui,rect:Rect){
-    crate::highlight::paint(ui,rect,crate::highlight::Geometry::Control,crate::highlight::Role::ReviewTint);
-}
 /// Byte ranges of the exact printed total, tax label, and native account.
 /// Never infer a bank or calculate a monetary value.
 pub fn payment_ranges(text:&str,signature:&str)->Vec<(usize,usize)>{

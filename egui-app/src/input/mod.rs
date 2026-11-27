@@ -848,12 +848,6 @@ pub(crate) fn reception_item_numeric_editor(
     }
 }
 
-/// Persistent required-input accent. Paint on the already allocated cell,
-/// after any inline editor and blue/orange hover decoration. No layout space.
-pub(crate) fn paint_required_input(ui:&Ui,rect:Rect){
-    crate::highlight::paint(ui,rect,crate::highlight::Geometry::Control,crate::highlight::Role::RequiredInput);
-}
-
 // Shared controls and presentation profiles.
 /// Read-only TextEdit does not reliably own the egui hover response.
 /// One shared hit target now owns field hover, I-beam cursor and inline-click

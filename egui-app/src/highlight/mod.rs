@@ -179,6 +179,7 @@ pub(crate) fn fill_shape(rect:Rect,geometry:Geometry,fill:Color32)->egui::Shape{
 pub(crate) fn outline_shape(rect:Rect,geometry:Geometry,stroke:Stroke)->egui::Shape{
     egui::Shape::rect_stroke(rect,geometry.corners(),stroke,egui::StrokeKind::Inside)
 }
+#[cfg(test)]
 pub(crate) fn painter(ui:&Ui,rect:Rect)->Option<Painter>{
     (rect.is_positive()&&rect.intersects(ui.clip_rect())).then(||ui.painter().clone())
 }
@@ -286,16 +287,6 @@ pub(crate) fn action_widget(ui:&mut Ui,rest:Color32,stroke:Stroke,state:impl Int
 pub(crate) fn fixed_action_surface(ui:&Ui,response:&Response,geometry:Geometry,rest:Color32,stroke:Stroke,light:bool,interactive:bool){
     let (fill,border)=action_surface(rest,stroke,light,interactive&&response.hovered(),interactive&&response.has_focus());
     paint_parts(ui.painter(),response.rect,geometry,Some(fill),Some(border));
-}
-/// Native widgets retain hit testing, layout and text; only their scoped
-/// visual state is configured here. Light button fill is behind dark text.
-pub(crate) fn light_button(ui:&mut Ui,rest:Color32){
-    let fill=palette(Role::LightHover).fill.unwrap_or(rest);
-    let widgets=&mut ui.visuals_mut().widgets;
-    widgets.inactive.weak_bg_fill=rest;
-    widgets.hovered.weak_bg_fill=fill;
-    widgets.active.weak_bg_fill=fill;
-    widgets.open.weak_bg_fill=fill;
 }
 pub(crate) fn dropdown_options(ui:&mut Ui){
     let visuals=ui.visuals_mut();

@@ -1088,7 +1088,6 @@ mod shared_general_screen_audit_tests {
         ));
         assert!(manual.contains("theme::SOURCE_DOCUMENT_TEXT_MARGIN"));
         assert_eq!(theme::RECEPTION_PANE_PADDING_Y,8.0);
-        assert_eq!(theme::RECEPTION_SECTION_HEADER_TOP,theme::RECEPTION_PANE_PADDING_Y);
         assert_eq!(theme::SECTION_PADDING,12.0);
         assert_eq!(theme::SOURCE_DOCUMENT_TEXT_MARGIN,4);
         assert!(theme::SOURCE_DOCUMENT_TEXT_MARGIN as f32 >=
@@ -2004,7 +2003,7 @@ pub(crate) mod general_screen_geometry_tests {
             "header-row-to-divider clearance drifted: {top_gap:.2}pt");
         assert!((bottom_gap-8.0).abs()<=0.5,
             "divider-to-visible-document-frame clearance drifted: {bottom_gap:.2}pt");
-        let expected_chrome=theme::RECEPTION_SECTION_HEADER_TOP
+        let expected_chrome=theme::RECEPTION_PANE_PADDING_Y
             +theme::RECEPTION_PANE_PADDING_Y
             +theme::SECTION_HEADER_HEIGHT
             +17.0;
