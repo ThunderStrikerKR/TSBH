@@ -1154,6 +1154,47 @@ mod tests{
         assert_eq!(total.wire()["brierOnCovered"],0.0625);
         assert_eq!(total.wire()["hardLegacyBrierOnCovered"],1.0);
     }
+    #[test]
+    fn owner_calibration_time_split_excludes_late_labels_and_blocked_scores(){
+        let make=|id:&str,predicted:&str,confirmed:&str,blocked:bool|{
+            let mut p=owner_fixture();
+            p["id"]=json!(id);p["learningActive"]=json!(true);p["confirmedAt"]=json!(confirmed);
+            p["confirmationSnapshot"]["at"]=json!(confirmed);
+            p["recognitionAuditEvents"]=json!([]);
+            let base=&mut p["confirmationSnapshot"]["recognitionBaseline"];
+            base["auditEventIds"]=json!([]);
+            let first=&mut base["initialAnalysis"];
+            let phone=first["recipients"][0]["sources"].as_array_mut().unwrap().pop().unwrap();
+            first["recipients"][0]["mobile"]=json!("");
+            first["recipients"][1]["mobile"]=json!("010-1234-5678");
+            first["recipients"][1]["sources"].as_array_mut().unwrap().push(phone);
+            first["initialPredictionCapture"]=json!({"schemaVersion":1,"origin":"native_reception_worker",
+                "orderId":id,"analysisStartedAt":predicted,"analysisCompletedAt":predicted,"clientBuildVersion":"test"});
+            first["recipientOwnerTrace"]["scorePolicyVersion"]=json!(OWNER_SCORE_POLICY);
+            let d=&mut first["recipientOwnerTrace"]["decisions"][0];
+            d["legacyRequiredMargin"]=json!(30);
+            d["legacyFirstBlockingReason"]=if blocked{json!("paragraph_boundary")}else{Value::Null};
+            d["selectedAnchor"]=d["candidates"][1]["anchor"].clone();
+            d["candidates"][0]["legacyScore"]=json!(10);
+            d["candidates"][1]["legacyScore"]=json!(110);
+            let final_rows=first["recipients"].clone();
+            p["confirmationSnapshot"]["recipients"]=final_rows;
+            p
+        };
+        let mut orders=(0..5).map(|i|make(&format!("fit-{i}"),"2026-01-02T00:00:00Z","2026-01-03T00:00:00Z",false)).collect::<Vec<_>>();
+        orders.push(make("late","2026-01-02T00:00:00Z","2026-02-02T00:00:00Z",false));
+        orders.push(make("test","2026-02-03T00:00:00Z","2026-02-04T00:00:00Z",false));
+        orders.push(make("blocked","2026-02-03T00:00:00Z","2026-02-04T00:00:00Z",true));
+        let config=json!({"fitStart":"2026-01-01T00:00:00Z","testStart":"2026-02-01T00:00:00Z",
+            "testEnd":"2026-03-01T00:00:00Z","evaluationAsOf":"2026-03-02T00:00:00Z","clientBuildVersion":"test"});
+        let report=calibrate_legacy_scores(&json!({"orders":orders,"config":config})).unwrap();
+        assert_eq!(report["fitOrders"],5);assert_eq!(report["testOrders"],1);
+        assert_eq!(report["lateLabelOrders"],1);assert_eq!(report["blockedObservations"],1);
+        assert_eq!(report["bins"][15]["fitOrders"],5);
+        assert!((report["bins"][15]["estimatedNextProxyFrequency"].as_f64().unwrap()-6.0/7.0).abs()<1e-10);
+        assert!(report["testGroups"].as_array().unwrap().iter().all(|g|g["metrics"]["coveredObservations"]==1));
+        assert_eq!(report["eligibleForAutomaticDecision"],false);
+    }
     fn owner_fixture()->Value{
         // Emoji makes the UTF-16 positions differ from byte offsets.
         let raw="😀김가상\n010-1234-5678\n박가상";
