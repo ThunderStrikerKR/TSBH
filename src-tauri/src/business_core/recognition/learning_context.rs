@@ -647,6 +647,65 @@ fn field_shadow_candidates(units:&[u16],first:&Value,s:Span,task:&str)->Vec<Stri
         .filter_map(Value::as_str).map(str::to_owned).collect()
 }
 
+// Independent paragraph support for adjacent role order. Each paragraph
+// contributes at most once to a role pair. Exclude the target paragraph.
+#[derive(Default)]
+struct TypeOrderIndex{
+    totals:BTreeMap<(&'static str,&'static str),usize>,
+    paragraphs:BTreeSet<(u64,&'static str,&'static str)>,
+}
+impl TypeOrderIndex{
+    fn new(events:&[Event])->Self{
+        let mut out=Self::default();
+        for w in events.windows(2){
+            let (a,b)=(&w[0],&w[1]);
+            if a.paragraph!=b.paragraph||a.position.1>b.position.0{continue;}
+            if out.paragraphs.insert((a.paragraph,a.role,b.role)){
+                *out.totals.entry((a.role,b.role)).or_default()+=1;
+            }
+        }
+        out
+    }
+    fn support(&self,p:u64,a:&'static str,b:&'static str)->usize{
+        self.totals.get(&(a,b)).copied().unwrap_or(0)
+            .saturating_sub(if self.paragraphs.contains(&(p,a,b)){1}else{0})
+    }
+}
+fn compare_types(events:&[Event],order:&TypeOrderIndex,index:&ShadowIndex<'_>,s:Span,shadow:&Value)->Value{
+    let unavailable=|status:&str|json!({"status":status,"preferredCandidate":null,
+        "decisionChanged":false,"eligibleForAutomaticDecision":false});
+    let Some(baseline)=type_baseline(index,s)else{return unavailable("unbound_baseline");};
+    let Ok(i)=events.binary_search_by_key(&s,|e|e.position)else{return unavailable("unbound_source");};
+    let e=&events[i];
+    if i>0&&events[i-1].position.1>s.0||i+1<events.len()&&events[i+1].position.0<s.1{
+        return unavailable("overlapping_source");
+    }
+    let previous=i.checked_sub(1).and_then(|j|events.get(j)).filter(|p|p.paragraph==e.paragraph);
+    let next=events.get(i+1).filter(|n|n.paragraph==e.paragraph);
+    let mut candidates=Vec::new();
+    let mut scores=Vec::new();
+    for candidate in rows(&shadow["candidates"]).filter_map(Value::as_str){
+        let Some(r)=role(candidate)else{continue;};
+        // Existing explicit overlap rejection is not a soft score.
+        let blocked=candidate=="quantity"&&index.gates.get(&s).into_iter().flatten().any(|(_,g)|
+            g["kind"]=="quantity"&&g["reasonCode"]=="overlaps_recipient_field");
+        let left=previous.map_or(0,|p|order.support(e.paragraph,p.role,r));
+        let right=next.map_or(0,|n|order.support(e.paragraph,r,n.role));
+        let score=left.min(8)+right.min(8);
+        if !blocked{scores.push((candidate,score));}
+        candidates.push(json!({"candidate":candidate,"score":(!blocked).then_some(score),
+            "precedingOrderSupport":left,"followingOrderSupport":right,
+            "blockedBySourceOverlap":blocked}));
+    }
+    scores.sort_by(|a,b|b.1.cmp(&a.1));
+    let preferred=if scores.len()>=2&&scores[0].1>=2&&scores[0].1>=scores[1].1+2{
+        Some(scores[0].0)
+    }else{None};
+    json!({"status":"provisional_comparison","policyVersion":"type-order-candidate-v1",
+        "baselineCandidate":baseline,"preferredCandidate":preferred,"candidates":candidates,
+        "decisionChanged":false,"eligibleForAutomaticDecision":false})
+}
+
 /// Explicit diagnostic/lookup projection, not a second parser. The same
 /// context key function is used for first/final observations and new traces.
 pub(super) fn lookup(payload:&Value)->Result<Value,String>{
@@ -657,6 +716,8 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
     let lead=document_lead(&events);
     let index=ShadowIndex::new(&units,first);
     let mut locals=LocalContextCache::new();
+    let type_order=(payload["compareTypePolicy"]==true&&events.len()<=DOCUMENT_PATTERN_MAX_EVENTS)
+        .then(||TypeOrderIndex::new(&events));
     let entries=owner_contexts_from_events(&units,first,&events,lead,&mut locals).into_iter().map(|(s,keys)|
         json!({"source":{"start":s.0,"end":s.1},"contexts":keys})
     ).collect::<Vec<_>>();
@@ -667,6 +728,9 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
             "traceReferences":shadow["traceReferences"],"traceIsTrainingEvidence":false});
         if task=="type"{
             entry["legacyTypeCandidate"]=json!(type_baseline(&index,s));
+            if let Some(order)=type_order.as_ref(){
+                entry["candidatePolicyComparison"]=compare_types(&events,order,&index,s,&shadow);
+            }
         }
         entry
     }).collect::<Vec<_>>();
@@ -1065,6 +1129,21 @@ fn statistics_with_comparison(payload:&Value,prepared:Option<&Value>)->Result<Va
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn type_order_support_counts_distinct_other_paragraphs(){
+        let events=vec![
+            Event{position:(0,1),line:0,paragraph:0,role:"name"},
+            Event{position:(1,2),line:0,paragraph:0,role:"contact"},
+            Event{position:(2,3),line:0,paragraph:0,role:"name"},
+            Event{position:(3,4),line:0,paragraph:0,role:"contact"},
+            Event{position:(4,5),line:1,paragraph:1,role:"name"},
+            Event{position:(5,6),line:1,paragraph:1,role:"contact"}];
+        let index=TypeOrderIndex::new(&events);
+        assert_eq!(index.support(0,"name","contact"),1);
+        assert_eq!(index.support(1,"name","contact"),1);
+        assert_eq!(index.support(2,"name","contact"),2);
+        assert_eq!(index.support(2,"contact","product"),0);
+    }
     #[test]
     fn owner_order_evidence_excludes_target_and_conflicting_paragraphs(){
         let mut source=Vec::new();
