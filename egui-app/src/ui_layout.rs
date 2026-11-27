@@ -76,6 +76,53 @@ mod logical_alignment_tests{
     }
 
     #[test]
+    fn shared_allocation_preserves_native_rects_responses_and_cursor(){
+        let ctx=crate::ui_test_support::test_context();
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(640.0,480.0));
+        let _=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+            egui::CentralPanel::default().show(ctx,|root|{
+                let bounds=Rect::from_min_size(egui::pos2(32.0,32.0),Vec2::new(540.0,380.0));
+                let size=Vec2::new(83.019,24.113);
+                let expected=size.round_ui();
+                for (index,layout) in [
+                    Layout::top_down(Align::Min),
+                    Layout::left_to_right(Align::Center),
+                    Layout::right_to_left(Align::Center),
+                    Layout::top_down(Align::Center).with_cross_justify(true),
+                ].into_iter().enumerate(){
+                    let mut actual=root.new_child(UiBuilder::new().id_salt((index,"allocation actual"))
+                        .aligned_max_rect(bounds).layout(layout));
+                    let mut native=root.new_child(UiBuilder::new().id_salt((index,"allocation native"))
+                        .aligned_max_rect(bounds).layout(layout));
+                    let (a,ar)=actual.shared_allocate_exact_size(size,Sense::click());
+                    let (b,br)=native.allocate_exact_size(expected,Sense::click());
+                    assert_eq!(a,b);
+                    assert_eq!(ar.rect,br.rect);
+                    assert_eq!(actual.cursor(),native.cursor());
+                    let (_,a)=actual.shared_allocate_space(size);
+                    let (_,b)=native.allocate_space(expected);
+                    assert_eq!(a,b);
+                    assert_eq!(actual.cursor(),native.cursor());
+                    let a=actual.shared_allocate_response(size,Sense::hover());
+                    let b=native.allocate_response(expected,Sense::hover());
+                    assert_eq!(a.rect,b.rect);
+                    assert_eq!(actual.cursor(),native.cursor());
+                    let draw=|ui:&mut Ui|ui.label("allocation").rect;
+                    let a=actual.shared_allocate_ui_with_layout(size,Layout::top_down(Align::Min),draw);
+                    let b=native.allocate_ui_with_layout(expected,Layout::top_down(Align::Min),draw);
+                    assert_eq!(a.inner,b.inner);
+                    assert_eq!(a.response.rect,b.response.rect);
+                    let a=actual.shared_add_sized(size,egui::Button::new("button"));
+                    let b=native.add_sized(expected,egui::Button::new("button"));
+                    assert_eq!(a.rect,b.rect);
+                    assert_eq!(actual.cursor(),native.cursor());
+                    assert_eq!(actual.min_rect(),native.min_rect());
+                }
+            });
+        });
+    }
+
+    #[test]
     fn adjacent_fractional_rects_share_rounded_edges_without_drift(){
         for scale in [1.0_f32,1.25,1.5,1.75,2.0]{
             let origin=egui::pos2(7.13/scale,11.17/scale);
