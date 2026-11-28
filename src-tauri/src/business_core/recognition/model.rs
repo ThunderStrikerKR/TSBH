@@ -514,33 +514,32 @@ pub(super) fn collect<'a>(text:&str,state:&'a Value,client_id:&str)->ProductHypo
     ProductHypotheses{verified,names,aliases,color_hint,color_codes,semantic,branded,known_brand}
 }
 pub(crate) fn decide(text:&str,state:&Value,client_id:&str)->Decision{
-    evaluate(text,collect(text,state,client_id))
+    evaluate(text,&collect(text,state,client_id))
 }
-pub(super) fn evaluate(text:&str,hypotheses:ProductHypotheses<'_>)->Decision{
-    let ProductHypotheses{verified,names,aliases,color_hint:mut hint,mut color_codes,
+pub(super) fn evaluate(text:&str,hypotheses:&ProductHypotheses<'_>)->Decision{
+    let ProductHypotheses{verified,names,aliases,color_hint,color_codes,
         semantic,branded,known_brand}=hypotheses;
-    let mut entries=filter_business_candidates(text,&branded,name_entries(text,names,&verified));
-    if let Some((_,_,term))=&hint{
+    let mut hint=color_hint.as_ref();
+    let mut entries=filter_business_candidates(text,branded,name_entries(text,names.clone(),verified));
+    if let Some((_,_,term))=hint{
         // A registered full model protects its suffix from being read as color.
         let protected=entries.iter().any(|e|model_names(e.p).iter()
             .any(|name|model_key(name)==model_key(term)));
         if protected{hint=None;}else{
-            if color_codes.iter().any(|e|!variants(e.p).iter()
-                .any(|v|str_field(v,"source")=="DEMO")){
-                color_codes.retain(|e|!variants(e.p).iter()
-                    .any(|v|str_field(v,"source")=="DEMO"));
-            }
-            entries=color_codes;
+            let prefer_real=color_codes.iter().any(|e|!variants(e.p).iter()
+                .any(|v|str_field(v,"source")=="DEMO"));
+            entries=color_codes.iter().filter(|e|!prefer_real||!variants(e.p).iter()
+                .any(|v|str_field(v,"source")=="DEMO")).cloned().collect();
         }
     }
     let mut semantic_name=false;
     if entries.is_empty()&&aliases.is_empty()&&!semantic.is_empty(){
-        let filtered=filter_business_candidates(text,&branded,semantic);
+        let filtered=filter_business_candidates(text,branded,semantic.clone());
         if !filtered.is_empty(){entries=filtered;semantic_name=true;}
     }
     let mut branded_category=false;
-    if entries.is_empty()&&aliases.is_empty()&&known_brand{
-        entries=branded.into_iter().map(|p|Entry{p,priority:0,span:(0,text.len())}).collect();
+    if entries.is_empty()&&aliases.is_empty()&&*known_brand{
+        entries=branded.iter().copied().map(|p|Entry{p,priority:0,span:(0,text.len())}).collect();
         branded_category=true;
     }
     let proof = qualifiers(text);
@@ -718,7 +717,7 @@ mod option_boundary_tests {
             assert!(selected_family.contains(expected),"missing collected family {family}");
             let all=names.into_iter().chain(aliases).chain(semantics).chain(colors).chain(brands)
                 .collect::<HashSet<_>>();
-            let decision=evaluate(raw,pool);
+            let decision=evaluate(raw,&pool);
             assert!(decision.product_id.as_deref().is_none_or(|id|all.contains(id)));
             assert!(decision.candidates.iter().all(|c|c["productId"].as_str().is_some_and(|id|all.contains(id))));
         }
@@ -732,9 +731,12 @@ mod option_boundary_tests {
         let batch=collect("GT-1 2개",&state,"");
         assert!(batch.names.iter().any(|e|str_field(e.p,"id")=="a"));
         assert!(batch.aliases.iter().any(|(_,p)|str_field(p,"id")=="b"));
-        let decision=evaluate("GT-1 2개",batch);
+        let decision=evaluate("GT-1 2개",&batch);
         assert_eq!(decision.kind,"CONFLICT");
         assert!(decision.product_id.is_none());
+        assert!(batch.names.iter().any(|e|str_field(e.p,"id")=="a"));
+        assert!(batch.aliases.iter().any(|(_,p)|str_field(p,"id")=="b"));
+        assert_eq!(decision_json(&decision),decision_json(&evaluate("GT-1 2개",&batch)));
     }
     #[test]
     fn type_evidence_cannot_bridge_model_code_boundary() {

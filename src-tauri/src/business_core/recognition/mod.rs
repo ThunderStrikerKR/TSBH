@@ -524,44 +524,46 @@ fn recipient_proposals(line:&str,address:Option<usize>,contact:Option<usize>,
     }
     proposals
 }
-// Bounded, document-local ownership of catalog hypotheses. An entry is
-// evaluated at most once while retained. On saturation the old exact
-// matcher is used for an uncached slice; no hypothesis is treated as false.
-enum ProductProbe<'s>{
-    Collected(model::ProductHypotheses<'s>),
-    Evaluated(Value),
+// The document owns immutable collected hypotheses independently from
+// derived decisions. A result must never replace its original evidence.
+struct ProductProbe<'s>{
+    hypotheses:model::ProductHypotheses<'s>,
+    evaluated:Option<Value>,
 }
 struct ProductSearch<'a,'s>{
     state:&'s Value,
     client:&'s str,
     probes:HashMap<&'a str,ProductProbe<'s>>,
+    // Saturation is explicit. The existing fallback preserves classification
+    // behavior, but an incomplete batch cannot certify complete discovery.
+    truncated:bool,
 }
 impl<'a,'s> ProductSearch<'a,'s>{
     fn new(state:&'s Value,client:&'s str)->Self{
-        Self{state,client,probes:HashMap::new()}
+        Self{state,client,probes:HashMap::new(),truncated:false}
     }
     fn prepare(&mut self,text:&'a str){
-        if self.probes.len()<512&&!self.probes.contains_key(text){
-            self.probes.insert(text,ProductProbe::Collected(model::collect(text,self.state,self.client)));
+        if self.probes.contains_key(text){return;}
+        if self.truncated||self.probes.len()>=512{
+            self.truncated=true;
+            return;
         }
+        self.probes.insert(text,ProductProbe{
+            hypotheses:model::collect(text,self.state,self.client),evaluated:None});
     }
     fn decision(&mut self,text:&'a str)->Value{
         self.prepare(text);
-        match self.probes.remove(text){
-            Some(ProductProbe::Evaluated(value))=>{
-                self.probes.insert(text,ProductProbe::Evaluated(value.clone()));
-                value
-            }
-            Some(ProductProbe::Collected(pool))=>{
-                let value=evaluate_product_probe(text,pool);
-                self.probes.insert(text,ProductProbe::Evaluated(value.clone()));
-                value
-            }
-            None=>evaluate_product_probe(text,model::collect(text,self.state,self.client)),
+        if let Some(probe)=self.probes.get_mut(text){
+            if let Some(value)=&probe.evaluated{return value.clone();}
+            let value=evaluate_product_probe(text,&probe.hypotheses);
+            probe.evaluated=Some(value.clone());
+            value
+        }else{
+            evaluate_product_probe(text,&model::collect(text,self.state,self.client))
         }
     }
 }
-fn evaluate_product_probe(text:&str,pool:model::ProductHypotheses<'_>)->Value{
+fn evaluate_product_probe(text:&str,pool:&model::ProductHypotheses<'_>)->Value{
     model::decision_json(&model::evaluate(text,pool))
 }
 // Legacy type policy is deliberately kept here until the common feature
@@ -621,8 +623,8 @@ fn product_records<'a>(line:&RecordSlice<'a>,quantities:&[quantity::Quantity],
         if begin>=q.start||(i>0&&leading==0){return None;}
         let segment=&text[begin..q.end];
         search.prepare(segment);
-        let Some(ProductProbe::Collected(pool))=search.probes.get(segment)else{return None;};
-        if !model::isolated_model_prefix(segment,q.start-begin,pool){return None;}
+        let Some(probe)=search.probes.get(segment)else{return None;};
+        if !model::isolated_model_prefix(segment,q.start-begin,&probe.hypotheses){return None;}
         records.push((record_slice(line,begin,q.end),vec![quantity::Quantity{
             value:q.value,start:q.start-begin,end:q.end-begin}]));
         start=q.end;
@@ -1858,15 +1860,15 @@ mod tests {
         assert_eq!(rows.len(),4);
         assert_eq!(&rows[0].line.text[rows[0].names[0].span.0..rows[0].names[0].span.1],"GT-1");
         assert_eq!(rows[0].names[0].requirement,NameRequirement::NotProduct);
-        assert!(matches!(search.probes.get("GT-1"),Some(ProductProbe::Collected(_))));
-        assert!(search.probes.values().all(|p|matches!(p,ProductProbe::Collected(_))));
+        assert!(search.probes.get("GT-1").is_some_and(|p|p.evaluated.is_none()));
+        assert!(search.probes.values().all(|p|p.evaluated.is_none()));
         assert_eq!(rows[1].quantities[0].value,2);
         assert!(rows[1].names.iter().any(|p|&rows[1].line.text[p.span.0..p.span.1]=="김가상"));
         assert_eq!(rows[3].zone,SourceZone::Sender);
         assert_eq!(rows[3].contacts[0].value,"010-3456-7890");
         assert!(rows.iter().all(|r|r.line.text==&raw[r.line.start..r.line.start+r.line.text.len()]));
         assert_eq!(project_name(rows[0].line.text,&rows[0].names,&mut search),None);
-        assert!(matches!(search.probes.get("GT-1"),Some(ProductProbe::Evaluated(_))));
+        assert!(search.probes.get("GT-1").is_some_and(|p|p.evaluated.is_some()));
     }
     #[test]
     fn explicit_same_line_recipient_records_keep_distinct_source_offsets(){
@@ -1901,7 +1903,7 @@ mod tests {
         let rows=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
         assert_eq!(rows.len(),2);
         assert_eq!(rows[0].line.number,rows[1].line.number);
-        assert!(search.probes.values().all(|p|matches!(p,ProductProbe::Collected(_))));
+        assert!(search.probes.values().all(|p|p.evaluated.is_none()));
         let result=analyze(raw,&state,None).unwrap();
         let items=result["recipients"][0]["items"].as_array().unwrap();
         assert_eq!(items.len(),2);
@@ -1964,6 +1966,34 @@ mod tests {
             assert!(row.line.start+row.line.text.len()<=physical.start+physical.text.len());
         }
         assert_eq!(geometry.gap(0,2).blank_lines,1);
+    }
+    #[test]
+    fn product_hypotheses_survive_evaluation_and_cache_reuse(){
+        let state=state();
+        let raw="GT-1 2개";
+        let mut search=ProductSearch::new(&state,"");
+        search.prepare(raw);
+        let before=&search.probes[raw].hypotheses as *const _;
+        assert!(model::isolated_model_prefix(raw,"GT-1 ".len(),&search.probes[raw].hypotheses));
+        let first=search.decision(raw);
+        assert_eq!(first["productId"],"pgt");
+        assert_eq!(before,&search.probes[raw].hypotheses as *const _);
+        assert!(model::isolated_model_prefix(raw,"GT-1 ".len(),&search.probes[raw].hypotheses));
+        assert_eq!(search.decision(raw),first);
+        assert_eq!(search.probes.len(),1);
+        assert!(!search.truncated);
+    }
+    #[test]
+    fn product_probe_limit_reports_incomplete_collection(){
+        let state=json!({"products":[],"aliases":[]});
+        let inputs=(0..513).map(|i|format!("가상 기록 {i}")).collect::<Vec<_>>();
+        let mut search=ProductSearch::new(&state,"");
+        for input in &inputs{search.prepare(input);}
+        assert_eq!(search.probes.len(),512);
+        assert!(search.truncated);
+        let expected=model::decision_json(&model::decide(&inputs[512],&state,""));
+        assert_eq!(search.decision(&inputs[512]),expected);
+        assert_eq!(search.probes.len(),512);
     }
     #[test]
     fn contract_rejects_incomplete_state() {

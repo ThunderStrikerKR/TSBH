@@ -79,6 +79,8 @@ def audit(sources, final=False):
             errors.append("Missing product phase boundary: " + name)
     collector = model.get("collect", "")
     evaluator = model.get("evaluate", "")
+    if not re.search(r"hypotheses\s*:\s*&\s*ProductHypotheses", evaluator):
+        errors.append("Product evaluator must borrow original hypotheses")
     for name in ("decide", "evaluate", "strongest", "name_entries", "decision_json"):
         if call_count(collector, name):
             errors.append("Collector selects a product: " + name)
@@ -120,6 +122,7 @@ def self_test(sources):
     assert not base, base
     mutations = [
         ("model.rs", "let ps=products(state);", "let ps=products(state); let _=decide(text,state,client_id);", "Collector selects"),
+        ("model.rs", "hypotheses:&ProductHypotheses", "hypotheses:ProductHypotheses", "must borrow"),
         ("model.rs", "let proof = qualifiers(text);", "let proof = qualifiers(text); let _=products(state);", "Evaluator discovers"),
         ("mod.rs", "let client_id = client_id(client);", "let client_id = client_id(client); let _=model::decide(raw,state,client_id);", "New early"),
     ]
@@ -142,7 +145,12 @@ def verify_discovery(listed, ignored, final):
              if line.endswith(": test")}
     skipped = {line.removesuffix(": test") for line in ignored.splitlines()
                if line.endswith(": test")}
-    required = [CURRENT_TEST, "common_candidates_preserve_competing_types_before_selection"]
+    required = [
+        CURRENT_TEST,
+        "common_candidates_preserve_competing_types_before_selection",
+        "product_hypotheses_survive_evaluation_and_cache_reuse",
+        "product_probe_limit_reports_incomplete_collection",
+    ]
     if final:
         required = list(dict.fromkeys(required + list(FINAL_TESTS)))
     failures = []
