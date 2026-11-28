@@ -713,9 +713,9 @@ fn address_text_candidate(line:&str,start:usize,phone:&Regex)->Option<TextCandid
     if value.is_empty(){return None;}
     Some(TextCandidate{span:(start,start+masked.trim_end().len()),value:value.to_owned()})
 }
-// Preserve the legacy full-tail range and all lexical starts, including
-// alternatives within a labelled field. Explicit separators also provide
-// shorter competing ranges; none of these alternatives selects a recipient.
+// Preserve the existing full-tail range and independently delimited
+// address fields. Administrative components inside one address are not
+// independent competing addresses; do not generate every nested suffix.
 fn collect_address_candidates(line:&str,raw_start:Option<usize>,legacy_start:Option<usize>,
     phone:&Regex)->Vec<TextCandidate>{
     let mut candidates=Vec::new();
@@ -730,15 +730,15 @@ fn collect_address_candidates(line:&str,raw_start:Option<usize>,legacy_start:Opt
     for start in legacy_start.into_iter().chain(raw_start){
         add(start,line.len());
     }
-    let separators=Regex::new(r"[;；|]|\s/\s").expect("address range separator");
+    static SEPARATORS:std::sync::OnceLock<Regex>=std::sync::OnceLock::new();
+    let separators=SEPARATORS.get_or_init(||Regex::new(r"[;；|]|\s/\s").expect("address range separator"));
     let mut start=0;
     for end in separators.find_iter(line).map(|m|(m.start(),m.end()))
         .chain(std::iter::once((line.len(),line.len()))){
+        // An undivided record was already collected above.
+        if start==0&&end.0==line.len(){break;}
         let segment=&line[start..end.0];
         if let Some(at)=address_begin(segment){add(start+at,end.0);}
-        for m in address_pattern().find_iter(segment){
-            add(start+m.start(),end.0);
-        }
         start=end.1;
     }
     candidates
@@ -2210,6 +2210,11 @@ mod tests {
         let state=state();
         let first="서울특별시 마포구 월드컵로 20";
         let second="경기도 성남시 분당구 불정로 6";
+        // A single complete address must not create independent district
+        // or street suffix candidates merely because they match the regex.
+        let single=collect_address_candidates(first,Some(0),Some(0),&phone_regex());
+        assert_eq!(single.len(),1);
+        assert_eq!(single[0].value,first);
         let raw=format!("수취인: 김가상\n주소: {first} / 주소: {second}\n709 1개");
         let geometry=SourceGeometry::new(&raw);
         let mut search=ProductSearch::new(&state,"");
