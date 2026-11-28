@@ -671,7 +671,15 @@ impl BandoGateway for LocalGateway {
         let scoped_group_move=matches!(action,"detach_shipment"|"regroup_shipment");
         let scoped_shipment=scoped_freight || scoped_group_move;
         let confirmed_order_edit=matches!(action,"change_confirmed_dispatch_origin"|"edit_confirmed_recipient");
+        let learning_relevant=!scoped_shipment&&matches!(action,"advance_group"|"undo_group"|
+            "delete_group"|"restore_group"|"edit_confirmed_recipient"|"change_confirmed_dispatch_origin");
+        let mut before_learning=std::collections::BTreeMap::new();
         let mutate=|before:&Value|->Result<Value,String>{
+        if learning_relevant{
+            for id in learning_lifecycle_order_ids(before,&args){
+                before_learning.insert(id.clone(),crate::preview_store::learning_input(before,&id));
+            }
+        }
         checkpoint("read_snapshot");
         // An unconfirmed egui draft may enter the operational ledger ONLY
         // through the explicit first-stage approval. The full Order is a
@@ -899,7 +907,7 @@ impl BandoGateway for LocalGateway {
         }
         Ok(changed)
         };
-        let verified=if scoped_shipment{
+        let mut verified=if scoped_shipment{
             let shipment_id=args["shipmentId"].as_str().ok_or("배송 건 ID 누락")?;
             let group_id=args["groupId"].as_str().ok_or("주문 묶음 ID 누락")?;
             let (mut state,stable)=bando_data_access::update_v2_shipment_snapshot(
@@ -916,6 +924,20 @@ impl BandoGateway for LocalGateway {
         // projection verification. A concurrent update cannot be mistaken
         // for a failed commit after the employee's own write succeeded.
         checkpoint("write_verify_commit");
+        if learning_relevant{
+            let mut ids=before_learning.keys().cloned().collect::<std::collections::BTreeSet<_>>();
+            ids.extend(learning_lifecycle_order_ids(&verified,&args));
+            let changed=ids.into_iter().filter(|id|
+                before_learning.get(id)!=Some(&crate::preview_store::learning_input(&verified,id)))
+                .collect::<Vec<_>>();
+            if PreviewStore::synchronize_learning(&verified,&changed,|order|
+                recognition::execute("summarize_learning_confirmation",order.clone())).is_err(){
+                // The operational transaction succeeded. The derived
+                // ledger remains pending; do not report the order failed.
+                verified["_recognitionLearningPending"]=Value::Bool(true);
+                eprintln!("recognition learning contribution pending");
+            }
+        }
         Ok(verified)
     }
     // The egui intake is a local autosaved draft, NOT a separate
@@ -1005,6 +1027,18 @@ impl BandoGateway for LocalGateway {
             }
         }
     }
+}
+
+fn learning_lifecycle_order_ids(state:&Value,args:&Value)->Vec<String>{
+    let mut ids=std::collections::BTreeSet::new();
+    if let Some(id)=args["draft"]["id"].as_str(){ids.insert(id.to_owned());}
+    for ship in state["workflow"]["shipments"].as_array().into_iter().flatten(){
+        if args["groupId"].as_str().is_some_and(|id|ship["groupId"].as_str()==Some(id))
+            ||args["shipmentId"].as_str().is_some_and(|id|ship["id"].as_str()==Some(id)){
+            if let Some(id)=ship["orderId"].as_str(){ids.insert(id.to_owned());}
+        }
+    }
+    ids.into_iter().collect()
 }
 
 /// Build exactly the explicitly selected backend. Invalid remote config is an

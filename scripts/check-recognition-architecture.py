@@ -66,6 +66,12 @@ PHASE05_TESTS = (
     "experimental_weight_profiles_keep_version_and_component_bounds",
     "baseline_weight_experiment_report",
 )
+PHASE06_TESTS = (
+    "pattern_b_is_invariant_under_pattern_a_growth",
+    "confirmed_and_corrected_learning_contributions_are_retractable",
+    "explicit_type_reassignment_is_negative_for_old_and_positive_for_new",
+    "shared_features_are_frozen_for_pattern_learning",
+)
 STAGE_FILE = ROOT / "scripts/recognition-stage.txt"
 
 
@@ -76,7 +82,7 @@ def stage_number(raw):
     return int(raw)
 
 
-def verify_discovery(listed, ignored, final, phase02=False, phase03=False, phase04=False, phase05=False):
+def verify_discovery(listed, ignored, final, phase02=False, phase03=False, phase04=False, phase05=False, phase06=False):
     tests = {line.removesuffix(": test") for line in listed.splitlines()
              if line.endswith(": test")}
     skipped = {line.removesuffix(": test") for line in ignored.splitlines()
@@ -100,6 +106,8 @@ def verify_discovery(listed, ignored, final, phase02=False, phase03=False, phase
         required.extend(PHASE04_TESTS)
     if phase05 or final:
         required.extend(PHASE05_TESTS)
+    if phase06 or final:
+        required.extend(PHASE06_TESTS)
     if final:
         required.extend(FINAL_TESTS)
     required = list(dict.fromkeys(required))
@@ -128,7 +136,7 @@ def main():
         print("Test discovery and execution required; integration not certified")
         return
     listed, ignored = args.tests.read_text(), args.ignored.read_text()
-    failures = verify_discovery(listed, ignored, args.final, require_phase02, stage >= 3, stage >= 4, stage >= 5)
+    failures = verify_discovery(listed, ignored, args.final, require_phase02, stage >= 3, stage >= 4, stage >= 5, stage >= 6)
     if failures:
         for failure in failures:
             print("FAIL:", failure)

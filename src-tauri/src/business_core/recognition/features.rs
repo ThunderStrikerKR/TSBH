@@ -170,6 +170,23 @@ impl<'g,'a,'s> DocumentFeatures<'g,'a,'s>{
         let r=self.repeats.iter().find(|r|r.start<=a&&a<r.end&&r.start<=b&&b<r.end)?;
         Some((a-r.start)/r.period==(b-r.start)/r.period)
     }
+    // Persist only the common feature projection, not a second parser's
+    // reconstruction from selected fields. Source positions are UTF-16
+    // so the frozen observation/audit ledger can join them exactly.
+    pub(super) fn learning_projection(&self)->serde_json::Value{
+        use serde_json::json;
+        let slots=self.slots.iter().map(|s|{
+            let p=position(self.geometry,s.span.start);
+            json!({"start":p.utf16,"scalar":p.scalar,"line":p.line,
+                "paragraph":p.paragraph,"roles":s.roles})
+        }).collect::<Vec<_>>();
+        let repeats=self.repeats.iter().map(|r|json!({
+            "start":self.geometry.utf16(r.span.start),"end":self.geometry.utf16(r.span.end),
+            "period":r.period,"cycles":r.cycles,"remainder":r.remainder
+        })).collect::<Vec<_>>();
+        json!({"schemaVersion":2,"pattern":{"version":self.pattern.version,"roles":self.pattern.roles},
+            "slots":slots,"repeats":repeats,"order":self.structural_order().collect::<Vec<_>>()})
+    }
     pub(super) fn structural_order(&self)->impl Iterator<Item=u16>+'_{
         self.structural.iter().map(|t|t.roles)
     }

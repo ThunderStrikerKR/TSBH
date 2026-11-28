@@ -6,6 +6,8 @@ mod corrections;
 mod ts_semantics;
 mod features;
 mod weights;
+mod observations;
+mod learning_context;
 #[path = "../postcode.rs"]
 mod postcode;
 
@@ -145,6 +147,9 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         }
         "reanalyze_order" => reanalyze(&payload),
         "extract_correction_candidates" => corrections::extract(&payload),
+        "compare_confirmation_observations" => observations::compare(&payload),
+        "summarize_learning_confirmation" => learning_context::summarize_confirmation(&payload),
+        "summarize_owner_statistics" => learning_context::statistics(&payload),
         _ => Err(format!("unknown recognition operation: {operation}")),
     }
 }
@@ -1903,6 +1908,7 @@ fn analyze_with_profile(raw:&str,state:&Value,client:Option<&Value>,include_trac
     if recipients.is_empty() {
         recipients.push(blank_recipient("recognition:recipient:0","",None,&geometry));
     }
+    let mut owner_trace=Vec::new();
     let mut postcodes=vec![HashSet::<String>::new();recipients.len()];
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
@@ -1910,6 +1916,22 @@ fn analyze_with_profile(raw:&str,state:&Value,client:Option<&Value>,include_trac
         let rid = recipients[row_index]["id"].as_str().unwrap_or("").to_owned();
         let e = &events[index];
         let kind = e.kind;
+        // Record the actually compared adjacent anchors from the same
+        // production owner decision. No extra lexical scan or owner vote.
+        if matches!(kind,"address"|"phone"|"mobile"){
+            let boundary=anchors.partition_point(|&i|events[i].start<=e.start);
+            if boundary>0&&boundary<anchors.len(){
+                let previous=&events[anchors[boundary-1]];
+                let next=&events[anchors[boundary]];
+                if previous.kind=="name"&&next.kind=="name"&&previous.start<e.start&&e.start<next.start{
+                    let span=|x:&Evidence|json!({"kind":x.kind,
+                        "start":geometry.utf16(x.start),"end":geometry.utf16(x.end)});
+                    owner_trace.push(json!({"source":span(e),"selectedAnchor":span(&events[anchors[row_index]]),
+                        "candidates":[{"anchor":span(previous),"relation":"previous"},
+                            {"anchor":span(next),"relation":"next"}]}));
+                }
+            }
+        }
         if kind=="address" {
             if let Some(line)=rows.iter().map(|row|&row.line)
                 .find(|line|line.number==e.line&&line.start<=e.start
@@ -2210,7 +2232,9 @@ fn analyze_with_profile(raw:&str,state:&Value,client:Option<&Value>,include_trac
         }
         candidate
     }).collect();
-    let mut result=json!({"recipients":recipients,"candidates":candidates,"unassigned":unassigned});
+    let mut result=json!({"recipients":recipients,"candidates":candidates,"unassigned":unassigned,
+        "recipientOwnerTrace":{"schemaVersion":1,"decisions":owner_trace},
+        "documentStructure":shared_features.as_ref().map(|f|f.learning_projection())});
     if let Some(mut log)=trace{
         // Every evaluated SKU probe is traceable back to its original
         // occurrence, including repeated text at distinct coordinates.
@@ -2862,6 +2886,27 @@ mod tests {
         assert_eq!(address_format("경기도 가상읍 20"),"LOT");
         assert_eq!(address_completeness("가상로 20 #","ROAD"),"INCOMPLETE");
         assert_eq!(address_completeness("가상 주소","UNKNOWN"),"INCOMPLETE");
+    }
+    #[test]
+    fn shared_features_are_frozen_for_pattern_learning(){
+        let state=state();
+        let raw="수취인: 김가상\n서울특별시 마포구 월드컵로 20\nGT-1 2개";
+        let first=analyze(raw,&state,None).unwrap();
+        let structure=&first["documentStructure"];
+        assert_eq!(structure["schemaVersion"],2);
+        assert!(structure["pattern"]["roles"].as_array().is_some_and(|v|!v.is_empty()));
+        let order=json!({"id":"pattern-order","learningActive":true,"confirmedAt":"2026-01-01T00:00:00Z",
+            "recognitionAuditEvents":[],"confirmationSnapshot":{"raw":raw,"at":"2026-01-01T00:00:00Z",
+                "recipients":first["recipients"],"recognitionBaseline":{"schemaVersion":1,
+                    "auditEventIds":[],"initialAnalysis":first}}});
+        let report=learning_context::summarize_confirmation(&order).unwrap();
+        let facts=report["fieldContextStatistics"].as_array().unwrap();
+        assert!(!facts.is_empty());
+        for fact in facts{
+            let key:Value=serde_json::from_str(fact["key"].as_str().unwrap()).unwrap();
+            assert_eq!(key["pattern"],structure["pattern"]);
+            assert_eq!(fact["counts"]["independentOrders"],1);
+        }
     }
     #[test]
     fn contract_rejects_incomplete_state() {

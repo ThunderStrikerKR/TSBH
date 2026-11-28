@@ -97,6 +97,9 @@ jobs:
           manifest=tests/rust-migration/recognition/Cargo.toml
           # Use the exact same fixture expectations, catalog and measurement
           # code for both engines. Never silently compare different data.
+          # Both engines use the current identical measurement harness,
+          # including the timestamp dependency for verified audit tests.
+          cp "$manifest" ".recognition-reference/$manifest"
           cmp "$manifest" ".recognition-reference/$manifest"
           cmp tests/rust-migration/recognition/operational-order-samples.json .recognition-reference/tests/rust-migration/recognition/operational-order-samples.json
           cmp src-tauri/resources/state-seed.json .recognition-reference/src-tauri/resources/state-seed.json
@@ -224,6 +227,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml reception_edit_audit_tests -- --nocapture
       - name: Verify source-grounded correction candidate extraction
         run: cargo test --manifest-path egui-app/Cargo.toml recognition::corrections::tests -- --nocapture
+      - name: Verify pattern-isolated learning ledger and lifecycle
+        run: cargo test --manifest-path egui-app/Cargo.toml pattern_learning -- --nocapture
       - name: Verify content-fitted manual popup and Reception source-pane geometry
         run: cargo test --manifest-path egui-app/Cargo.toml manual_workspace_layout_tests -- --nocapture
       - name: Verify the unified date-selector count control geometry and single-recipient 1/1 header

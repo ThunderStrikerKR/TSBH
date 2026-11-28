@@ -6,6 +6,8 @@ use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde_json::{json, Value};
 use std::{collections::HashSet, fs, path::PathBuf, time::Duration};
 
+#[path="recognition_learning_store.rs"]
+mod recognition_learning_store;
 const SIGNATURE: &str = "bando-hub-egui-preview-v1";
 const SOURCE_LIMIT_BYTES: usize = 2 * 1024 * 1024;
 
@@ -813,7 +815,155 @@ impl PreviewStore {
         query_reception_audit_page(&conn,query)
     }
 
+    fn learning_connection()->Result<(Connection,PathBuf,String),String>{
+        use sha2::{Digest,Sha256};
+        let business=crate::business_state::authorized_business_write_path()?.canonicalize()
+            .map_err(|_|"업무 DB 식별 실패")?;
+        // Scope by the canonical bound DB, not a potentially shared order ID.
+        let scope=format!("{:x}",Sha256::digest(business.as_os_str().as_encoded_bytes()));
+        let path=Self::directory()?.join("egui-preview.sqlite3");
+        let conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
+            .map_err(|_|"기존 정정 이력 DB 연결 실패")?;
+        conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
+        conn.execute_batch("PRAGMA foreign_keys=ON").map_err(|e|e.to_string())?;
+        let signature:String=conn.query_row("SELECT value FROM preview_meta WHERE key='signature'",[],|r|r.get(0))
+            .map_err(|e|e.to_string())?;
+        if signature!=SIGNATURE{return Err("egui 전용 DB 식별자가 다릅니다.".into());}
+        Ok((conn,business,scope))
+    }
+
+    // Reuse the isolated audit DB and the old transactional delta ledger.
+    // A confirmed order never depends on derived learning storage success.
+    // Mark/revoke before computing; failure leaves a pending, non-voting order.
+    pub(crate) fn synchronize_learning(state:&Value,ids:&[String],
+        summarize:impl Fn(&Value)->Result<Value,String>)->Result<(),String>{
+        if ids.is_empty(){return Ok(());}
+        static SERIAL:std::sync::Mutex<()>=std::sync::Mutex::new(());
+        let _guard=SERIAL.lock().map_err(|_|"학습 갱신 잠금 오류")?;
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        recognition_learning_store::prepare(&conn)?;
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
+        for id in ids{recognition_learning_store::mark_pending(&tx,&scope,id)?;}
+        tx.commit().map_err(|e|e.to_string())?;
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
+        for id in ids{recognition_learning_store::revoke_pending(&tx,&scope,id)?;}
+        tx.commit().map_err(|e|e.to_string())?;
+        let business_conn=Connection::open_with_flags(&business,OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|e|e.to_string())?;
+        business_conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
+        let current_revision=||->Result<u64,String>{
+            business_conn.query_row("SELECT json_extract(payload,'$.revision') FROM app_state WHERE id=1",
+                [],|r|r.get(0)).map_err(|e|e.to_string())
+        };
+        let revision=state["revision"].as_u64().ok_or("학습 원본 revision 누락")?;
+        if current_revision()?!=revision{return Err("학습 원본 변경: 갱신 보류".into());}
+        let mut prepared=Vec::new();
+        for id in ids{
+            let mut input=learning_input(state,id);
+            if input["learningActive"]==true{
+                let mut events=Vec::new();let mut cursor=Value::Null;
+                loop{
+                    let page=query_reception_audit_page(&conn,&json!({"orderId":id,"limit":250,"cursor":cursor}))?;
+                    events.extend(page["events"].as_array().ok_or("정정 감사 조회 오류")?.iter().cloned());
+                    if events.len()>1000{return Err("정정 감사 조회 한도 초과".into());}
+                    cursor=page["nextCursor"].clone();
+                    if cursor.is_null(){break;}
+                }
+                input["recognitionAuditEvents"]=json!(events);
+            }
+            let report=summarize(&input)?;
+            prepared.push(recognition_learning_store::prepare_order(&input,&report)?);
+        }
+        if crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business
+            ||current_revision()?!=revision{return Err("학습 원본 변경: 갱신 보류".into());}
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
+        for item in &prepared{recognition_learning_store::apply(&tx,&scope,item)?;}
+        tx.commit().map_err(|e|e.to_string())?;
+        // Another process may have committed between the revision read and
+        // the separate derived DB commit. Revoke this stale contribution.
+        if current_revision()?!=revision{
+            let tx=conn.transaction().map_err(|e|e.to_string())?;
+            for id in ids{
+                recognition_learning_store::mark_pending(&tx,&scope,id)?;
+                recognition_learning_store::revoke_pending(&tx,&scope,id)?;
+            }
+            tx.commit().map_err(|e|e.to_string())?;
+            return Err("학습 원본 변경: 갱신 보류".into());
+        }
+        Ok(())
+    }
+
     pub fn path(&self) -> &std::path::Path { &self.path }
+}
+
+// Match only learning-relevant source fields, never prices or shipping fees.
+// A live re-correction with no new verified audit chain revokes the old vote.
+fn learning_rows(rows:&Value)->Value{
+    let sources=|r:&Value|r["sources"].as_array().into_iter().flatten()
+        .map(|s|json!([s["start"],s["end"],s["field"],s["text"]])).collect::<Vec<_>>();
+    Value::Array(rows.as_array().into_iter().flatten().map(|r|{
+        let items=r["items"].as_array().into_iter().flatten().map(|i|json!({
+            "productId":i["productId"],"variantId":i["variantId"],"name":i["name"],
+            "color":i["color"],"quantity":i["quantity"],"quantityConfirmed":i["quantityConfirmed"],
+            "sources":sources(i)
+        })).collect::<Vec<_>>();
+        json!({"name":r["name"],"address":r["address"],"phone":r["phone"],"mobile":r["mobile"],
+            "note":r["note"],"sources":sources(r),"items":items})
+    }).collect())
+}
+pub(crate) fn learning_input(state:&Value,id:&str)->Value{
+    let order=state["orders"].as_array().into_iter().flatten()
+        .find(|o|o["id"].as_str()==Some(id)).unwrap_or(&Value::Null);
+    let snapshot=&order["confirmationSnapshot"];
+    let mut shipments=state["workflow"]["shipments"].as_array().into_iter().flatten()
+        .filter(|s|s["orderId"].as_str()==Some(id)&&s["legacyArchived"]!=true).peekable();
+    let active=shipments.peek().is_some()&&shipments.all(|s|{
+        s["step"].as_i64().is_some_and(|v|(1..=4).contains(&v))&&
+        state["workflow"]["groups"].as_array().into_iter().flatten().any(|g|
+            g["id"]==s["groupId"]&&g["deletedAt"].as_str().is_none_or(|v|v.is_empty()))
+    });
+    // A later explicit edit is not an untouched sample even if the user
+    // restores the same value. Reuse the existing workflow audit history.
+    let shipment_ids=state["workflow"]["shipments"].as_array().into_iter().flatten()
+        .filter(|s|s["orderId"].as_str()==Some(id))
+        .filter_map(|s|s["id"].as_str()).collect::<HashSet<_>>();
+    let confirmed=order["confirmedAt"].as_str().and_then(|v|chrono::DateTime::parse_from_rfc3339(v).ok());
+    let later_edit=state["workflow"]["events"].as_array().into_iter().flatten().any(|e|
+        e["action"]=="확정 주문 수정"&&matches!(e["reason"].as_str(),
+            Some("name"|"address"|"phone"|"mobile"|"note"|"quantity"|"product"|"color"|"variant"|"addItem"|"removeItem"))
+        &&e["shipmentIds"].as_array().into_iter().flatten().any(|s|s.as_str().is_some_and(|id|shipment_ids.contains(id)))
+        &&e["at"].as_str().and_then(|v|chrono::DateTime::parse_from_rfc3339(v).ok())
+            .zip(confirmed.as_ref()).is_some_and(|(a,b)|a>=*b));
+    let active=active&&!later_edit&&order["deletedAt"].as_str().is_none_or(|v|v.is_empty())
+        &&snapshot["recognitionBaseline"]["schemaVersion"]==1
+        &&order["raw"]==snapshot["raw"]&&order["clientId"]==snapshot["data"]["clientId"]
+        &&learning_rows(&order["recipients"])==learning_rows(&snapshot["recipients"]);
+    json!({"id":id,"confirmedAt":order["confirmedAt"],"deletedAt":order["deletedAt"],
+        "learningActive":active,"confirmationSnapshot":snapshot,"recognitionAuditEvents":[]})
+}
+#[cfg(test)]
+mod pattern_learning_lifecycle_tests{
+    use super::*;
+    #[test]
+    fn learning_lifecycle_retracts_cancelled_deleted_and_recorrected_orders(){
+        let row=json!({"name":"가","items":[{"productId":"p","quantity":1}]});
+        let mut state=json!({"orders":[{"id":"a","confirmedAt":"t","raw":"가","clientId":"c",
+            "recipients":[row],"confirmationSnapshot":{"at":"t","raw":"가","recipients":[row],
+            "data":{"clientId":"c"},"recognitionBaseline":{"schemaVersion":1}}}],
+            "workflow":{"groups":[{"id":"g"}],"shipments":[{"orderId":"a","groupId":"g","step":1}]}});
+        assert_eq!(learning_input(&state,"a")["learningActive"],true);
+        state["workflow"]["shipments"][0]["step"]=json!(0);
+        assert_eq!(learning_input(&state,"a")["learningActive"],false);
+        state["workflow"]["shipments"][0]["step"]=json!(1);
+        state["workflow"]["groups"][0]["deletedAt"]=json!("t");
+        assert_eq!(learning_input(&state,"a")["learningActive"],false);
+        state["workflow"]["groups"][0]["deletedAt"]=Value::Null;
+        state["orders"][0]["recipients"][0]["items"][0]["quantity"]=json!(2);
+        assert_eq!(learning_input(&state,"a")["learningActive"],false);
+        state["orders"][0]["recipients"][0]["items"][0]["quantity"]=json!(1);
+        assert_eq!(learning_input(&state,"a")["learningActive"],true);
+        assert_eq!(learning_input(&state,"missing")["learningActive"],false);
+    }
 }
 
 // Stable keyset paging: no unbounded loading and no write on the audit path.

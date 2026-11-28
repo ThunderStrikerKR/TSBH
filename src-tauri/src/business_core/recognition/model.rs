@@ -247,6 +247,15 @@ fn code_color_hints(text:&str,ps:&[&Value],cache:&mut TermMatches)->Vec<ColorHin
     found.retain(|h|seen.insert((h.base.clone(),h.color.clone(),h.span)));
     found
 }
+/// Learning proof uses the same attached-color candidates as recognition.
+pub(super) fn audit_attached_color(text:&str,item:&Value,source:(usize,usize))->Option<(String,(usize,usize))>{
+    let mut hints=code_color_hints(text,&[item],&mut TermMatches::new()).into_iter()
+        .filter(|h|model_names(item).iter().any(|name|model_key(name)==model_key(&h.base))
+            &&h.span.0<source.1&&h.span.1>source.0);
+    let first=hints.next()?;
+    if hints.any(|h|h.span!=first.span||h.color!=first.color){return None;}
+    Some((first.color,first.span))
+}
 #[cfg(test)]
 fn code_color_hint(text:&str,ps:&[&Value])->Option<(String,String,String)>{
     code_color_hints(text,ps,&mut TermMatches::new()).into_iter().next()
