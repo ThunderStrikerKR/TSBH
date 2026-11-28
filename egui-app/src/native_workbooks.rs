@@ -108,19 +108,19 @@ fn validate_sheet_xml<R:std::io::BufRead>(input:R)->Result<(),String>{
                 let tag=e.local_name();
                 if !root_seen{
                     root_seen=true;
-                    if tag.as_ref()!=b"worksheet"{return Ok(())}
+                    if tag.as_ref()!="worksheet"{return Ok(())}
                 }
                 let mut pos=None;
                 for attr in e.attributes(){
                     let attr=attr.map_err(|_|invalid())?;
                     match (tag.as_ref(),attr.key.as_ref()){
-                        (b"row",b"r")=>{row_coordinate(attr.value.as_ref())?;},
-                        (b"c",b"r")=>{pos=Some(cell_coordinate(attr.value.as_ref())?);},
-                        (b"dimension"|b"mergeCell"|b"f",b"ref")=>validate_reference(attr.value.as_ref())?,
+                        ("row","r")=>{row_coordinate(attr.value.as_bytes())?;},
+                        ("c","r")=>{pos=Some(cell_coordinate(attr.value.as_bytes())?);},
+                        ("dimension"|"mergeCell"|"f","ref")=>validate_reference(attr.value.as_bytes())?,
                         _=>{}
                     }
                 }
-                if tag.as_ref()==b"c"{budget.record(pos)?;}
+                if tag.as_ref()=="c"{budget.record(pos)?;}
             }
             Event::Eof=>return Ok(()),
             _=>{}
