@@ -4,6 +4,7 @@ mod model;
 mod quantity;
 mod corrections;
 mod ts_semantics;
+mod features;
 #[path = "../postcode.rs"]
 mod postcode;
 
@@ -1225,7 +1226,8 @@ fn owner_index(anchors: &[usize], events: &[Evidence], offset: usize) -> usize {
 // to that next recipient when the preceding name is in another paragraph.
 // Distances are supporting evidence only: they never create recipients.
 fn recipient_owner_index(
-    anchors: &[usize], events: &[Evidence], evidence_index: usize, geometry:&SourceGeometry<'_>
+    anchors: &[usize], events: &[Evidence], evidence_index: usize, geometry:&SourceGeometry<'_>,
+    features:Option<&features::DocumentFeatures<'_,'_,'_>>
 ) -> usize {
     let candidate=&events[evidence_index];
     let previous=owner_index(anchors,events,candidate.start);
@@ -1256,10 +1258,14 @@ fn recipient_owner_index(
     if !previous_has_delivery {return previous;}
     // A separating line containing only spaces/tabs counts as a block
     // boundary too. This is a conservative overlay on the existing gates.
-    let previous_gap=geometry.gap(preceding.line,candidate.line);
-    let following_gap=geometry.gap(candidate.line,following.line);
+    let relation=|a:&Evidence,b:&Evidence|features.map_or_else(
+        ||features::relation(geometry,a.start,b.start),|f|f.between(a.start,b.start));
+    let previous_relation=relation(preceding,candidate);
+    let following_relation=relation(candidate,following);
+    let previous_gap=previous_relation.gap;
+    let following_gap=following_relation.gap;
     if following_gap.blank_lines>0 {return previous;}
-    let next_distance=following.line.saturating_sub(candidate.line);
+    let next_distance=following_relation.line_delta.max(0) as usize;
     if next_distance>3 {return previous;}
     let has_nearby_address=events.iter().any(|e|
         e.kind=="address" && e.paragraph==candidate.paragraph
@@ -1270,7 +1276,7 @@ fn recipient_owner_index(
     if matches!(candidate.kind,"phone"|"mobile") && !has_nearby_address {
         return previous;
     }
-    let preceding_distance=candidate.line.saturating_sub(preceding.line);
+    let preceding_distance=previous_relation.line_delta.max(0) as usize;
     let previous_score=(if preceding.paragraph==candidate.paragraph {80usize} else {0})
         + 20usize.saturating_sub(preceding_distance.saturating_mul(5));
     // Blank-line and content-line evidence are distinct. Their bounded
@@ -1479,6 +1485,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     let mut search=ProductSearch::new(state,client_id);
     let geometry=SourceGeometry::new(raw);
     let document=collect_document(&geometry,&phone,&person_label,&mut search);
+    let shared_features=features::DocumentFeatures::build(&geometry,&document);
     let rows=document.legacy_rows();
     // This is only the cache-completeness signal, not certification that
     // all competing record/zone/type hypotheses have been discovered.
@@ -1726,7 +1733,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     let mut postcodes=vec![HashSet::<String>::new();recipients.len()];
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
-        let row_index = recipient_owner_index(&anchors,&events,index,&geometry);
+        let row_index = recipient_owner_index(&anchors,&events,index,&geometry,shared_features.as_ref());
         let rid = recipients[row_index]["id"].as_str().unwrap_or("").to_owned();
         let e = &events[index];
         let kind = e.kind;
@@ -2589,6 +2596,34 @@ mod tests {
         assert_eq!(search.probes.len(),probes);
         assert_eq!(search.quantity_cache.len(),quantities);
         assert!(doc.complete_occurrences().is_some());
+    }
+    #[test]
+    fn common_document_features_preserve_candidates_and_order_before_evaluation(){
+        let state=state();
+        let raw="수취인: 김가상 010-2345-6789\n\n서울특별시 마포구 월드컵로 20\nGT-1 2개";
+        let geometry=SourceGeometry::new(raw);
+        let mut search=ProductSearch::new(&state,"");
+        let document=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut search);
+        let shared=features::DocumentFeatures::build(&geometry,&document).unwrap();
+        assert!(std::ptr::eq(shared.occurrences,document.complete_occurrences().unwrap()));
+        assert!(search.probes.values().all(|p|p.evaluated.is_none()));
+        assert_eq!(shared.sequence().map(|s|s.candidates.len()).sum::<usize>(),shared.occurrences.len());
+        assert!(shared.slots.windows(2).all(|s|s[0].span.start<s[1].span.start));
+        let first=shared.slots.iter().position(|s|s.span.start==raw.find("김가상").unwrap()).unwrap();
+        let address=shared.slots.iter().position(|s|s.span.start==raw.find("서울특별시").unwrap()).unwrap();
+        let relation=shared.partial_order(first,address).unwrap();
+        assert_eq!(relation.line_delta,2);
+        assert_eq!(relation.gap.blank_lines,1);
+        assert!(!relation.same_paragraph);
+        assert_eq!(shared.local.len(),2);
+        assert!(shared.structural_order().count()>0);
+        assert!(!shared.pattern.roles.is_empty());
+        assert_eq!(shared.pattern.version,1);
+        assert_eq!(shared.next_same_role.len(),shared.slots.len());
+        assert!(shared.next_same_role.iter().enumerate().all(|(i,edges)|edges.iter().all(|&j|j>i)));
+        assert!(shared.repeats.iter().all(|r|r.span.end<=raw.len()));
+        let line=&raw[raw.rfind("GT-1").unwrap()..];
+        assert_eq!(search.decision(line)["productId"],"pgt");
     }
     #[test]
     fn contract_rejects_incomplete_state() {

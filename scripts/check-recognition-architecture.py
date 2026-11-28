@@ -47,6 +47,13 @@ PHASE02_TESTS = {
               "incomplete_document_candidates_are_ineligible_for_shared_features",
               "document_candidate_discovery_reuses_catalog_and_lexical_scans"),
 }
+PHASE03_TESTS = (
+    "common_document_features_preserve_candidates_and_order_before_evaluation",
+    "exact_and_incomplete_repetition_preserve_source_boundaries",
+    "pattern_identity_is_independent_of_candidate_confidence",
+    "pattern_normalizes_item_multiplicity_without_discarding_source_candidates",
+    "signed_distances_and_blank_boundaries_use_original_geometry",
+)
 STAGE_FILE = ROOT / "scripts/recognition-stage.txt"
 
 
@@ -57,7 +64,7 @@ def stage_number(raw):
     return int(raw)
 
 
-def verify_discovery(listed, ignored, final, phase02=False):
+def verify_discovery(listed, ignored, final, phase02=False, phase03=False):
     tests = {line.removesuffix(": test") for line in listed.splitlines()
              if line.endswith(": test")}
     skipped = {line.removesuffix(": test") for line in ignored.splitlines()
@@ -75,6 +82,8 @@ def verify_discovery(listed, ignored, final, phase02=False):
     ]
     if phase02 or final:
         required.extend(name for names in PHASE02_TESTS.values() for name in names)
+    if phase03 or final:
+        required.extend(PHASE03_TESTS)
     if final:
         required.extend(FINAL_TESTS)
     required = list(dict.fromkeys(required))
@@ -103,7 +112,7 @@ def main():
         print("Test discovery and execution required; integration not certified")
         return
     listed, ignored = args.tests.read_text(), args.ignored.read_text()
-    failures = verify_discovery(listed, ignored, args.final, require_phase02)
+    failures = verify_discovery(listed, ignored, args.final, require_phase02, stage >= 3)
     if failures:
         for failure in failures:
             print("FAIL:", failure)
