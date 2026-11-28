@@ -198,25 +198,27 @@ pub(crate) fn norm_color(source: &str) -> String {
 }
 /// parser.ts::modelColorHint / registeredColorHint: a model-associated
 /// color suffix or prefix is stronger evidence than an unqualified color word.
-fn code_color_hint(text: &str, ps: &[&Value]) -> Option<(String,String,String)> {
+struct ColorHint{base:String,color:String,term:String,span:(usize,usize)}
+fn code_color_hints(text:&str,ps:&[&Value],cache:&mut TermMatches)->Vec<ColorHint>{
+    let mut found=Vec::new();
     let number_suffix=Regex::new(concat!(
         r"(?i)(?:BD\s*)?(\d{3}(?:-\d+)?)\s*",
         r"(?:\(\s*(BK|BR|B|C|W|G|검정|블랙|크롬|화이트|그레이|브라운)\s*\)",
         r"|(BK|BR|B|C|W|G))"
     )).expect("model color suffix");
     for c in number_suffix.captures_iter(text) {
-        let m=c.get(0)?;
+        let Some(m)=c.get(0)else{continue;};
         if !color_suffix_boundary(text,m.start(),m.end()) {continue;}
-        let color=c.get(2).or_else(||c.get(3))?.as_str();
-        return Some((c[1].to_owned(),norm_color(color),m.as_str().to_owned()));
+        let Some(color)=c.get(2).or_else(||c.get(3))else{continue;};
+        found.push(ColorHint{base:c[1].to_owned(),color:norm_color(color.as_str()),term:m.as_str().to_owned(),span:(m.start(),m.end())});
     }
     let number_prefix=Regex::new(
         r"(?i)(BK|BR|B|C|W|G)\s+(?:BD\s*)?(\d{3}(?:-\d+)?)"
     ).expect("model color prefix");
     for c in number_prefix.captures_iter(text) {
-        let m=c.get(0)?;
+        let Some(m)=c.get(0)else{continue;};
         if is_boundary(text,m.start(),m.end()) {
-            return Some((c[2].to_owned(),norm_color(&c[1]),m.as_str().to_owned()));
+            found.push(ColorHint{base:c[2].to_owned(),color:norm_color(&c[1]),term:m.as_str().to_owned(),span:(m.start(),m.end())});
         }
     }
     // The same code+color syntax also applies to alphabetic registered
@@ -226,31 +228,27 @@ fn code_color_hint(text: &str, ps: &[&Value]) -> Option<(String,String,String)> 
         .expect("registered color suffix");
     for p in ps {
         for model in model_names(p) {
-            let Some((begin,end))=find_term(text,&model,true) else {continue;};
-            if let Some(c)=color_code.captures(&text[end..]) {
-                let m=c.get(0)?;
-                if m.start()!=0 {continue;}
-                let end=end+m.end();
-                if !color_suffix_boundary(text,begin,end) {continue;}
-                let color=c.get(1).or_else(||c.get(2))?.as_str();
-                return Some((model.clone(),norm_color(color),
-                    text[begin..end].to_owned()));
+            for &(begin,end) in all_terms(text,&model,true,cache){
+                if let Some(c)=color_code.captures(&text[end..]) {
+                    let Some(m)=c.get(0)else{continue;};
+                    if m.start()!=0 {continue;}
+                    let end=end+m.end();
+                    if !color_suffix_boundary(text,begin,end) {continue;}
+                    let Some(color)=c.get(1).or_else(||c.get(2))else{continue;};
+                    found.push(ColorHint{base:model.clone(),color:norm_color(color.as_str()),
+                        term:text[begin..end].to_owned(),span:(begin,end)});
+                }
             }
         }
     }
-    None
+    let mut seen=HashSet::new();
+    found.retain(|h|seen.insert((h.base.clone(),h.color.clone(),h.span)));
+    found
 }
-fn written_color(text: &str) -> Option<String> {
-    for word in ["rose gold","로즈골드","cosmo black","cosmoblack","코스모블랙",
-        "gold","골드","black","블랙","검정","gray","grey","그레이",
-        "회색","white","화이트","흰색","brown","브라운","clear",
-        "클리어","frost","프로스트","silver","실버","blue",
-        "블루","red","레드","pink","핑크"] {
-        if find_term(text,word,false).is_some() {
-            return Some(norm_color(word));
-        }
-    }
-    None
+#[cfg(test)]
+fn code_color_hint(text:&str,ps:&[&Value])->Option<(String,String,String)>{
+    code_color_hints(text,ps,&mut TermMatches::new()).into_iter().next()
+        .map(|h|(h.base,h.color,h.term))
 }
 fn model_key(source: &str) -> String {
     source.to_uppercase().chars().filter(|c|!c.is_whitespace()).collect::<String>()
@@ -411,7 +409,7 @@ fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
     xs
 }
 fn name_entries<'a>(text: &str, mut entries: Vec<Entry<'a>>,
-    verified: &HashSet<String>) -> Vec<Entry<'a>> {
+    verified: &HashSet<String>,written:&Option<String>) -> Vec<Entry<'a>> {
     if no_holes(text) {
         entries.retain(|e| top(e.p, verified) != Some("PERFORATED"));
     } else if with_holes(text) {
@@ -428,10 +426,10 @@ fn name_entries<'a>(text: &str, mut entries: Vec<Entry<'a>>,
                         && top(e.p, verified) == Some(desired))
                     .cloned().collect();
                 if !family.is_empty() {
-                    let selected = if let Some(color) = written_color(text) {
+                    let selected = if let Some(color) = written {
                         family.into_iter().filter(|e| variants(e.p).iter().any(|v|
-                            norm_color(str_field(v, "color")) == color) ||
-                            norm_color(str_field(e.p, "name")) == color).collect()
+                            norm_color(str_field(v, "color")) == *color) ||
+                            norm_color(str_field(e.p, "name")) == *color).collect()
                     } else {
                         let defaults: Vec<_> = family.iter().filter(|e|
                             score_model(e.p).map_or(false, |(_,_,suffix)| suffix.is_empty()))
@@ -472,22 +470,24 @@ fn alias_entries<'a>(text:&str,state:&'a Value,client_id:&str,ps:&[&'a Value],
 // orders even when the catalog uses "지휘자 보면대". Do not override explicit
 // model codes, registered names, or dealer aliases. More than one active
 // conductor SKU must remain an unresolved choice.
-fn conductor_semantic_entries<'a>(text: &str, ps: &[&'a Value]) -> Vec<Entry<'a>> {
+fn conductor_semantic_entries<'a>(text: &str, ps: &[&'a Value]) -> (Vec<Entry<'a>>,bool) {
     let phrase=Regex::new(
         r"지휘(?:자)?\s*용?\s*(?:악보\s*스탠드|보면대|악보대|뮤직\s*스탠드)"
     ).expect("conductor role with score stand");
-    let Some(m)=phrase.find(text) else { return vec![]; };
+    let spans=phrase.find_iter(text).map(|m|(m.start(),m.end())).collect::<Vec<_>>();
+    if spans.is_empty(){return (vec![],false);}
     // A separate model token is stronger evidence, even when it is not
     // registered in this catalog. Never silently reinterpret its model.
     let competing_code=Regex::new(
         r"(?i)(?:^|[\s(/])(?:BD\s*[- ]*)?(?:[A-Z]{1,7}[- ]?\d+|\d{3}(?:-\d+)?)(?:\b|\s|$)"
     ).expect("independent model token");
-    if competing_code.is_match(text) { return vec![]; }
-    ps.iter().copied()
+    let allowed=!competing_code.is_match(text);
+    let entries=ps.iter().copied()
         .filter(|p| str_field(p,"category").contains("보면대")
             && str_field(p,"name").contains("지휘자")
             && str_field(p,"name").contains("보면대"))
-        .map(|p|Entry{p,priority:1,span:(m.start(),m.end())}).collect()
+        .flat_map(|p|spans.iter().map(move |&span|Entry{p,priority:1,span})).collect();
+    (entries,allowed)
 }
 // The five candidate families are collected before any identity is
 // selected. The evaluator cannot create a new catalog hypothesis.
@@ -497,9 +497,14 @@ pub(super) struct ProductHypotheses<'a>{
     names:Vec<Entry<'a>>,
     aliases:Vec<AliasEntry<'a>>,
     lead_spans:HashMap<&'a str,(usize,usize)>,
-    color_hint:Option<(String,String,String)>,
+    color_hints:Vec<ColorHint>,
     color_codes:Vec<Entry<'a>>,
     semantic:Vec<Entry<'a>>,
+    semantic_allowed:bool,
+    lexical:Vec<(&'static str,(usize,usize))>,
+    written:Option<String>,
+    proof:HashSet<String>,
+    registered_model:bool,
     branded:Vec<&'a Value>,
     known_brand:bool,
 }
@@ -507,8 +512,8 @@ pub(super) struct ProductHypotheses<'a>{
 // Restrict this structural split to bare registered terms. Alias, semantic,
 // brand and color conflicts remain with the unsplit row for classification.
 pub(super) fn isolated_model_prefix(text:&str,quantity_start:usize,pool:&ProductHypotheses<'_>)->bool{
-    if !pool.aliases.is_empty()||!pool.semantic.is_empty()||!pool.branded.is_empty()
-        ||pool.color_hint.is_some(){return false;}
+    if !pool.aliases.is_empty()||(pool.semantic_allowed&&!pool.semantic.is_empty())||!pool.branded.is_empty()
+        ||!pool.color_hints.is_empty(){return false;}
     let primary=legacy_names(&pool.names);
     let boundary=primary.iter().filter(|e|e.priority>=2&&e.span.0==0)
         .map(|e|e.span.1).filter(|&end|end>0&&end<=quantity_start
@@ -517,27 +522,49 @@ pub(super) fn isolated_model_prefix(text:&str,quantity_start:usize,pool:&Product
         .max();
     boundary.is_some_and(|end|primary.iter().all(|e|e.span.1<=end))
 }
+pub(super) struct Catalog<'a>{ps:Vec<&'a Value>,verified:HashSet<String>}
+impl<'a> Catalog<'a>{
+    pub(super) fn new(state:&'a Value)->Self{
+        let ps=products(state);
+        let verified=verified_bases(&ps);
+        Self{ps,verified}
+    }
+}
 pub(super) fn collect<'a>(text:&str,state:&'a Value,client_id:&str)->ProductHypotheses<'a>{
-    let ps=products(state);
-    let verified=verified_bases(&ps);
+    collect_prepared(text,state,client_id,&Catalog::new(state))
+}
+pub(super) fn collect_prepared<'a>(text:&str,state:&'a Value,client_id:&str,catalog:&Catalog<'a>)->ProductHypotheses<'a>{
+    let ps=&catalog.ps;
+    let verified=catalog.verified.clone();
     let mut cache=TermMatches::new();
     let names=ps.iter().flat_map(|p|evidence(text,p,&verified,&mut cache)).collect();
     let aliases=alias_entries(text,state,client_id,&ps,&mut cache);
     let lead_spans=ps.iter().filter_map(|p|
         all_terms(text,lead(p),true,&mut cache).first().copied()
             .map(|span|(str_field(p,"id"),span))).collect();
-    let color_hint=code_color_hint(text,&ps);
-    let color_codes=if let Some((base,_,term))=&color_hint{
-        let span=find_term(text,term,false).unwrap_or((0,text.len()));
-        ps.iter().copied().filter(|p|model_names(p).iter()
-            .any(|name|model_key(name)==model_key(base)))
-            .map(|p|Entry{p,priority:2,span}).collect()
-    }else{vec![]};
-    let semantic=conductor_semantic_entries(text,&ps);
+    let color_hints=code_color_hints(text,ps,&mut cache);
+    let color_codes=color_hints.iter().flat_map(|h|ps.iter().copied()
+        .filter(move |p|model_names(p).iter().any(|name|model_key(name)==model_key(&h.base)))
+        .map(move |p|Entry{p,priority:2,span:h.span})).collect();
+    let (semantic,semantic_allowed)=conductor_semantic_entries(text,ps);
+    let registered_model=ps.iter().any(|p|model_names(p).iter()
+        .any(|name|!all_terms(text,name,true,&mut cache).is_empty()));
+    let mut lexical=Vec::new();
+    static OPTIONS:OnceLock<Regex>=OnceLock::new();
+    let options=OPTIONS.get_or_init(||Regex::new(r"(?i)(?:가방|바퀴)\s*(?:미포함|포함|미장착|장착)|민판|무타공\s*상판|무타공|비타공\s*상판|타공\s*상판|\d+(?:\.\d+)?\s*cm|[ab]\s*타입|타입\s*[:：]?\s*[ab]").expect("option spans"));
+    lexical.extend(options.find_iter(text).filter(|m|is_boundary(text,m.start(),m.end()))
+        .map(|m|("option",(m.start(),m.end()))));
+    let mut written=None;
+    for word in ["rose gold","로즈골드","cosmo black","cosmoblack","코스모블랙","gold","골드","black","블랙","검정","gray","grey","그레이","회색","white","화이트","흰색","brown","브라운","clear","클리어","frost","프로스트","silver","실버","blue","블루","red","레드","pink","핑크"]{
+        let spans=all_terms(text,word,false,&mut cache);
+        if !spans.is_empty()&&written.is_none(){written=Some(norm_color(word));}
+        lexical.extend(spans.iter().map(|&span|("color_word",span)));
+    }
+    let proof=qualifiers(text);
     let branded=ps.iter().copied().filter(|p|
         brand_matches(text,&brand_words(state,p))).collect();
     let known_brand=known_brand(text,state);
-    ProductHypotheses{verified,names,aliases,lead_spans,color_hint,color_codes,semantic,branded,known_brand}
+    ProductHypotheses{verified,names,aliases,lead_spans,color_hints,color_codes,semantic,semantic_allowed,lexical,written,proof,registered_model,branded,known_brand}
 }
 // Borrow every currently discovered positioned identity. The document
 // supplies its absolute source offset; no regex or SKU evaluation here.
@@ -555,6 +582,11 @@ pub(super) fn visit_occurrences<'s>(pool:&ProductHypotheses<'s>,
         }
     }
 }
+pub(super) fn visit_lexical_occurrences(pool:&ProductHypotheses<'_>,mut visit:impl FnMut(&'static str,(usize,usize))){
+    for &(kind,span) in &pool.lexical{visit(kind,span);}
+    for h in &pool.color_hints{visit("color_hint",h.span);}
+}
+pub(super) fn has_any_model_name(pool:&ProductHypotheses<'_>)->bool{pool.registered_model}
 pub(super) fn has_registered_model(pool:&ProductHypotheses<'_>)->bool{
     !pool.lead_spans.is_empty()
 }
@@ -562,24 +594,26 @@ pub(crate) fn decide(text:&str,state:&Value,client_id:&str)->Decision{
     evaluate(text,&collect(text,state,client_id))
 }
 pub(super) fn evaluate(text:&str,hypotheses:&ProductHypotheses<'_>)->Decision{
-    let ProductHypotheses{verified,names,aliases,lead_spans,color_hint,color_codes,
-        semantic,branded,known_brand}=hypotheses;
-    let mut hint=color_hint.as_ref();
-    let mut entries=filter_business_candidates(text,branded,name_entries(text,legacy_names(names),verified));
-    if let Some((_,_,term))=hint{
+    let ProductHypotheses{verified,names,aliases,lead_spans,color_hints,color_codes,
+        semantic,semantic_allowed,written,proof,branded,known_brand,..}=hypotheses;
+    let mut hint=color_hints.first();
+    let mut entries=filter_business_candidates(text,branded,name_entries(text,legacy_names(names),verified,written));
+    if let Some(h)=hint{
         // A registered full model protects its suffix from being read as color.
         let protected=entries.iter().any(|e|model_names(e.p).iter()
-            .any(|name|model_key(name)==model_key(term)));
+            .any(|name|model_key(name)==model_key(&h.term)));
         if protected{hint=None;}else{
-            let prefer_real=color_codes.iter().any(|e|!variants(e.p).iter()
+            let mut seen=HashSet::new();
+            let preferred=color_codes.iter().filter(|e|e.span==h.span&&seen.insert(str_field(e.p,"id"))).collect::<Vec<_>>();
+            let prefer_real=preferred.iter().any(|e|!variants(e.p).iter()
                 .any(|v|str_field(v,"source")=="DEMO"));
-            entries=color_codes.iter().filter(|e|!prefer_real||!variants(e.p).iter()
+            entries=preferred.into_iter().filter(|e|!prefer_real||!variants(e.p).iter()
                 .any(|v|str_field(v,"source")=="DEMO")).cloned().collect();
         }
     }
     let mut semantic_name=false;
-    if entries.is_empty()&&aliases.is_empty()&&!semantic.is_empty(){
-        let filtered=filter_business_candidates(text,branded,semantic.clone());
+    if entries.is_empty()&&aliases.is_empty()&&*semantic_allowed&&!semantic.is_empty(){
+        let filtered=filter_business_candidates(text,branded,legacy_names(semantic));
         if !filtered.is_empty(){entries=filtered;semantic_name=true;}
     }
     let mut branded_category=false;
@@ -587,19 +621,18 @@ pub(super) fn evaluate(text:&str,hypotheses:&ProductHypotheses<'_>)->Decision{
         entries=branded.iter().copied().map(|p|Entry{p,priority:0,span:(0,text.len())}).collect();
         branded_category=true;
     }
-    let proof = qualifiers(text);
-    entries.retain(|e| qualifies(e.p, &proof, &verified));
+    entries.retain(|e| qualifies(e.p, proof, verified));
     let code_entries = entries.clone();
     let first_alias=aliases.first().map(|a|a.alias);
     if entries.is_empty() {
         if let Some(a)=aliases.first(){
-            if qualifies(a.product,&proof,verified){
+            if qualifies(a.product,proof,verified){
                 entries=vec![Entry{p:a.product,priority:1,span:a.spans[0]}];
             }
         }
     }
-    let explicit = hint.as_ref().map(|(_,color,_)|color.clone())
-        .or_else(||written_color(text));
+    let explicit = hint.map(|h|h.color.clone())
+        .or_else(||written.clone());
     let color_matched: Vec<_> = if let Some(ref color) = explicit {
         entries.iter().filter(|e| variants(e.p).iter()
             .any(|v| norm_color(str_field(v, "color")) == *color))

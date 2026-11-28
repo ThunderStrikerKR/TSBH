@@ -109,10 +109,7 @@ pub(super) fn table_quantities(text:&str)->Vec<TableQuantity>{
 /// a delivery address, its prefix is an order item only if a real registered
 /// model is present, or an unknown three-digit SKU also has an explicit
 /// quantity. Do not turn five-digit postal codes into fake SKUs.
-pub(super) fn model_before_address(prefix: &str, state: &serde_json::Value) -> bool {
-    let known=super::model::products(state).iter().any(|p|
-        super::model::model_names(p).iter()
-            .any(|name|super::model::find_term(prefix,name,true).is_some()));
+pub(super) fn model_before_address(prefix: &str, known:bool, has_quantity:bool) -> bool {
     if known { return true; }
     let model=Regex::new(r"(?i)(?:BD\s*)?\d{3}[A-Za-z0-9-]*")
         .expect("legacy unknown model");
@@ -124,7 +121,7 @@ pub(super) fn model_before_address(prefix: &str, state: &serde_json::Value) -> b
         before.map_or(true,|c|!c.is_ascii_digit() && c!='(')
             && after.map_or(true,|c|!c.is_ascii_digit())
     });
-    unknown && !super::quantity::extract(prefix).is_empty()
+    unknown && has_quantity
 }
 
 /// Port of src/order-evidence.ts:609-650 (matchingRecipient).

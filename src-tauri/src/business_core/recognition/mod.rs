@@ -480,8 +480,8 @@ impl NameProposal{
 }
 // Discover all plausible name boundaries without choosing a product or
 // discarding a name because its spelling is also a catalog term.
-fn recipient_proposals(line:&str,address:Option<usize>,contact:Option<usize>,
-    near_delivery:bool)->Vec<NameProposal>{
+fn recipient_proposals<'a>(line:&'a str,address:Option<usize>,contact:Option<usize>,
+    near_delivery:bool,search:&mut ProductSearch<'a,'_>)->Vec<NameProposal>{
     let mut proposals=Vec::new();
     let end=address.into_iter().chain(contact).min().unwrap_or(line.len());
     let prefix=&line[..end];
@@ -504,7 +504,7 @@ fn recipient_proposals(line:&str,address:Option<usize>,contact:Option<usize>,
         }
         return proposals;
     }
-    for q in quantity::extract(prefix).into_iter().rev(){
+    for q in search.quantities(prefix).into_iter().rev(){
         let tail=prefix[q.end..].trim_start_matches(|c:char|c.is_whitespace()||c=='|'||c=='ㅣ');
         let a=q.end+prefix[q.end..].len()-tail.len();
         let Some((a,b))=trim_span(line,a,end)else{continue;};
@@ -518,7 +518,7 @@ fn recipient_proposals(line:&str,address:Option<usize>,contact:Option<usize>,
     }else{
         trim_span(line,0,line.len()).filter(|&(a,b)|{
             let candidate=&line[a..b];
-            !other_recipient_field(candidate)&&quantity::extract(candidate).is_empty()
+            !other_recipient_field(candidate)&&search.quantities(candidate).is_empty()
                 &&(near_delivery||weak_recipient_hint(candidate))
         })
     };
@@ -537,6 +537,8 @@ struct ProductSearch<'a,'s>{
     state:&'s Value,
     client:&'s str,
     probes:HashMap<&'a str,ProductProbe<'s>>,
+    catalog:model::Catalog<'s>,
+    quantity_cache:HashMap<&'a str,Vec<quantity::Quantity>>,
     source:Option<&'a str>,
     // Cache equality is textual; source occurrence identity is positional.
     source_ranges:BTreeSet<(usize,usize)>,
@@ -546,10 +548,27 @@ struct ProductSearch<'a,'s>{
 }
 impl<'a,'s> ProductSearch<'a,'s>{
     fn new(state:&'s Value,client:&'s str)->Self{
-        Self{state,client,probes:HashMap::new(),source:None,
-            source_ranges:BTreeSet::new(),truncated:false}
+        Self{state,client,probes:HashMap::new(),catalog:model::Catalog::new(state),
+            quantity_cache:HashMap::new(),source:None,source_ranges:BTreeSet::new(),truncated:false}
+    }
+    fn quantities(&mut self,text:&'a str)->Vec<quantity::Quantity>{
+        if let Some(q)=self.quantity_cache.get(text){return q.clone();}
+        let q=quantity::extract(text);
+        if self.quantity_cache.len()<512{self.quantity_cache.insert(text,q.clone());}
+        q
+    }
+    fn known_model(&mut self,text:&'a str)->bool{
+        self.prepare(text);
+        self.probes.get(text).map_or_else(||
+            model::has_any_model_name(&model::collect_prepared(text,self.state,self.client,&self.catalog)),
+            |p|model::has_any_model_name(&p.hypotheses))
+    }
+    fn signal(&mut self,text:&'a str,decision:&Value)->bool{
+        let has_quantity=!self.quantities(text.trim()).is_empty();
+        product_signal(text,decision,has_quantity)
     }
     fn prepare(&mut self,text:&'a str){
+        self.quantities(text.trim());
         if let Some(raw)=self.source{
             // Every input here is a borrowed substring, not a normalized
             // allocation. Check provenance before translating its offset.
@@ -566,7 +585,7 @@ impl<'a,'s> ProductSearch<'a,'s>{
             return;
         }
         self.probes.insert(text,ProductProbe{
-            hypotheses:model::collect(text,self.state,self.client),evaluated:None});
+            hypotheses:model::collect_prepared(text,self.state,self.client,&self.catalog),evaluated:None});
     }
     fn decision(&mut self,text:&'a str)->Value{
         self.prepare(text);
@@ -576,7 +595,7 @@ impl<'a,'s> ProductSearch<'a,'s>{
             probe.evaluated=Some(value.clone());
             value
         }else{
-            evaluate_product_probe(text,&model::collect(text,self.state,self.client))
+            evaluate_product_probe(text,&model::collect_prepared(text,self.state,self.client,&self.catalog))
         }
     }
 }
@@ -589,7 +608,7 @@ fn project_name<'a>(line:&'a str,proposals:&[NameProposal],search:&mut ProductSe
     for proposal in proposals{
         if let Some(probe)=proposal.probe(line){
             let decision=search.decision(probe);
-            let product=product_signal(probe,&decision,search.state);
+            let product=search.signal(probe,&decision);
             if product!=(matches!(proposal.requirement,NameRequirement::ProductPrefix(_))){continue;}
         }
         return Some(proposal.span);
@@ -648,7 +667,7 @@ fn product_records<'a>(line:&RecordSlice<'a>,quantities:&[quantity::Quantity],
     }
     Some(records)
 }
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+#[derive(Clone,Copy,Debug,PartialEq,Eq,Hash)]
 enum SourceZone{Unspecified,Recipient,Sender,Common}
 fn common_item_hint(text:&str)->bool{
     Regex::new(r"공통|모두|전부|전원|각\s*수취인|같은\s*상품")
@@ -690,13 +709,15 @@ fn product_slice<'a>(line:&RecordSlice<'a>,address:Option<usize>,name:Option<(us
     let matching=ts_semantics::table_product_prefix(text);
     search.prepare(text);
     search.prepare(matching);
-    let explicit_quantities=quantity::extract(text);
+    let explicit_quantities=search.quantities(text);
     let table_quantities=if text.contains('|'){ts_semantics::table_quantities(text)}else{vec![]};
     let quantities=if text.contains('|'){vec![]}else{
-        quantity::for_product(matching,false,search.probes.get(matching)
+        let allow_trailing=search.probes.get(matching)
             .map(|p|model::has_registered_model(&p.hypotheses))
             .unwrap_or_else(||model::products(search.state).iter().any(|p|
-                model::model_names(p).iter().any(|name|model::find_term(matching,name,true).is_some()))))
+                model::model_names(p).iter().any(|name|model::find_term(matching,name,true).is_some())));
+        let explicit=search.quantities(matching);
+        quantity::for_product_with_explicit(matching,false,allow_trailing,explicit)
     };
     let contact_spans=phone.find_iter(text).map(|m|(m.start(),m.end())).collect();
     Some(ProductSlice{text,matching,offset,quantities,table_quantities,contact_spans,explicit_quantities})
@@ -764,6 +785,7 @@ struct LineCandidates<'a>{
     ignored:bool,
     labelled_postcode:bool,
     product_slices:HashMap<Option<(usize,usize)>,ProductSlice<'a>>,
+    model_before_address:bool,
 }
 // Absolute half-open byte span. UTF-16, line and paragraph are derived
 // from the same SourceGeometry, not a second representation of the text.
@@ -794,12 +816,13 @@ struct DocumentOccurrence<'s>{
 // can read this immutable occurrence index without parsing the source.
 struct DocumentCandidates<'a,'s>{
     rows:Vec<LineCandidates<'a>>,
+    projected_rows:usize,
     occurrences:Vec<DocumentOccurrence<'s>>,
     incomplete:bool,
 }
 impl<'a,'s> DocumentCandidates<'a,'s>{
     fn new(geometry:&SourceGeometry<'a>,rows:Vec<LineCandidates<'a>>,
-        search:&ProductSearch<'a,'s>)->Self{
+        projected_rows:usize,search:&ProductSearch<'a,'s>)->Self{
         let mut occurrences=BTreeSet::new();
         for row in &rows{
             let mut add=|kind,span|{
@@ -816,6 +839,18 @@ impl<'a,'s> DocumentCandidates<'a,'s>{
             if let Some(note)=&row.note{add("note",note.span);}
             let trim=row.line.text.trim();
             let begin=row.line.text.len()-row.line.text.trim_start().len();
+            let end=begin+trim.len();
+            if begin<end{
+                add("record_boundary",(begin,end));
+                let zone=match row.zone{
+                    SourceZone::Sender=>Some("sender_zone"),
+                    SourceZone::Recipient=>Some("recipient_zone"),
+                    SourceZone::Common=>Some("common_zone"),
+                    SourceZone::Unspecified=>None,
+                };
+                if let Some(zone)=zone{add(zone,(begin,end));}
+                if row.ignored{add("excluded",(begin,end));}
+            }
             if row.dispatch{add("dispatch",(begin,begin+trim.len()));}
             if row.address_detail{add("address_detail",(begin,begin+trim.len()));}
             if row.labelled_postcode{add("postcode",(begin,begin+trim.len()));}
@@ -838,18 +873,51 @@ impl<'a,'s> DocumentCandidates<'a,'s>{
                         span:DocumentSpan{start:start+a,end:start+b},kind,
                         product:Some(product),alias});
                 });
+                model::visit_lexical_occurrences(&probe.hypotheses,|kind,(a,b)|{
+                    assert!(a<=b&&source.get(a..b).is_some());
+                    occurrences.insert(DocumentOccurrence{span:DocumentSpan{start:start+a,end:start+b},
+                        kind,product:None,alias:None});
+                });
             }
         }
-        Self{rows,occurrences:occurrences.into_iter().collect(),incomplete:search.truncated}
+        let covered=occurrences.iter().filter(|c|!matches!(c.kind,
+            "record_boundary"|"sender_zone"|"recipient_zone"|"common_zone"))
+            .map(|c|c.span).collect::<Vec<_>>();
+        let mut i=0;
+        for line in geometry.content_lines(){
+            let mut cursor=line.start;
+            let end=line.start+line.text.len();
+            while i<covered.len()&&covered[i].end<=cursor{i+=1;}
+            let mut j=i;
+            while j<covered.len()&&covered[j].start<end{
+                let span=covered[j];
+                if span.start>cursor{add_unknown(geometry.raw,cursor,span.start.min(end),&mut occurrences);}
+                cursor=cursor.max(span.end.min(end));
+                j+=1;
+            }
+            if cursor<end{add_unknown(geometry.raw,cursor,end,&mut occurrences);}
+            i=j;
+        }
+        Self{rows,projected_rows,occurrences:occurrences.into_iter().collect(),incomplete:search.truncated}
     }
     // Keep existing projection call sites and tests as row views, not a
     // separate collection pipeline.
-    fn legacy_rows(&self)->&[LineCandidates<'a>]{&self.rows}
+    fn legacy_rows(&self)->&[LineCandidates<'a>]{&self.rows[..self.projected_rows]}
+    fn complete_occurrences(&self)->Option<&[DocumentOccurrence<'s>]>{
+        (!self.incomplete).then_some(self.occurrences.as_slice())
+    }
     fn contains_span(&self,kind:&str,span:DocumentSpan)->bool{
         // Occurrences are sorted by absolute span, then family/identity.
         let first=self.occurrences.partition_point(|c|c.span<span);
         self.occurrences[first..].iter().take_while(|c|c.span==span)
             .any(|c|c.kind==kind)
+    }
+}
+fn add_unknown<'s>(raw:&str,start:usize,end:usize,out:&mut BTreeSet<DocumentOccurrence<'s>>){
+    if let Some((a,b))=trim_span(raw,start,end){
+        if raw[a..b].chars().any(char::is_alphanumeric){
+            out.insert(DocumentOccurrence{span:DocumentSpan{start:a,end:b},kind:"unknown",product:None,alias:None});
+        }
     }
 }
 // A content row can contain multiple logical records. Reduce their
@@ -908,6 +976,8 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
     ).expect("note");
     let detail=Regex::new(r"\d+\s*(?:층|호)").expect("address detail");
     let mut records=Vec::new();
+    let mut alternatives=Vec::new();
+    let field_marker=Regex::new(r"(?:수취인(?:명)?|수하인(?:명)?|수령자|받(?:는|으시는)\s*(?:분|사람)|송하인(?:명)?|보내는\s*(?:분|사람|곳)|공통(?:상품|품목)?)\s*[:：]").expect("zone marker");
     // Use one physical-line pass. Reuse each discovered quantity when a
     // bare product row is split; explicit recipient records are scanned
     // only within their original slices.
@@ -917,28 +987,61 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
         let recipient_heading=label.find(text).is_some_and(|m|m.as_str().contains([':', '：']));
         if sender_heading{sender_section=true;}
         else if recipient_heading{sender_section=false;}
-        if !sender_section{
-            if let Some(parts)=recipient_records(&line,label,phone){
-                records.extend(parts.into_iter().map(|part|{
-                    let quantities=quantity::extract(part.text);
-                    (part,quantities,SourceZone::Recipient)
-                }));
-                continue;
-            }
-        }
-        let quantities=quantity::extract(text);
-        if !sender_section{
-            if let Some(parts)=product_records(&line,&quantities,label,phone,search){
-                records.extend(parts.into_iter().map(|(part,qs)|(part,qs,SourceZone::Unspecified)));
-                continue;
-            }
-        }
         let zone=if sender_section{SourceZone::Sender}
             else if recipient_heading{SourceZone::Recipient}
             else if common_item_hint(text){SourceZone::Common}
             else{SourceZone::Unspecified};
-        records.push((line,quantities,zone));
+        let quantities=search.quantities(text);
+        let start_index=records.len();
+        if !sender_section{
+            if let Some(parts)=recipient_records(&line,label,phone){
+                records.extend(parts.into_iter().map(|part|{
+                    let qs=search.quantities(part.text);
+                    (part,qs,SourceZone::Recipient)
+                }));
+            }else if let Some(parts)=product_records(&line,&quantities,label,phone,search){
+                records.extend(parts.into_iter().map(|(part,qs)|(part,qs,SourceZone::Unspecified)));
+            }
+        }
+        if records.len()==start_index{
+            records.push((line.clone(),quantities.clone(),zone));
+        }else{
+            alternatives.push((line.clone(),quantities.clone(),zone));
+        }
+        let markers=field_marker.find_iter(text).filter(|m|m.start()==0
+            ||text[..m.start()].chars().next_back().is_some_and(|c|c.is_whitespace()||matches!(c,';'|'；'|'|'|'/')))
+            .collect::<Vec<_>>();
+        for (i,marker) in markers.iter().enumerate(){
+            let end=markers.get(i+1).map_or(text.len(),|m|m.start());
+            let trimmed=text[marker.start()..end].trim_end_matches(|c:char|c.is_whitespace()||matches!(c,';'|'；'|'|'|'/'));
+            let part=record_slice(&line,marker.start(),marker.start()+trimmed.len());
+            let part_zone=if sender.is_match(part.text){SourceZone::Sender}
+                else if label.is_match(part.text){SourceZone::Recipient}
+                else{SourceZone::Common};
+            let qs=search.quantities(part.text);
+            alternatives.push((part,qs,part_zone));
+        }
+        if quantities.len()>1&&!text.contains('|'){
+            let mut begin=0;
+            for qty in &quantities{
+                let prefix=&text[begin..qty.start];
+                let boundary=prefix.rfind([';','；','/']).map_or(begin,|at|begin+at+prefix[at..].chars().next().unwrap().len_utf8());
+                let tail=&text[boundary..qty.start];
+                let at=boundary+tail.len()-tail.trim_start().len();
+                if at<qty.start{
+                    let part=record_slice(&line,at,qty.end);
+                    search.prepare(part.text);
+                    if search.probes.get(part.text).is_some_and(|p|model::has_any_model_name(&p.hypotheses)){
+                        alternatives.push((part,vec![quantity::Quantity{value:qty.value,start:qty.start-at,end:qty.end-at}],zone));
+                    }
+                }
+                begin=qty.end;
+            }
+        }
     }
+    let projected_rows=records.len();
+    let mut seen=records.iter().map(|(r,_,z)|(r.start,r.text.len(),*z)).collect::<HashSet<_>>();
+    records.extend(alternatives.into_iter().filter(|(r,_,z)|seen.insert((r.start,r.text.len(),*z))));
     let mut rows=records.into_iter().map(|(line,quantities,zone)|{
         let explicit_name=explicit_recipient_span(line.text,label,phone);
         let raw_address=address_begin(line.text);
@@ -972,14 +1075,14 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
         LineCandidates{line,raw_address,address,explicit_name,label_only,near_delivery:false,
             after_label:false,zone,names:vec![],legacy_name_count:0,contact_spans,contacts,quantities,
             address_candidates,note,dispatch,address_detail,ignored,labelled_postcode,
-            product_slices:HashMap::new()}
+            product_slices:HashMap::new(),model_before_address:false}
     }).collect::<Vec<_>>();
-    let contexts=physical_line_contexts(geometry,&rows);
+    let contexts=physical_line_contexts(geometry,&rows[..projected_rows]);
     for row in &mut rows{
         let line=&row.line;
         let PhysicalLineContext{near_delivery,after_label}=contexts[line.number];
         let text=line.text;
-        let alternatives=recipient_proposals(text,row.address,row.contact_spans.first().map(|s|s.0),near_delivery);
+        let alternatives=recipient_proposals(text,row.address,row.contact_spans.first().map(|s|s.0),near_delivery,search);
         // Keep the historical name projection order, but do not discard
         // other proposals when a label already provides a preferred name.
         let mut names=if let Some(span)=row.explicit_name{
@@ -1010,15 +1113,21 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
                 slices.insert(boundary,slice);
             }
         }
+        if let Some(begin)=row.address{
+            let prefix=&line.text[..begin];
+            let known=search.known_model(prefix);
+            let has_quantity=!search.quantities(prefix).is_empty();
+            row.model_before_address=ts_semantics::model_before_address(prefix,known,has_quantity);
+        }
         row.near_delivery=near_delivery;
         row.after_label=after_label;
         row.names=names;
         row.product_slices=slices;
     }
-    DocumentCandidates::new(geometry,rows,search)
+    DocumentCandidates::new(geometry,rows,projected_rows,search)
 }
 fn is_money_or_header(text: &str) -> bool { ts_semantics::ignored_document_line(text) }
-fn product_signal(text: &str, decision: &Value, _state: &Value) -> bool {
+fn product_signal(text: &str, decision: &Value, has_quantity:bool) -> bool {
     // From parser.ts:479-570: only registered identity, aliases, quantity,
     // a genuine unknown model, or a product category can form a product row.
     let t=text.trim();
@@ -1038,7 +1147,7 @@ fn product_signal(text: &str, decision: &Value, _state: &Value) -> bool {
         r"(?i)보면대|악보대|스탠드|뮤직트레이|스테레오바|홀더|카트|의자|가방|발판|거치대|SSB"
     ).expect("product category");
     product_category.is_match(t)
-        && (quantity::extract(t).len()>0 || t.contains("BANDO") || t.contains("반도"))
+        && (has_quantity || t.contains("BANDO") || t.contains("반도"))
 }
 fn source_json(geometry:&SourceGeometry<'_>,e:&Evidence,recipient_id:&str,target_id:&str)->Value {
     let raw=geometry.raw;
@@ -1374,6 +1483,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     // This is only the cache-completeness signal, not certification that
     // all competing record/zone/type hypotheses have been discovered.
     debug_assert_eq!(document.incomplete,search.truncated);
+    debug_assert_eq!(document.complete_occurrences().is_some(),!search.truncated);
     let mut events:Vec<Evidence>=Vec::new();
     let mut product_hits:Vec<ProductHit>=Vec::new();
     let mut note_continuation: Option<usize>=None;
@@ -1409,7 +1519,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                 || (near_delivery && !other_recipient_field(text))
                 || weak_recipient_hint(text)
                 || (!row.quantities.is_empty()&&model::category(line.text).is_some())
-                || product_signal(line.text,&search.decision(line.text),state);
+                || {let decision=search.decision(line.text);search.signal(line.text,&decision)};
             if !field && line.paragraph==events[i].paragraph {
                 events[i].end=line.start+line.text.len();
                 if !events[i].value.is_empty(){events[i].value.push('\n');}
@@ -1483,9 +1593,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         // parser.ts::logicalLines gives the address the whole line unless
         // a recognized/quantity-qualified SKU precedes the address.
         // Never infer a product from an address's five-digit postal code.
-        if let Some(begin)=address {
-            if !ts_semantics::model_before_address(&line.text[..begin],state) {continue;}
-        }
+        if address.is_some()&&!row.model_before_address{continue;}
         let Some(slice)=row.product_slices.get(&name_span)else{continue;};
         let trimmed=slice.text;
         // Preserve legacy product eligibility at selection, not collection.
@@ -1499,7 +1607,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             && decision.pointer("/match/kind").and_then(Value::as_str)==Some("UNKNOWN") {
             continue;
         }
-        if !product_signal(trimmed,&decision,state){continue;}
+        if !search.signal(trimmed,&decision){continue;}
         if trimmed.contains("발주일")||trimmed.contains("발송일"){continue;}
         let skip_until=slice.matching;
         let matched=search.decision(skip_until);
@@ -2395,6 +2503,92 @@ mod tests {
         assert_eq!(source,"GT-1 2개");
         assert_eq!(search.decision(source)["productId"],"pgt");
         assert_eq!(document.occurrences,before);
+    }
+    #[test]
+    fn same_line_recipient_boundary_alternatives_survive_collection(){
+        let state=state();
+        let raw="수취인: 김가상 010-1234-5678； 수취인: 이가상 010-2345-6789";
+        let mut search=ProductSearch::new(&state,"");
+        let document=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
+        assert_eq!(document.legacy_rows().len(),2);
+        assert!(document.contains_span("record_boundary",DocumentSpan{start:0,end:raw.len()}));
+        for name in ["김가상","이가상"]{
+            let start=raw.find(name).unwrap();
+            assert!(document.contains_span("name",DocumentSpan{start,end:start+name.len()}));
+        }
+    }
+    #[test]
+    fn same_line_product_boundary_alternatives_survive_collection(){
+        let state=state();
+        let raw="709 2개 구성 / GT-1 3개";
+        let mut search=ProductSearch::new(&state,"");
+        let document=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
+        assert_eq!(document.legacy_rows().len(),1);
+        for term in ["709 2개","GT-1 3개"]{
+            let start=raw.find(term).unwrap();
+            assert!(document.contains_span("record_boundary",DocumentSpan{start,end:start+term.len()}));
+        }
+    }
+    #[test]
+    fn mixed_zone_boundary_alternatives_survive_collection(){
+        let state=state();
+        let raw="송하인: 가상상사; 수취인: 김가상 010-2345-6789; 공통: GT-1 2개";
+        let mut search=ProductSearch::new(&state,"");
+        let document=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
+        for (kind,term) in [("sender_zone","송하인: 가상상사"),("recipient_zone","수취인: 김가상 010-2345-6789"),("common_zone","공통: GT-1 2개")]{
+            let start=raw.find(term).unwrap();
+            assert!(document.contains_span(kind,DocumentSpan{start,end:start+term.len()}));
+        }
+    }
+    #[test]
+    fn unrecognized_conflicting_and_excluded_candidates_are_preserved(){
+        let mut state=state();
+        state["aliases"]=json!([{"id":"conflict","text":"GT-1","productId":"p709"}]);
+        let raw="GT-1 2개\n합계: GT-1 3개\n미분류문자열";
+        let mut search=ProductSearch::new(&state,"");
+        let document=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
+        for (kind,term) in [("registered","GT-1"),("alias","GT-1"),("excluded","합계: GT-1 3개"),("unknown","미분류문자열")]{
+            let start=raw.find(term).unwrap();
+            assert!(document.contains_span(kind,DocumentSpan{start,end:start+term.len()}),"{kind}");
+        }
+    }
+    #[test]
+    fn color_option_and_semantic_occurrences_are_preserved(){
+        let mut state=state();
+        state["products"].as_array_mut().unwrap().push(json!({"id":"conductor","name":"BD CONDUCTOR / 지휘자 보면대","category":"보면대","variants":[]}));
+        let raw="709W / 709BK / 민판 / 지휘용 악보 스탠드";
+        let mut search=ProductSearch::new(&state,"");
+        let doc=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
+        for (kind,term) in [("color","709W"),("color","709BK"),("option","민판"),("semantic","지휘용 악보 스탠드")]{
+            let start=raw.find(term).unwrap();
+            assert!(doc.contains_span(kind,DocumentSpan{start,end:start+term.len()}),"{kind}");
+        }
+    }
+    #[test]
+    fn incomplete_document_candidates_are_ineligible_for_shared_features(){
+        let state=json!({"products":[],"aliases":[]});
+        let raw=(0..513).map(|i|format!("가상기록{i}")).collect::<Vec<_>>().join("\n");
+        let mut search=ProductSearch::new(&state,"");
+        let doc=collect_document(&SourceGeometry::new(&raw),&phone_regex(),&recipient_label(),&mut search);
+        assert!(doc.incomplete);
+        assert!(doc.complete_occurrences().is_none());
+    }
+    #[test]
+    fn document_candidate_discovery_reuses_catalog_and_lexical_scans(){
+        let state=state();
+        let raw="GT-1 2개\nGT-1 2개";
+        let mut search=ProductSearch::new(&state,"");
+        let doc=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
+        let probes=search.probes.len();
+        let quantities=search.quantity_cache.len();
+        for row in doc.legacy_rows(){
+            let decision=search.decision(row.line.text);
+            assert_eq!(decision["productId"],"pgt");
+            assert!(search.signal(row.line.text,&decision));
+        }
+        assert_eq!(search.probes.len(),probes);
+        assert_eq!(search.quantity_cache.len(),quantities);
+        assert!(doc.complete_occurrences().is_some());
     }
     #[test]
     fn contract_rejects_incomplete_state() {

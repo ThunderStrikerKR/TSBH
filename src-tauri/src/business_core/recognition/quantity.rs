@@ -79,7 +79,9 @@ pub(crate) fn extract(text: &str) -> Vec<Quantity> {
 
 /// Rows transcribed from an order table may use a bare numeric quantity column.
 pub(crate) fn for_product(text: &str, allow_table: bool, allow_trailing: bool) -> Vec<Quantity> {
-    let explicit = extract(text);
+    for_product_with_explicit(text,allow_table,allow_trailing,extract(text))
+}
+pub(super) fn for_product_with_explicit(text:&str,allow_table:bool,allow_trailing:bool,explicit:Vec<Quantity>)->Vec<Quantity>{
     if !explicit.is_empty() { return explicit; }
     if allow_table {
         let pattern = Regex::new(r"\|\s*([1-9]\d*)\s*(?:\||$)").expect("table quantity");
