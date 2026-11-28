@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/egui-manual-classification-check.yml
       - scripts/check-recognition-architecture.py
+      - scripts/recognition-stage.txt
       - 'tests/rust-migration/recognition/**'
       - egui-app/src/manual_workspace.rs
       - egui-app/src/manual_product_search.rs
@@ -26,6 +27,7 @@ on:
     paths:
       - .github/workflows/egui-manual-classification-check.yml
       - scripts/check-recognition-architecture.py
+      - scripts/recognition-stage.txt
       - 'tests/rust-migration/recognition/**'
       - egui-app/src/manual_workspace.rs
       - egui-app/src/manual_product_search.rs
@@ -43,6 +45,11 @@ on:
       - egui-app/src/theme.rs
       - egui-app/src/typography.rs
   workflow_dispatch:
+    inputs:
+      phase_02_admission:
+        description: Require phase 02 admission to stage 03
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -73,6 +80,9 @@ jobs:
           test "$(grep -Ec "^regressions::recognition_baseline_report: test$" /tmp/recognition-tests.txt || true)" -eq 1
           cargo test --manifest-path "$manifest" -- --ignored --list > /tmp/recognition-ignored.txt
           python3 scripts/check-recognition-architecture.py --tests /tmp/recognition-tests.txt --ignored /tmp/recognition-ignored.txt
+      - name: Require phase 02 admission on explicit admission requests
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.phase_02_admission }}
+        run: python3 scripts/check-recognition-architecture.py --phase02 --tests /tmp/recognition-tests.txt --ignored /tmp/recognition-ignored.txt
       - name: Require complete architecture on main-bound pull requests
         if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' }}
         run: python3 scripts/check-recognition-architecture.py --final --tests /tmp/recognition-tests.txt --ignored /tmp/recognition-ignored.txt

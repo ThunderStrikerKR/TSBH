@@ -37,6 +37,108 @@ FINAL_TESTS = (
 CURRENT_TEST = "recognition::model::option_boundary_tests::collected_candidate_families_cover_evaluated_identities"
 
 
+# Admission conditions are separate from the development debt budget.
+PHASE02_TESTS = {
+    "02-01": ("collected_candidate_families_cover_evaluated_identities",),
+    "02-02": ("source_geometry_preserves_mixed_newlines_blank_lines_and_utf16",
+              "physical_geometry_is_independent_of_record_partition",
+              "document_candidates_keep_all_absolute_source_spans"),
+    "02-03": ("product_hypotheses_survive_evaluation_and_cache_reuse",
+              "common_lexical_candidates_precede_document_evaluation",
+              "competing_information_types_survive_legacy_projection"),
+    "02-04": ("explicit_same_line_recipient_records_keep_distinct_source_offsets",
+              "same_line_recipient_boundary_alternatives_survive_collection"),
+    "02-05": ("same_line_bare_product_boundaries_are_not_identity_decisions",
+              "same_line_product_boundary_alternatives_survive_collection"),
+    "02-06": ("sender_candidates_survive_discovery_without_leaking_into_recipient_projection",
+              "mixed_zone_boundary_alternatives_survive_collection"),
+    "02-07": ("repeated_registered_terms_and_aliases_preserve_each_occurrence",
+              "product_probe_limit_reports_incomplete_collection",
+              "unrecognized_conflicting_and_excluded_candidates_are_preserved",
+              "color_option_and_semantic_occurrences_are_preserved",
+              "incomplete_document_candidates_are_ineligible_for_shared_features",
+              "document_candidate_discovery_reuses_catalog_and_lexical_scans"),
+}
+PHASE02_MODULES = {"mod.rs", "model.rs", "quantity.rs", "ts_semantics.rs", "corrections.rs"}
+LATER_PHASE_SYMBOLS = re.compile(
+    r"\b(?:DocumentFeatures|document_features|build_document_features|"
+    r"PatternIdentity|pattern_identity|document_pattern|role_cycle|"
+    r"learning_context|observations)\b"
+)
+STAGE_FILE = ROOT / "scripts/recognition-stage.txt"
+
+
+def stage_number(raw):
+    raw = raw.strip()
+    if raw not in {f"{n:02d}" for n in range(2, 10)}:
+        raise ValueError("Invalid recognition stage; expected 02 through 09")
+    return int(raw)
+
+
+def admission_required(sources, stage, requested=False):
+    # A new core module during phase 02 requires explicit architectural
+    # review. Later-phase work cannot be hidden by leaving the stage at 02.
+    return (requested or stage > 2 or bool(set(sources) - PHASE02_MODULES)
+            or any(LATER_PHASE_SYMBOLS.search(production(source))
+                   for source in sources.values()))
+
+
+def phase02_debt(sources):
+    """Audited source blockers, not a complete Rust call graph."""
+    mod = production(sources["mod.rs"])
+    model = production(sources["model.rs"])
+    fn = functions(sources["mod.rs"])
+    collect = fn.get("collect_document", "")
+    analyze = fn.get("analyze", "")
+    debt = []
+    def flag(condition, task, reason):
+        if condition:
+            debt.append(f"{task}: {reason}")
+    flag(bool(re.search(r"->\s*Vec\s*<\s*LineCandidates", collect)),
+         "02-02", "collector returns record rows, not a unified document candidate batch")
+    flag("rows.get(i+1)" in collect or "rows[i-1]" in collect,
+         "02-02", "candidate adjacency depends on record-array position")
+    flag("row.note.is_none()" in collect or "row.explicit_name.is_none()" in collect
+         or "row.zone!=SourceZone::Sender" in collect,
+         "02-03", "legacy projection filters discovery by predicted information type")
+    flag("address_candidate:Option<TextCandidate>" in mod,
+         "02-03", "single address candidate excludes competing address ranges")
+    flag("model_before_address(" in analyze or "quantity::extract(" in analyze,
+         "02-03", "projection repeats lexical or catalog discovery")
+    flag(bool(re.search(r"if\s+let\s+Some\(parts\)\s*=\s*recipient_records", collect)),
+         "02-04", "recipient partition chosen before complete collection")
+    flag(bool(re.search(r"if\s+let\s+Some\(parts\)\s*=\s*product_records", collect)),
+         "02-05", "product partition chosen before complete collection")
+    flag("sender_section" in collect, "02-06", "single sender state chooses region")
+    flag("zone:SourceZone" in mod, "02-06", "record stores only a single zone")
+    flag("color_hint:Option<" in model, "02-07", "color discovery keeps a single hint")
+    flag("if e.recipient.is_none(){unassigned.push" in analyze,
+         "02-07", "legacy unassigned projection is not unknown-span preservation")
+    flag("self.probes.len()>=512" in mod and "truncated:bool" in mod,
+         "02-07", "bounded cache needs a document completeness contract")
+    return debt
+
+
+def phase02_self_test():
+    assert stage_number("02\n") == 2
+    assert admission_required({}, 3)
+    assert admission_required({}, 2, requested=True)
+    assert admission_required({"new_core_module.rs": ""}, 2)
+    assert admission_required({"mod.rs": "struct DocumentFeatures;"}, 2)
+    assert not admission_required({"mod.rs": "fn collect_document() {}"}, 2)
+    negative = phase02_debt({
+        "mod.rs": "fn collect_document() -> Vec<LineCandidates<'_>> { if row.note.is_none() {} }",
+        "model.rs": "struct ProductHypotheses { color_hint:Option<String> }",
+    })
+    for task in ("02-02", "02-03", "02-07"):
+        assert any(x.startswith(task + ":") for x in negative), negative
+    # Missing and ignored tests cannot count as certified admission.
+    names = [name for group in PHASE02_TESTS.values() for name in group]
+    assert verify_discovery("", "", False, True)
+    ignored = names[-1] + ": test"
+    assert any(names[-1] in x for x in verify_discovery(ignored, ignored, False, True))
+
+
 def production(source):
     # Current recognition files keep test modules at the end.
     return source.split("#[cfg(test)]", 1)[0]
@@ -140,7 +242,7 @@ def self_test(sources):
         assert audit(sources, final=True)[0], "Final gate must reject legacy debt"
 
 
-def verify_discovery(listed, ignored, final):
+def verify_discovery(listed, ignored, final, phase02=False):
     tests = {line.removesuffix(": test") for line in listed.splitlines()
              if line.endswith(": test")}
     skipped = {line.removesuffix(": test") for line in ignored.splitlines()
@@ -153,8 +255,11 @@ def verify_discovery(listed, ignored, final):
         "common_lexical_candidates_precede_document_evaluation",
         "repeated_registered_terms_and_aliases_preserve_each_occurrence",
     ]
+    if phase02 or final:
+        required.extend(name for names in PHASE02_TESTS.values() for name in names)
     if final:
-        required = list(dict.fromkeys(required + list(FINAL_TESTS)))
+        required.extend(FINAL_TESTS)
+    required = list(dict.fromkeys(required))
     failures = []
     for name in required:
         matches = [test for test in tests if test == name or test.endswith("::" + name)]
@@ -166,18 +271,41 @@ def verify_discovery(listed, ignored, final):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--final", action="store_true")
+    parser.add_argument("--phase02", action="store_true",
+                        help="require admission to stage 03 regardless of declared stage")
     parser.add_argument("--tests", type=Path)
     parser.add_argument("--ignored", type=Path)
     args = parser.parse_args()
     sources = {p.relative_to(CORE).as_posix(): p.read_text(encoding="utf-8")
                for p in CORE.rglob("*.rs")}
     failures, debt = audit(sources, args.final)
+    stage = stage_number(STAGE_FILE.read_text(encoding="utf-8"))
+    require_phase02 = admission_required(sources, stage, args.phase02 or args.final)
+    phase02_self_test()
+    phase_debt = phase02_debt(sources)
+    print(f"Declared recognition stage: {stage:02d}")
+    for reason in phase_debt:
+        print("OPEN phase-02 admission debt:", reason)
+    for task, names in PHASE02_TESTS.items():
+        for name in names:
+            print("Required phase-02 behavior:", task, name)
+    if require_phase02:
+        failures.extend("Phase-02 admission blocked: " + reason for reason in phase_debt)
     if not failures:
         self_test(sources)
     if args.tests and args.ignored:
-        failures += verify_discovery(args.tests.read_text(), args.ignored.read_text(), args.final)
-    elif args.final:
-        failures.append("Final gate requires Cargo test and ignored-test discovery")
+        listed, ignored = args.tests.read_text(), args.ignored.read_text()
+        failures += verify_discovery(listed, ignored, args.final, require_phase02)
+        missing = verify_discovery(listed, ignored, False, True)
+        for reason in missing:
+            print("OPEN phase-02 admission test:", reason)
+        print("PHASE 02 ADMISSION:", "BLOCKED" if phase_debt or missing
+              else "SOURCE AND DISCOVERY READY; CARGO REGRESSION PASS STILL REQUIRED")
+    elif args.final or args.phase02:
+        failures.append("Admission requires Cargo test and ignored-test discovery")
+    else:
+        print("PHASE 02 ADMISSION:", "BLOCKED" if phase_debt
+              else "NOT CERTIFIED; test discovery and execution required")
     for scope, count in sorted(debt.items()):
         print("OPEN architecture debt:", scope, count)
     for name in FINAL_TESTS:
