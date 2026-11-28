@@ -116,3 +116,14 @@ jobs:
           if ($code -ne 0) { exit $code }
           $results = [regex]::Matches($output,'test result: ok\. (\d+) passed; 0 failed')
           if (!($results | Where-Object { [int]$_.Groups[1].Value -ge 7 })) { throw 'Expected at least seven passing database-path tests.' }
+
+      - name: Verify private data file permissions on synthetic fixtures
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = cargo test --locked --manifest-path egui-app/Cargo.toml private_storage::tests:: 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $output
+          if ($code -ne 0) { exit $code }
+          $results = [regex]::Matches($output,'test result: ok\. (\d+) passed; 0 failed')
+          if (!($results | Where-Object { [int]$_.Groups[1].Value -ge 2 })) { throw 'Expected at least two private storage regression tests.' }

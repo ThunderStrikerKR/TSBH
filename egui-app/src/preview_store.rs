@@ -263,11 +263,30 @@ impl PreviewStore {
 
     pub fn initialize() -> Result<Self, String> {
         let directory=Self::directory()?;
-        fs::create_dir_all(&directory)
-            .map_err(|e| format!("egui 전용 DB 폴더를 만들지 못했습니다: {e}"))?;
+        #[cfg(unix)]
+        if let Some(parent)=directory.parent(){fs::create_dir_all(parent).map_err(|_|"egui 전용 상위 폴더 생성 실패")?;}
+        let directory=crate::private_storage::private_directory(&directory)?;
         let path = directory.join("egui-preview.sqlite3");
         let store = Self { path };
-        let existed = store.path.exists();
+        let existed=match fs::symlink_metadata(&store.path){
+            Ok(_)=>true,
+            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>false,
+            Err(_)=>return Err("egui 전용 DB 경로 확인 실패".into()),
+        };
+        if !existed{
+            fs::OpenOptions::new().write(true).create_new(true).open(&store.path)
+                .map_err(|_|"egui 전용 DB 생성 실패")?;
+        }
+        crate::private_storage::protect_sqlite_files(&store.path)?;
+        // Verify existing identity before write-mode PRAGMAs or migrations.
+        if existed{
+            let check=Connection::open_with_flags(&store.path,OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .map_err(|_|"기존 egui 전용 DB 조회 실패")?;
+            let signature:Option<String>=check.query_row(
+                "SELECT value FROM preview_meta WHERE key='signature'",[],|r|r.get(0)
+            ).optional().map_err(|_|"기존 egui 전용 DB 식별자 확인 실패")?;
+            if signature.as_deref()!=Some(SIGNATURE){return Err("egui 전용 DB 식별자가 다릅니다.".into())}
+        }
         let conn = store.open_connection()?;
         if existed {
             let signature: Option<String> = conn.query_row(
@@ -481,7 +500,8 @@ impl PreviewStore {
     }
 
     fn open_connection(&self) -> Result<Connection, String> {
-        let flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE;
+        crate::private_storage::protect_sqlite_files(&self.path)?;
+        let flags = OpenFlags::SQLITE_OPEN_READ_WRITE;
         let conn = Connection::open_with_flags(&self.path, flags)
             .map_err(|e| format!("egui 전용 SQLite 접근 오류: {e}"))?;
         conn.busy_timeout(Duration::from_secs(5)).map_err(|e| e.to_string())?;
@@ -802,7 +822,10 @@ impl PreviewStore {
 
     // Read the existing isolated audit DB without initializing or migrating it.
     pub(crate) fn read_reception_audit_page(query:&Value)->Result<Value,String>{
-        let path=Self::directory()?.join("egui-preview.sqlite3");
+        let directory=Self::directory()?;
+        if !directory.is_dir(){return Err("기존 정정 이력 DB가 없습니다.".into())}
+        let path=crate::private_storage::private_directory(&directory)?.join("egui-preview.sqlite3");
+        crate::private_storage::protect_sqlite_files(&path)?;
         let conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e|format!("정정 이력 읽기 실패: {e}"))?;
         conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;

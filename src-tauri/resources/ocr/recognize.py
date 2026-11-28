@@ -1,4 +1,5 @@
 """BANDO HUB offline Korean PP-OCRv5, independent of non-ASCII install paths."""
+import io
 import json
 import os
 from contextlib import contextmanager
@@ -105,7 +106,17 @@ def main():
     import numpy as np
     # Avoid OpenCV's Windows Unicode filename issue for captured BMP images.
     # PaddleOCR accepts a BGR NumPy image, eliminating native file path IO.
-    with Image.open(sys.argv[1]) as image:
+    # '-' is the native egui memory-only transport. Keep path mode for the
+    # existing packaged smoke test and historical callers.
+    if sys.argv[1] == "-":
+        max_bytes = 64 * 1024 * 1024
+        raw = sys.stdin.buffer.read(max_bytes + 1)
+        if not raw or len(raw) > max_bytes:
+            raise ValueError("OCR 이미지 크기 오류")
+        source = io.BytesIO(raw)
+    else:
+        source = sys.argv[1]
+    with Image.open(source) as image:
         pixels = np.asarray(image.convert("RGB"))[:, :, ::-1].copy()
     with compatible_model_folders(Path(root_value).resolve()) as (det, rec):
         text = extract(make_pipeline(det, rec).predict(pixels))

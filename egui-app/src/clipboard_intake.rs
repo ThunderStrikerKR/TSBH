@@ -5,7 +5,7 @@
 
 use std::{sync::atomic::AtomicBool,time::{Duration,Instant}};
 #[cfg(windows)]
-use std::{fs,path::PathBuf,process::{Command,Stdio},sync::atomic::Ordering,time::{SystemTime,UNIX_EPOCH}};
+use std::{fs,path::PathBuf,process::{Command,Stdio},sync::atomic::Ordering};
 use arboard::Clipboard;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -526,52 +526,55 @@ pub fn recognize_image(image: &ClipboardImage, cancelled: &AtomicBool) -> Result
     {
         return Err("OCR 실행 파일 또는 한글 모델이 없습니다. 기존 OCR runtime/models 폴더를 egui 실행파일 옆 ocr 폴더에 두거나 BANDO_OCR_RUNTIME_DIR로 지정해 주세요.".into());
     }
+    use std::io::{Read,Write};
     let bmp = bmp_from_rgba(image)?;
+    if bmp.len()>64*1024*1024{return Err("OCR 이미지 크기 오류".into())}
     let temp = TempFolder::create()?;
-    let input = temp.path.join("capture.bmp");
-    let stdout = temp.path.join("output.txt");
-    let stderr = temp.path.join("error.txt");
-    fs::write(&input, bmp).map_err(|e| format!("OCR 이미지 저장 실패: {e}"))?;
-
     let mut command = Command::new(python);
     command.arg("-I").arg("-B").arg("-X").arg("utf8").arg("-c")
         .arg(include_str!("../../src-tauri/resources/ocr/recognize.py"))
-        .arg(&input)
+        .arg("-")
         .current_dir(&runtime_dir)
         .env("BANDO_OCR_MODEL_ROOT", &models)
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .env("PADDLE_PDX_CACHE_HOME", temp.path.join("paddlex-cache"))
+        .env("TMP", &temp.path).env("TEMP", &temp.path).env("TMPDIR", &temp.path)
         .env_remove("PYTHONHOME").env_remove("PYTHONPATH")
-        .creation_flags(0x08000000);
-    command.stdout(Stdio::from(fs::File::create(&stdout).map_err(|e| e.to_string())?));
-    command.stderr(Stdio::from(fs::File::create(&stderr).map_err(|e| e.to_string())?));
-    let mut child = command.spawn().map_err(|e| format!("PaddleOCR 실행 실패: {e}"))?;
-    let started = Instant::now();
-    let status = loop {
-        if cancelled.load(Ordering::Acquire) {
-            let _ = child.kill(); let _ = child.wait();
-            return Err("OCR_CANCELLED".into());
-        }
-        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? { break status; }
-        if started.elapsed() > Duration::from_secs(180) {
-            let _ = child.kill(); let _ = child.wait();
-            return Err("OCR 처리 시간이 초과됐습니다.".into());
-        }
+        .creation_flags(0x08000000)
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
+    // No screenshot, OCR result or exception text is written to disk.
+    // Drain concurrently so a large result cannot deadlock the child.
+    struct ChildGuard(std::process::Child);
+    impl Drop for ChildGuard{
+        fn drop(&mut self){let _=self.0.kill();let _=self.0.wait();}
+    }
+    let mut child=ChildGuard(command.spawn().map_err(|_|"PaddleOCR 실행 실패")?);
+    let mut input=child.0.stdin.take().ok_or("OCR 이미지 전달 실패")?;
+    let output=child.0.stdout.take().ok_or("OCR 결과 연결 실패")?;
+    let (input_tx,input_rx)=std::sync::mpsc::sync_channel(1);
+    let (output_tx,output_rx)=std::sync::mpsc::sync_channel(1);
+    std::thread::Builder::new().name("bando-ocr-input".into()).spawn(move||{
+        let result=input.write_all(&bmp).is_ok();drop(input);let _=input_tx.send(result);
+    }).map_err(|_|"OCR 입력 작업 시작 실패")?;
+    std::thread::Builder::new().name("bando-ocr-output".into()).spawn(move||{
+        let mut bytes=Vec::new();
+        let result=output.take(8*1024*1024+1).read_to_end(&mut bytes)
+            .map(|_|bytes).map_err(|_|"OCR 결과 읽기 실패");
+        let _=output_tx.send(result);
+    }).map_err(|_|"OCR 출력 작업 시작 실패")?;
+    let started=Instant::now();
+    let status=loop{
+        if cancelled.load(Ordering::Acquire){return Err("OCR_CANCELLED".into())}
+        if let Some(status)=child.0.try_wait().map_err(|_|"OCR 실행 상태 확인 실패")?{break status;}
+        if started.elapsed()>Duration::from_secs(180){return Err("OCR 처리 시간이 초과됐습니다.".into())}
         std::thread::sleep(Duration::from_millis(150));
     };
-    if cancelled.load(Ordering::Acquire) { return Err("OCR_CANCELLED".into()); }
-    let out = String::from_utf8_lossy(&fs::read(&stdout).unwrap_or_default()).into_owned();
-    if !status.success() {
-        let err = String::from_utf8_lossy(&fs::read(&stderr).unwrap_or_default()).into_owned();
-        let detail = err.lines().rev().find_map(|line|
-            line.trim().strip_prefix("BANDO_OCR_ERROR=")
-        ).or_else(|| err.lines().rev().find(|line| !line.trim().is_empty()))
-            .unwrap_or("추가 진단 정보 없음");
-        return Err(format!(
-            "OCR 실행 실패 (코드 {:?}): {}",
-            status.code(), detail.chars().take(1000).collect::<String>()
-        ));
-    }
+    if cancelled.load(Ordering::Acquire){return Err("OCR_CANCELLED".into())}
+    if !status.success(){return Err(format!("OCR 실행 실패 (코드 {:?})",status.code()))}
+    if !input_rx.recv_timeout(Duration::from_secs(2)).unwrap_or(false){return Err("OCR 이미지 전달 실패".into())}
+    let bytes=output_rx.recv_timeout(Duration::from_secs(2)).map_err(|_|"OCR 결과 반환 시간 초과")??;
+    if bytes.len()>8*1024*1024{return Err("OCR 결과 크기 초과".into())}
+    let out=String::from_utf8(bytes).map_err(|_|"OCR 결과 문자 형식 오류")?;
     let payload = out.lines().rev().find_map(|line| line.strip_prefix("BANDO_OCR_RESULT="))
         .ok_or("OCR 결과가 반환되지 않았습니다.")?;
     let result: serde_json::Value = serde_json::from_str(payload)
@@ -594,12 +597,11 @@ struct TempFolder { path: PathBuf }
 #[cfg(windows)]
 impl TempFolder {
     fn create() -> Result<Self, String> {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH)
-            .map_err(|e| e.to_string())?.as_nanos();
-        let path = std::env::temp_dir().join(
-            format!("bando-egui-ocr-{}-{nanos}", std::process::id())
-        );
-        fs::create_dir(&path).map_err(|e| e.to_string())?;
+        let local=std::env::var_os("LOCALAPPDATA").filter(|v|!v.is_empty()).ok_or("LOCALAPPDATA 누락")?;
+        let root=crate::private_storage::private_directory(&PathBuf::from(local).join("BANDO-HUB-egui-ocr"))?;
+        let path=root.join(format!("work-{}",uuid::Uuid::new_v4()));
+        fs::create_dir(&path).map_err(|_|"OCR 전용 작업 폴더 생성 실패")?;
+        let path=crate::private_storage::private_directory(&path)?;
         Ok(Self { path })
     }
 }

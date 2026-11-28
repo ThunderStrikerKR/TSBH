@@ -44,6 +44,7 @@ mod reception_service;
 mod review_panel;
 mod gateway;
 mod http_gateway;
+mod private_storage;
 mod preview_store;
 mod source_autosave;
 mod clipboard_intake;
