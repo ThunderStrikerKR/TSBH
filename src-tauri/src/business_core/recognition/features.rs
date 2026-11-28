@@ -161,6 +161,15 @@ impl<'g,'a,'s> DocumentFeatures<'g,'a,'s>{
         Some(self.between(a.span.start,b.span.start))
     }
     pub(super) fn between(&self,from:usize,to:usize)->Relation{relation(self.geometry,from,to)}
+    // Evidence of a shared repeated cycle, not merely a shared document.
+    // Unknown offsets or non-repeating sections provide no repeat vote.
+    pub(super) fn same_repeat_cycle(&self,a:usize,b:usize)->Option<bool>{
+        let index=|at:usize|self.structural.partition_point(|t|t.span.start<=at)
+            .checked_sub(1).filter(|&i|at<self.structural[i].span.end);
+        let (a,b)=(index(a)?,index(b)?);
+        let r=self.repeats.iter().find(|r|r.start<=a&&a<r.end&&r.start<=b&&b<r.end)?;
+        Some((a-r.start)/r.period==(b-r.start)/r.period)
+    }
     pub(super) fn structural_order(&self)->impl Iterator<Item=u16>+'_{
         self.structural.iter().map(|t|t.roles)
     }

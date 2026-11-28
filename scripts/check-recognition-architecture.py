@@ -61,6 +61,11 @@ PHASE04_TESTS = (
     "assignment_graph_rejects_invalid_source_and_owner",
     "address_format_is_not_directory_validation",
 )
+PHASE05_TESTS = (
+    "normalized_weight_features_are_bounded_and_distance_decays",
+    "experimental_weight_profiles_keep_version_and_component_bounds",
+    "baseline_weight_experiment_report",
+)
 STAGE_FILE = ROOT / "scripts/recognition-stage.txt"
 
 
@@ -71,7 +76,7 @@ def stage_number(raw):
     return int(raw)
 
 
-def verify_discovery(listed, ignored, final, phase02=False, phase03=False, phase04=False):
+def verify_discovery(listed, ignored, final, phase02=False, phase03=False, phase04=False, phase05=False):
     tests = {line.removesuffix(": test") for line in listed.splitlines()
              if line.endswith(": test")}
     skipped = {line.removesuffix(": test") for line in ignored.splitlines()
@@ -93,6 +98,8 @@ def verify_discovery(listed, ignored, final, phase02=False, phase03=False, phase
         required.extend(PHASE03_TESTS)
     if phase04 or final:
         required.extend(PHASE04_TESTS)
+    if phase05 or final:
+        required.extend(PHASE05_TESTS)
     if final:
         required.extend(FINAL_TESTS)
     required = list(dict.fromkeys(required))
@@ -121,7 +128,7 @@ def main():
         print("Test discovery and execution required; integration not certified")
         return
     listed, ignored = args.tests.read_text(), args.ignored.read_text()
-    failures = verify_discovery(listed, ignored, args.final, require_phase02, stage >= 3, stage >= 4)
+    failures = verify_discovery(listed, ignored, args.final, require_phase02, stage >= 3, stage >= 4, stage >= 5)
     if failures:
         for failure in failures:
             print("FAIL:", failure)

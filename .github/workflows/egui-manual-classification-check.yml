@@ -190,9 +190,19 @@ jobs:
         run: |
           set -euo pipefail
           result=0
-          cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml > /tmp/recognition-regressions.log 2>&1 || result=$?
+          cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml -- --nocapture > /tmp/recognition-regressions.log 2>&1 || result=$?
           # Do not publish arbitrary fixture text from failed assertions.
           grep -E '^test [a-zA-Z0-9_:]+ \.\.\. (ok|FAILED|ignored)$|^test result:' /tmp/recognition-regressions.log || true
+          # The experiment reports only aggregate metrics, never raw orders.
+          sed -n 's/^.*RECOGNITION_WEIGHT_EXPERIMENT //p' /tmp/recognition-regressions.log > /tmp/recognition-weight-experiment.json
+          if [[ "$result" -eq 0 && "$(cat scripts/recognition-stage.txt)" -ge 5 ]]; then
+            python3 - <<'PY'
+          import json
+          r=json.load(open("/tmp/recognition-weight-experiment.json"))
+          assert r["realFixtureCount"] == 18 and len(r["profiles"]) == 4
+          print("RECOGNITION_WEIGHT_EXPERIMENT",json.dumps(r,ensure_ascii=True))
+          PY
+          fi
           exit "$result"
   manual-classification:
     runs-on: windows-latest

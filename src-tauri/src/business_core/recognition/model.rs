@@ -1,3 +1,4 @@
+use super::weights::{Profile,BASELINE};
 use regex::{Regex, RegexBuilder};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -400,12 +401,19 @@ fn candidate_rank(text:&str,e:&Entry<'_>)->(u8,usize,usize){
         text[e.span.0..e.span.1].chars().filter(|c|!c.is_whitespace()).count()
     }else{0},if e.priority>=2{option_score(text,e.p)}else{0})
 }
-fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
+fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>,profile:Profile) -> Vec<Entry<'a>> {
     let priority=entries.iter().map(|entry|entry.priority).max().unwrap_or(0);
     let mut best=None;
     let mut winners=Vec::new();
     for entry in entries.into_iter().filter(|entry|entry.priority==priority){
         let rank=candidate_rank(text,&entry);
+        // Keep evidence priority as a hard tier. Only compare alternative
+        // length/option weights inside a tier in experimental runs.
+        let soft=if profile.baseline(){0}else{
+            profile.sku(rank.1,rank.2,text.chars().filter(|c|!c.is_whitespace()).count(),
+                str_field(entry.p,"name").split('/').skip(1).filter(|v|!v.trim().is_empty()).count())
+        };
+        let rank=(rank.0,soft,rank.1,rank.2);
         if best.is_none_or(|current|rank>current){best=Some(rank);winners.clear();}
         if best==Some(rank){winners.push(entry);}
     }
@@ -413,7 +421,7 @@ fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
     winners
 }
 fn name_entries<'a>(text: &str, mut entries: Vec<Entry<'a>>,
-    verified: &HashSet<String>,written:&Option<String>) -> Vec<Entry<'a>> {
+    verified: &HashSet<String>,written:&Option<String>,profile:Profile) -> Vec<Entry<'a>> {
     if no_holes(text) {
         entries.retain(|e| top(e.p, verified) != Some("PERFORATED"));
     } else if with_holes(text) {
@@ -440,12 +448,12 @@ fn name_entries<'a>(text: &str, mut entries: Vec<Entry<'a>>,
                             .cloned().collect();
                         if defaults.is_empty() { family } else { defaults }
                     };
-                    return strongest(text, selected);
+                    return strongest(text, selected,profile);
                 }
             }
         }
     }
-    strongest(text, entries)
+    strongest(text, entries,profile)
 }
 struct AliasEntry<'a>{
     alias:&'a Value,
@@ -601,10 +609,13 @@ pub(super) fn evaluate(text:&str,hypotheses:&ProductHypotheses<'_>)->Decision{
     evaluate_with_trace(text,hypotheses,false)
 }
 pub(super) fn evaluate_with_trace(text:&str,hypotheses:&ProductHypotheses<'_>,trace:bool)->Decision{
+    evaluate_with_profile(text,hypotheses,trace,BASELINE)
+}
+pub(super) fn evaluate_with_profile(text:&str,hypotheses:&ProductHypotheses<'_>,trace:bool,profile:Profile)->Decision{
     let ProductHypotheses{verified,names,aliases,lead_spans,color_hints,color_codes,
         semantic,semantic_allowed,written,proof,branded,known_brand,..}=hypotheses;
     let mut hint=color_hints.first();
-    let mut entries=filter_business_candidates(text,branded,name_entries(text,legacy_names(names),verified,written));
+    let mut entries=filter_business_candidates(text,branded,name_entries(text,legacy_names(names),verified,written,profile));
     if let Some(h)=hint{
         // A registered full model protects its suffix from being read as color.
         let protected=entries.iter().any(|e|model_names(e.p).iter()

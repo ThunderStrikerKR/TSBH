@@ -5,6 +5,7 @@ mod quantity;
 mod corrections;
 mod ts_semantics;
 mod features;
+mod weights;
 #[path = "../postcode.rs"]
 mod postcode;
 
@@ -104,6 +105,15 @@ struct ProductHit {
 /// The only public entrypoint. Returns an error instead of guessing on malformed input.
 pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
     if !payload.is_object() { return Err("payload must be a JSON object".into()); }
+    #[cfg(test)]
+    if operation=="analyze_order_weight_experiment"{
+        let raw=required_string(&payload,"raw")?;
+        let state=reception_state(required_state(&payload)?)?;
+        let id=required_string(&payload,"profile")?;
+        let profile=weights::EXPERIMENTS.iter().copied().find(|p|p.id==id)
+            .ok_or("unknown experimental profile")?;
+        return analyze_with_profile(raw,&state,payload.get("client"),false,profile,true);
+    }
     match operation {
         "analyze_order" => {
             let raw = required_string(&payload, "raw")?;
@@ -111,15 +121,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
             // Production reception never resolves a synthetic catalog or a
             // product containing synthetic variants. Do not rely on React
             // removing those candidates before crossing the native boundary.
-            let mut reception = state.clone();
-            reception["products"].as_array_mut()
-                .ok_or("state products must be an array")?
-                .retain(|product| {
-                    product.get("catalog").and_then(Value::as_str)!=Some("DEMO") &&
-                    !product.get("variants").and_then(Value::as_array)
-                        .is_some_and(|variants|variants.iter().any(|variant|
-                            variant.get("source").and_then(Value::as_str)==Some("DEMO")))
-                });
+            let reception=reception_state(state)?;
             analyze_with_trace(raw, &reception, payload.get("client"),
                 payload.get("includeDecisionTrace").and_then(Value::as_bool)==Some(true))
         }
@@ -147,6 +149,14 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
     }
 }
 
+fn reception_state(state:&Value)->Result<Value,String>{
+    let mut reception=state.clone();
+    reception["products"].as_array_mut().ok_or("state products must be an array")?
+        .retain(|product|product.get("catalog").and_then(Value::as_str)!=Some("DEMO")
+            &&!product.get("variants").and_then(Value::as_array).is_some_and(|vs|
+                vs.iter().any(|v|v.get("source").and_then(Value::as_str)==Some("DEMO"))));
+    Ok(reception)
+}
 fn required_string<'a>(obj: &'a Value, key: &str) -> Result<&'a str, String> {
     obj.get(key).and_then(Value::as_str)
         .ok_or_else(|| format!("{key} must be a string"))
@@ -548,11 +558,12 @@ struct ProductSearch<'a,'s>{
     // behavior, but an incomplete batch cannot certify complete discovery.
     truncated:bool,
     trace:bool,
+    profile:weights::Profile,
 }
 impl<'a,'s> ProductSearch<'a,'s>{
     fn new(state:&'s Value,client:&'s str)->Self{
         Self{state,client,probes:HashMap::new(),catalog:model::Catalog::new(state),
-            quantity_cache:HashMap::new(),source:None,source_ranges:BTreeSet::new(),truncated:false,trace:false}
+            quantity_cache:HashMap::new(),source:None,source_ranges:BTreeSet::new(),truncated:false,trace:false,profile:weights::BASELINE}
     }
     fn quantities(&mut self,text:&'a str)->Vec<quantity::Quantity>{
         if let Some(q)=self.quantity_cache.get(text){return q.clone();}
@@ -594,25 +605,32 @@ impl<'a,'s> ProductSearch<'a,'s>{
         self.prepare(text);
         if let Some(probe)=self.probes.get_mut(text){
             if let Some(value)=&probe.evaluated{return value.clone();}
-            let value=evaluate_product_probe(text,&probe.hypotheses,self.trace);
+            let value=evaluate_product_probe(text,&probe.hypotheses,self.trace,self.profile);
             probe.evaluated=Some(value.clone());
             value
         }else{
-            evaluate_product_probe(text,&model::collect_prepared(text,self.state,self.client,&self.catalog),self.trace)
+            evaluate_product_probe(text,&model::collect_prepared(text,self.state,self.client,&self.catalog),self.trace,self.profile)
         }
     }
 }
-fn evaluate_product_probe(text:&str,pool:&model::ProductHypotheses<'_>,trace:bool)->Value{
-    model::decision_json(&model::evaluate_with_trace(text,pool,trace))
+fn evaluate_product_probe(text:&str,pool:&model::ProductHypotheses<'_>,trace:bool,profile:weights::Profile)->Value{
+    model::decision_json(&model::evaluate_with_profile(text,pool,trace,profile))
 }
 // Name eligibility is a constraint, not a vote against a competing SKU.
 // Compare eligible names by evidence family then stable source proposal order.
 fn project_name<'a>(line:&'a str,proposals:&[NameProposal],allowed:usize,
     search:&mut ProductSearch<'a,'_>,trace:&mut Option<Vec<Value>>)->Option<(usize,usize)>{
-    let mut best:Option<((u8,usize),(usize,usize))>=None;
+    let mut best:Option<((u8,i64,usize),(usize,usize))>=None;
     for (i,proposal) in proposals.iter().enumerate(){
-        let rank=(match proposal.requirement{ NameRequirement::Structural=>3,
-            NameRequirement::ProductPrefix(_)=>2,NameRequirement::NotProduct=>1},usize::MAX-i);
+        let priority=match proposal.requirement{ NameRequirement::Structural=>3,
+            NameRequirement::ProductPrefix(_)=>2,NameRequirement::NotProduct=>1};
+        let soft=if search.profile.baseline(){0}else{
+            search.profile.name(priority,i,line[proposal.span.0..proposal.span.1].chars().count(),line.chars().count())
+        };
+        // Explicit structural evidence remains a hard tier. Other
+        // eligible name interpretations can compete in the trial.
+        let tier=if search.profile.baseline(){priority}else{u8::from(priority==3)};
+        let rank=(tier,soft,usize::MAX-i);
         // An explicit name field or a structural label boundary cannot
         // be replaced by a competing unlabelled interpretation.
         let eligible=i<allowed&&proposal.probe(line).is_none_or(|probe|{
@@ -622,12 +640,12 @@ fn project_name<'a>(line:&'a str,proposals:&[NameProposal],allowed:usize,
         if let Some(log)=trace.as_mut(){
             let base=line.as_ptr() as usize-search.source.map_or(line.as_ptr() as usize,|raw|raw.as_ptr() as usize);
             log.push(json!({"kind":"name","startByte":base+proposal.span.0,"endByte":base+proposal.span.1,
-                "eligible":eligible,"priority":rank.0,"proposalOrder":i,"requirement":format!("{:?}",proposal.requirement)}));
+                "eligible":eligible,"priority":priority,"proposalOrder":i,"normalizedScore":soft,"requirement":format!("{:?}",proposal.requirement)}));
         }
         if eligible&&best.is_none_or(|(current,_)|rank>current){best=Some((rank,proposal.span));}
         // Stop only when no later eligible proposal could outrank this
         // evidence family. Diagnostic and normal modes select identically.
-        if eligible&&trace.is_none()&&!proposals[i+1..allowed.min(proposals.len())].iter()
+        if eligible&&search.profile.baseline()&&trace.is_none()&&!proposals[i+1..allowed.min(proposals.len())].iter()
             .any(|next|match next.requirement{
                 NameRequirement::Structural=>rank.0<3,
                 NameRequirement::ProductPrefix(_)=>rank.0<2,
@@ -1325,7 +1343,7 @@ fn recipient_owner_index(
 // leading-item evidence, and common items are handled separately.
 fn product_owner_index(anchors:&[usize],events:&[Evidence],offset:usize,leading:bool,
     geometry:&SourceGeometry<'_>,features:Option<&features::DocumentFeatures<'_,'_,'_>>,
-    trace:&mut Option<Vec<Value>>)->usize{
+    trace:&mut Option<Vec<Value>>,profile:weights::Profile)->usize{
     if anchors.is_empty(){return 0;}
     let boundary=anchors.partition_point(|&i|events[i].start<=offset);
     let previous=boundary.saturating_sub(1);
@@ -1339,14 +1357,25 @@ fn product_owner_index(anchors:&[usize],events:&[Evidence],offset:usize,leading:
         let preferred=if leading{events[anchors[idx]].start>offset}else{events[anchors[idx]].start<=offset};
         (preferred,std::cmp::Reverse(origin.scalar.abs_diff(target.scalar)))
     };
-    let selected=if rank(following)>rank(previous){following}else{previous};
+    let score=|idx:usize|{
+        let r=relation(idx);
+        profile.ownership(rank(idx).0,r.line_delta.unsigned_abs() as usize,
+            r.scalar_delta.unsigned_abs() as usize,r.same_paragraph,
+            features.and_then(|f|f.same_repeat_cycle(offset,events[anchors[idx]].start)))
+    };
+    let selected=if profile.baseline()||features.is_none(){
+        if rank(following)>rank(previous){following}else{previous}
+    }else if (score(following),rank(following))>(score(previous),rank(previous)){
+        following
+    }else{previous};
     if let Some(log)=trace.as_mut(){
         for idx in [previous,following].into_iter().enumerate().filter_map(|(i,idx)|(i==0||idx!=previous).then_some(idx)){
             let r=relation(idx);
             log.push(json!({"kind":"productOwner","startByte":offset,"candidateRecipient":idx,
                 "selected":idx==selected,"preferredDirection":rank(idx).0,
                 "lineDelta":r.line_delta,"characterDelta":r.scalar_delta,
-                "sameParagraph":r.same_paragraph}));
+                "sameParagraph":r.same_paragraph,"normalizedScore":score(idx),
+                "weightVersion":profile.version}));
         }
     }
     selected
@@ -1361,7 +1390,8 @@ fn available_detached_quantity(events:&[Evidence],hits:&[ProductHit],anchors:&[u
         &&owner_index(anchors,events,e.start)==recipient&&!hits.iter().any(|h|h.line==e.line)
 }
 fn select_quantity(hit:&ProductHit,events:&[Evidence],hits:&[ProductHit],anchors:&[usize],
-    recipient:usize,trace:&mut Option<Vec<Value>>)->Option<usize>{
+    recipient:usize,trace:&mut Option<Vec<Value>>,geometry:&SourceGeometry<'_>,
+    features:Option<&features::DocumentFeatures<'_,'_,'_>>,profile:weights::Profile)->Option<usize>{
     let mut detached=events.iter().enumerate().filter_map(|(i,_)|
         (available_detached_quantity(events,hits,anchors,recipient,i)&&!hit.quantities.contains(&i)).then_some(i));
     let first=if hit.common{detached.next()}else{None};
@@ -1375,8 +1405,16 @@ fn select_quantity(hit:&ProductHit,events:&[Evidence],hits:&[ProductHit],anchors
     if let Some(log)=trace.as_mut(){
         for i in hit.quantities.iter().copied().chain(events.iter().enumerate().filter_map(|(i,_)|
             (hit.common&&available_detached_quantity(events,hits,anchors,recipient,i)&&!hit.quantities.contains(&i)).then_some(i))){
-            log.push(json!({"kind":"quantityLink","productStartByte":events[hit.evidence].start,
-                "startByte":events[i].start,"endByte":events[i].end,"recipient":recipient,
+            let product=&events[hit.evidence];
+            let quantity=&events[i];
+            let relation=features.map_or_else(||features::relation(geometry,product.start,quantity.start),
+                |f|f.between(product.start,quantity.start));
+            let normalized_score=profile.quantity_link(relation.line_delta.unsigned_abs() as usize,
+                relation.scalar_delta.unsigned_abs() as usize,relation.same_paragraph,
+                features.and_then(|f|f.same_repeat_cycle(product.start,quantity.start)));
+            log.push(json!({"kind":"quantityLink","productStartByte":product.start,
+                "startByte":quantity.start,"endByte":quantity.end,"recipient":recipient,
+                "normalizedScore":normalized_score,"weightVersion":profile.version,
                 "selected":selected==Some(i),"explicitEach":hit.each,"common":hit.common,
                 "ambiguous":ambiguous||hit.quantities.len()>1}));
         }
@@ -1600,15 +1638,22 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     analyze_with_trace(raw,state,client,false)
 }
 fn analyze_with_trace(raw:&str,state:&Value,client:Option<&Value>,include_trace:bool)->Result<Value,String>{
+    analyze_with_profile(raw,state,client,include_trace,weights::BASELINE,false)
+}
+fn analyze_with_profile(raw:&str,state:&Value,client:Option<&Value>,include_trace:bool,
+    profile:weights::Profile,experiment:bool)->Result<Value,String>{
     let mut trace=include_trace.then(Vec::<Value>::new);
     let client_id = client_id(client);
     let phone=phone_regex();
     let person_label=recipient_label();
     let mut search=ProductSearch::new(state,client_id);
     search.trace=include_trace;
+    search.profile=profile;
     let geometry=SourceGeometry::new(raw);
     let document=collect_document(&geometry,&phone,&person_label,&mut search);
     let shared_features=features::DocumentFeatures::build(&geometry,&document);
+    let profile=if shared_features.is_some(){profile}else{weights::BASELINE};
+    search.profile=profile;
     let rows=document.legacy_rows();
     // This is only the cache-completeness signal, not certification that
     // all competing record/zone/type hypotheses have been discovered.
@@ -1846,6 +1891,8 @@ fn analyze_with_trace(raw:&str,state:&Value,client:Option<&Value>,include_trace:
     if anchors.is_empty() && raw.trim().is_empty() {
         let mut empty=json!({"recipients":[],"candidates":[],"unassigned":[]});
         if include_trace{empty["decisionTrace"]=json!({"complete":true,"entries":[]});}
+        if experiment{empty["weightExperiment"]=json!({"profile":profile.id,"version":profile.version,
+            "pattern":null,"complete":!document.incomplete});}
         return Ok(empty);
     }
     let mut recipients: Vec<Value> = anchors.iter().enumerate().map(|(i,a)| {
@@ -1943,7 +1990,7 @@ fn analyze_with_trace(raw:&str,state:&Value,client:Option<&Value>,include_trace:
         !h.common && events[h.evidence].start < events[*a].start));
     for hit in &product_hits {
         let owner=product_owner_index(&anchors,&events,events[hit.evidence].start,
-            has_leading,&geometry,shared_features.as_ref(),&mut trace);
+            has_leading,&geometry,shared_features.as_ref(),&mut trace,profile);
         let attach_to: Vec<usize> = if hit.common {
             (0..recipients.len()).filter(|idx| recipients[*idx]["items"]
                 .as_array().map_or(true,|xs|xs.is_empty())).collect()
@@ -1957,7 +2004,8 @@ fn analyze_with_trace(raw:&str,state:&Value,client:Option<&Value>,include_trace:
             // - common goods use a local detached quantity or an
             //   explicitly per-recipient ('각각'/'씩') source quantity
             // - a common document total must never be multiplied
-            let selected_qty=select_quantity(hit,&events,&product_hits,&anchors,idx,&mut trace);
+            let selected_qty=select_quantity(hit,&events,&product_hits,&anchors,idx,&mut trace,
+                &geometry,shared_features.as_ref(),profile);
             let unique = selected_qty.is_some();
             let quantity_value = selected_qty
                 .and_then(|i|events[i].value.parse::<i64>().ok());
@@ -2185,6 +2233,11 @@ fn analyze_with_trace(raw:&str,state:&Value,client:Option<&Value>,include_trace:
                 "projectedSpan":projected}));
         }
         result["decisionTrace"]=json!({"complete":!document.incomplete,"entries":log});
+    }
+    if experiment{
+        result["weightExperiment"]=json!({"profile":profile.id,"version":profile.version,
+            "pattern":shared_features.as_ref().map(|f|json!({"version":f.pattern.version,"roles":f.pattern.roles})),
+            "complete":shared_features.is_some()});
     }
     Ok(result)
 }

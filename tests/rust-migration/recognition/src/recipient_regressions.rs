@@ -198,6 +198,13 @@ fn preserve_secondary_contact_and_show_unassigned_quantity_evidence() {
 // identities are not counted as correct automatically. Never emit PII.
 #[test]
 fn operational_field_truth_report(){
+    let results=operational_field_truth(None);
+    println!("RECOGNITION_FIELD_TRUTH {}",json!({"schemaVersion":1,"fixtureCount":18,
+        "fullAddressTruth":false,"patternTruth":false,"fixtures":results}));
+}
+// Keep exactly the same independent expectations for every profile and
+// the pinned-main measurement. The experiment operation is test-only.
+fn operational_field_truth(profile:Option<&str>)->Vec<Value>{
     struct Row<'a>{
         name:&'a str, address:&'a str, contacts:&'a [&'a str],
         items:&'a [(Option<&'a str>,Option<i64>)],
@@ -242,7 +249,9 @@ fn operational_field_truth_report(){
                 if let Some(id)=id{assert!(state["products"].as_array().unwrap().iter().any(|p|p["id"]==*id),"fixture {} catalog identity",i+1);}
             }
         }
-        let parsed=recognition::execute("analyze_order",json!({"raw":raw,"state":state,"client":client}))
+        let parsed=recognition::execute(
+            if profile.is_some(){"analyze_order_weight_experiment"}else{"analyze_order"},
+            json!({"raw":raw,"state":state,"client":client,"profile":profile}))
             .unwrap_or_else(|_|panic!("field evaluation failed at fixture {}",i+1));
         let rows=parsed["recipients"].as_array().unwrap();
         let units=raw.encode_utf16().collect::<Vec<_>>();
@@ -279,9 +288,192 @@ fn operational_field_truth_report(){
                 it["sources"].as_array().into_iter().flatten().all(|s|
                     span_ok(s)&&s["recipientId"]==r["id"]&&s["targetId"]==it["id"]))
         })&&parsed["candidates"].as_array().into_iter().flatten().all(span_ok);
-        results.push(json!({"fixtureId":i+1,"recipientCount":rows.len()==expected.len(),
-            "sourceLinks":links,"recipients":checks}));
+        let mut result=json!({"fixtureId":i+1,"recipientCount":rows.len()==expected.len(),
+            "sourceLinks":links,"recipients":checks});
+        if profile.is_some(){
+            result["weightExperiment"]=parsed["weightExperiment"].clone();
+        }
+        results.push(result);
     }
-    println!("RECOGNITION_FIELD_TRUTH {}",json!({"schemaVersion":1,"fixtureCount":18,
-        "fullAddressTruth":false,"patternTruth":false,"fixtures":results}));
+    results
+}
+
+// Aggregate only booleans from independent field truth, never parser
+// predictions as truth, source text, addresses, contacts or customer IDs.
+#[derive(Clone,Copy,Default,Debug)]
+struct Accuracy{correct:usize,total:usize}
+impl Accuracy{
+    fn add(&mut self,other:Self){self.correct+=other.correct;self.total+=other.total;}
+    fn value(self)->f64{if self.total==0{0.0}else{self.correct as f64/self.total as f64}}
+    fn json(self)->Value{json!({"correct":self.correct,"total":self.total,"accuracy":self.value()})}
+}
+fn checks(value:&Value)->Accuracy{
+    let mut result=Accuracy::default();
+    match value{
+        Value::Bool(v)=>{result.total=1;result.correct=usize::from(*v);}
+        Value::Array(xs)=>for x in xs{result.add(checks(x));},
+        Value::Object(xs)=>for (key,x) in xs{
+            if key!="weightExperiment"{result.add(checks(x));}
+        },
+        _=>{}
+    }
+    result
+}
+fn dimensions(row:&Value)->[Accuracy;3]{
+    // Information type, recipient/item ownership & SKU, and quantity
+    // linkage have distinct metrics in addition to overall accuracy.
+    let mut result=[Accuracy::default();3];
+    result[0].add(checks(&row["recipientCount"]));
+    result[1].add(checks(&row["sourceLinks"]));
+    for r in row["recipients"].as_array().into_iter().flatten(){
+        for k in ["name","addressAnchor","contacts"]{result[0].add(checks(&r[k]));}
+        result[1].add(checks(&r["itemCount"]));
+        for item in r["items"].as_array().into_iter().flatten(){
+            result[1].add(checks(&item["sku"]));
+            result[2].add(checks(&item["quantity"]));
+            result[2].add(checks(&item["quantityConfirmed"]));
+        }
+    }
+    result
+}
+type PatternScores=std::collections::BTreeMap<String,Accuracy>;
+fn balanced(groups:&PatternScores,exclude:Option<&str>)->(Accuracy,f64){
+    let mut micro=Accuracy::default();
+    let mut sum=0.0;
+    let mut count=0;
+    for (key,accuracy) in groups{
+        if exclude==Some(key.as_str()){continue;}
+        micro.add(*accuracy);sum+=accuracy.value();count+=1;
+    }
+    (micro,if count==0{0.0}else{sum/count as f64})
+}
+fn group_scores(rows:&[Value])->PatternScores{
+    let mut groups=PatternScores::new();
+    for row in rows{
+        let metadata=&row["weightExperiment"];
+        // Unknown/truncated pattern is not an independently learned group.
+        if metadata["complete"]!=true||metadata["pattern"].is_null(){continue;}
+        let key=metadata["pattern"].to_string();
+        groups.entry(key).or_default().add(checks(row));
+    }
+    groups
+}
+fn preserves_checks(before:&Value,after:&Value)->bool{
+    match (before,after){
+        (Value::Bool(true),Value::Bool(false))=>false,
+        (Value::Bool(true),v)=>v==&Value::Bool(true),
+        (Value::Array(a),Value::Array(b))=>a.len()==b.len()&&a.iter().zip(b).all(|(x,y)|preserves_checks(x,y)),
+        (Value::Object(a),Value::Object(b))=>a.iter().filter(|(k,_)|k.as_str()!="weightExperiment")
+            .all(|(k,x)|b.get(k).is_some_and(|y|preserves_checks(x,y))),
+        _=>true
+    }
+}
+// One independently specified holdout document; do not use the test's
+// answers when choosing a profile. Synthetic data are not evidence of
+// unseen real-world forms, and are reported separately.
+fn holdout(profile:&str,training:&PatternScores)->Value{
+    let state=seed();
+    let client=recipient_client();
+    let mut aggregate=Accuracy::default();
+    let mut unseen=Accuracy::default();
+    let mut unseen_count=0;
+    type Expected<'a>=(&'a str,&'a str,&'a str,i64);
+    let cases:[(&str,&[Expected<'_>]);5]=[
+        ("수취인: 김가상\n주소: 서울특별시 마포구 월드컵로 20\n연락처: 010-1234-5678\nBD 950 2개",
+            &[("김가상","월드컵로 20","010-1234-5678",2)]),
+        ("BD 950 3개\n연락처: 010-2345-6789\n주소: 경기도 의정부시 시민로 20\n수취인: 이가상",
+            &[("이가상","시민로 20","010-2345-6789",3)]),
+        ("배송 요청사항: 문 앞\n주소: 서울특별시 중구 테스트로 1\n수취인: 박가상\n연락처: 010-3456-7890\nBD 950 1개",
+            &[("박가상","테스트로 1","010-3456-7890",1)]),
+        ("BD 950 2개\n수취인: 김가상\n연락처: 010-1234-5678\n주소: 서울특별시 마포구 월드컵로 20\n\nBD 950 3개\n수취인: 이가상\n연락처: 010-2345-6789\n주소: 경기도 의정부시 시민로 20",
+            &[("김가상","월드컵로 20","010-1234-5678",2),("이가상","시민로 20","010-2345-6789",3)]),
+        ("수취인: 김가상\n주소: 서울특별시 마포구 월드컵로 20\n연락처: 010-1234-5678\nBD 950 2개\n\n수취인: 이가상\n주소: 경기도 의정부시 시민로 20\n연락처: 010-2345-6789\nBD 950 3개",
+            &[("김가상","월드컵로 20","010-1234-5678",2),("이가상","시민로 20","010-2345-6789",3)]),
+    ];
+    for (raw,expected) in cases{
+        let result=recognition::execute("analyze_order_weight_experiment",json!({
+            "raw":raw,"state":state,"client":client,"profile":profile})).expect("holdout experiment");
+        let mut score=checks(&json!(result["recipients"].as_array().is_some_and(|v|v.len()==expected.len())));
+        for (index,&(name,address,contact,qty)) in expected.iter().enumerate(){
+            let row=&result["recipients"][index];
+            score.add(checks(&json!({
+                "name":row["name"]==name,"address":row["address"].as_str().is_some_and(|v|v.contains(address)),
+                "contact":row["phone"]==contact||row["mobile"]==contact,
+                "itemCount":row["items"].as_array().is_some_and(|v|v.len()==1),
+                "sku":row["items"][0]["productId"]=="bando-site-290",
+                "quantity":row["items"][0]["quantity"]==qty,"quantityConfirmed":row["items"][0]["quantityConfirmed"]==true})));
+        }
+        aggregate.add(score);
+        let metadata=&result["weightExperiment"];
+        if metadata["complete"]==true&&!metadata["pattern"].is_null()
+            &&!training.contains_key(&metadata["pattern"].to_string()){
+            unseen.add(score);unseen_count+=1;
+        }
+    }
+    json!({"syntheticCount":cases.len(),"all":aggregate.json(),"unseenCount":unseen_count,"unseen":unseen.json()})
+}
+#[test]
+fn baseline_weight_experiment_report(){
+    let ids=["baseline-v1","linear-v1","reciprocal-v1","exponential-v1"];
+    let reports=ids.iter().map(|&id|operational_field_truth(Some(id))).collect::<Vec<_>>();
+    let groups=reports.iter().map(|r|group_scores(r)).collect::<Vec<_>>();
+    let normal=operational_field_truth(None);
+    for (a,b) in normal.iter().zip(&reports[0]){
+        let mut actual=b.clone();actual.as_object_mut().unwrap().remove("weightExperiment");
+        assert_eq!(a,&actual,"baseline profile must preserve actual field results");
+    }
+    // Pattern identity must not change with experimental confidence.
+    for report in &reports{
+        assert_eq!(report.len(),18);
+        for (a,b) in reports[0].iter().zip(report){
+            assert_eq!(a["weightExperiment"]["pattern"],b["weightExperiment"]["pattern"]);
+        }
+    }
+    let mut metrics=Vec::new();
+    for (i,id) in ids.iter().enumerate(){
+        let (pattern_micro,macro_accuracy)=balanced(&groups[i],None);
+        let mut micro=Accuracy::default();
+        let mut per_dimension=[Accuracy::default();3];
+        for row in &reports[i]{
+            micro.add(checks(row));
+            for (total,part) in per_dimension.iter_mut().zip(dimensions(row)){total.add(part);}
+        }
+        metrics.push(json!({"id":id,"micro":micro.json(),"macro":macro_accuracy,"patternCount":groups[i].len(),
+            "patternCoverage":pattern_micro.total,"totalFieldChecks":micro.total,
+            "type":per_dimension[0].json(),"ownershipAndSku":per_dimension[1].json(),"quantityLink":per_dimension[2].json(),
+            "regressionFree":reports[0].iter().zip(&reports[i]).all(|(a,b)|preserves_checks(a,b))}));
+    }
+    // Select on training patterns only, then evaluate the excluded
+    // pattern. Prefer macro accuracy, then micro, then existing baseline.
+    let choose=|exclude:Option<&str>|{
+        let mut best=0;
+        for i in 1..ids.len(){
+            let eligible=reports[0].iter().zip(&reports[i]).filter(|(a,_)|
+                exclude.is_none_or(|key|a["weightExperiment"]["pattern"].to_string()!=key))
+                .all(|(a,b)|preserves_checks(a,b))
+                &&groups[i].keys().eq(groups[0].keys());
+            let (micro,macro_acc)=balanced(&groups[i],exclude);
+            let (best_micro,best_macro)=balanced(&groups[best],exclude);
+            if eligible&&(macro_acc,micro.value())>(best_macro,best_micro.value()){best=i;}
+        }
+        best
+    };
+    let mut fold_micro=Accuracy::default();let mut fold_macro=0.0;
+    let mut folds=0;
+    if groups[0].len()>1{
+        for key in groups[0].keys(){
+            let selected=choose(Some(key));
+            let score=groups[selected][key];
+            fold_micro.add(score);fold_macro+=score.value();folds+=1;
+        }
+    }
+    let winner=choose(None);
+    let held=holdout(ids[winner],&groups[0]);
+    println!("RECOGNITION_WEIGHT_EXPERIMENT {}",json!({
+        "schemaVersion":1,"realFixtureCount":18,"fullAddressTruth":false,"independentPatternTruth":false,
+        "profiles":metrics,"trainingCandidate":ids[winner],
+        "leaveOnePatternOut":{"folds":folds,"micro":fold_micro.json(),"macro":if folds==0{0.0}else{fold_macro/folds as f64}},
+        "syntheticHoldout":held,"activeProfile":"baseline-v1","approved":false,
+        "approvalBlocker":"real independent unseen-pattern evidence and full field truth are insufficient"
+    }));
 }
