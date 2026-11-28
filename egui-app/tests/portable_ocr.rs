@@ -1,5 +1,7 @@
 //! Native Windows portable package acceptance: use the actual egui adapter.
 #![cfg(windows)]
+#[path = "../src/private_storage.rs"]
+mod private_storage;
 #[path = "../src/clipboard_intake.rs"]
 mod clipboard_intake;
 

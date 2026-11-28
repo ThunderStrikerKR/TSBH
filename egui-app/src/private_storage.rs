@@ -123,6 +123,32 @@ mod tests{
         }
     }
     impl Drop for Fixture{fn drop(&mut self){let _=fs::remove_dir_all(&self.0);}}
+    #[cfg(windows)]
+    #[test]
+    fn windows_dacl_is_protected_with_only_two_access_entries(){
+        use std::{os::windows::ffi::OsStrExt,ptr};
+        use windows_sys::Win32::Security::{GetFileSecurityW,GetSecurityDescriptorControl,
+            GetSecurityDescriptorDacl,DACL_SECURITY_INFORMATION,ACL,SE_DACL_PROTECTED};
+        let root=Fixture::new();let dir=private_directory(&root.0.join("private")).unwrap();
+        let db=dir.join("synthetic.sqlite");fs::write(&db,b"synthetic").unwrap();
+        protect_sqlite_files(&db).unwrap();
+        for path in [&dir,&db]{
+            let name:Vec<u16>=path.as_os_str().encode_wide().chain(Some(0)).collect();
+            unsafe{
+                let mut needed=0;
+                GetFileSecurityW(name.as_ptr(),DACL_SECURITY_INFORMATION,ptr::null_mut(),0,&mut needed);
+                assert!(needed>0&&needed<65536);
+                let mut buffer=vec![0usize;(needed as usize).div_ceil(std::mem::size_of::<usize>())];
+                assert_ne!(GetFileSecurityW(name.as_ptr(),DACL_SECURITY_INFORMATION,buffer.as_mut_ptr().cast(),needed,&mut needed),0);
+                let mut control=0;let mut revision=0;
+                assert_ne!(GetSecurityDescriptorControl(buffer.as_mut_ptr().cast(),&mut control,&mut revision),0);
+                assert_ne!(control&SE_DACL_PROTECTED,0);
+                let mut present=0;let mut defaulted=0;let mut acl:*mut ACL=ptr::null_mut();
+                assert_ne!(GetSecurityDescriptorDacl(buffer.as_mut_ptr().cast(),&mut present,&mut acl,&mut defaulted),0);
+                assert_ne!(present,0);assert!(!acl.is_null());assert_eq!((*acl).AceCount,2);
+            }
+        }
+    }
     #[test]
     fn protects_existing_bytes_without_rewriting_or_deleting(){
         let root=Fixture::new();

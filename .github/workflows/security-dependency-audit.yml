@@ -126,4 +126,4 @@ jobs:
           Write-Host $output
           if ($code -ne 0) { exit $code }
           $results = [regex]::Matches($output,'test result: ok\. (\d+) passed; 0 failed')
-          if (!($results | Where-Object { [int]$_.Groups[1].Value -ge 2 })) { throw 'Expected at least two private storage regression tests.' }
+          if (!($results | Where-Object { [int]$_.Groups[1].Value -ge 3 })) { throw 'Expected at least three private storage regression tests.' }
