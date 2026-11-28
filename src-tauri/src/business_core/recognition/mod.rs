@@ -2200,7 +2200,13 @@ mod tests {
                 .unwrap(),span.text(raw));
         }
         let before=document.occurrences.clone();
-        let _=search.decision("GT-1 2개");
+        // ProductSearch is attached to this document, so evaluation must
+        // borrow an actual source occurrence, not an independent literal
+        // with the same text. Text equality alone cannot prove provenance.
+        let start=raw.rfind("GT-1 2개").unwrap();
+        let source=&raw[start..];
+        assert_eq!(source,"GT-1 2개");
+        assert_eq!(search.decision(source)["productId"],"pgt");
         assert_eq!(document.occurrences,before);
     }
     #[test]
