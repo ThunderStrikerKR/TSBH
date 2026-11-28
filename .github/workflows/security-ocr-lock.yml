@@ -1,0 +1,69 @@
+name: OCR Windows dependency lock candidate
+on:
+  push:
+    branches: [security/v0.8.0-pre-release]
+    paths:
+      - '.github/workflows/security-ocr-lock.yml'
+      - 'scripts/resolve-ocr-lock.py'
+      - 'scripts/test-resolve-ocr-lock.py'
+      - 'security/ocr/requirements.in'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/security-ocr-lock.yml'
+      - 'scripts/resolve-ocr-lock.py'
+      - 'scripts/test-resolve-ocr-lock.py'
+      - 'security/ocr/requirements.in'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ocr-lock-candidate-${{ github.event_name }}
+  cancel-in-progress: true
+jobs:
+  resolve:
+    if: >-
+      github.ref == 'refs/heads/security/v0.8.0-pre-release' ||
+      (github.event_name == 'pull_request' &&
+      github.head_ref == 'security/v0.8.0-pre-release' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Resolve Windows CPython 3.11 wheel candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          py -3.11 -m venv "$env:RUNNER_TEMP/ocr-resolve"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $python = "$env:RUNNER_TEMP/ocr-resolve/Scripts/python.exe"
+          & $python scripts/test-resolve-ocr-lock.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $python scripts/resolve-ocr-lock.py "$env:RUNNER_TEMP/ocr-candidate"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $python scripts/validate-ocr-audit-lock.py "$env:RUNNER_TEMP/ocr-candidate/requirements.lock"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ocr-lock-candidate
+          path: |
+            ${{ runner.temp }}/ocr-candidate/requirements.lock
+            ${{ runner.temp }}/ocr-candidate/wheel-inventory.json
+            ${{ runner.temp }}/ocr-candidate/resolution.json
+          if-no-files-found: error
+          retention-days: 3
+      - name: Audit candidate without installing OCR
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          py -3.11 -m venv "$env:RUNNER_TEMP/ocr-auditor"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $python = "$env:RUNNER_TEMP/ocr-auditor/Scripts/python.exe"
+          & $python -m pip --isolated install --index-url https://pypi.org/simple --only-binary=:all: pip-audit==2.10.1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $python -m pip_audit --strict --disable-pip --require-hashes -r "$env:RUNNER_TEMP/ocr-candidate/requirements.lock"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

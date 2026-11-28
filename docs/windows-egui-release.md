@@ -1,5 +1,7 @@
 # BANDO HUB v0.8.0 Windows 배포
 
+> 보안 개선 브랜치: [필수 보안 게이트](security-v0.8.0-release-gate.md)를 우선 적용한다. 기존 자동 OCR 다운로드는 비활성화되었으며 독립적으로 승인된 OCR 패키지, 잠금 파일 및 보안 검사 결과 없이는 배포할 수 없다. 아래의 기존 자동 준비 설명보다 보안 게이트를 우선한다.
+
 ## 빌드 컴퓨터
 Windows x64, Rust MSVC x64 toolchain, Visual Studio C++ build tools가 필요하다. 저장소 최신 main을 받은 뒤 루트의 PACKAGE_WINDOWS_EGUI.cmd를 실행한다. 최초 OCR 패키지 준비나 Cargo 의존성 다운로드에는 인터넷이 필요할 수 있다. 기존 OCR 번들을 재사용할 수 있으며 압축 해제본의 OCR 실추론 검증이 실패하면 새 ZIP을 공개하지 않는다.
 

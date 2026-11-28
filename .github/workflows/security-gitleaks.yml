@@ -1,0 +1,103 @@
+name: Git full-history secret audit
+on:
+  push:
+    branches: [main, security/v0.8.0-pre-release]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: git-secret-audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  history:
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GITLEAKS_VERSION: v8.30.1
+      GOPROXY: https://proxy.golang.org
+      GOSUMDB: sum.golang.org
+      GONOSUMDB: ''
+      GOPRIVATE: ''
+      GOWORK: 'off'
+      AUDIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      GIT_TERMINAL_PROMPT: '0'
+    steps:
+      - name: Install pinned scanner through Go checksum database
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/secret-audit/bin"
+          GOBIN="$RUNNER_TEMP/secret-audit/bin" go install "github.com/zricethezav/gitleaks/v8@$GITLEAKS_VERSION"
+          "$RUNNER_TEMP/secret-audit/bin/gitleaks" version
+      - name: Verify scanner on synthetic deleted credential
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          root="$RUNNER_TEMP/secret-audit"
+          scanner="$root/bin/gitleaks"
+          printf '[extend]\nuseDefault = true\n' > "$root/strict.toml"
+          : > "$root/empty.gitleaksignore"
+          git init -q "$root/fixture"
+          git -C "$root/fixture" config user.name 'Synthetic audit'
+          git -C "$root/fixture" config user.email 'fixture@example.invalid'
+          # Generate a fictional token-shaped string, never a real credential.
+          python3 -c 'import secrets,string; print("ghp_"+"".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(36)))' > "$root/fixture/example.txt"
+          git -C "$root/fixture" add example.txt
+          git -C "$root/fixture" commit -qm 'Synthetic fixture'
+          git -C "$root/fixture" rm -q example.txt
+          git -C "$root/fixture" commit -qm 'Remove synthetic fixture'
+          code=0
+          "$scanner" git --config "$root/strict.toml" --gitleaks-ignore-path "$root/empty.gitleaksignore" --ignore-gitleaks-allow --redact=100 --no-banner --exit-code 42 --log-opts="--all --full-history -m" "$root/fixture" >"$root/fixture.log" 2>&1 || code=$?
+          rm -rf "$root/fixture" "$root/fixture.log"
+          test "$code" -eq 42
+          echo 'PASS: deleted synthetic credential detected.'
+      - name: Fetch complete reachable branch and tag history
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          root="$RUNNER_TEMP/secret-audit"
+          repo="$root/history.git"
+          [[ "$AUDIT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git init --bare -q "$repo"
+          # Public repository; no checkout, credentials, hooks or project code execution.
+          git -C "$repo" -c core.hooksPath=/dev/null fetch --quiet --no-tags "https://github.com/$GITHUB_REPOSITORY.git" '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
+          if ! git -C "$repo" cat-file -e "$AUDIT_SHA^{commit}"; then
+            git -C "$repo" fetch --quiet --no-tags "https://github.com/$GITHUB_REPOSITORY.git" "$AUDIT_SHA"
+          fi
+          git -C "$repo" update-ref refs/audit/selected "$AUDIT_SHA"
+          test "$(git -C "$repo" rev-parse --is-shallow-repository)" = false
+          test -z "$(git -C "$repo" config --get extensions.partialClone || true)"
+          count="$(git -C "$repo" rev-list --all --count)"
+          test "$count" -gt 0
+          echo "Reachable commits: $count"
+          echo "Branch refs: $(git -C "$repo" for-each-ref --format='%(objectname)' refs/heads | wc -l)"
+          echo "Tag refs: $(git -C "$repo" for-each-ref --format='%(objectname)' refs/tags | wc -l)"
+      - name: Scan complete fetched Git history without exposing findings
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          root="$RUNNER_TEMP/secret-audit"
+          code=0
+          "$root/bin/gitleaks" git --config "$root/strict.toml" --gitleaks-ignore-path "$root/empty.gitleaksignore" --ignore-gitleaks-allow --redact=100 --no-banner --exit-code 42 --log-opts="--all --full-history -m" "$root/history.git" >"$root/history.log" 2>&1 || code=$?
+          rm -f "$root/history.log"
+          case "$code" in
+            0) echo 'PASS: no Gitleaks findings in fetched reachable history.' ;;
+            42) echo 'BLOCKED: potential secret findings. Review locally with redaction; rotate confirmed credentials.'; exit 1 ;;
+            *) echo "BLOCKED: scanner failed (exit $code)."; exit 1 ;;
+          esac
+      - name: Remove temporary scan data
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/secret-audit"

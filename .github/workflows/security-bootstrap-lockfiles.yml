@@ -1,0 +1,155 @@
+name: Security branch Cargo lock bootstrap
+on:
+  push:
+    branches: [security/v0.8.0-pre-release]
+    paths:
+      - '.github/workflows/security-bootstrap-lockfiles.yml'
+      - 'egui-app/Cargo.toml'
+      - 'crates/bando-data-access/Cargo.toml'
+      - 'src-tauri/Cargo.toml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/security-bootstrap-lockfiles.yml'
+      - 'egui-app/Cargo.toml'
+      - 'crates/bando-data-access/Cargo.toml'
+      - 'src-tauri/Cargo.toml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: security-lock-bootstrap-${{ github.event_name }}
+  cancel-in-progress: false
+jobs:
+  resolve:
+    if: >-
+      github.ref == 'refs/heads/security/v0.8.0-pre-release' ||
+      (github.event_name == 'pull_request' &&
+      github.head_ref == 'security/v0.8.0-pre-release' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Resolve security upgrades
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($dir in @('egui-app','crates/bando-data-access','src-tauri')) {
+            $manifest = "$dir/Cargo.toml"
+            cargo update --workspace --manifest-path $manifest
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path $manifest
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          python scripts/verify-patched-rust-locks.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Report lockfile checksums
+        shell: pwsh
+        run: |
+          foreach ($dir in @('egui-app','crates/bando-data-access','src-tauri')) {
+            Get-FileHash -LiteralPath "$dir/Cargo.lock" -Algorithm SHA256
+          }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: resolved-cargo-locks
+          path: |
+            egui-app/Cargo.lock
+            crates/bando-data-access/Cargo.lock
+            src-tauri/Cargo.lock
+          if-no-files-found: error
+          retention-days: 3
+  commit:
+    needs: resolve
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/security/v0.8.0-pre-release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: resolved-cargo-locks
+          path: lock-output
+      - name: Commit only verified lockfiles to isolated branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/security/v0.8.0-pre-release
+          git fetch origin refs/heads/security/v0.8.0-pre-release
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          for dir in egui-app crates/bando-data-access src-tauri; do
+            test -f "lock-output/$dir/Cargo.lock"
+            test ! -L "lock-output/$dir/Cargo.lock"
+            cp "lock-output/$dir/Cargo.lock" "$dir/Cargo.lock"
+          done
+          python3 scripts/verify-patched-rust-locks.py
+          git add -- egui-app/Cargo.lock crates/bando-data-access/Cargo.lock src-tauri/Cargo.lock
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -c core.hooksPath=/dev/null commit -m 'security: register resolved SQLite and XLSX lockfiles'
+          git push origin HEAD:refs/heads/security/v0.8.0-pre-release
+          git fetch origin refs/heads/security/v0.8.0-pre-release
+          test "$(git rev-parse FETCH_HEAD)" = "$(git rev-parse HEAD)"
+          git log -1 --format='Registered lockfiles at %H'
+  windows-regression:
+    needs: resolve
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: resolved-cargo-locks
+          path: lock-output
+      - name: Verify resolved native application and data engine
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($dir in @('egui-app','crates/bando-data-access','src-tauri')) {
+            Copy-Item -LiteralPath "lock-output/$dir/Cargo.lock" -Destination "$dir/Cargo.lock" -Force
+          }
+          python scripts/verify-patched-rust-locks.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path crates/bando-data-access/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo check --locked --manifest-path egui-app/Cargo.toml --all-targets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($filter in @('native_workbooks::','product_excel::','factory_reply_inbox::','excel_service::','excel_aggregate::')) {
+            cargo test --locked --manifest-path egui-app/Cargo.toml $filter
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+  rustsec:
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: resolved-cargo-locks
+          path: lock-output
+      - name: Audit the exact resolved lockfiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install cargo-audit --version 0.22.2 --locked
+          result=0
+          for dir in egui-app crates/bando-data-access; do
+            cargo audit --file "$GITHUB_WORKSPACE/lock-output/$dir/Cargo.lock" || result=1
+          done
+          exit "$result"

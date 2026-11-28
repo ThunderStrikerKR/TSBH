@@ -2,7 +2,7 @@
 //! Never write to a preview DB or bypass the native revision transaction.
 use crate::{business_state,excel_service,gateway};
 use chrono::Utc;
-use rusqlite::{Connection,OpenFlags};
+use rusqlite::OpenFlags;
 use serde_json::{json,Value};
 use std::time::Duration;
 
@@ -25,7 +25,7 @@ pub fn save(expected_revision:u64,shipment_id:&str,memo:&str)
         return Err("관리 메모는 2,000자 이내로 작성하세요.".into());
     }
     let path=business_state::authorized_business_write_path()?;
-    let mut conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
+    let mut conn=crate::business_state::open_business_connection(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
         .map_err(|_|"업무 DB를 쓰기 모드로 열지 못했습니다.".to_owned())?;
     conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
     conn.execute_batch("PRAGMA foreign_keys=ON;")

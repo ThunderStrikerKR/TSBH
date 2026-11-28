@@ -1,61 +1,58 @@
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$TargetDir
+    [Parameter(Mandatory=$true)][string]$TargetDir
 )
-# Runs on the build computer only. Staff computers receive a self-contained folder.
+# Build only from independently vetted offline inputs. No automatic downloads.
 $ErrorActionPreference = "Stop"
-$ProgressPreference = "SilentlyContinue"
 Set-StrictMode -Version Latest
-if (-not [Environment]::Is64BitOperatingSystem) {
-    throw "Portable PaddleOCR requires a Windows x64 build machine."
+. (Join-Path $PSScriptRoot "ocr-release-trust.ps1")
+if (![Environment]::Is64BitOperatingSystem -or $env:OS -ne "Windows_NT") { throw "Windows x64 required." }
+if (!$env:BANDO_OCR_INPUT_DIR -or !$env:BANDO_OCR_INPUT_MANIFEST -or !$env:BANDO_OCR_INPUT_SHA256) {
+    throw "Approved offline OCR input directory, manifest and SHA256 are required."
 }
-$target = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $TargetDir))
-if (Test-Path -LiteralPath $target) {
-    throw "Target already exists; refusing to overwrite: $target"
-}
-$temp = Join-Path ([System.IO.Path]::GetTempPath()) ("bando-ocr-package-" + [guid]::NewGuid().ToString("N"))
+$inputRoot = (Resolve-Path -LiteralPath $env:BANDO_OCR_INPUT_DIR).Path
+$approval = (Resolve-Path -LiteralPath $env:BANDO_OCR_INPUT_MANIFEST).Path
+Assert-ApprovedTree $inputRoot $approval $env:BANDO_OCR_INPUT_SHA256 @('python-embed.zip','pip.pyz','requirements.lock','wheels','models')
+$target = [IO.Path]::GetFullPath((Join-Path (Get-Location).Path $TargetDir))
+if (Test-Path -LiteralPath $target) { throw "Target exists; refusing to overwrite." }
+$temp = Join-Path ([IO.Path]::GetTempPath()) ("bando-ocr-approved-" + [guid]::NewGuid().ToString("N"))
+$inputs = Join-Path $temp "inputs"
 $stage = Join-Path $temp "ocr"
 $runtime = Join-Path $stage "runtime"
-$sitePackages = Join-Path $runtime "Lib\site-packages"
-$cache = Join-Path $temp "paddlex-cache"
-
 try {
-    New-Item -ItemType Directory -Path $runtime, $sitePackages, $cache -Force | Out-Null
-    $pythonZip = Join-Path $temp "python-embed.zip"
-    Write-Host "[OCR] Downloading official embedded CPython 3.11.9 runtime..."
-    Invoke-WebRequest "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" -OutFile $pythonZip
-    Expand-Archive -LiteralPath $pythonZip -DestinationPath $runtime
-    $pth = Join-Path $runtime "python311._pth"
-    if (!(Test-Path -LiteralPath $pth)) { throw "Embedded Python path configuration missing." }
-    @("python311.zip", ".", "Lib\site-packages", "import site") |
-        Set-Content -LiteralPath $pth -Encoding Ascii
+    New-Item -ItemType Directory -Path $temp | Out-Null
+    Copy-Item -LiteralPath $inputRoot -Destination $inputs -Recurse
+    Assert-ApprovedTree $inputs $approval $env:BANDO_OCR_INPUT_SHA256 @('python-embed.zip','pip.pyz','requirements.lock','wheels','models')
+    New-Item -ItemType Directory -Path $runtime -Force | Out-Null
+    Expand-Archive -LiteralPath (Join-Path $inputs "python-embed.zip") -DestinationPath $runtime
     $python = Join-Path $runtime "python.exe"
-    if (!(Test-Path -LiteralPath $python)) { throw "Embedded python.exe missing." }
-    $pipZip = Join-Path $temp "pip.pyz"
-    Write-Host "[OCR] Downloading pip zip application..."
-    Invoke-WebRequest "https://bootstrap.pypa.io/pip/pip.pyz" -OutFile $pipZip
-    $env:PYTHONNOUSERSITE = "1"
-    $env:PYTHONDONTWRITEBYTECODE = "1"
-    $env:PIP_DISABLE_PIP_VERSION_CHECK = "1"
-    $env:PIP_NO_CACHE_DIR = "1"
-    Write-Host "[OCR] Installing PaddleOCR only inside this package..."
-    $args = @($pipZip,"install","--disable-pip-version-check","--no-cache-dir","--only-binary=:all:","--target",$sitePackages,"paddlepaddle==3.2.0","paddleocr==3.2.0")
-    & $python @args
-    if ($LASTEXITCODE -ne 0) { throw "Portable PaddleOCR dependency installation failed." }
-
-    $env:PADDLE_PDX_CACHE_HOME = $cache
-    $env:PADDLE_PDX_MODEL_SOURCE = "BOS"
-    Write-Host "[OCR] Bundling Korean PP-OCRv5 models..."
-    & $python (Join-Path $PSScriptRoot "prepare-ocr-bundle.py") (Join-Path $stage "models")
-    if ($LASTEXITCODE -ne 0) { throw "Portable PaddleOCR model download/verification failed." }
-
-    $targetParent = Split-Path -Parent $target
-    New-Item -ItemType Directory -Path $targetParent -Force | Out-Null
-    Move-Item -LiteralPath $stage -Destination $target
-    if (!(Test-Path -LiteralPath (Join-Path $target "runtime\python.exe"))) {
-        throw "Packaged Python binary missing after staging."
+    $pth = Join-Path $runtime "python311._pth"
+    if (!(Test-Path -LiteralPath $python -PathType Leaf) -or !(Test-Path -LiteralPath $pth -PathType Leaf)) { throw "Invalid approved CPython 3.11 x64 archive." }
+    $site = Join-Path $runtime "Lib\site-packages"
+    New-Item -ItemType Directory -Path $site -Force | Out-Null
+    @("python311.zip",".","Lib\site-packages","import site") | Set-Content -LiteralPath $pth -Encoding Ascii
+    $requirements = Join-Path $inputs "requirements.lock"
+    # Only exact pinned wheel requirements and SHA256 options are permitted.
+    # The approved lock must include every transitive dependency, one requirement per line.
+    $lines = @(Get-Content -LiteralPath $requirements | Where-Object { $_.Trim() -and !$_.Trim().StartsWith('#') })
+    if (!$lines.Count) { throw "Empty OCR dependency lock." }
+    foreach ($line in $lines) {
+        if ($line.Trim() -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]*==[A-Za-z0-9][A-Za-z0-9_.+-]*(?:\s+--hash=sha256:[A-Fa-f0-9]{64})+$') {
+            throw "OCR dependency lock must contain exact versions and wheel hashes only."
+        }
     }
-    Write-Host "[OCR] Package ready: $target"
+    $env:PYTHONDONTWRITEBYTECODE = "1"
+    $env:PYTHONNOUSERSITE = "1"
+    & $python "-I" "-B" "-X" "utf8" (Join-Path $inputs "pip.pyz") --isolated install --no-index --find-links (Join-Path $inputs "wheels") --require-hashes --only-binary=:all: --no-cache-dir --disable-pip-version-check --target $site -r $requirements
+    if ($LASTEXITCODE -ne 0) { throw "Approved offline OCR dependency install failed." }
+    Copy-Item -LiteralPath (Join-Path $inputs "models") -Destination (Join-Path $stage "models") -Recurse
+    foreach ($name in @('PP-OCRv5_mobile_det','korean_PP-OCRv5_mobile_rec')) {
+        foreach ($file in @('inference.json','inference.pdiparams','inference.yml')) {
+            if (!(Test-Path -LiteralPath (Join-Path $stage ("models\" + $name + "\" + $file)) -PathType Leaf)) { throw "Missing approved OCR model file." }
+        }
+    }
+    New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
+    Move-Item -LiteralPath $stage -Destination $target
+    Write-Host "[OCR] Candidate prepared. Independent release inventory approval still required."
 } finally {
-    Remove-Item -LiteralPath $temp -Force -Recurse -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
 }

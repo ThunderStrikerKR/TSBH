@@ -17,12 +17,14 @@ unicode-normalization = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 url = "2"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "=0.41.1", features = ["bundled", "fallible_uint"] }
 bando-data-access = { path = "../crates/bando-data-access" }
 calamine = "0.38"
+zip = { version = "=9.8.2", default-features = false }
+quick-xml = "=0.42.0"
 sha2 = "0.10"
 open = "5"
-rust_xlsxwriter = "0.91"
+rust_xlsxwriter = "=0.104.0"
 uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(windows)'.dependencies]
