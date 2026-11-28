@@ -54,6 +54,13 @@ PHASE03_TESTS = (
     "pattern_normalizes_item_multiplicity_without_discarding_source_candidates",
     "signed_distances_and_blank_boundaries_use_original_geometry",
 )
+PHASE04_TESTS = (
+    "product_rank_preserves_ties_and_explicit_constraints",
+    "baseline_candidate_trace_does_not_change_business_result",
+    "baseline_quantity_constraints_reject_ambiguous_and_reused_evidence",
+    "assignment_graph_rejects_invalid_source_and_owner",
+    "address_format_is_not_directory_validation",
+)
 STAGE_FILE = ROOT / "scripts/recognition-stage.txt"
 
 
@@ -64,7 +71,7 @@ def stage_number(raw):
     return int(raw)
 
 
-def verify_discovery(listed, ignored, final, phase02=False, phase03=False):
+def verify_discovery(listed, ignored, final, phase02=False, phase03=False, phase04=False):
     tests = {line.removesuffix(": test") for line in listed.splitlines()
              if line.endswith(": test")}
     skipped = {line.removesuffix(": test") for line in ignored.splitlines()
@@ -84,6 +91,8 @@ def verify_discovery(listed, ignored, final, phase02=False, phase03=False):
         required.extend(name for names in PHASE02_TESTS.values() for name in names)
     if phase03 or final:
         required.extend(PHASE03_TESTS)
+    if phase04 or final:
+        required.extend(PHASE04_TESTS)
     if final:
         required.extend(FINAL_TESTS)
     required = list(dict.fromkeys(required))
@@ -112,7 +121,7 @@ def main():
         print("Test discovery and execution required; integration not certified")
         return
     listed, ignored = args.tests.read_text(), args.ignored.read_text()
-    failures = verify_discovery(listed, ignored, args.final, require_phase02, stage >= 3)
+    failures = verify_discovery(listed, ignored, args.final, require_phase02, stage >= 3, stage >= 4)
     if failures:
         for failure in failures:
             print("FAIL:", failure)

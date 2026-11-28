@@ -120,7 +120,8 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
                         .is_some_and(|variants|variants.iter().any(|variant|
                             variant.get("source").and_then(Value::as_str)==Some("DEMO")))
                 });
-            analyze(raw, &reception, payload.get("client"))
+            analyze_with_trace(raw, &reception, payload.get("client"),
+                payload.get("includeDecisionTrace").and_then(Value::as_bool)==Some(true))
         }
         "match_products" => {
             let state = required_state(&payload)?;
@@ -546,11 +547,12 @@ struct ProductSearch<'a,'s>{
     // Saturation is explicit. The existing fallback preserves classification
     // behavior, but an incomplete batch cannot certify complete discovery.
     truncated:bool,
+    trace:bool,
 }
 impl<'a,'s> ProductSearch<'a,'s>{
     fn new(state:&'s Value,client:&'s str)->Self{
         Self{state,client,probes:HashMap::new(),catalog:model::Catalog::new(state),
-            quantity_cache:HashMap::new(),source:None,source_ranges:BTreeSet::new(),truncated:false}
+            quantity_cache:HashMap::new(),source:None,source_ranges:BTreeSet::new(),truncated:false,trace:false}
     }
     fn quantities(&mut self,text:&'a str)->Vec<quantity::Quantity>{
         if let Some(q)=self.quantity_cache.get(text){return q.clone();}
@@ -592,29 +594,47 @@ impl<'a,'s> ProductSearch<'a,'s>{
         self.prepare(text);
         if let Some(probe)=self.probes.get_mut(text){
             if let Some(value)=&probe.evaluated{return value.clone();}
-            let value=evaluate_product_probe(text,&probe.hypotheses);
+            let value=evaluate_product_probe(text,&probe.hypotheses,self.trace);
             probe.evaluated=Some(value.clone());
             value
         }else{
-            evaluate_product_probe(text,&model::collect_prepared(text,self.state,self.client,&self.catalog))
+            evaluate_product_probe(text,&model::collect_prepared(text,self.state,self.client,&self.catalog),self.trace)
         }
     }
 }
-fn evaluate_product_probe(text:&str,pool:&model::ProductHypotheses<'_>)->Value{
-    model::decision_json(&model::evaluate(text,pool))
+fn evaluate_product_probe(text:&str,pool:&model::ProductHypotheses<'_>,trace:bool)->Value{
+    model::decision_json(&model::evaluate_with_trace(text,pool,trace))
 }
-// Legacy type policy is deliberately kept here until the common feature
-// classifier replaces it. This is projection, never candidate discovery.
-fn project_name<'a>(line:&'a str,proposals:&[NameProposal],search:&mut ProductSearch<'a,'_>)->Option<(usize,usize)>{
-    for proposal in proposals{
-        if let Some(probe)=proposal.probe(line){
+// Name eligibility is a constraint, not a vote against a competing SKU.
+// Compare eligible names by evidence family then stable source proposal order.
+fn project_name<'a>(line:&'a str,proposals:&[NameProposal],allowed:usize,
+    search:&mut ProductSearch<'a,'_>,trace:&mut Option<Vec<Value>>)->Option<(usize,usize)>{
+    let mut best:Option<((u8,usize),(usize,usize))>=None;
+    for (i,proposal) in proposals.iter().enumerate(){
+        let rank=(match proposal.requirement{ NameRequirement::Structural=>3,
+            NameRequirement::ProductPrefix(_)=>2,NameRequirement::NotProduct=>1},usize::MAX-i);
+        // An explicit name field or a structural label boundary cannot
+        // be replaced by a competing unlabelled interpretation.
+        let eligible=i<allowed&&proposal.probe(line).is_none_or(|probe|{
             let decision=search.decision(probe);
-            let product=search.signal(probe,&decision);
-            if product!=(matches!(proposal.requirement,NameRequirement::ProductPrefix(_))){continue;}
+            search.signal(probe,&decision)==matches!(proposal.requirement,NameRequirement::ProductPrefix(_))
+        });
+        if let Some(log)=trace.as_mut(){
+            let base=line.as_ptr() as usize-search.source.map_or(line.as_ptr() as usize,|raw|raw.as_ptr() as usize);
+            log.push(json!({"kind":"name","startByte":base+proposal.span.0,"endByte":base+proposal.span.1,
+                "eligible":eligible,"priority":rank.0,"proposalOrder":i,"requirement":format!("{:?}",proposal.requirement)}));
         }
-        return Some(proposal.span);
+        if eligible&&best.is_none_or(|(current,_)|rank>current){best=Some((rank,proposal.span));}
+        // Stop only when no later eligible proposal could outrank this
+        // evidence family. Diagnostic and normal modes select identically.
+        if eligible&&trace.is_none()&&!proposals[i+1..allowed.min(proposals.len())].iter()
+            .any(|next|match next.requirement{
+                NameRequirement::Structural=>rank.0<3,
+                NameRequirement::ProductPrefix(_)=>rank.0<2,
+                NameRequirement::NotProduct=>false,
+            }){break;}
     }
-    None
+    best.map(|(_,span)|span)
 }
 // A physical line can contain several explicit records. These are
 // non-owning slices, never synthetic newlines. Offsets and line geometry
@@ -1158,13 +1178,19 @@ fn source_json(geometry:&SourceGeometry<'_>,e:&Evidence,recipient_id:&str,target
         "recipientId":recipient_id, "text": &raw[e.start..e.end],
     })
 }
+// Format recognition and completeness are independent of address
+// existence. No postal-directory lookup occurs in the recognition engine.
+fn address_format(value:&str)->&'static str{
+    if Regex::new(r"[로길]\s*\d+(?:-\d+)?").expect("road").is_match(value){"ROAD"}
+    else if Regex::new(r"[동리읍면]\s+(?:산\s*)?\d+(?:-\d+)?").expect("lot").is_match(value){"LOT"}
+    else{"UNKNOWN"}
+}
+fn address_completeness(value:&str,format:&str)->&'static str{
+    if format!="UNKNOWN"&&!value.contains('#')&&!value.contains('@'){"COMPLETE"}else{"INCOMPLETE"}
+}
 fn address_info(value: &str) -> (String, String, Value) {
-    let road = Regex::new(r"[로길]\s*\d+(?:-\d+)?").expect("road").is_match(value);
-    let lot = Regex::new(r"[동리읍면]\s+(?:산\s*)?\d+(?:-\d+)?").expect("lot").is_match(value);
-    let kind = if road { "ROAD" } else if lot { "LOT" } else { "UNKNOWN" };
-    let status = if (road || lot) && !value.contains('#') && !value.contains('@') {
-        "COMPLETE"
-    } else { "INCOMPLETE" };
+    let kind=address_format(value);
+    let status=address_completeness(value,kind);
     let province = Regex::new(r"^(?:서울특별시|서울|부산광역시|부산|대구광역시|대구|인천광역시|인천|광주광역시|광주|대전광역시|대전|울산광역시|울산|세종특별자치시|세종|경기도|경기|강원특별자치도|강원도|강원|충청북도|충청남도|전북특별자치도|전라북도|전라남도|경상북도|경상남도|제주특별자치도|제주도|제주|충북|충남|전북|전남|경북|경남)")
         .expect("province").find(value)
         .filter(|m|value[m.end()..].chars().next().map_or(true,char::is_whitespace))
@@ -1218,8 +1244,7 @@ fn blank_recipient(id:&str,name:&str,anchor:Option<&Evidence>,geometry:&SourceGe
     value
 }
 fn owner_index(anchors: &[usize], events: &[Evidence], offset: usize) -> usize {
-    anchors.iter().enumerate().rev().find(|(_, i)| events[**i].start <= offset)
-        .map(|(idx,_)|idx).unwrap_or(0)
+    anchors.partition_point(|&i|events[i].start<=offset).saturating_sub(1)
 }
 // Recipient identity boundaries are stronger than a raw character offset.
 // A delivery address/contact placed BEFORE the next person's name can belong
@@ -1227,23 +1252,28 @@ fn owner_index(anchors: &[usize], events: &[Evidence], offset: usize) -> usize {
 // Distances are supporting evidence only: they never create recipients.
 fn recipient_owner_index(
     anchors: &[usize], events: &[Evidence], evidence_index: usize, geometry:&SourceGeometry<'_>,
-    features:Option<&features::DocumentFeatures<'_,'_,'_>>
+    features:Option<&features::DocumentFeatures<'_,'_,'_>>,trace:&mut Option<Vec<Value>>
 ) -> usize {
     let candidate=&events[evidence_index];
     let previous=owner_index(anchors,events,candidate.start);
+    let mut retain=|reason:&str|{
+        if let Some(log)=trace.as_mut(){log.push(json!({"kind":"recipientOwner","startByte":candidate.start,
+            "endByte":candidate.end,"selected":previous,"constraint":reason}));}
+        previous
+    };
     if anchors.len()<2 || !matches!(candidate.kind,"address"|"phone"|"mobile") {
-        return previous;
+        return retain("existing_anchor_or_non_delivery_field");
     }
-    let Some(&next_anchor_index)=anchors.get(previous+1) else {return previous};
+    let Some(&next_anchor_index)=anchors.get(previous+1) else {return retain("no_following_anchor");};
     let preceding=&events[anchors[previous]];
     let following=&events[next_anchor_index];
     if candidate.start<=preceding.start || candidate.start>=following.start {
-        return previous;
+        return retain("outside_adjacent_anchor_range");
     }
     // Keep existing ownership inside the preceding named person's paragraph.
     // This protects multiple phone numbers for the same recipient.
     if candidate.paragraph==preceding.paragraph || candidate.paragraph!=following.paragraph {
-        return previous;
+        return retain("paragraph_boundary");
     }
     // The prior named recipient must already have independent delivery
     // evidence before its blank-line boundary. Otherwise an address after
@@ -1255,7 +1285,7 @@ fn recipient_owner_index(
             && e.paragraph==preceding.paragraph
             && matches!(e.kind,"address"|"phone"|"mobile")
     );
-    if !previous_has_delivery {return previous;}
+    if !previous_has_delivery {return retain("previous_recipient_lacks_delivery_evidence");}
     // A separating line containing only spaces/tabs counts as a block
     // boundary too. This is a conservative overlay on the existing gates.
     let relation=|a:&Evidence,b:&Evidence|features.map_or_else(
@@ -1264,9 +1294,9 @@ fn recipient_owner_index(
     let following_relation=relation(candidate,following);
     let previous_gap=previous_relation.gap;
     let following_gap=following_relation.gap;
-    if following_gap.blank_lines>0 {return previous;}
+    if following_gap.blank_lines>0 {return retain("blank_line_before_following_anchor");}
     let next_distance=following_relation.line_delta.max(0) as usize;
-    if next_distance>3 {return previous;}
+    if next_distance>3 {return retain("following_anchor_outside_supported_range");}
     let has_nearby_address=events.iter().any(|e|
         e.kind=="address" && e.paragraph==candidate.paragraph
             && e.line.abs_diff(candidate.line)<=4
@@ -1274,19 +1304,84 @@ fn recipient_owner_index(
     // A phone just before the next name is not sufficient on its own.
     // A nearby Korean delivery address is independent corroboration.
     if matches!(candidate.kind,"phone"|"mobile") && !has_nearby_address {
-        return previous;
+        return retain("contact_without_independent_address");
     }
     let preceding_distance=previous_relation.line_delta.max(0) as usize;
-    let previous_score=(if preceding.paragraph==candidate.paragraph {80usize} else {0})
-        + 20usize.saturating_sub(preceding_distance.saturating_mul(5));
-    // Blank-line and content-line evidence are distinct. Their bounded
-    // adjustment must not override paragraph identity or address support.
-    let following_score=(80usize
-        + 20usize.saturating_sub(next_distance.saturating_mul(5))
-        + if has_nearby_address {20} else {0}
-        + previous_gap.blank_lines.min(2)*5)
-        .saturating_sub(following_gap.content_lines.min(2)*5);
-    if following_score >= previous_score+30 {previous+1} else {previous}
+    // Paragraph membership, blank boundary and corroborating address
+    // already decided eligibility above. Do not award the same evidence
+    // a second time. The old 80-point bonus made the comparison tautological
+    // (following >=75, previous <=20). After those hard gates, the next
+    // recipient owns the field. Distances remain explicit evidence for
+    // the later calibrated scoring stage, not a fabricated extra vote.
+    if let Some(log)=trace.as_mut(){log.push(json!({"kind":"recipientOwner",
+        "startByte":candidate.start,"endByte":candidate.end,"selected":previous+1,
+        "constraint":"supported_following_delivery_block","previousLineDistance":preceding_distance,
+        "followingLineDistance":next_distance,"previousBlankLines":previous_gap.blank_lines,
+        "followingContentLines":following_gap.content_lines}));}
+    previous+1
+}
+// Product ownership compares admissible anchors by writing direction and
+// then distance. The direction convention is established by the existing
+// leading-item evidence, and common items are handled separately.
+fn product_owner_index(anchors:&[usize],events:&[Evidence],offset:usize,leading:bool,
+    geometry:&SourceGeometry<'_>,features:Option<&features::DocumentFeatures<'_,'_,'_>>,
+    trace:&mut Option<Vec<Value>>)->usize{
+    if anchors.is_empty(){return 0;}
+    let boundary=anchors.partition_point(|&i|events[i].start<=offset);
+    let previous=boundary.saturating_sub(1);
+    let following=boundary.min(anchors.len()-1);
+    let relation=|idx:usize|features.map_or_else(
+        ||features::relation(geometry,offset,events[anchors[idx]].start),
+        |f|f.between(offset,events[anchors[idx]].start));
+    let origin=features::position(geometry,offset);
+    let rank=|idx:usize|{
+        let target=features::position(geometry,events[anchors[idx]].start);
+        let preferred=if leading{events[anchors[idx]].start>offset}else{events[anchors[idx]].start<=offset};
+        (preferred,std::cmp::Reverse(origin.scalar.abs_diff(target.scalar)))
+    };
+    let selected=if rank(following)>rank(previous){following}else{previous};
+    if let Some(log)=trace.as_mut(){
+        for idx in [previous,following].into_iter().enumerate().filter_map(|(i,idx)|(i==0||idx!=previous).then_some(idx)){
+            let r=relation(idx);
+            log.push(json!({"kind":"productOwner","startByte":offset,"candidateRecipient":idx,
+                "selected":idx==selected,"preferredDirection":rank(idx).0,
+                "lineDelta":r.line_delta,"characterDelta":r.scalar_delta,
+                "sameParagraph":r.same_paragraph}));
+        }
+    }
+    selected
+}
+fn unique_candidate(mut candidates:impl Iterator<Item=usize>)->Option<usize>{
+    let first=candidates.next()?;
+    candidates.next().is_none().then_some(first)
+}
+fn available_detached_quantity(events:&[Evidence],hits:&[ProductHit],anchors:&[usize],recipient:usize,index:usize)->bool{
+    let e=&events[index];
+    e.kind=="quantity"&&e.item_id.is_none()&&e.value.parse::<i64>().is_ok_and(|v|v>0)
+        &&owner_index(anchors,events,e.start)==recipient&&!hits.iter().any(|h|h.line==e.line)
+}
+fn select_quantity(hit:&ProductHit,events:&[Evidence],hits:&[ProductHit],anchors:&[usize],
+    recipient:usize,trace:&mut Option<Vec<Value>>)->Option<usize>{
+    let mut detached=events.iter().enumerate().filter_map(|(i,_)|
+        (available_detached_quantity(events,hits,anchors,recipient,i)&&!hit.quantities.contains(&i)).then_some(i));
+    let first=if hit.common{detached.next()}else{None};
+    let ambiguous=hit.common&&first.is_some()&&detached.next().is_some();
+    let explicit=unique_candidate(hit.quantities.iter().copied())
+        .filter(|&i|events[i].value.parse::<i64>().is_ok_and(|v|v>0))
+        .filter(|&i|events[i].item_id.is_none()||(hit.common&&hit.each));
+    let selected=if ambiguous{None}else if hit.common{
+        first.or_else(||hit.each.then_some(explicit).flatten())
+    }else{explicit};
+    if let Some(log)=trace.as_mut(){
+        for i in hit.quantities.iter().copied().chain(events.iter().enumerate().filter_map(|(i,_)|
+            (hit.common&&available_detached_quantity(events,hits,anchors,recipient,i)&&!hit.quantities.contains(&i)).then_some(i))){
+            log.push(json!({"kind":"quantityLink","productStartByte":events[hit.evidence].start,
+                "startByte":events[i].start,"endByte":events[i].end,"recipient":recipient,
+                "selected":selected==Some(i),"explicitEach":hit.each,"common":hit.common,
+                "ambiguous":ambiguous||hit.quantities.len()>1}));
+        }
+    }
+    selected
 }
 /// Original TypeScript resolvePrice for the recognition Item shape.
 /// The separate pricing migration remains authoritative for business rules.
@@ -1478,11 +1573,39 @@ fn dated_dispatch_instruction(text:&str)->bool{
     )).expect("dated dispatch instruction"));
     re.is_match(text)
 }
+fn validate_assignment_graph(raw:&str,events:&[Evidence],recipients:&[Value])->Result<(),String>{
+    let items=recipients.iter().enumerate().flat_map(|(idx,row)|
+        row["items"].as_array().into_iter().flatten().filter_map(move |v|
+            v["id"].as_str().map(|id|(idx,id)))).collect::<HashSet<_>>();
+    for e in events{
+        if e.start>e.end||raw.get(e.start..e.end).is_none(){
+            return Err("recognition produced an invalid source range".into());
+        }
+        match (e.recipient,e.item_id.as_deref()){
+            (Some(idx),item)=>{
+                recipients.get(idx).ok_or("recognition produced an invalid recipient assignment")?;
+                if let Some(item)=item{
+                    if !items.contains(&(idx,item)){
+                        return Err("recognition produced an invalid item assignment".into());
+                    }
+                }
+            }
+            (None,Some(_))=>return Err("recognition item assignment has no recipient".into()),
+            _=>{}
+        }
+    }
+    Ok(())
+}
 fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, String> {
+    analyze_with_trace(raw,state,client,false)
+}
+fn analyze_with_trace(raw:&str,state:&Value,client:Option<&Value>,include_trace:bool)->Result<Value,String>{
+    let mut trace=include_trace.then(Vec::<Value>::new);
     let client_id = client_id(client);
     let phone=phone_regex();
     let person_label=recipient_label();
     let mut search=ProductSearch::new(state,client_id);
+    search.trace=include_trace;
     let geometry=SourceGeometry::new(raw);
     let document=collect_document(&geometry,&phone,&person_label,&mut search);
     let shared_features=features::DocumentFeatures::build(&geometry,&document);
@@ -1572,7 +1695,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                 candidate.value.clone(),"배송주소 원문 구간");
         }
 
-        let name_span=project_name(line.text,&row.names[..row.legacy_name_count],&mut search);
+        let name_span=project_name(line.text,&row.names,row.legacy_name_count,&mut search,&mut trace);
         if let Some((begin,end))=name_span{
             let span=DocumentSpan::in_record(line,(begin,end));
             debug_assert!(document.contains_span("name",span));
@@ -1717,10 +1840,13 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     if anchors.is_empty() {
         anchors = events.iter().enumerate()
             .filter_map(|(i,e)| (e.kind=="address").then_some(i)).collect();
+        anchors.sort_by_key(|i|events[*i].start);
     }
     // If a document has only one unnamed destination, keep exactly one row.
     if anchors.is_empty() && raw.trim().is_empty() {
-        return Ok(json!({"recipients":[],"candidates":[],"unassigned":[]}));
+        let mut empty=json!({"recipients":[],"candidates":[],"unassigned":[]});
+        if include_trace{empty["decisionTrace"]=json!({"complete":true,"entries":[]});}
+        return Ok(empty);
     }
     let mut recipients: Vec<Value> = anchors.iter().enumerate().map(|(i,a)| {
         let e = &events[*a];
@@ -1733,7 +1859,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     let mut postcodes=vec![HashSet::<String>::new();recipients.len()];
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
-        let row_index = recipient_owner_index(&anchors,&events,index,&geometry,shared_features.as_ref());
+        let row_index = recipient_owner_index(&anchors,&events,index,&geometry,shared_features.as_ref(),&mut trace);
         let rid = recipients[row_index]["id"].as_str().unwrap_or("").to_owned();
         let e = &events[index];
         let kind = e.kind;
@@ -1806,6 +1932,8 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         }
         if let Some(address) = row["address"].as_str().filter(|s| !s.is_empty()) {
             let (kind,status,parts) = address_info(address);
+            if let Some(log)=trace.as_mut(){log.push(json!({"kind":"addressAssessment",
+                "recipientId":row["id"],"format":kind,"completeness":status,"directoryValidation":"NOT_CHECKED"}));}
             row["addressKind"] = json!(kind);
             row["addressStatus"] = json!(status);
             row["addressParts"] = parts;
@@ -1814,11 +1942,8 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     let has_leading = anchors.first().map_or(false, |a| product_hits.iter().any(|h|
         !h.common && events[h.evidence].start < events[*a].start));
     for hit in &product_hits {
-        let anchor_index = owner_index(&anchors,&events,events[hit.evidence].start);
-        let owner = if has_leading && !anchors.is_empty() {
-            anchors.iter().position(|a| events[*a].start > events[hit.evidence].start)
-                .unwrap_or(anchors.len()-1)
-        } else { anchor_index };
+        let owner=product_owner_index(&anchors,&events,events[hit.evidence].start,
+            has_leading,&geometry,shared_features.as_ref(),&mut trace);
         let attach_to: Vec<usize> = if hit.common {
             (0..recipients.len()).filter(|idx| recipients[*idx]["items"]
                 .as_array().map_or(true,|xs|xs.is_empty())).collect()
@@ -1832,17 +1957,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             // - common goods use a local detached quantity or an
             //   explicitly per-recipient ('각각'/'씩') source quantity
             // - a common document total must never be multiplied
-            let selected_qty = if hit.common {
-                events.iter().enumerate().find_map(|(qi,e)|
-                    (e.kind=="quantity" && e.item_id.is_none()
-                        && !hit.quantities.contains(&qi)
-                        && !product_hits.iter().any(|p|p.line==e.line)
-                        && owner_index(&anchors,&events,e.start)==idx).then_some(qi)
-                ).or_else(||(hit.each && hit.quantities.len()==1)
-                    .then(||hit.quantities[0]))
-            } else if hit.quantities.len()==1 {
-                Some(hit.quantities[0])
-            } else {None};
+            let selected_qty=select_quantity(hit,&events,&product_hits,&anchors,idx,&mut trace);
             let unique = selected_qty.is_some();
             let quantity_value = selected_qty
                 .and_then(|i|events[i].value.parse::<i64>().ok());
@@ -1986,16 +2101,20 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     // A detached quantity is attachable only when exactly one item and one quantity
     // are unresolved within the same recipient. Otherwise it stays visible as evidence.
     for idx in 0..recipients.len() {
-        let standalone: Vec<usize> = events.iter().enumerate().filter_map(|(i,e)|
-            (e.kind=="quantity" && e.item_id.is_none()
-                && owner_index(&anchors,&events,e.start)==idx
-                && !product_hits.iter().any(|h| h.line==e.line)).then_some(i)
+        let standalone: Vec<usize> = events.iter().enumerate().filter_map(|(i,_)|
+            available_detached_quantity(&events,&product_hits,&anchors,idx,i).then_some(i)
         ).collect();
         let pending: Vec<usize> = recipients[idx]["items"].as_array().expect("items")
             .iter().enumerate().filter_map(|(i,it)|it["quantity"].is_null().then_some(i)).collect();
-        if standalone.len()==1 && pending.len()==1 {
-            let q = standalone[0];
-            let item_idx = pending[0];
+        let detached_link=unique_candidate(standalone.iter().copied()).zip(unique_candidate(pending.iter().copied()));
+        if let Some(log)=trace.as_mut(){
+            for &q in &standalone{
+                log.push(json!({"kind":"detachedQuantityLink","startByte":events[q].start,
+                    "endByte":events[q].end,"recipient":idx,"pendingItems":pending.len(),
+                    "eligibleQuantityCount":standalone.len(),"selected":detached_link.is_some_and(|(i,_)|i==q)}));
+            }
+        }
+        if let Some((q,item_idx))=detached_link{
             let rid = recipients[idx]["id"].as_str().unwrap_or("").to_owned();
             let id = recipients[idx]["items"][item_idx]["id"].as_str().unwrap_or("").to_owned();
             if let Ok(value) = events[q].value.parse::<i64>() {
@@ -2011,6 +2130,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             }
         }
     }
+    validate_assignment_graph(raw,&events,&recipients)?;
     // Attach evidence to the outer rows, but do not fabricate product/quantity ownership.
     // Source order-evidence.ts sorts all evidence by source position before
     // assigning and returning candidates. A quantity inserted ahead of its
@@ -2042,7 +2162,31 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         }
         candidate
     }).collect();
-    Ok(json!({"recipients":recipients,"candidates":candidates,"unassigned":unassigned}))
+    let mut result=json!({"recipients":recipients,"candidates":candidates,"unassigned":unassigned});
+    if let Some(mut log)=trace{
+        // Every evaluated SKU probe is traceable back to its original
+        // occurrence, including repeated text at distinct coordinates.
+        for &(start,end) in &search.source_ranges{
+            if let Some(decision)=search.probes.get(&raw[start..end]).and_then(|p|p.evaluated.as_ref()){
+                if let Some(candidates)=decision.get("decisionTrace"){
+                    log.push(json!({"kind":"productCandidates","startByte":start,"endByte":end,
+                        "outcome":decision["match"]["kind"],"selectedProductId":decision["productId"],
+                        "candidates":candidates}));
+                }
+            }
+        }
+        // Preserve the disposition of every discovered candidate, including
+        // candidates that never reached a product evaluation or output field.
+        for c in &document.occurrences{
+            let projected=events.iter().any(|e|e.start==c.span.start&&e.end==c.span.end&&
+                (e.kind==c.kind||(e.kind=="product"&&matches!(c.kind,"registered"|"alias"|"color"|"semantic"))));
+            log.push(json!({"kind":"sourceCandidate","family":c.kind,
+                "startByte":c.span.start,"endByte":c.span.end,"productId":c.product,
+                "projectedSpan":projected}));
+        }
+        result["decisionTrace"]=json!({"complete":!document.incomplete,"entries":log});
+    }
+    Ok(result)
 }
 
 fn reanalyze(payload: &Value) -> Result<Value, String> {
@@ -2220,7 +2364,7 @@ mod tests {
         assert_eq!(rows[3].zone,SourceZone::Sender);
         assert_eq!(rows[3].contacts[0].value,"010-3456-7890");
         assert!(rows.iter().all(|r|r.line.text==&raw[r.line.start..r.line.start+r.line.text.len()]));
-        assert_eq!(project_name(rows[0].line.text,&rows[0].names,&mut search),None);
+        assert_eq!(project_name(rows[0].line.text,&rows[0].names,rows[0].names.len(),&mut search,&mut None),None);
         assert!(search.probes.get("GT-1").is_some_and(|p|p.evaluated.is_some()));
     }
     #[test]
@@ -2624,6 +2768,47 @@ mod tests {
         assert!(shared.repeats.iter().all(|r|r.span.end<=raw.len()));
         let line=&raw[raw.rfind("GT-1").unwrap()..];
         assert_eq!(search.decision(line)["productId"],"pgt");
+    }
+    #[test]
+    fn baseline_candidate_trace_does_not_change_business_result(){
+        let state=state();
+        let raw="수취인: 김가상\n서울특별시 마포구 월드컵로 20\nGT-1 2개";
+        let original=analyze(raw,&state,None).unwrap();
+        let mut diagnostic=analyze_with_trace(raw,&state,None,true).unwrap();
+        let trace=diagnostic.as_object_mut().unwrap().remove("decisionTrace").unwrap();
+        assert_eq!(original,diagnostic);
+        let entries=trace["entries"].as_array().unwrap();
+        for kind in ["name","recipientOwner","addressAssessment","productOwner","productCandidates","quantityLink","sourceCandidate"]{
+            assert!(entries.iter().any(|e|e["kind"]==kind),"{kind}");
+        }
+        assert!(entries.iter().any(|e|e["kind"]=="addressAssessment"&&e["directoryValidation"]=="NOT_CHECKED"));
+    }
+    #[test]
+    fn baseline_quantity_constraints_reject_ambiguous_and_reused_evidence(){
+        assert_eq!(unique_candidate([1,2].into_iter()),None);
+        assert_eq!(unique_candidate([1].into_iter()),Some(1));
+        let state=state();
+        let out=analyze("수취인: 김가상\nGT-1 2개 3개",&state,None).unwrap();
+        assert!(out["recipients"][0]["items"][0]["quantity"].is_null());
+        assert_eq!(out["recipients"][0]["items"][0]["quantityConfirmed"],false);
+    }
+    #[test]
+    fn assignment_graph_rejects_invalid_source_and_owner(){
+        let mut event=Evidence{kind:"quantity",value:"1".into(),start:0,end:1,line:0,
+            paragraph:0,reason:"test",recipient:Some(0),item_id:Some("missing".into())};
+        let recipients=vec![json!({"items":[{"id":"present"}]})];
+        assert!(validate_assignment_graph("1",&[event.clone()],&recipients).is_err());
+        event.item_id=Some("present".into());
+        assert!(validate_assignment_graph("1",&[event.clone()],&recipients).is_ok());
+        event.end=2;
+        assert!(validate_assignment_graph("1",&[event],&recipients).is_err());
+    }
+    #[test]
+    fn address_format_is_not_directory_validation(){
+        assert_eq!(address_format("서울특별시 마포구 월드컵로 20"),"ROAD");
+        assert_eq!(address_format("경기도 가상읍 20"),"LOT");
+        assert_eq!(address_completeness("가상로 20 #","ROAD"),"INCOMPLETE");
+        assert_eq!(address_completeness("가상 주소","UNKNOWN"),"INCOMPLETE");
     }
     #[test]
     fn contract_rejects_incomplete_state() {

@@ -16,6 +16,7 @@ pub(crate) struct Decision {
     pub(crate) candidates: Vec<Value>,
     pub(crate) alias_id: Option<String>,
     pub(crate) span: Option<(usize, usize)>,
+    trace: Option<Vec<Value>>,
 }
 
 fn str_field<'a>(v: &'a Value, name: &str) -> &'a str {
@@ -391,22 +392,25 @@ fn legacy_names<'a>(entries:&[Entry<'a>])->Vec<Entry<'a>>{
     let mut seen=HashSet::new();
     entries.iter().filter(|e|seen.insert(e.p as *const Value)).cloned().collect()
 }
+// Compare the existing evidence priorities lexicographically. A lower
+// priority cannot win by accumulating repeated occurrences or option points.
+// The component tuple is evaluated once per candidate, not on each filter.
+fn candidate_rank(text:&str,e:&Entry<'_>)->(u8,usize,usize){
+    (e.priority,if e.priority==2{
+        text[e.span.0..e.span.1].chars().filter(|c|!c.is_whitespace()).count()
+    }else{0},if e.priority>=2{option_score(text,e.p)}else{0})
+}
 fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
-    if entries.is_empty() { return entries; }
-    let priority = entries.iter().map(|e| e.priority).max().unwrap_or(0);
-    let mut xs: Vec<_> = entries.into_iter().filter(|e| e.priority == priority).collect();
-    if xs.len() > 1 && priority == 2 {
-        let max = xs.iter().map(|e| text[e.span.0..e.span.1]
-            .chars().filter(|c| !c.is_whitespace()).count()).max().unwrap_or(0);
-        xs.retain(|e| text[e.span.0..e.span.1].chars()
-            .filter(|c| !c.is_whitespace()).count() == max);
+    let priority=entries.iter().map(|entry|entry.priority).max().unwrap_or(0);
+    let mut best=None;
+    let mut winners=Vec::new();
+    for entry in entries.into_iter().filter(|entry|entry.priority==priority){
+        let rank=candidate_rank(text,&entry);
+        if best.is_none_or(|current|rank>current){best=Some(rank);winners.clear();}
+        if best==Some(rank){winners.push(entry);}
     }
-    if xs.len() > 1 && priority >= 2 {
-        let max = xs.iter().map(|e| option_score(text, e.p)).max().unwrap_or(0);
-        if max > 0 { xs.retain(|e| option_score(text, e.p) == max); }
-    }
-    if priority == 1 && xs.len() > 1 { return vec![]; }
-    xs
+    if best.is_some_and(|rank|rank.0==1)&&winners.len()>1{winners.clear();}
+    winners
 }
 fn name_entries<'a>(text: &str, mut entries: Vec<Entry<'a>>,
     verified: &HashSet<String>,written:&Option<String>) -> Vec<Entry<'a>> {
@@ -594,6 +598,9 @@ pub(crate) fn decide(text:&str,state:&Value,client_id:&str)->Decision{
     evaluate(text,&collect(text,state,client_id))
 }
 pub(super) fn evaluate(text:&str,hypotheses:&ProductHypotheses<'_>)->Decision{
+    evaluate_with_trace(text,hypotheses,false)
+}
+pub(super) fn evaluate_with_trace(text:&str,hypotheses:&ProductHypotheses<'_>,trace:bool)->Decision{
     let ProductHypotheses{verified,names,aliases,lead_spans,color_hints,color_codes,
         semantic,semantic_allowed,written,proof,branded,known_brand,..}=hypotheses;
     let mut hint=color_hints.first();
@@ -733,6 +740,45 @@ pub(super) fn evaluate(text:&str,hypotheses:&ProductHypotheses<'_>)->Decision{
     } else { (None,None,text.trim().to_owned(),"FACTORY".to_owned()) };
     let span = chosen.as_ref().map(|e|e.span)
         .or_else(|| available.first().map(|e|e.span));
+    // Diagnostic evidence is produced only on request; it does not
+    // change ranking or expose new default fields in the existing UI.
+    let candidate_trace=trace.then(||{
+        let mut out=Vec::new();
+        let mut seen=HashSet::new();
+        for (family,entry) in names.iter().map(|e|("registered",e))
+            .chain(color_codes.iter().map(|e|("color",e)))
+            .chain(semantic.iter().map(|e|("semantic",e))){
+            let id=str_field(entry.p,"id");
+            if !seen.insert((family,id,entry.span)){continue;}
+            out.push(json!({"family":family,"productId":id,"startByte":entry.span.0,
+                "endByte":entry.span.1,"rank":candidate_rank(text,entry),
+                "optionCompatible":qualifies(entry.p,proof,verified),
+                "colorCompatible":explicit.as_ref().is_none_or(|color|variants(entry.p).iter()
+                    .any(|v|norm_color(str_field(v,"color"))==*color)),
+                "inFinalPool":available.iter().any(|e|str_field(e.p,"id")==id),
+                "selectedIdentity":product_id.as_deref()==Some(id),
+                "semanticAllowed":family!="semantic"||*semantic_allowed}));
+        }
+        for a in aliases{
+            let id=str_field(a.product,"id");
+            for &(start,end) in &a.spans{
+                out.push(json!({"family":"alias","productId":id,"aliasId":str_field(a.alias,"id"),
+                    "startByte":start,"endByte":end,"clientSpecific":a.alias.get("clientId").and_then(Value::as_str).is_some(),
+                    "optionCompatible":qualifies(a.product,proof,verified),
+                    "colorCompatible":explicit.as_ref().is_none_or(|color|variants(a.product).iter()
+                        .any(|v|norm_color(str_field(v,"color"))==*color)),
+                    "inFinalPool":available.iter().any(|e|str_field(e.p,"id")==id),
+                    "selectedIdentity":product_id.as_deref()==Some(id)}));
+            }
+        }
+        for p in branded{
+            let id=str_field(p,"id");
+            out.push(json!({"family":"brand","productId":id,
+                "inFinalPool":available.iter().any(|e|str_field(e.p,"id")==id),
+                "selectedIdentity":product_id.as_deref()==Some(id)}));
+        }
+        out
+    });
     Decision {
         product_id, variant_id, name, color: explicit.unwrap_or_default(),
         origin, kind: kind.to_owned(),
@@ -740,11 +786,11 @@ pub(super) fn evaluate(text:&str,hypotheses:&ProductHypotheses<'_>)->Decision{
             .unwrap_or_else(|| span.map(|(a,b)| text[a..b].to_owned())
                 .unwrap_or_else(|| text.to_owned())),
         reason, candidates, alias_id: first_alias.map(|a|str_field(a,"id").to_owned()),
-        span,
+        span,trace:candidate_trace,
     }
 }
 pub(crate) fn decision_json(decision: &Decision) -> Value {
-    json!({
+    let mut result=json!({
         "productId": decision.product_id, "variantId":decision.variant_id,
         "name": decision.name, "color": decision.color,
         "match": { "kind":decision.kind, "term":decision.term,
@@ -755,13 +801,32 @@ pub(crate) fn decision_json(decision: &Decision) -> Value {
         "recognitionReason":decision.reason,
         "productCandidates":decision.candidates,
         "evidence":decision.span.map(|(start,end)| json!({"start":start,"end":end}))
-    })
+    });
+    if let Some(trace)=&decision.trace{result["decisionTrace"]=json!(trace);}
+    result
 }
 
 #[cfg(test)]
 mod option_boundary_tests {
     use super::*;
 
+    #[test]
+    fn product_rank_preserves_ties_and_explicit_constraints(){
+        let state=json!({"products":[
+            {"id":"a","name":"GT-1","variants":[{"id":"black","color":"Black"}]},
+            {"id":"b","name":"GT-1","variants":[{"id":"white","color":"White"}]}
+        ],"aliases":[]});
+        let raw="GT-1 화이트";
+        let pool=collect(raw,&state,"");
+        let decision=evaluate_with_trace(raw,&pool,true);
+        assert_eq!(decision.product_id.as_deref(),Some("b"));
+        let trace=decision.trace.as_ref().unwrap();
+        assert!(trace.iter().any(|c|c["productId"]=="a"&&c["colorCompatible"]==false));
+        assert!(trace.iter().any(|c|c["productId"]=="b"&&c["selectedIdentity"]==true));
+        let tie=evaluate("GT-1",&collect("GT-1",&state,""));
+        assert!(tie.product_id.is_none());
+        assert!(decision_json(&tie).get("decisionTrace").is_none());
+    }
     #[test]
     fn collected_candidate_families_cover_evaluated_identities(){
         let state=json!({"products":[
