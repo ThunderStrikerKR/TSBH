@@ -62,7 +62,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $repo "scripts\RUN_BANDO_HUB.cmd") -Destination $stage
     @(
         "BANDO HUB v$version - Windows x64",
-        "Extract the entire ZIP before use. Run RUN_BANDO_HUB.cmd.",
+        "Extract the entire ZIP before use. Run BANDO-HUB.exe directly (RUN_BANDO_HUB.cmd is optional).",
         "Keep the ocr folder next to BANDO-HUB.exe.",
         "Close the old app and back up existing business data before upgrading.",
         "This package does not contain, initialize or replace a business database.",

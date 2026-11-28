@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "production-direct-exe-write-defaults-20261128",
+  "baseline": "e2e6fcbaf45e2e5826a74be1c5f15102270bdbd3",
+  "scope": [
+    "standard Windows Release DB binding",
+    "client/product/shipping/settings/excel flags",
+    "factory reply polling via Excel flag",
+    "optional CMD"
+  ],
+  "patch": "defaults only after standard existing v2 database validation; preserve explicit flags, explicit alternate paths, HTTP/index and debug isolation; no working commit activation; no operational DB edits in this task",
+  "verification": {
+    "static": "source and diff review",
+    "unit": "tests added, not executed",
+    "ci": "NOT_VERIFIED",
+    "windows": "NOT_VERIFIED"
+  },
+  "remaining": "Rebuild package and test direct EXE with isolated copy of standard production v2 DB; missing DB and incompatible schema must not grant write flags."
+}

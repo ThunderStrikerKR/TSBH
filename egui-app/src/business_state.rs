@@ -178,8 +178,64 @@ pub fn bind_existing_tauri_database() -> Result<Option<PathBuf>,String>{
         return Err("기존 Tauri DB의 업무 스키마 버전이 지원되지 않습니다. 자동 변경하지 않았습니다.".into());
     }
     drop(connection);
+    reject_retired_workspace(&path)?;
     std::env::set_var("BANDO_EGUI_BUSINESS_DB",&path);
+    // Only the standard, existing Windows Release v2 database reaches here.
+    // Initialize absent launch flags before any workers start. Explicit
+    // disables, custom DBs, HTTP/index previews and debug isolation stay intact.
+    apply_production_write_defaults(
+        |name| std::env::var_os(name).is_some(),
+        |name| std::env::set_var(name,"1"),
+    );
     Ok(Some(path))
+}
+
+fn apply_production_write_defaults(
+    mut has_value:impl FnMut(&str)->bool,
+    mut enable:impl FnMut(&str),
+){
+    for name in [
+        "BANDO_EGUI_ENABLE_CLIENT_WRITE",
+        "BANDO_EGUI_ENABLE_PRODUCT_WRITE",
+        "BANDO_EGUI_ENABLE_SHIPPING_WRITE",
+        "BANDO_EGUI_ENABLE_SETTINGS_WRITE",
+        "BANDO_EGUI_ENABLE_EXCEL_WRITE",
+    ]{
+        if !has_value(name){enable(name);}
+    }
+}
+
+#[cfg(test)]
+mod production_launch_defaults_tests{
+    use super::apply_production_write_defaults;
+    #[test]
+    fn direct_release_launch_enables_all_five_missing_capabilities(){
+        let mut enabled=Vec::new();
+        apply_production_write_defaults(|_|false,|name|enabled.push(name.to_owned()));
+        assert_eq!(enabled,[
+            "BANDO_EGUI_ENABLE_CLIENT_WRITE",
+            "BANDO_EGUI_ENABLE_PRODUCT_WRITE",
+            "BANDO_EGUI_ENABLE_SHIPPING_WRITE",
+            "BANDO_EGUI_ENABLE_SETTINGS_WRITE",
+            "BANDO_EGUI_ENABLE_EXCEL_WRITE",
+        ]);
+    }
+    #[test]
+    fn explicit_flags_are_not_overwritten(){
+        let mut enabled=Vec::new();
+        apply_production_write_defaults(
+            |name|matches!(name,"BANDO_EGUI_ENABLE_PRODUCT_WRITE"|"BANDO_EGUI_ENABLE_EXCEL_WRITE"),
+            |name|enabled.push(name.to_owned()),
+        );
+        assert_eq!(enabled,[
+            "BANDO_EGUI_ENABLE_CLIENT_WRITE",
+            "BANDO_EGUI_ENABLE_SHIPPING_WRITE",
+            "BANDO_EGUI_ENABLE_SETTINGS_WRITE",
+        ]);
+        enabled.clear();
+        apply_production_write_defaults(|_|true,|name|enabled.push(name.to_owned()));
+        assert!(enabled.is_empty());
+    }
 }
 
 /// Client writes require a pre-existing explicitly bound business database.

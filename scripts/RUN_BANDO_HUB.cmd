@@ -1,17 +1,12 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-rem Production launcher: use the existing standard DB, never the developer TEST profile.
+rem Optional production launcher: the EXE initializes missing write flags after DB validation.
 set "BANDO_HUB_GATEWAY=local"
 set "BANDO_EGUI_BUSINESS_DB="
 set "BANDO_EGUI_CLIENT_INDEX="
 set "BANDO_EGUI_DEVELOPER_TEST="
 set "BANDO_EGUI_UI_SAMPLE_DATA=0"
-set "BANDO_EGUI_ENABLE_CLIENT_WRITE=1"
-set "BANDO_EGUI_ENABLE_PRODUCT_WRITE=1"
-set "BANDO_EGUI_ENABLE_SHIPPING_WRITE=1"
-set "BANDO_EGUI_ENABLE_SETTINGS_WRITE=1"
-set "BANDO_EGUI_ENABLE_EXCEL_WRITE=1"
 set "BANDO_EGUI_ENABLE_WORKING_COMMIT="
 set "BANDO_OCR_RUNTIME_DIR=%~dp0ocr"
 if not exist "%~dp0BANDO-HUB.exe" (
