@@ -42,7 +42,8 @@ PHASE02_TESTS = {
     "02-01": ("collected_candidate_families_cover_evaluated_identities",),
     "02-02": ("source_geometry_preserves_mixed_newlines_blank_lines_and_utf16",
               "physical_geometry_is_independent_of_record_partition",
-              "document_candidates_keep_all_absolute_source_spans"),
+              "document_candidates_keep_all_absolute_source_spans",
+              "physical_line_contexts_are_partition_invariant"),
     "02-03": ("product_hypotheses_survive_evaluation_and_cache_reuse",
               "common_lexical_candidates_precede_document_evaluation",
               "competing_information_types_survive_legacy_projection"),
@@ -96,8 +97,9 @@ def phase02_debt(sources):
             debt.append(f"{task}: {reason}")
     flag(bool(re.search(r"->\s*Vec\s*<\s*LineCandidates", collect)),
          "02-02", "collector returns record rows, not a unified document candidate batch")
-    flag("rows.get(i+1)" in collect or "rows[i-1]" in collect,
-         "02-02", "candidate adjacency depends on record-array position")
+    flag(bool(re.search(r"rows\s*\.\s*get\s*\(\s*i\s*\+\s*1|rows\s*\[\s*i\s*-\s*1", collect))
+         or call_count(collect, "physical_line_contexts") != 1,
+         "02-02", "candidate adjacency must use one physical-line context index")
     flag("row.note.is_none()" in collect or "row.explicit_name.is_none()" in collect
          or "row.zone!=SourceZone::Sender" in collect,
          "02-03", "legacy projection filters discovery by predicted information type")
@@ -254,6 +256,7 @@ def verify_discovery(listed, ignored, final, phase02=False):
         "product_probe_limit_reports_incomplete_collection",
         "common_lexical_candidates_precede_document_evaluation",
         "repeated_registered_terms_and_aliases_preserve_each_occurrence",
+        "physical_line_contexts_are_partition_invariant",
     ]
     if phase02 or final:
         required.extend(name for names in PHASE02_TESTS.values() for name in names)

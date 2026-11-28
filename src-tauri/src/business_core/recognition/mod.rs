@@ -819,6 +819,49 @@ impl<'a,'s> DocumentCandidates<'a,'s>{
             .any(|c|c.kind==kind)
     }
 }
+// A content row can contain multiple logical records. Reduce their
+// lexical signals by physical line before computing adjacency. A record
+// on the same physical line is never its preceding/following content line.
+#[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
+struct PhysicalLineSignals{
+    address:bool,
+    contact:bool,
+    label_only:bool,
+}
+#[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
+struct PhysicalLineContext{
+    near_delivery:bool,
+    after_label:bool,
+}
+fn physical_line_contexts(geometry:&SourceGeometry<'_>,rows:&[LineCandidates<'_>])
+    ->Vec<PhysicalLineContext>{
+    let mut signals=vec![PhysicalLineSignals::default();geometry.lines.len()];
+    for row in rows{
+        let line=&geometry.lines[row.line.number];
+        let signal=&mut signals[line.number];
+        signal.address|=row.raw_address.is_some();
+        signal.contact|=!row.contact_spans.is_empty();
+        // A label-only fragment is not a label-only physical line.
+        signal.label_only|=row.label_only&&row.line.start==line.start
+            &&row.line.text.len()==line.text.len();
+    }
+    let content=geometry.content_lines().map(|line|line.number).collect::<Vec<_>>();
+    let mut contexts=vec![PhysicalLineContext::default();geometry.lines.len()];
+    for (rank,&number) in content.iter().enumerate(){
+        let previous=rank.checked_sub(1).map(|i|content[i]);
+        let next=content.get(rank+1).copied();
+        let paragraph=geometry.lines[number].paragraph;
+        // Retain the existing two-physical-line delivery proximity rule
+        // and paragraph-end rule. Only the neighbor identity is changed.
+        let near_delivery=next.is_some_and(|n|n-number<=2
+            &&(signals[n].address||signals[n].contact))
+            ||(previous.is_some_and(|p|number-p<=2&&signals[p].contact)
+                &&next.is_none_or(|n|geometry.lines[n].paragraph!=paragraph));
+        contexts[number]=PhysicalLineContext{near_delivery,
+            after_label:previous.is_some_and(|p|signals[p].label_only)};
+    }
+    contexts
+}
 // All physical lines, including sender and unrecognized lines, survive
 // discovery. The old recipient projection may exclude them, but it no
 // longer determines which recipient proposals are discovered.
@@ -898,14 +941,10 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
             address_candidate,note,dispatch,address_detail,ignored,labelled_postcode,
             product_slices:HashMap::new()}
     }).collect::<Vec<_>>();
-    for i in 0..rows.len(){
-        let row=&rows[i];
+    let contexts=physical_line_contexts(geometry,&rows);
+    for row in &mut rows{
         let line=&row.line;
-        let near_delivery=rows.get(i+1).is_some_and(|next|
-            next.line.number<=line.number+2&&(next.raw_address.is_some()||!next.contact_spans.is_empty()))
-            ||(i>0&&line.number<=rows[i-1].line.number+2&&!rows[i-1].contact_spans.is_empty()
-                &&rows.get(i+1).is_none_or(|next|next.line.paragraph!=line.paragraph));
-        let after_label=i>0&&rows[i-1].label_only;
+        let PhysicalLineContext{near_delivery,after_label}=contexts[line.number];
         let text=line.text;
         let names=if let Some(span)=row.explicit_name{
             vec![NameProposal{span,requirement:NameRequirement::Structural}]
@@ -935,10 +974,10 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
             }
             search.prepare(line.text);
         }
-        rows[i].near_delivery=near_delivery;
-        rows[i].after_label=after_label;
-        rows[i].names=names;
-        rows[i].product_slices=slices;
+        row.near_delivery=near_delivery;
+        row.after_label=after_label;
+        row.names=names;
+        row.product_slices=slices;
     }
     DocumentCandidates::new(geometry,rows,search)
 }
@@ -2125,6 +2164,43 @@ mod tests {
             assert!(row.line.start+row.line.text.len()<=physical.start+physical.text.len());
         }
         assert_eq!(geometry.gap(0,2).blank_lines,1);
+    }
+    #[test]
+    fn physical_line_contexts_are_partition_invariant(){
+        let state=state();
+        let empty=json!({"products":[],"aliases":[]});
+        let raw="010-1234-5678\r\n709 2개 / GT-1 3개\r\n\r\n수취인: 김가상 010-2345-6789";
+        let geometry=SourceGeometry::new(raw);
+        let mut split_search=ProductSearch::new(&state,"");
+        let split=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut split_search);
+        let mut whole_search=ProductSearch::new(&empty,"");
+        let whole=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut whole_search);
+        assert_eq!(split.legacy_rows().iter().filter(|r|r.line.number==1).count(),2);
+        assert_eq!(whole.legacy_rows().iter().filter(|r|r.line.number==1).count(),1);
+        let split_contexts=physical_line_contexts(&geometry,split.legacy_rows());
+        let whole_contexts=physical_line_contexts(&geometry,whole.legacy_rows());
+        assert_eq!(split_contexts,whole_contexts);
+        assert!(split_contexts[1].near_delivery);
+        assert_eq!(split_contexts[2],PhysicalLineContext::default());
+        assert!(split.legacy_rows().iter().filter(|r|r.line.number==1)
+            .all(|r|r.near_delivery==split_contexts[1].near_delivery
+                &&r.after_label==split_contexts[1].after_label));
+        // A label's next content line remains the same across blank lines.
+        let label_raw="수취인:\n\n김가상\n010-2345-6789";
+        let label_geometry=SourceGeometry::new(label_raw);
+        let mut label_search=ProductSearch::new(&state,"");
+        let labels=collect_document(&label_geometry,&phone_regex(),&recipient_label(),&mut label_search);
+        let contexts=physical_line_contexts(&label_geometry,labels.legacy_rows());
+        assert!(contexts[2].after_label);
+        assert!(!contexts[3].after_label);
+        assert!(contexts[2].near_delivery);
+        // Two or more intervening blank lines must not look like a nearby
+        // delivery field merely because the non-empty row list is short.
+        let distant="가상 안내\n\n\n010-2345-6789";
+        let distant_geometry=SourceGeometry::new(distant);
+        let mut distant_search=ProductSearch::new(&state,"");
+        let doc=collect_document(&distant_geometry,&phone_regex(),&recipient_label(),&mut distant_search);
+        assert!(!physical_line_contexts(&distant_geometry,doc.legacy_rows())[0].near_delivery);
     }
     #[test]
     fn product_hypotheses_survive_evaluation_and_cache_reuse(){
