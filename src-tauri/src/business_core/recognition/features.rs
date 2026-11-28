@@ -356,7 +356,7 @@ mod tests{
                 let end=start+text.len();cursor=end;
                 DocumentOccurrence{span:DocumentSpan{start,end},kind,product,alias:None}
             }).collect();
-            let document=DocumentCandidates{rows:vec![],projected_rows:0,occurrences,incomplete:false};
+            let document=DocumentCandidates{rows:vec![],partitions:vec![],occurrences,incomplete:false};
             let features=DocumentFeatures::build(&geometry,&document).unwrap();
             assert_eq!(features.occurrences.len(),fields.len());
             assert_eq!(features.candidate_gap(0,1),Some((1,1)));

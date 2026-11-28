@@ -623,7 +623,7 @@ fn evaluate_product_probe(text:&str,pool:&model::ProductHypotheses<'_>,trace:boo
 }
 // Name eligibility is a constraint, not a vote against a competing SKU.
 // Compare eligible names by evidence family then stable source proposal order.
-fn project_name<'a>(line:&'a str,proposals:&[NameProposal],allowed:usize,
+fn project_name<'a>(line:&'a str,proposals:&[NameProposal],
     search:&mut ProductSearch<'a,'_>,trace:&mut Option<Vec<Value>>)->Option<(usize,usize)>{
     let mut best:Option<((u8,i64,usize),(usize,usize))>=None;
     for (i,proposal) in proposals.iter().enumerate(){
@@ -638,7 +638,7 @@ fn project_name<'a>(line:&'a str,proposals:&[NameProposal],allowed:usize,
         let rank=(tier,soft,usize::MAX-i);
         // An explicit name field or a structural label boundary cannot
         // be replaced by a competing unlabelled interpretation.
-        let eligible=i<allowed&&proposal.probe(line).is_none_or(|probe|{
+        let eligible=proposal.probe(line).is_none_or(|probe|{
             let decision=search.decision(probe);
             search.signal(probe,&decision)==matches!(proposal.requirement,NameRequirement::ProductPrefix(_))
         });
@@ -650,7 +650,7 @@ fn project_name<'a>(line:&'a str,proposals:&[NameProposal],allowed:usize,
         if eligible&&best.is_none_or(|(current,_)|rank>current){best=Some((rank,proposal.span));}
         // Stop only when no later eligible proposal could outrank this
         // evidence family. Diagnostic and normal modes select identically.
-        if eligible&&search.profile.baseline()&&trace.is_none()&&!proposals[i+1..allowed.min(proposals.len())].iter()
+        if eligible&&search.profile.baseline()&&trace.is_none()&&!proposals[i+1..].iter()
             .any(|next|match next.requirement{
                 NameRequirement::Structural=>rank.0<3,
                 NameRequirement::ProductPrefix(_)=>rank.0<2,
@@ -686,7 +686,7 @@ fn recipient_records<'a>(line:&RecordSlice<'a>,label:&Regex,phone:&Regex)->Optio
     Some(ranges.into_iter().map(|(a,b)|record_slice(line,a,b)).collect())
 }
 fn product_records<'a>(line:&RecordSlice<'a>,quantities:&[quantity::Quantity],
-    label:&Regex,phone:&Regex,search:&mut ProductSearch<'a,'_>)->Option<Vec<(RecordSlice<'a>,Vec<quantity::Quantity>)>>{
+    label:&Regex,phone:&Regex)->Option<Vec<(RecordSlice<'a>,Vec<quantity::Quantity>)>>{
     let text=line.text;
     if quantities.len()<2||quantities.len()>16||label.is_match(text)||phone.is_match(text)
         ||address_begin(text).is_some()||text.contains('|')||is_money_or_header(text)
@@ -701,10 +701,6 @@ fn product_records<'a>(line:&RecordSlice<'a>,quantities:&[quantity::Quantity],
             c.is_whitespace()||(i>0&&matches!(c,';'|'；'|'/'))).len();
         let begin=start+leading;
         if begin>=q.start||(i>0&&leading==0){return None;}
-        let segment=&text[begin..q.end];
-        search.prepare(segment);
-        let Some(probe)=search.probes.get(segment)else{return None;};
-        if !model::isolated_model_prefix(segment,q.start-begin,&probe.hypotheses){return None;}
         records.push((record_slice(line,begin,q.end),vec![quantity::Quantity{
             value:q.value,start:q.start-begin,end:q.end-begin}]));
         start=q.end;
@@ -713,6 +709,25 @@ fn product_records<'a>(line:&RecordSlice<'a>,quantities:&[quantity::Quantity],
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq,Hash)]
 enum SourceZone{Unspecified,Recipient,Sender,Common}
+#[derive(Clone,Copy)]
+enum BoundaryKind{Whole,DelimitedRecipients,ExplicitFields,ProductSequence}
+struct RecordPartition{
+    rows:Vec<usize>,
+    kind:BoundaryKind,
+    delimited:bool,
+}
+// The selected record and its resolved zone. Inherited sender context is
+// resolved from preceding selected headings, not rejected hypotheses.
+struct SelectedRecord<'d,'a>{
+    row:&'d LineCandidates<'a>,
+    zone:SourceZone,
+}
+type RecordCandidate<'a>=(RecordSlice<'a>,Vec<quantity::Quantity>,SourceZone);
+fn insert_record<'a>(records:&mut Vec<RecordCandidate<'a>>,seen:&mut HashMap<(usize,usize,SourceZone),usize>,
+    record:RecordCandidate<'a>)->usize{
+    let key=(record.0.start,record.0.text.len(),record.2);
+    *seen.entry(key).or_insert_with(||{let i=records.len();records.push(record);i})
+}
 fn common_item_hint(text:&str)->bool{
     Regex::new(r"공통|모두|전부|전원|각\s*수취인|같은\s*상품")
         .expect("common item").is_match(text)
@@ -817,8 +832,9 @@ struct LineCandidates<'a>{
     near_delivery:bool,
     after_label:bool,
     zone:SourceZone,
+    explicit_zone:Option<SourceZone>,
+    common_hint:bool,
     names:Vec<NameProposal>,
-    legacy_name_count:usize,
     contact_spans:Vec<(usize,usize)>,
     contacts:Vec<ContactCandidate>,
     quantities:Vec<quantity::Quantity>,
@@ -855,18 +871,18 @@ struct DocumentOccurrence<'s>{
     product:Option<&'s str>,
     alias:Option<&'s str>,
 }
-// Own the document's record view and positional candidate view together.
-// Legacy projection still consumes row-local values; later common analysis
-// can read this immutable occurrence index without parsing the source.
+// Own record hypotheses, competing partitions and the positional
+// candidate index together. Features and selection share this discovery
+// result; neither needs a second source parser.
 struct DocumentCandidates<'a,'s>{
     rows:Vec<LineCandidates<'a>>,
-    projected_rows:usize,
+    partitions:Vec<Vec<RecordPartition>>,
     occurrences:Vec<DocumentOccurrence<'s>>,
     incomplete:bool,
 }
 impl<'a,'s> DocumentCandidates<'a,'s>{
     fn new(geometry:&SourceGeometry<'a>,rows:Vec<LineCandidates<'a>>,
-        projected_rows:usize,search:&ProductSearch<'a,'s>)->Self{
+        partitions:Vec<Vec<RecordPartition>>,search:&ProductSearch<'a,'s>)->Self{
         let mut occurrences=BTreeSet::new();
         for row in &rows{
             let mut add=|kind,span|{
@@ -942,11 +958,73 @@ impl<'a,'s> DocumentCandidates<'a,'s>{
             if cursor<end{add_unknown(geometry.raw,cursor,end,&mut occurrences);}
             i=j;
         }
-        Self{rows,projected_rows,occurrences:occurrences.into_iter().collect(),incomplete:search.truncated}
+        Self{rows,partitions,occurrences:occurrences.into_iter().collect(),incomplete:search.truncated}
     }
-    // Keep existing projection call sites and tests as row views, not a
-    // separate collection pipeline.
-    fn legacy_rows(&self)->&[LineCandidates<'a>]{&self.rows[..self.projected_rows]}
+    // Choose a complete record partition after discovery from the same
+    // row pool that supplied the common features. Do not emit overlapping
+    // alternatives as independent orders.
+    fn selected_rows(&self,search:&ProductSearch<'a,'s>)->Vec<SelectedRecord<'_,'a>>{
+        let mut selected=Vec::new();
+        let mut sender_active=false;
+        for group in &self.partitions{
+            let rank=|partition:&RecordPartition|->Option<u8>{
+                match partition.kind{
+                    BoundaryKind::Whole=>Some(0),
+                    BoundaryKind::DelimitedRecipients=>{
+                        partition.rows.iter().all(|&i|{
+                            let r=&self.rows[i];
+                            r.explicit_name.is_some()&&(r.address.is_some()||!r.contact_spans.is_empty())
+                        }).then_some(3)
+                    },
+                    BoundaryKind::ExplicitFields=>{
+                        let supported=partition.rows.iter().all(|&i|{
+                            let r=&self.rows[i];
+                            if r.ignored||r.note.is_some(){return false;}
+                            match r.zone{
+                                SourceZone::Recipient=>r.explicit_name.is_some()
+                                    &&(partition.delimited||r.address.is_some()||!r.contacts.is_empty()),
+                                SourceZone::Sender=>r.line.text.split_once([':', '：'])
+                                    .is_some_and(|(_,v)|!v.trim().is_empty()),
+                                // An explicit common field establishes a boundary,
+                                // not a registered product identity.
+                                SourceZone::Common=>r.line.text.split_once([':', '：'])
+                                    .is_some_and(|(_,v)|!v.trim().is_empty()),
+                                SourceZone::Unspecified=>false,
+                            }
+                        });
+                        supported.then_some(2)
+                    },
+                    BoundaryKind::ProductSequence=>{
+                        partition.rows.iter().all(|&i|{
+                            let r=&self.rows[i];
+                            !sender_active&&r.quantities.len()==1
+                                &&search.probes.get(r.line.text).is_some_and(|p|
+                                    model::isolated_model_prefix(r.line.text,r.quantities[0].start,&p.hypotheses))
+                        }).then_some(1)
+                    },
+                }
+            };
+            let mut best=&group[0];
+            let mut score=0;
+            for partition in group{
+                if let Some(value)=rank(partition){
+                    if value>score{best=partition;score=value;}
+                }
+            }
+            for &i in &best.rows{
+                let row=&self.rows[i];
+                if row.explicit_zone==Some(SourceZone::Sender){sender_active=true;}
+                else if row.explicit_zone==Some(SourceZone::Recipient){sender_active=false;}
+                let zone=row.explicit_zone.unwrap_or_else(||{
+                    if sender_active{SourceZone::Sender}
+                    else if row.common_hint{SourceZone::Common}
+                    else{SourceZone::Unspecified}
+                });
+                selected.push(SelectedRecord{row,zone});
+            }
+        }
+        selected
+    }
     fn complete_occurrences(&self)->Option<&[DocumentOccurrence<'s>]>{
         (!self.incomplete).then_some(self.occurrences.as_slice())
     }
@@ -978,7 +1056,7 @@ struct PhysicalLineContext{
     near_delivery:bool,
     after_label:bool,
 }
-fn physical_line_contexts(geometry:&SourceGeometry<'_>,rows:&[LineCandidates<'_>])
+fn physical_line_contexts<'r,'a:'r>(geometry:&SourceGeometry<'_>,rows:impl IntoIterator<Item=&'r LineCandidates<'a>>)
     ->Vec<PhysicalLineContext>{
     let mut signals=vec![PhysicalLineSignals::default();geometry.lines.len()];
     for row in rows{
@@ -1007,9 +1085,8 @@ fn physical_line_contexts(geometry:&SourceGeometry<'_>,rows:&[LineCandidates<'_>
     }
     contexts
 }
-// All physical lines, including sender and unrecognized lines, survive
-// discovery. The old recipient projection may exclude them, but it no
-// longer determines which recipient proposals are discovered.
+// All physical lines and their hypotheses survive discovery. Explicit
+// field and inherited-zone candidates are evidence, not final ownership.
 fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Regex,
     search:&mut ProductSearch<'a,'s>)->DocumentCandidates<'a,'s>{
     search.source=Some(geometry.raw);
@@ -1020,7 +1097,8 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
     ).expect("note");
     let detail=Regex::new(r"\d+\s*(?:층|호)").expect("address detail");
     let mut records=Vec::new();
-    let mut alternatives=Vec::new();
+    let mut seen=HashMap::new();
+    let mut partitions=Vec::new();
     let field_marker=Regex::new(r"(?:수취인(?:명)?|수하인(?:명)?|수령자|받(?:는|으시는)\s*(?:분|사람)|송하인(?:명)?|보내는\s*(?:분|사람|곳)|공통(?:상품|품목)?)\s*[:：]").expect("zone marker");
     // Use one physical-line pass. Reuse each discovered quantity when a
     // bare product row is split; explicit recipient records are scanned
@@ -1036,35 +1114,50 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
             else if common_item_hint(text){SourceZone::Common}
             else{SourceZone::Unspecified};
         let quantities=search.quantities(text);
-        let start_index=records.len();
-        if !sender_section{
-            if let Some(parts)=recipient_records(&line,label,phone){
-                records.extend(parts.into_iter().map(|part|{
-                    let qs=search.quantities(part.text);
-                    (part,qs,SourceZone::Recipient)
-                }));
-            }else if let Some(parts)=product_records(&line,&quantities,label,phone,search){
-                records.extend(parts.into_iter().map(|(part,qs)|(part,qs,SourceZone::Unspecified)));
-            }
+        let whole=insert_record(&mut records,&mut seen,(line.clone(),quantities.clone(),zone));
+        let mut group=vec![RecordPartition{rows:vec![whole],kind:BoundaryKind::Whole,delimited:false}];
+        if let Some(parts)=recipient_records(&line,label,phone){
+            let ids=parts.into_iter().map(|part|{
+                let qs=search.quantities(part.text);
+                insert_record(&mut records,&mut seen,(part,qs,SourceZone::Recipient))
+            }).collect();
+            group.push(RecordPartition{rows:ids,kind:BoundaryKind::DelimitedRecipients,delimited:true});
         }
-        if records.len()==start_index{
-            records.push((line.clone(),quantities.clone(),zone));
-        }else{
-            alternatives.push((line.clone(),quantities.clone(),zone));
+        if let Some(parts)=product_records(&line,&quantities,label,phone){
+            let ids=parts.into_iter().map(|(part,qs)|
+                insert_record(&mut records,&mut seen,(part,qs,zone))).collect();
+            group.push(RecordPartition{rows:ids,kind:BoundaryKind::ProductSequence,delimited:false});
         }
         let markers=field_marker.find_iter(text).filter(|m|m.start()==0
             ||text[..m.start()].chars().next_back().is_some_and(|c|c.is_whitespace()||matches!(c,';'|'；'|'|'|'/')))
             .collect::<Vec<_>>();
+        let mut field_ids=Vec::new();
+        let mut all_delimited=true;
+        let mut last_zone=None;
         for (i,marker) in markers.iter().enumerate(){
             let end=markers.get(i+1).map_or(text.len(),|m|m.start());
             let trimmed=text[marker.start()..end].trim_end_matches(|c:char|c.is_whitespace()||matches!(c,';'|'；'|'|'|'/'));
+            if i+1<markers.len(){
+                all_delimited&=text[marker.start()+trimmed.len()..end].contains([';','；','/','|']);
+            }
             let part=record_slice(&line,marker.start(),marker.start()+trimmed.len());
             let part_zone=if sender.is_match(part.text){SourceZone::Sender}
                 else if label.is_match(part.text){SourceZone::Recipient}
                 else{SourceZone::Common};
+            if part_zone!=SourceZone::Common{last_zone=Some(part_zone);}
             let qs=search.quantities(part.text);
-            alternatives.push((part,qs,part_zone));
+            field_ids.push(insert_record(&mut records,&mut seen,(part,qs,part_zone)));
         }
+        // Embedded labels in a memo or an unlabelled prefix are only
+        // hypotheses, not permission to drop the prefix.
+        if field_ids.len()>1&&markers.first().is_some_and(|m|text[..m.start()].trim().is_empty())
+            &&!text.contains('|')&&!is_money_or_header(text)
+            &&!["메모:","메모：","메시지:","메세지:","비고:","비고：","요청사항:"]
+                .iter().any(|label|text.contains(label)){
+            group.push(RecordPartition{rows:field_ids,kind:BoundaryKind::ExplicitFields,delimited:all_delimited});
+            if let Some(last)=last_zone{sender_section=last==SourceZone::Sender;}
+        }
+        partitions.push(group);
         if quantities.len()>1&&!text.contains('|'){
             let mut begin=0;
             for qty in &quantities{
@@ -1076,16 +1169,13 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
                     let part=record_slice(&line,at,qty.end);
                     search.prepare(part.text);
                     if search.probes.get(part.text).is_some_and(|p|model::has_any_model_name(&p.hypotheses)){
-                        alternatives.push((part,vec![quantity::Quantity{value:qty.value,start:qty.start-at,end:qty.end-at}],zone));
+                        insert_record(&mut records,&mut seen,(part,vec![quantity::Quantity{value:qty.value,start:qty.start-at,end:qty.end-at}],zone));
                     }
                 }
                 begin=qty.end;
             }
         }
     }
-    let projected_rows=records.len();
-    let mut seen=records.iter().map(|(r,_,z)|(r.start,r.text.len(),*z)).collect::<HashSet<_>>();
-    records.extend(alternatives.into_iter().filter(|(r,_,z)|seen.insert((r.start,r.text.len(),*z))));
     let mut rows=records.into_iter().map(|(line,quantities,zone)|{
         let explicit_name=explicit_recipient_span(line.text,label,phone);
         let raw_address=address_begin(line.text);
@@ -1104,6 +1194,11 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
                 value:format!("{}-{}-{}",&c[1],&c[2],&c[3])});
         }
         let text=line.text.trim();
+        let explicit_zone=if sender.is_match(text){Some(SourceZone::Sender)}
+            else if label.find(line.text).is_some_and(|m|m.as_str().contains([':', '：'])){Some(SourceZone::Recipient)}
+            else if field_marker.find(text).is_some_and(|m|m.start()==0&&m.as_str().starts_with("공통")){Some(SourceZone::Common)}
+            else{None};
+        let common_hint=common_item_hint(text);
         let label_only=label.find(line.text).is_some_and(|m|line.text[m.end()..].trim().is_empty());
         let address_candidates=collect_address_candidates(line.text,raw_address,address,phone);
         let note=note_label.captures(line.text).and_then(|c|c.get(1)).map(|v|{
@@ -1117,18 +1212,17 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
         let ignored=is_money_or_header(text);
         let labelled_postcode=postcode::labelled_line(text).is_some();
         LineCandidates{line,raw_address,address,explicit_name,label_only,near_delivery:false,
-            after_label:false,zone,names:vec![],legacy_name_count:0,contact_spans,contacts,quantities,
+            after_label:false,zone,explicit_zone,common_hint,names:vec![],contact_spans,contacts,quantities,
             address_candidates,note,dispatch,address_detail,ignored,labelled_postcode,
             product_slices:HashMap::new(),model_before_address:false}
     }).collect::<Vec<_>>();
-    let contexts=physical_line_contexts(geometry,&rows[..projected_rows]);
+    let contexts=physical_line_contexts(geometry,&rows);
     for row in &mut rows{
         let line=&row.line;
         let PhysicalLineContext{near_delivery,after_label}=contexts[line.number];
         let text=line.text;
         let alternatives=recipient_proposals(text,row.address,row.contact_spans.first().map(|s|s.0),near_delivery,search);
-        // Keep the historical name projection order, but do not discard
-        // other proposals when a label already provides a preferred name.
+        // Explicit labels are an evidence tier, not a truncated candidate list.
         let mut names=if let Some(span)=row.explicit_name{
             vec![NameProposal{span,requirement:NameRequirement::Structural}]
         }else if after_label&&row.address.is_none()&&row.contact_spans.is_empty()&&!other_recipient_field(text.trim()){
@@ -1136,7 +1230,6 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
         }else{
             alternatives.clone()
         };
-        row.legacy_name_count=names.len();
         for proposal in alternatives{
             if !names.iter().any(|p|p.span==proposal.span&&p.requirement==proposal.requirement){
                 names.push(proposal);
@@ -1168,7 +1261,7 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
         row.names=names;
         row.product_slices=slices;
     }
-    DocumentCandidates::new(geometry,rows,projected_rows,search)
+    DocumentCandidates::new(geometry,rows,partitions,search)
 }
 fn is_money_or_header(text: &str) -> bool { ts_semantics::ignored_document_line(text) }
 fn product_signal(text: &str, decision: &Value, has_quantity:bool) -> bool {
@@ -1659,7 +1752,7 @@ fn analyze_with_profile(raw:&str,state:&Value,client:Option<&Value>,include_trac
     let shared_features=features::DocumentFeatures::build(&geometry,&document);
     let profile=if shared_features.is_some(){profile}else{weights::BASELINE};
     search.profile=profile;
-    let rows=document.legacy_rows();
+    let rows=document.selected_rows(&search);
     // This is only the cache-completeness signal, not certification that
     // all competing record/zone/type hypotheses have been discovered.
     debug_assert_eq!(document.incomplete,search.truncated);
@@ -1667,13 +1760,14 @@ fn analyze_with_profile(raw:&str,state:&Value,client:Option<&Value>,include_trac
     let mut events:Vec<Evidence>=Vec::new();
     let mut product_hits:Vec<ProductHit>=Vec::new();
     let mut note_continuation: Option<usize>=None;
-    for row in rows{
+    for selection in &rows{
+        let row=selection.row;
         let line=&row.line;
         let text=line.text.trim();
         let explicit_name=row.explicit_name;
         let near_delivery=row.near_delivery;
         let after_label=row.after_label;
-        if row.zone==SourceZone::Sender{continue;}
+        if selection.zone==SourceZone::Sender{continue;}
         if row.labelled_postcode {
             note_continuation=None;
             continue;
@@ -1735,17 +1829,22 @@ fn analyze_with_profile(raw:&str,state:&Value,client:Option<&Value>,include_trac
         }
 
         let address=row.address;
-        // Only the legacy preferred range is projected into the current
-        // order. Other source-grounded ranges remain in the document pool.
-        if let Some(candidate)=address.and_then(|start|row.address_candidates.iter()
-            .find(|candidate|candidate.span.0==start)){
+        // Independent recipient boundaries are handled by partition
+        // selection. Prefer the explicit address start and full extent;
+        // an ambiguous second address alone cannot create a recipient.
+        if let Some(candidate)=row.address_candidates.iter()
+            .filter(|c|address.is_some_and(|a|c.span.0>=a))
+            .max_by_key(|c|(address==Some(c.span.0),c.span.1-c.span.0)){
             let span=DocumentSpan::in_record(line,candidate.span);
             debug_assert!(document.contains_span("address",span));
             add_match(&mut events,line,candidate.span.0,candidate.span.1,"address",
                 candidate.value.clone(),"배송주소 원문 구간");
         }
 
-        let name_span=project_name(line.text,&row.names,row.legacy_name_count,&mut search,&mut trace);
+        // A common-product label owns the field, not a recipient name.
+        // Keep its competing name hypotheses in the shared document pool.
+        let name_span=if row.explicit_zone==Some(SourceZone::Common){None}
+            else{project_name(line.text,&row.names,&mut search,&mut trace)};
         if let Some((begin,end))=name_span{
             let span=DocumentSpan::in_record(line,(begin,end));
             debug_assert!(document.contains_span("name",span));
@@ -1776,7 +1875,7 @@ fn analyze_with_profile(raw:&str,state:&Value,client:Option<&Value>,include_trac
         if address.is_some()&&!row.model_before_address{continue;}
         let Some(slice)=row.product_slices.get(&name_span)else{continue;};
         let trimmed=slice.text;
-        // Preserve legacy product eligibility at selection, not collection.
+        // Protect explicit non-product fields at selection, not collection.
         if is_money_or_header(trimmed)
             ||(trimmed.contains('|')&&trimmed.split('|').any(|c|matches!(c.trim(),"배송비"|"택배비"|"운임"))){
             continue;
@@ -1837,7 +1936,7 @@ fn analyze_with_profile(raw:&str,state:&Value,client:Option<&Value>,include_trac
             evidence:product_evidence,source_start:line.start+offset,
             line:line.number,raw:original_product_line.to_owned(),
             decision:matched,quantities:quantity_indexes,
-            common:common_item_hint(trimmed),
+            common:selection.zone==SourceZone::Common||common_item_hint(trimmed),
             // order-evidence.ts:358-368: a common total is not a
             // per-recipient quantity without explicit 'each' evidence.
             each:Regex::new(r"(?i)(?:각각?|수취인마다|한\s*분당).*(?:\d+|한|두|세)\s*(?:개|대)|씩")
@@ -1859,8 +1958,9 @@ fn analyze_with_profile(raw:&str,state:&Value,client:Option<&Value>,include_trac
         }
     }
     // A generic quantity line is evidence but cannot itself prove which SKU was ordered.
-    for row in rows{
-        if row.zone==SourceZone::Sender{continue;}
+    for selection in &rows{
+        if selection.zone==SourceZone::Sender{continue;}
+        let row=selection.row;
         let line=&row.line;
         if events.iter().any(|e| e.kind == "quantity" && e.start>=line.start
             && e.end<=line.start+line.text.len()) { continue; }
@@ -2430,7 +2530,7 @@ mod tests {
         let raw="GT-1 010-1234-5678\n709 2개 김가상 010-2345-6789\n송하인: 가상상사\n010-3456-7890";
         let mut search=ProductSearch::new(&state,"");
         let document=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
-        let rows=document.legacy_rows();
+        let rows=document.selected_rows(&search).into_iter().map(|r|r.row).collect::<Vec<_>>();
         assert_eq!(rows.len(),4);
         assert_eq!(&rows[0].line.text[rows[0].names[0].span.0..rows[0].names[0].span.1],"GT-1");
         assert_eq!(rows[0].names[0].requirement,NameRequirement::NotProduct);
@@ -2441,7 +2541,7 @@ mod tests {
         assert_eq!(rows[3].zone,SourceZone::Sender);
         assert_eq!(rows[3].contacts[0].value,"010-3456-7890");
         assert!(rows.iter().all(|r|r.line.text==&raw[r.line.start..r.line.start+r.line.text.len()]));
-        assert_eq!(project_name(rows[0].line.text,&rows[0].names,rows[0].names.len(),&mut search,&mut None),None);
+        assert_eq!(project_name(rows[0].line.text,&rows[0].names,&mut search,&mut None),None);
         assert!(search.probes.get("GT-1").is_some_and(|p|p.evaluated.is_some()));
     }
     #[test]
@@ -2450,7 +2550,7 @@ mod tests {
         let raw="수취인: 김가상 010-1234-5678； 수취인: 이가상 010-2345-6789";
         let mut search=ProductSearch::new(&state,"");
         let document=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
-        let rows=document.legacy_rows();
+        let rows=document.selected_rows(&search).into_iter().map(|r|r.row).collect::<Vec<_>>();
         assert_eq!(rows.len(),2);
         assert_eq!(rows[0].line.number,rows[1].line.number);
         assert!(rows[0].line.start<rows[1].line.start);
@@ -2476,7 +2576,7 @@ mod tests {
         let raw="709 2개 / GT-1 3개";
         let mut search=ProductSearch::new(&state,"");
         let document=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
-        let rows=document.legacy_rows();
+        let rows=document.selected_rows(&search).into_iter().map(|r|r.row).collect::<Vec<_>>();
         assert_eq!(rows.len(),2);
         assert_eq!(rows[0].line.number,rows[1].line.number);
         assert!(search.probes.values().all(|p|p.evaluated.is_none()));
@@ -2489,7 +2589,7 @@ mod tests {
         assert_eq!(items[1]["quantity"],3);
         let ambiguous="709 2개 구성 / GT-1 3개";
         let mut other=ProductSearch::new(&state,"");
-        assert_eq!(collect_document(&SourceGeometry::new(ambiguous),&phone_regex(),&recipient_label(),&mut other).legacy_rows().len(),1);
+        assert_eq!(collect_document(&SourceGeometry::new(ambiguous),&phone_regex(),&recipient_label(),&mut other).selected_rows(&other).len(),1);
     }
     #[test]
     fn sender_candidates_survive_discovery_without_leaking_into_recipient_projection(){
@@ -2497,10 +2597,11 @@ mod tests {
         let raw="송하인: 가상상사\n010-1111-2222\n2개\n수취인: 김가상 010-2345-6789\n709 1개";
         let mut search=ProductSearch::new(&state,"");
         let document=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
-        let rows=document.legacy_rows();
-        assert_eq!(rows[1].zone,SourceZone::Sender);
+        let rows=document.selected_rows(&search).into_iter().map(|r|r.row).collect::<Vec<_>>();
+        let selected=document.selected_rows(&search);
+        assert_eq!(selected[1].zone,SourceZone::Sender);
         assert_eq!(rows[2].quantities[0].value,2);
-        assert_eq!(rows[3].zone,SourceZone::Recipient);
+        assert_eq!(selected[3].zone,SourceZone::Recipient);
         let result=analyze(raw,&state,None).unwrap();
         let r=&result["recipients"][0];
         assert_eq!(r["name"],"김가상");
@@ -2530,7 +2631,7 @@ mod tests {
             c.kind=="registered"&&c.product==Some("pgt"))
             .map(|c|c.span).collect::<BTreeSet<_>>();
         assert_eq!(actual,expected);
-        for row in document.legacy_rows(){
+        for row in document.selected_rows(&search).into_iter().map(|r|r.row){
             assert!(search.probes.contains_key(row.line.text));
         }
         let result=analyze(raw,&state,None).unwrap();
@@ -2555,7 +2656,7 @@ mod tests {
         let geometry=SourceGeometry::new(&raw);
         let mut search=ProductSearch::new(&state,"");
         let document=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut search);
-        let row=&document.legacy_rows()[1];
+        let row=document.selected_rows(&search)[1].row;
         assert_eq!(row.address_candidates[0].value,format!("{first} / 주소: {second}"));
         for expected in [first,second]{
             let start=raw.find(expected).unwrap();
@@ -2601,7 +2702,7 @@ mod tests {
         let geometry=SourceGeometry::new(raw);
         let mut search=ProductSearch::new(&state,"");
         let document=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut search);
-        let rows=document.legacy_rows();
+        let rows=document.selected_rows(&search).into_iter().map(|r|r.row).collect::<Vec<_>>();
         assert_eq!(geometry.lines.len(),3);
         assert_eq!(rows.len(),4);
         assert_eq!(rows.iter().map(|row|row.line.number).collect::<Vec<_>>(),vec![0,0,2,2]);
@@ -2622,22 +2723,22 @@ mod tests {
         let split=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut split_search);
         let mut whole_search=ProductSearch::new(&empty,"");
         let whole=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut whole_search);
-        assert_eq!(split.legacy_rows().iter().filter(|r|r.line.number==1).count(),2);
-        assert_eq!(whole.legacy_rows().iter().filter(|r|r.line.number==1).count(),1);
-        let split_contexts=physical_line_contexts(&geometry,split.legacy_rows());
-        let whole_contexts=physical_line_contexts(&geometry,whole.legacy_rows());
+        assert_eq!(split.selected_rows(&split_search).iter().filter(|r|r.row.line.number==1).count(),2);
+        assert_eq!(whole.selected_rows(&whole_search).iter().filter(|r|r.row.line.number==1).count(),1);
+        let split_contexts=physical_line_contexts(&geometry,split.selected_rows(&split_search).into_iter().map(|r|r.row));
+        let whole_contexts=physical_line_contexts(&geometry,whole.selected_rows(&whole_search).into_iter().map(|r|r.row));
         assert_eq!(split_contexts,whole_contexts);
         assert!(split_contexts[1].near_delivery);
         assert_eq!(split_contexts[2],PhysicalLineContext::default());
-        assert!(split.legacy_rows().iter().filter(|r|r.line.number==1)
-            .all(|r|r.near_delivery==split_contexts[1].near_delivery
-                &&r.after_label==split_contexts[1].after_label));
+        assert!(split.selected_rows(&split_search).iter().filter(|r|r.row.line.number==1)
+            .all(|r|r.row.near_delivery==split_contexts[1].near_delivery
+                &&r.row.after_label==split_contexts[1].after_label));
         // A label's next content line remains the same across blank lines.
         let label_raw="수취인:\n\n김가상\n010-2345-6789";
         let label_geometry=SourceGeometry::new(label_raw);
         let mut label_search=ProductSearch::new(&state,"");
         let labels=collect_document(&label_geometry,&phone_regex(),&recipient_label(),&mut label_search);
-        let contexts=physical_line_contexts(&label_geometry,labels.legacy_rows());
+        let contexts=physical_line_contexts(&label_geometry,labels.selected_rows(&label_search).into_iter().map(|r|r.row));
         assert!(contexts[2].after_label);
         assert!(!contexts[3].after_label);
         assert!(contexts[2].near_delivery);
@@ -2647,7 +2748,7 @@ mod tests {
         let distant_geometry=SourceGeometry::new(distant);
         let mut distant_search=ProductSearch::new(&state,"");
         let doc=collect_document(&distant_geometry,&phone_regex(),&recipient_label(),&mut distant_search);
-        assert!(!physical_line_contexts(&distant_geometry,doc.legacy_rows())[0].near_delivery);
+        assert!(!physical_line_contexts(&distant_geometry,doc.selected_rows(&distant_search).into_iter().map(|r|r.row))[0].near_delivery);
     }
     #[test]
     fn product_hypotheses_survive_evaluation_and_cache_reuse(){
@@ -2684,7 +2785,7 @@ mod tests {
         let geometry=SourceGeometry::new(raw);
         let mut search=ProductSearch::new(&state,"");
         let document=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut search);
-        let rows=document.legacy_rows();
+        let rows=document.selected_rows(&search).into_iter().map(|r|r.row).collect::<Vec<_>>();
         assert!(search.probes.values().all(|p|p.evaluated.is_none()));
         let address=rows[0].address_candidates.first().unwrap();
         assert_eq!(address.value,"서울특별시 마포구 월드컵로 20");
@@ -2738,7 +2839,7 @@ mod tests {
         let raw="수취인: 김가상 010-1234-5678； 수취인: 이가상 010-2345-6789";
         let mut search=ProductSearch::new(&state,"");
         let document=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
-        assert_eq!(document.legacy_rows().len(),2);
+        assert_eq!(document.selected_rows(&search).len(),2);
         assert!(document.contains_span("record_boundary",DocumentSpan{start:0,end:raw.len()}));
         for name in ["김가상","이가상"]{
             let start=raw.find(name).unwrap();
@@ -2751,7 +2852,7 @@ mod tests {
         let raw="709 2개 구성 / GT-1 3개";
         let mut search=ProductSearch::new(&state,"");
         let document=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
-        assert_eq!(document.legacy_rows().len(),1);
+        assert_eq!(document.selected_rows(&search).len(),1);
         for term in ["709 2개","GT-1 3개"]{
             let start=raw.find(term).unwrap();
             assert!(document.contains_span("record_boundary",DocumentSpan{start,end:start+term.len()}));
@@ -2809,7 +2910,7 @@ mod tests {
         let doc=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
         let probes=search.probes.len();
         let quantities=search.quantity_cache.len();
-        for row in doc.legacy_rows(){
+        for row in doc.selected_rows(&search).into_iter().map(|r|r.row){
             let decision=search.decision(row.line.text);
             assert_eq!(decision["productId"],"pgt");
             assert!(search.signal(row.line.text,&decision));
@@ -2907,6 +3008,49 @@ mod tests {
             assert_eq!(key["pattern"],structure["pattern"]);
             assert_eq!(fact["counts"]["independentOrders"],1);
         }
+    }
+    #[test]
+    fn explicit_mixed_zone_partition_changes_actual_selection(){
+        let state=state();
+        let raw="송하인: 가상상사 010-1111-2222; 수취인: 김가상 010-2345-6789; 공통: GT-1 2개씩\n서울특별시 마포구 월드컵로 20";
+        let geometry=SourceGeometry::new(raw);
+        let mut search=ProductSearch::new(&state,"");
+        let document=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut search);
+        assert!(document.partitions[0].len()>1);
+        assert!(search.probes.values().all(|p|p.evaluated.is_none()));
+        let selected=document.selected_rows(&search);
+        assert_eq!(selected.iter().map(|r|r.zone).collect::<Vec<_>>(),
+            vec![SourceZone::Sender,SourceZone::Recipient,SourceZone::Common,SourceZone::Unspecified]);
+        let out=analyze(raw,&state,None).unwrap();
+        assert_eq!(out["recipients"].as_array().unwrap().len(),1);
+        assert_eq!(out["recipients"][0]["name"],"김가상");
+        assert_eq!(out["recipients"][0]["mobile"],"010-2345-6789");
+        assert_eq!(out["recipients"][0]["items"][0]["productId"],"pgt");
+        assert_eq!(out["recipients"][0]["items"][0]["quantity"],2);
+        assert_eq!(out["recipients"][0]["address"],"서울특별시 마포구 월드컵로 20");
+        assert!(!out["candidates"].as_array().unwrap().iter().any(|c|c["text"]=="010-1111-2222"));
+    }
+    #[test]
+    fn explicit_recipient_boundaries_without_semicolon_reach_output(){
+        let state=state();
+        let raw="수취인: 김가상 010-1234-5678 수취인: 이가상 010-2345-6789";
+        let out=analyze(raw,&state,None).unwrap();
+        let rows=out["recipients"].as_array().unwrap();
+        assert_eq!(rows.len(),2);
+        assert_eq!(rows[0]["name"],"김가상");
+        assert_eq!(rows[1]["name"],"이가상");
+        assert_eq!(rows[0]["mobile"],"010-1234-5678");
+        assert_eq!(rows[1]["mobile"],"010-2345-6789");
+    }
+    #[test]
+    fn a_competing_label_inside_memo_does_not_create_recipient(){
+        let state=state();
+        let raw="수취인: 김가상 010-1234-5678\n메모: 수취인: 이가상 010-2345-6789; 공통: GT-1 2개";
+        let out=analyze(raw,&state,None).unwrap();
+        let rows=out["recipients"].as_array().unwrap();
+        assert_eq!(rows.len(),1);
+        assert_eq!(rows[0]["name"],"김가상");
+        assert!(rows[0]["items"].as_array().unwrap().is_empty());
     }
     #[test]
     fn contract_rejects_incomplete_state() {
