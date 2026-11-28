@@ -45,7 +45,10 @@ pub fn record_file_error(conn:&Connection,id:&str,filename:&str,at:&str,detail:&
         "tone":"error","title":"공장 회신 파일 처리 실패","detail":format!("{filename}\n{detail}"),"filename":filename}))
 }
 pub fn load(conn:&Connection)->Result<Vec<Value>,String>{
-    initialize(conn)?;
+    let exists:bool=conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='hub_notifications')",
+        [],|row|row.get(0)).map_err(err)?;
+    if !exists{return Ok(Vec::new());}
     let mut stmt=conn.prepare("SELECT payload,read FROM hub_notifications
         WHERE json_extract(payload,'$.source')='공장 회신'
         AND COALESCE(json_extract(payload,'$.dismissed'),0)=0 ORDER BY rowid DESC").map_err(err)?;
@@ -72,6 +75,18 @@ pub fn dismiss(conn:&Connection,id:Option<&str>)->Result<(),String>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn load_does_not_create_or_modify_notification_storage(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA query_only=ON;").unwrap();
+        assert!(load(&conn).unwrap().is_empty());
+        let count:i64=conn.query_row("SELECT count(*) FROM sqlite_master WHERE name='hub_notifications'",[],|r|r.get(0)).unwrap();
+        assert_eq!(count,0);
+        conn.execute_batch("PRAGMA query_only=OFF;").unwrap();
+        record_file_error(&conn,"sample","reply.xlsx","2026-11-28","합성 오류").unwrap();
+        conn.execute_batch("PRAGMA query_only=ON;").unwrap();
+        assert_eq!(load(&conn).unwrap().len(),1);
+    }
     #[test]
     fn every_business_hold_is_visible_unread_and_deduplicated(){
         let conn=Connection::open_in_memory().unwrap();

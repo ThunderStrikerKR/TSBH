@@ -156,13 +156,12 @@ pub fn bind_existing_tauri_database() -> Result<Option<PathBuf>,String>{
         .is_some_and(|v|!v.is_empty()){
         return Ok(None);
     }
-    let Some(roaming)=std::env::var_os("APPDATA").filter(|v|!v.is_empty()) else{
-        return Ok(None);
-    };
     if cfg!(debug_assertions){return Ok(None);}
+    let roaming=std::env::var_os("APPDATA").filter(|v|!v.is_empty())
+        .ok_or("운영 데이터 폴더를 확인할 수 없습니다. 기존 업무 데이터를 확인해 주세요.")?;
     let path=tauri_database_path(std::path::Path::new(&roaming))?;
     if !path.is_file(){
-        return Ok(None);
+        return Err("기존 운영 DB가 없습니다. 백업 및 기존 데이터 위치를 확인해 주세요. 새 업무 DB를 생성하지 않았습니다.".into());
     }
     // A malformed existing file is NOT a reason to silently load a preview
     // seed. Fail here without touching it; Tauri owns all migrations.
@@ -190,18 +189,37 @@ pub fn bind_existing_tauri_database() -> Result<Option<PathBuf>,String>{
     Ok(Some(path))
 }
 
+const PRODUCTION_WRITE_FLAGS:[(&str,&str);5]=[
+    ("BANDO_EGUI_ENABLE_CLIENT_WRITE","거래처 관리"),
+    ("BANDO_EGUI_ENABLE_PRODUCT_WRITE","상품 관리"),
+    ("BANDO_EGUI_ENABLE_SHIPPING_WRITE","운임 관리"),
+    ("BANDO_EGUI_ENABLE_SETTINGS_WRITE","설정 관리"),
+    ("BANDO_EGUI_ENABLE_EXCEL_WRITE","Excel 관리"),
+];
+
 fn apply_production_write_defaults(
     mut has_value:impl FnMut(&str)->bool,
     mut enable:impl FnMut(&str),
 ){
-    for name in [
-        "BANDO_EGUI_ENABLE_CLIENT_WRITE",
-        "BANDO_EGUI_ENABLE_PRODUCT_WRITE",
-        "BANDO_EGUI_ENABLE_SHIPPING_WRITE",
-        "BANDO_EGUI_ENABLE_SETTINGS_WRITE",
-        "BANDO_EGUI_ENABLE_EXCEL_WRITE",
-    ]{
+    for (name,_) in PRODUCTION_WRITE_FLAGS{
         if !has_value(name){enable(name);}
+    }
+}
+
+/// Session-only explanation, not a persisted factory reply or a write grant.
+pub(crate) fn production_write_warning()->Option<String>{
+    if !cfg!(windows)||cfg!(debug_assertions)||
+        std::env::var("BANDO_HUB_GATEWAY").ok().is_some_and(|mode|mode.trim().eq_ignore_ascii_case("http")){
+        return None;
+    }
+    if let Err(reason)=authorized_business_write_path(){
+        return Some(format!("업무 기능 수정 제한: {reason}"));
+    }
+    let blocked=PRODUCTION_WRITE_FLAGS.iter().filter_map(|(name,label)|
+        (std::env::var(name).ok().as_deref()!=Some("1")).then_some(*label))
+        .collect::<Vec<_>>();
+    if blocked.is_empty(){None}else{
+        Some(format!("실행 권한 설정으로 다음 업무가 제한되어 있습니다: {}",blocked.join(", ")))
     }
 }
 

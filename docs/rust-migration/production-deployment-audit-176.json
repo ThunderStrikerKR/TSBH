@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "baseline": "03824852d80c2fa4a849ab4712058f4b76b955a5",
+  "decisions": {
+    "D01": "copy and hash-check mapped images in actual package",
+    "D02": "retain explicit deny, surface session warning; no forced override",
+    "D03": "default Windows Release missing DB fails closed; no creation",
+    "D04": "startup modal and session-only notification center warning",
+    "D05": "notification reads independent of Excel; read-only SQL; read/dismiss require authorized DB",
+    "D06": "remove retired working-commit launcher flags",
+    "D07": "track resolved Git ref and prefer actual checkout SHA"
+  },
+  "verification": {
+    "patch": "COMMITTED_WITH_THIS_CHANGE",
+    "unit": "test added, not executed locally",
+    "ci": "NOT_VERIFIED",
+    "windows": "NOT_VERIFIED",
+    "packaging": "NOT_VERIFIED"
+  }
+}

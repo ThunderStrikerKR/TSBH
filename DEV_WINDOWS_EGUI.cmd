@@ -29,7 +29,6 @@ set "BANDO_EGUI_ENABLE_PRODUCT_WRITE=1"
 set "BANDO_EGUI_ENABLE_SHIPPING_WRITE=1"
 set "BANDO_EGUI_ENABLE_SETTINGS_WRITE=1"
 set "BANDO_EGUI_ENABLE_EXCEL_WRITE=1"
-set "BANDO_EGUI_ENABLE_WORKING_COMMIT=1"
 
 rem Reuse an EXISTING, packaged BANDO OCR runtime without copying or
 rem modifying any React/Tauri files. An explicit user override wins.

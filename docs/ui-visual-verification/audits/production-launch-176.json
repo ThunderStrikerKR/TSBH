@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "production-launch-176",
+  "screen": "운영 시작 오류 / 알림센터",
+  "files": [
+    "egui-app/src/main.rs",
+    "egui-app/src/notification_center.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "운영 DB 미연결 안내 및 권한 제한 세션 안내 추가. Windows Release 실제 화면과 클릭 검증 미실시.",
+  "releaseDecision": "NOT_APPROVED"
+}

@@ -10950,6 +10950,10 @@ fn main() -> eframe::Result<()> {
         Ok(None) => {},
         Err(error) => {
             eprintln!("[BANDO HUB] 기존 Tauri 업무 DB 자동 연결 실패: {error}");
+            #[cfg(windows)]
+            rfd::MessageDialog::new().set_title("BANDO HUB 실행 오류")
+                .set_level(rfd::MessageLevel::Error)
+                .set_description(&error).show();
             std::process::exit(2);
         }
     }
