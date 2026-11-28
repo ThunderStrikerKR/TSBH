@@ -353,15 +353,18 @@ fn address_begin(line: &str) -> Option<usize> {
         ) { return None; }
         return Some(begin);
     }
-    let address = Regex::new(concat!(
+    address_pattern().find(line).map(|m| m.start())
+}
+fn address_pattern()->&'static Regex{
+    static PATTERN:std::sync::OnceLock<Regex>=std::sync::OnceLock::new();
+    PATTERN.get_or_init(||Regex::new(concat!(
         r"(?:서울(?:특별시)?|부산(?:광역시)?|대구(?:광역시)?|인천(?:광역시)?|광주(?:광역시)?|",
         r"대전(?:광역시)?|울산(?:광역시)?|세종(?:특별자치시)?|경기(?:도)?|강원(?:특별자치도|도)?|",
         r"충청북도|충청남도|전라북도|전북특별자치도|전라남도|경상북도|경상남도|",
         r"충북|충남|전북|전남|경북|경남|제주(?:특별자치도|도)?|",
         r"[가-힣]{2,}(?:시|군|구|읍|면|동|리))\s+",
         r"|[가-힣A-Za-z0-9.]+(?:대로|로|길)\s*\d+(?:-\d+)?"
-    )).expect("address");
-    address.find(line).map(|m| m.start())
+    )).expect("address"))
 }
 // A delivery label may contain any arrangement of department, contact,
 // office/floor and bracketed remarks. Treat the entire pre-address field as
@@ -710,6 +713,36 @@ fn address_text_candidate(line:&str,start:usize,phone:&Regex)->Option<TextCandid
     if value.is_empty(){return None;}
     Some(TextCandidate{span:(start,start+masked.trim_end().len()),value:value.to_owned()})
 }
+// Preserve the legacy full-tail range and all lexical starts, including
+// alternatives within a labelled field. Explicit separators also provide
+// shorter competing ranges; none of these alternatives selects a recipient.
+fn collect_address_candidates(line:&str,raw_start:Option<usize>,legacy_start:Option<usize>,
+    phone:&Regex)->Vec<TextCandidate>{
+    let mut candidates=Vec::new();
+    let mut seen=BTreeSet::new();
+    let mut add=|start:usize,end:usize|{
+        if let Some(candidate)=address_text_candidate(&line[..end],start,phone){
+            if seen.insert(candidate.span){candidates.push(candidate);}
+        }
+    };
+    // First position for each legacy start keeps the historical value and
+    // source span exactly, including its existing postcode/phone treatment.
+    for start in legacy_start.into_iter().chain(raw_start){
+        add(start,line.len());
+    }
+    let separators=Regex::new(r"[;；|]|\s/\s").expect("address range separator");
+    let mut start=0;
+    for end in separators.find_iter(line).map(|m|(m.start(),m.end()))
+        .chain(std::iter::once((line.len(),line.len()))){
+        let segment=&line[start..end.0];
+        if let Some(at)=address_begin(segment){add(start+at,end.0);}
+        for m in address_pattern().find_iter(segment){
+            add(start+m.start(),end.0);
+        }
+        start=end.1;
+    }
+    candidates
+}
 struct LineCandidates<'a>{
     line:RecordSlice<'a>,
     raw_address:Option<usize>,
@@ -724,7 +757,7 @@ struct LineCandidates<'a>{
     contact_spans:Vec<(usize,usize)>,
     contacts:Vec<ContactCandidate>,
     quantities:Vec<quantity::Quantity>,
-    address_candidate:Option<TextCandidate>,
+    address_candidates:Vec<TextCandidate>,
     note:Option<TextCandidate>,
     dispatch:bool,
     address_detail:bool,
@@ -779,7 +812,7 @@ impl<'a,'s> DocumentCandidates<'a,'s>{
             // Retain lexical contacts even if normalization rejected them.
             for &span in &row.contact_spans{add("contact_lexical",span);}
             for q in &row.quantities{add("quantity",(q.start,q.end));}
-            if let Some(address)=&row.address_candidate{add("address",address.span);}
+            for address in &row.address_candidates{add("address",address.span);}
             if let Some(note)=&row.note{add("note",note.span);}
             let trim=row.line.text.trim();
             let begin=row.line.text.len()-row.line.text.trim_start().len();
@@ -925,7 +958,7 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
         }
         let text=line.text.trim();
         let label_only=label.find(line.text).is_some_and(|m|line.text[m.end()..].trim().is_empty());
-        let address_candidate=address.and_then(|start|address_text_candidate(line.text,start,phone));
+        let address_candidates=collect_address_candidates(line.text,raw_address,address,phone);
         let note=note_label.captures(line.text).and_then(|c|c.get(1)).map(|v|{
             let value=if text.starts_with('('){v.as_str().trim_end_matches(')').trim()}
                 else{v.as_str().trim()};
@@ -938,7 +971,7 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
         let labelled_postcode=postcode::labelled_line(text).is_some();
         LineCandidates{line,raw_address,address,explicit_name,label_only,near_delivery:false,
             after_label:false,zone,names:vec![],legacy_name_count:0,contact_spans,contacts,quantities,
-            address_candidate,note,dispatch,address_detail,ignored,labelled_postcode,
+            address_candidates,note,dispatch,address_detail,ignored,labelled_postcode,
             product_slices:HashMap::new()}
     }).collect::<Vec<_>>();
     let contexts=physical_line_contexts(geometry,&rows);
@@ -1412,7 +1445,10 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         }
 
         let address=row.address;
-        if let Some(candidate)=&row.address_candidate{
+        // Only the legacy preferred range is projected into the current
+        // order. Other source-grounded ranges remain in the document pool.
+        if let Some(candidate)=address.and_then(|start|row.address_candidates.iter()
+            .find(|candidate|candidate.span.0==start)){
             let span=DocumentSpan::in_record(line,candidate.span);
             debug_assert!(document.contains_span("address",span));
             add_match(&mut events,line,candidate.span.0,candidate.span.1,"address",
@@ -2170,6 +2206,36 @@ mod tests {
             .any(|c|c["text"]=="3개"||c["text"]=="4개"));
     }
     #[test]
+    fn competing_address_ranges_survive_legacy_projection(){
+        let state=state();
+        let first="서울특별시 마포구 월드컵로 20";
+        let second="경기도 성남시 분당구 불정로 6";
+        let raw=format!("수취인: 김가상\n주소: {first} / 주소: {second}\n709 1개");
+        let geometry=SourceGeometry::new(&raw);
+        let mut search=ProductSearch::new(&state,"");
+        let document=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut search);
+        let row=&document.legacy_rows()[1];
+        assert_eq!(row.address_candidates[0].value,format!("{first} / 주소: {second}"));
+        for expected in [first,second]{
+            let start=raw.find(expected).unwrap();
+            let span=DocumentSpan{start,end:start+expected.len()};
+            assert!(document.contains_span("address",span),"{expected}");
+            assert!(row.address_candidates.iter().any(|candidate|
+                candidate.value==expected&&DocumentSpan::in_record(&row.line,candidate.span)==span));
+        }
+        assert!(search.probes.values().all(|p|p.evaluated.is_none()));
+        let out=analyze(&raw,&state,None).unwrap();
+        let addresses=out["candidates"].as_array().unwrap().iter()
+            .filter(|c|c["kind"]=="address").collect::<Vec<_>>();
+        assert_eq!(addresses.len(),1);
+        assert_eq!(addresses[0]["value"],row.address_candidates[0].value);
+        let units=raw.encode_utf16().collect::<Vec<_>>();
+        for c in document.occurrences.iter().filter(|c|c.kind=="address"){
+            assert_eq!(String::from_utf16(&units[geometry.utf16(c.span.start)..geometry.utf16(c.span.end)]).unwrap(),
+                c.span.text(&raw));
+        }
+    }
+    #[test]
     fn source_geometry_preserves_mixed_newlines_blank_lines_and_utf16(){
         let raw="😀가\r\n \t\r나\n\r\n끝\r";
         let geometry=SourceGeometry::new(raw);
@@ -2279,7 +2345,7 @@ mod tests {
         let document=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut search);
         let rows=document.legacy_rows();
         assert!(search.probes.values().all(|p|p.evaluated.is_none()));
-        let address=rows[0].address_candidate.as_ref().unwrap();
+        let address=rows[0].address_candidates.first().unwrap();
         assert_eq!(address.value,"서울특별시 마포구 월드컵로 20");
         assert_eq!(rows[1].note.as_ref().unwrap().value,"문 앞 배송");
         let table=&rows[2].product_slices[&None];

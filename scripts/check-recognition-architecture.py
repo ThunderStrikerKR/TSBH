@@ -46,7 +46,8 @@ PHASE02_TESTS = {
               "physical_line_contexts_are_partition_invariant"),
     "02-03": ("product_hypotheses_survive_evaluation_and_cache_reuse",
               "common_lexical_candidates_precede_document_evaluation",
-              "competing_information_types_survive_legacy_projection"),
+              "competing_information_types_survive_legacy_projection",
+              "competing_address_ranges_survive_legacy_projection"),
     "02-04": ("explicit_same_line_recipient_records_keep_distinct_source_offsets",
               "same_line_recipient_boundary_alternatives_survive_collection"),
     "02-05": ("same_line_bare_product_boundaries_are_not_identity_decisions",
@@ -100,6 +101,19 @@ def type_collection_violations(sources):
     return failures
 
 
+def address_collection_violations(sources):
+    mod = production(sources["mod.rs"])
+    fn = functions(sources["mod.rs"])
+    failures = []
+    if re.search(r"\baddress_candidate\s*:\s*Option\s*<\s*TextCandidate", mod):
+        failures.append("Single address candidate excludes competing address ranges")
+    if call_count(fn.get("collect_document", ""), "collect_address_candidates") != 1:
+        failures.append("Document must collect competing address ranges once per record")
+    if call_count(fn.get("analyze", ""), "collect_address_candidates") or call_count(fn.get("analyze", ""), "address_text_candidate"):
+        failures.append("Address projection repeats discovery")
+    return failures
+
+
 def phase02_debt(sources):
     """Audited source blockers, not a complete Rust call graph."""
     mod = production(sources["mod.rs"])
@@ -118,8 +132,8 @@ def phase02_debt(sources):
          "02-02", "candidate adjacency must use one physical-line context index")
     for reason in type_collection_violations(sources):
         flag(True, "02-03", reason)
-    flag("address_candidate:Option<TextCandidate>" in mod,
-         "02-03", "single address candidate excludes competing address ranges")
+    for reason in address_collection_violations(sources):
+        flag(True, "02-03", reason)
     flag("model_before_address(" in analyze or "quantity::extract(" in analyze,
          "02-03", "projection repeats lexical or catalog discovery")
     flag(bool(re.search(r"if\s+let\s+Some\(parts\)\s*=\s*recipient_records", collect)),
@@ -154,6 +168,11 @@ def phase02_self_test():
     assert type_collection_violations({"mod.rs":
         "fn collect_document() { search.prepare(text); search.prepare(text); }\n"
         "fn product_slice() { if is_money_or_header(text) { return None; } }"})
+    assert address_collection_violations({"mod.rs":
+        "struct LineCandidates { address_candidate: Option<TextCandidate> }"})
+    assert address_collection_violations({"mod.rs":
+        "fn collect_document() { collect_address_candidates(); }\n"
+        "fn analyze() { address_text_candidate(); }"})
     # Missing and ignored tests cannot count as certified admission.
     names = [name for group in PHASE02_TESTS.values() for name in group]
     assert verify_discovery("", "", False, True)
@@ -196,7 +215,7 @@ def call_count(source, name):
 
 
 def audit(sources, final=False):
-    errors, debt = type_collection_violations(sources), {}
+    errors, debt = type_collection_violations(sources) + address_collection_violations(sources), {}
     model = functions(sources["model.rs"])
     for name in ("collect", "evaluate", "decide"):
         if name not in model:
@@ -278,6 +297,7 @@ def verify_discovery(listed, ignored, final, phase02=False):
         "repeated_registered_terms_and_aliases_preserve_each_occurrence",
         "physical_line_contexts_are_partition_invariant",
         "competing_information_types_survive_legacy_projection",
+        "competing_address_ranges_survive_legacy_projection",
     ]
     if phase02 or final:
         required.extend(name for names in PHASE02_TESTS.values() for name in names)
