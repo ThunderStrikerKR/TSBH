@@ -82,15 +82,29 @@ pub(super) fn table_product_prefix(text: &str) -> &str {
 }
 
 /// From order-evidence.ts's product-quantity association, table fields.
-pub(super) fn table_quantity(text: &str, model_end: Option<usize>) -> Option<(i64,usize,usize)> {
-    let start = model_end.unwrap_or(0);
-    if start > text.len() || !text.is_char_boundary(start) { return None; }
-    let field = Regex::new(r"\|\s*([1-9]\d*)\s*(?:\||$)")
-        .expect("table quantity");
-    let m = field.captures(&text[start..])?.get(1)?;
-    Some((m.as_str().parse().ok()?,start+m.start(),start+m.end()))
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub(super) struct TableQuantity{
+    pub pipe:usize,
+    pub quantity:super::quantity::Quantity,
 }
-
+// Retain the leading pipe of each numeric cell, including adjacent cells.
+// Selection of the quantity after the model is a separate operation.
+pub(super) fn table_quantities(text:&str)->Vec<TableQuantity>{
+    let mut cells=text.split('|');
+    let mut pipe=cells.next().map_or(0,str::len);
+    let mut found=Vec::new();
+    let field=Regex::new(r"^\s*([1-9]\d*)\s*$").expect("table quantity");
+    for cell in cells{
+        if let Some(value)=field.captures(cell).and_then(|c|c.get(1)){
+            if let Ok(number)=value.as_str().parse(){
+                found.push(TableQuantity{pipe,quantity:super::quantity::Quantity{
+                    value:number,start:pipe+1+value.start(),end:pipe+1+value.end()}});
+            }
+        }
+        pipe+=1+cell.len();
+    }
+    found
+}
 /// Direct port of parser.ts:102-149 (logicalLines): when a line contains
 /// a delivery address, its prefix is an order item only if a real registered
 /// model is present, or an unknown three-digit SKU also has an explicit
@@ -189,7 +203,9 @@ mod tests {
         let input="연주용의자 | BB-3 | EA | 1 | 여가상 / 0502-1234-5678";
         let prefix=table_product_prefix(input);
         assert!(input.starts_with(prefix));
-        let (value,start,end)=table_quantity(input,Some(input.find("BB-3").unwrap()+4)).unwrap();
+        let candidate=table_quantities(input).into_iter()
+            .find(|q|q.pipe>=input.find("BB-3").unwrap()+4).unwrap();
+        let (value,start,end)=(candidate.quantity.value,candidate.quantity.start,candidate.quantity.end);
         assert_eq!(value,1);
         assert_eq!(&input[start..end],"1");
     }

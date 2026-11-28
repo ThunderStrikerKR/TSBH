@@ -643,6 +643,58 @@ struct ContactCandidate{
     kind:&'static str,
     value:String,
 }
+#[derive(Debug)]
+struct TextCandidate{
+    span:(usize,usize),
+    value:String,
+}
+#[derive(Debug)]
+struct ProductSlice<'a>{
+    text:&'a str,
+    matching:&'a str,
+    offset:usize,
+    quantities:Vec<quantity::Quantity>,
+    table_quantities:Vec<ts_semantics::TableQuantity>,
+    contact_spans:Vec<(usize,usize)>,
+    explicit_quantities:Vec<quantity::Quantity>,
+}
+fn product_slice<'a>(line:&RecordSlice<'a>,address:Option<usize>,name:Option<(usize,usize)>,
+    phone:&Regex,search:&mut ProductSearch<'a,'_>)->Option<ProductSlice<'a>>{
+    let end=address.unwrap_or(line.text.len());
+    let product_end=name.map_or(end,|(a,_)|a.min(end));
+    let part=if line.text[..product_end].matches('|').count()>=4{
+        &line.text[..end]
+    }else{&line.text[..product_end]};
+    let text=part.trim();
+    if text.is_empty()||is_money_or_header(text)
+        ||(text.contains('|')&&text.split('|').any(|c|matches!(c.trim(),"배송비"|"택배비"|"운임"))){
+        return None;
+    }
+    let offset=part.len()-part.trim_start().len();
+    let matching=ts_semantics::table_product_prefix(text);
+    search.prepare(text);
+    search.prepare(matching);
+    let explicit_quantities=quantity::extract(text);
+    let table_quantities=if text.contains('|'){ts_semantics::table_quantities(text)}else{vec![]};
+    let quantities=if text.contains('|'){vec![]}else{
+        quantity::for_product(matching,false,model::products(search.state).iter().any(|p|
+            model::model_names(p).iter().any(|name|model::find_term(matching,name,true).is_some())))
+    };
+    let contact_spans=phone.find_iter(text).map(|m|(m.start(),m.end())).collect();
+    Some(ProductSlice{text,matching,offset,quantities,table_quantities,contact_spans,explicit_quantities})
+}
+fn address_text_candidate(line:&str,start:usize,phone:&Regex)->Option<TextCandidate>{
+    let original=&line[start..];
+    let original=postcode::labelled_suffix(original).map_or(original,|(end,_)|&original[..end]);
+    let mut masked=original.to_owned();
+    let spans:Vec<_>=phone.find_iter(original).map(|m|(m.start(),m.end())).collect();
+    for (from,to) in spans.into_iter().rev(){
+        masked.replace_range(from..to,&" ".repeat(to-from));
+    }
+    let value=masked.trim();
+    if value.is_empty(){return None;}
+    Some(TextCandidate{span:(start,start+masked.trim_end().len()),value:value.to_owned()})
+}
 struct LineCandidates<'a>{
     line:RecordSlice<'a>,
     raw_address:Option<usize>,
@@ -656,6 +708,13 @@ struct LineCandidates<'a>{
     contact_spans:Vec<(usize,usize)>,
     contacts:Vec<ContactCandidate>,
     quantities:Vec<quantity::Quantity>,
+    address_candidate:Option<TextCandidate>,
+    note:Option<TextCandidate>,
+    dispatch:bool,
+    address_detail:bool,
+    ignored:bool,
+    labelled_postcode:bool,
+    product_slices:HashMap<Option<(usize,usize)>,ProductSlice<'a>>,
 }
 // All physical lines, including sender and unrecognized lines, survive
 // discovery. The old recipient projection may exclude them, but it no
@@ -664,6 +723,10 @@ fn collect_document<'a>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Regex,
     search:&mut ProductSearch<'a,'_>)->Vec<LineCandidates<'a>>{
     let sender=Regex::new(r"^(?:보내는\s*(?:분|사람|곳)|송하인(?:명)?)\s*[:：]").expect("sender prefix");
     let mut sender_section=false;
+    let note_label=Regex::new(
+        r"^\s*\(?(?:배송\s*)?(?:메세지|메시지|요청(?:사항)?|메모)(?:\s*[:：]\s*|\s+)(.*)$"
+    ).expect("note");
+    let detail=Regex::new(r"\d+\s*(?:층|호)").expect("address detail");
     let mut records=Vec::new();
     // Use one physical-line pass. Reuse each discovered quantity when a
     // bare product row is split; explicit recipient records are scanned
@@ -713,9 +776,23 @@ fn collect_document<'a>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Regex,
                 kind:if c[1].starts_with("01"){"mobile"}else{"phone"},
                 value:format!("{}-{}-{}",&c[1],&c[2],&c[3])});
         }
+        let text=line.text.trim();
         let label_only=label.find(line.text).is_some_and(|m|line.text[m.end()..].trim().is_empty());
+        let address_candidate=address.and_then(|start|address_text_candidate(line.text,start,phone));
+        let note=note_label.captures(line.text).and_then(|c|c.get(1)).map(|v|{
+            let value=if text.starts_with('('){v.as_str().trim_end_matches(')').trim()}
+                else{v.as_str().trim()};
+            TextCandidate{span:(v.start(),v.end()),value:value.to_owned()}
+        });
+        let dispatch=dated_dispatch_instruction(text);
+        let address_detail=line.text.starts_with("  ")&&raw_address.is_none()
+            &&contact_spans.is_empty()&&!weak_recipient_hint(text)&&detail.is_match(text);
+        let ignored=is_money_or_header(text);
+        let labelled_postcode=postcode::labelled_line(text).is_some();
         LineCandidates{line,raw_address,address,explicit_name,label_only,near_delivery:false,
-            after_label:false,zone,names:vec![],contact_spans,contacts,quantities}
+            after_label:false,zone,names:vec![],contact_spans,contacts,quantities,
+            address_candidate,note,dispatch,address_detail,ignored,labelled_postcode,
+            product_slices:HashMap::new()}
     }).collect::<Vec<_>>();
     for i in 0..rows.len(){
         let row=&rows[i];
@@ -740,9 +817,24 @@ fn collect_document<'a>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Regex,
                 if let Some(probe)=proposal.probe(text){search.prepare(probe);}
             }
         }
+        // Collect competing legacy product boundaries without evaluation.
+        let mut slices=HashMap::new();
+        if row.zone!=SourceZone::Sender&&!row.ignored&&!row.labelled_postcode
+            &&!row.dispatch&&row.note.is_none()&&row.explicit_name.is_none(){
+            let mut boundaries=vec![None];
+            boundaries.extend(names.iter().map(|p|Some(p.span)));
+            for boundary in boundaries{
+                if slices.contains_key(&boundary){continue;}
+                if let Some(slice)=product_slice(line,row.address,boundary,phone,search){
+                    slices.insert(boundary,slice);
+                }
+            }
+            search.prepare(line.text);
+        }
         rows[i].near_delivery=near_delivery;
         rows[i].after_label=after_label;
         rows[i].names=names;
+        rows[i].product_slices=slices;
     }
     rows
 }
@@ -1101,11 +1193,6 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     let rows=collect_document(&geometry,&phone,&person_label,&mut search);
     let mut events:Vec<Evidence>=Vec::new();
     let mut product_hits:Vec<ProductHit>=Vec::new();
-    // Direct translation of order-evidence.ts:140-170: parenthesized
-    // delivery requests and note continuation remain separate evidence.
-    let note_label = Regex::new(
-        r"^\s*\(?(?:배송\s*)?(?:메세지|메시지|요청(?:사항)?|메모)(?:\s*[:：]\s*|\s+)(.*)$"
-    ).expect("note");
     let mut note_continuation: Option<usize>=None;
     for row in &rows{
         let line=&row.line;
@@ -1114,26 +1201,26 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         let near_delivery=row.near_delivery;
         let after_label=row.after_label;
         if row.zone==SourceZone::Sender{continue;}
-        if postcode::labelled_line(text).is_some() {
+        if row.labelled_postcode {
             note_continuation=None;
             continue;
         }
         // Parse an explicit dated dispatch instruction before recipient or
         // product heuristics. An ordinary order date or a question does not
         // become a confirmed dispatch request.
-        if dated_dispatch_instruction(text){
+        if row.dispatch{
             let start=line.text.find(text).unwrap_or(0);
             add_match(&mut events,line,start,start+text.len(),"note",
                 text.to_owned(),"발송 요청일 원문 구간");
             note_continuation=None;
             continue;
         }
-        if is_money_or_header(text) { continue; }
+        if row.ignored { continue; }
         // The TS recognizer extends a memo through subsequent non-field
         // lines in the same paragraph, stopping at any contact/address/item.
         if let Some(i)=note_continuation {
             let field=person_label.is_match(line.text)
-                || note_label.is_match(line.text)
+                || row.note.is_some()
                 || row.raw_address.is_some()
                 || !row.contact_spans.is_empty()
                 || (near_delivery && !other_recipient_field(text))
@@ -1148,24 +1235,16 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             }
             note_continuation=None;
         }
-        if let Some(c) = note_label.captures(line.text) {
-            if let Some(v) = c.get(1) {
-                let value=if text.starts_with('(') {
-                    v.as_str().trim_end_matches(')').trim().to_owned()
-                } else {v.as_str().trim().to_owned()};
-                let i=add_match(&mut events, line, v.start(), v.end(), "note",
-                    value,"배송 요청사항 표제어");
-                note_continuation=Some(i);
-            }
+        if let Some(note)=&row.note{
+            let i=add_match(&mut events,line,note.span.0,note.span.1,"note",
+                note.value.clone(),"배송 요청사항 표제어");
+            note_continuation=Some(i);
             continue;
         }
 
         // order-evidence.ts:170-188: an indented building/floor line
         // is continuation of the preceding address, never a new item.
-        if line.text.starts_with("  ") && row.raw_address.is_none()
-            && row.contact_spans.is_empty()
-            && !weak_recipient_hint(text)
-            && Regex::new(r"\d+\s*(?:층|호)").expect("address detail").is_match(text) {
+        if row.address_detail {
             if let Some(previous)=events.iter().rev()
                 .find(|e|e.kind=="address" && e.paragraph==line.paragraph) {
                 if previous.start<line.start
@@ -1180,27 +1259,10 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             }
         }
 
-        // An address-shaped substring inside an explicit name is not an address.
         let address=row.address;
-        // parser.ts::parseLegacy masks complete phone numbers *before*
-        // interpreting a mixed address/phone row. A phone is a distinct
-        // contact field, not part of the recipient's delivery address.
-        if let Some(start) = address {
-            let original=&line.text[start..];
-            let original=postcode::labelled_suffix(original)
-                .map_or(original,|(end,_)|&original[..end]);
-            let mut without_phones=original.to_owned();
-            let spans:Vec<_>=phone.find_iter(original)
-                .map(|m|(m.start(),m.end())).collect();
-            for (from,to) in spans.into_iter().rev() {
-                without_phones.replace_range(from..to,&" ".repeat(to-from));
-            }
-            let value=without_phones.trim();
-            if !value.is_empty() {
-                let end=start+without_phones.trim_end().len();
-                add_match(&mut events,line,start,end,"address",
-                    value.to_owned(),"배송주소 원문 구간");
-            }
+        if let Some(candidate)=&row.address_candidate{
+            add_match(&mut events,line,candidate.span.0,candidate.span.1,"address",
+                candidate.value.clone(),"배송주소 원문 구간");
         }
 
         let name_span=project_name(line.text,&row.names,&mut search);
@@ -1231,49 +1293,23 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         if let Some(begin)=address {
             if !ts_semantics::model_before_address(&line.text[..begin],state) {continue;}
         }
-        let product_end=address.unwrap_or(line.text.len());
-        let product_end=name_span.map_or(product_end,|(a,_)|a.min(product_end));
-        // Table quantities depend on the original column boundaries.
-        let product_part=if line.text[..product_end].matches('|').count()>=4 {
-            &line.text[..address.unwrap_or(line.text.len())]
-        }else{&line.text[..product_end]};
-        let trimmed = product_part.trim();
-        if trimmed.is_empty() || is_money_or_header(trimmed)
-            || (trimmed.contains('|') && trimmed.split('|').any(|column|
-                matches!(column.trim(),"배송비"|"택배비"|"운임"))) {
-            continue;
-        }
-        // Exact TS parser.ts contact branch: a phone/identity row must not
-        // create a product even when its digits match a generic model regex.
-        let trim_phones: Vec<(usize,usize)> = phone.find_iter(trimmed)
-            .map(|m|(m.start(),m.end())).collect();
+        let Some(slice)=row.product_slices.get(&name_span)else{continue;};
+        let trimmed=slice.text;
         let decision=search.decision(trimmed);
-        // parser.ts::parseLegacy: a full contact may share the same physical
-        // line with a valid product and quantity; filter contact-only rows,
-        // not valid joint records such as "709 민판 한개 이가상 010-...".
-        if ts_semantics::only_contact_or_identity(trimmed,&trim_phones)
-            && quantity::extract(trimmed).is_empty()
+        if ts_semantics::only_contact_or_identity(trimmed,&slice.contact_spans)
+            && slice.explicit_quantities.is_empty()
             && decision.pointer("/match/kind").and_then(Value::as_str)==Some("UNKNOWN") {
             continue;
         }
-        if !product_signal(trimmed, &decision, state) { continue; }
-        // Require model/category evidence, not a value made solely from a date or contact.
-        if trimmed.contains("발주일") || trimmed.contains("발송일") { continue; }
-        let skip_until = ts_semantics::table_product_prefix(trimmed);
-        // Never synthesize a new string and then treat its indexes as offsets
-        // into raw: UTF-8/UTF-16 source-evidence contract must be lossless.
+        if !product_signal(trimmed,&decision,state){continue;}
+        if trimmed.contains("발주일")||trimmed.contains("발송일"){continue;}
+        let skip_until=slice.matching;
         let matched=search.decision(skip_until);
-        let mut quantity_values = if trimmed.contains('|') {
-            let model_end=matched.get("evidence").and_then(Value::as_object)
-                .and_then(|o|o.get("end")).and_then(Value::as_u64)
-                .map(|v|v as usize);
-            ts_semantics::table_quantity(trimmed,model_end).map_or_else(Vec::new,
-                |(value,start,end)|vec![quantity::Quantity{value,start,end}])
-        } else {
-            quantity::for_product(skip_until,false,
-                model::products(state).iter().any(|p|model::model_names(p).iter()
-                    .any(|name|model::find_term(skip_until,name,true).is_some())))
-        };
+        let mut quantity_values=if trimmed.contains('|'){
+            let model_end=matched.pointer("/evidence/end").and_then(Value::as_u64).unwrap_or(0) as usize;
+            slice.table_quantities.iter().find(|q|q.pipe>=model_end)
+                .map_or_else(Vec::new,|q|vec![q.quantity.clone()])
+        }else{slice.quantities.clone()};
         // parser.ts:537-552: a compound sale-unit phrase containing
         // "2개" is part of the option name, not an order quantity.
         if quantity_values.len()==1 {
@@ -1291,7 +1327,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             }
         }
         let mut quantity_indexes = Vec::new();
-        let offset = line.text.find(trimmed).unwrap_or(0);
+        let offset=slice.offset;
         for q in quantity_values {
             quantity_indexes.push(add_match(&mut events, line, offset+q.start,offset+q.end,
                 "quantity",q.value.to_string(),"상품 행에 명시된 수량"));
@@ -1340,7 +1376,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         let line=&row.line;
         if events.iter().any(|e| e.kind == "quantity" && e.start>=line.start
             && e.end<=line.start+line.text.len()) { continue; }
-        if is_money_or_header(line.text) { continue; }
+        if row.ignored { continue; }
         if product_hits.iter().any(|h| h.source_start>=line.start
             && h.source_start<line.start+line.text.len()) { continue; }
         for q in &row.quantities{
@@ -1994,6 +2030,23 @@ mod tests {
         let expected=model::decision_json(&model::decide(&inputs[512],&state,""));
         assert_eq!(search.decision(&inputs[512]),expected);
         assert_eq!(search.probes.len(),512);
+    }
+    #[test]
+    fn common_lexical_candidates_precede_document_evaluation(){
+        let state=state();
+        let raw="서울특별시 마포구 월드컵로 20 010-1234-5678\n메모: 문 앞 배송\n709 | 2 | 3 | 4 | 가상\nGT-1 5\n미분류 안내";
+        let geometry=SourceGeometry::new(raw);
+        let mut search=ProductSearch::new(&state,"");
+        let rows=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut search);
+        assert!(search.probes.values().all(|p|p.evaluated.is_none()));
+        let address=rows[0].address_candidate.as_ref().unwrap();
+        assert_eq!(address.value,"서울특별시 마포구 월드컵로 20");
+        assert_eq!(rows[1].note.as_ref().unwrap().value,"문 앞 배송");
+        let table=&rows[2].product_slices[&None];
+        assert_eq!(table.table_quantities.iter().map(|c|c.quantity.value).collect::<Vec<_>>(),vec![2,3,4]);
+        assert_eq!(rows[3].product_slices[&None].quantities[0].value,5);
+        assert_eq!(rows[4].line.text,"미분류 안내");
+        assert!(rows.iter().all(|r|r.line.text==&raw[r.line.start..r.line.start+r.line.text.len()]));
     }
     #[test]
     fn contract_rejects_incomplete_state() {
