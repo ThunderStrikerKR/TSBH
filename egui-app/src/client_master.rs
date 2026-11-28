@@ -3,7 +3,7 @@
 //! Client commands reuse the original native Rust rules and shared v2 writer;
 //! the separate egui preview DB remains exclusively for unconfirmed sources.
 
-use rusqlite::{Connection,OpenFlags};
+use rusqlite::OpenFlags;
 use serde_json::{json,Value};
 use std::time::Duration;
 

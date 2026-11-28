@@ -2,7 +2,7 @@
 //! Never write to a preview DB or bypass the native revision transaction.
 use crate::{business_state,excel_service,gateway};
 use chrono::Utc;
-use rusqlite::{Connection,OpenFlags};
+use rusqlite::OpenFlags;
 use serde_json::{json,Value};
 use std::time::Duration;
 

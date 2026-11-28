@@ -105,3 +105,14 @@ jobs:
           if ($code -ne 0) { exit $code }
           $matches = [regex]::Matches($output,'test result: ok\. (\d+) passed; 0 failed')
           if (!($matches | Where-Object { [int]$_.Groups[1].Value -ge 11 })) { throw 'Expected at least eleven passing XLSX resource regression tests.' }
+
+      - name: Verify standard operating DB path on isolated fixtures
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = cargo test --locked --manifest-path egui-app/Cargo.toml business_state::auto_database_location_tests:: 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $output
+          if ($code -ne 0) { exit $code }
+          $results = [regex]::Matches($output,'test result: ok\. (\d+) passed; 0 failed')
+          if (!($results | Where-Object { [int]$_.Groups[1].Value -ge 7 })) { throw 'Expected at least seven passing database-path tests.' }

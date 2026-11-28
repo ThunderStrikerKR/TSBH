@@ -2,7 +2,7 @@
 //! No production/release/HTTP path, no helper executable, no real customers or orders.
 //! Data is appended atomically through the shared v2 Rust writer, once per test DB.
 use crate::gateway::{BandoGateway, LocalGateway, ReadOperation};
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::OpenFlags;
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::time::Duration;
