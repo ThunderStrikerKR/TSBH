@@ -151,6 +151,7 @@ def verify_discovery(listed, ignored, final):
         "product_hypotheses_survive_evaluation_and_cache_reuse",
         "product_probe_limit_reports_incomplete_collection",
         "common_lexical_candidates_precede_document_evaluation",
+        "repeated_registered_terms_and_aliases_preserve_each_occurrence",
     ]
     if final:
         required = list(dict.fromkeys(required + list(FINAL_TESTS)))

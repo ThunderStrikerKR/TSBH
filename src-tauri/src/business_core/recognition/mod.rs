@@ -677,8 +677,10 @@ fn product_slice<'a>(line:&RecordSlice<'a>,address:Option<usize>,name:Option<(us
     let explicit_quantities=quantity::extract(text);
     let table_quantities=if text.contains('|'){ts_semantics::table_quantities(text)}else{vec![]};
     let quantities=if text.contains('|'){vec![]}else{
-        quantity::for_product(matching,false,model::products(search.state).iter().any(|p|
-            model::model_names(p).iter().any(|name|model::find_term(matching,name,true).is_some())))
+        quantity::for_product(matching,false,search.probes.get(matching)
+            .map(|p|model::has_registered_model(&p.hypotheses))
+            .unwrap_or_else(||model::products(search.state).iter().any(|p|
+                model::model_names(p).iter().any(|name|model::find_term(matching,name,true).is_some()))))
     };
     let contact_spans=phone.find_iter(text).map(|m|(m.start(),m.end())).collect();
     Some(ProductSlice{text,matching,offset,quantities,table_quantities,contact_spans,explicit_quantities})
