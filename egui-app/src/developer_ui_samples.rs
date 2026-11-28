@@ -232,7 +232,7 @@ pub fn seed_if_requested() -> Result<(), String> {
         return Err("UI 테스트 데이터는 Windows 개발용 격리 DB에서만 등록합니다.".into());
     }
     let path = crate::business_state::authorized_business_write_path()?;
-    let mut conn = Connection::open_with_flags(&path,OpenFlags::SQLITE_OPEN_READ_WRITE)
+    let mut conn = crate::business_state::open_business_connection(&path,OpenFlags::SQLITE_OPEN_READ_WRITE)
         .map_err(|_|"개발용 테스트 DB를 쓰기 모드로 열지 못했습니다.".to_owned())?;
     conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
     conn.execute_batch("PRAGMA foreign_keys=ON;").map_err(|e|e.to_string())?;

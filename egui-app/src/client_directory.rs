@@ -20,7 +20,7 @@ pub fn attach(mut catalog: Value) -> Result<Value, String> {
         (Some(_), Some(_)) =>
             return Err("거래처 인덱스와 읽기 전용 운영 DB 경로를 동시에 지정할 수 없습니다.".into()),
         (Some(file), None) => load_index(&PathBuf::from(file))?,
-        (None, Some(file)) => load_business_db(&PathBuf::from(file))?,
+        (None, Some(_)) => load_business_db(&crate::business_state::authorized_business_read_path()?)?,
         (None, None) => (json!([]), json!({"kakaoTitleMappings": {}})),
     };
     catalog["clients"] = clients;
@@ -46,11 +46,11 @@ fn load_index(file: &std::path::Path) -> Result<(Value, Value), String> {
 /// customer details to egui SQLite. This is a read-only live lookup, not an
 /// ownership transfer. WAL mode is not altered.
 fn load_business_db(file: &std::path::Path) -> Result<(Value, Value), String> {
-    use rusqlite::{Connection, OpenFlags};
+    use rusqlite::OpenFlags;
     if !file.is_file() {
         return Err("지정한 운영 DB 파일을 찾을 수 없습니다.".into());
     }
-    let conn = Connection::open_with_flags(file, OpenFlags::SQLITE_OPEN_READ_ONLY)
+    let conn = crate::business_state::open_business_connection(file,OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|_| "운영 DB 읽기 전용 열기에 실패했습니다.".to_owned())?;
     conn.execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=2000;")
         .map_err(|_| "운영 DB 읽기 전용 설정에 실패했습니다.".to_owned())?;

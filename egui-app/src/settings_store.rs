@@ -45,10 +45,7 @@ pub fn writable_business()->bool{
 /// service. No separate Tauri executable is required for these operations.
 pub fn data_service_available()->bool{
     if !using_business(){return false;}
-    let Some(path)=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-        .filter(|p|!p.is_empty()).map(PathBuf::from) else{return false};
-    path.is_file() &&
-        std::env::var_os("BANDO_EGUI_CLIENT_INDEX").is_none_or(|x|x.is_empty())
+    business_state::authorized_business_read_path().is_ok()
 }
 fn used_accounts(clients:&Value)->Vec<String>{
     let mut refs=Vec::new();
@@ -226,9 +223,7 @@ fn patch_business(changes:Value,expected:Value)->Result<Value,String>{
         return Err("설정 변경 내용이 너무 큽니다.".into());
     }
     let path=business_state::authorized_business_write_path()?;
-    let mut conn=Connection::open_with_flags(
-        path,rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
-    ).map_err(|_|"운영 설정 DB를 열지 못했습니다.".to_owned())?;
+    let mut conn=crate::business_state::open_business_connection(path,rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE).map_err(|_|"운영 설정 DB를 열지 못했습니다.".to_owned())?;
     conn.busy_timeout(Duration::from_secs(5))
         .map_err(|e|e.to_string())?;
     conn.execute_batch("PRAGMA foreign_keys=ON;")
@@ -279,16 +274,13 @@ pub fn data(operation:&str,filename:Option<&str>)->Result<Value,String>{
     let path=if write{
         business_state::authorized_business_write_path()?
     }else{
-        std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-            .filter(|path|!path.is_empty())
-            .map(PathBuf::from)
-            .ok_or("운영 DB 파일 경로가 설정되지 않았습니다.")?
+        business_state::authorized_business_read_path()?
     };
     if !path.is_file(){return Err("운영 DB 파일이 없습니다.".into());}
     let base=path.parent().ok_or("운영 DB 보관 폴더가 없습니다.")?;
     let flags=if write{OpenFlags::SQLITE_OPEN_READ_WRITE}
         else{OpenFlags::SQLITE_OPEN_READ_ONLY};
-    let mut conn=Connection::open_with_flags(&path,flags)
+    let mut conn=crate::business_state::open_business_connection(&path,flags)
         .map_err(|_|"데이터 관리 DB를 열지 못했습니다.".to_owned())?;
     conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
     if !write {

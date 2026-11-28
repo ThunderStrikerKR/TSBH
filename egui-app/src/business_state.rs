@@ -109,6 +109,117 @@ fn reject_retired_workspace(path:&std::path::Path)->Result<(),String>{
     Ok(())
 }
 
+// The configured path is not itself authorization. Bind only the existing
+// standard business DB under this user's RoamingAppData. Do not follow a
+// redirected application directory, database file or SQLite sidecar.
+fn plain_entry(path:&std::path::Path,directory:bool)->Result<(),String>{
+    let meta=std::fs::symlink_metadata(path)
+        .map_err(|_|"업무 DB 또는 보관 경로를 확인할 수 없습니다.")?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if meta.file_attributes() & 0x400 != 0{
+            return Err("업무 DB 경로에 연결 또는 재분석 지점을 사용할 수 없습니다.".into());
+        }
+    }
+    if meta.file_type().is_symlink() ||
+        (directory && !meta.is_dir()) || (!directory && !meta.is_file()){
+        return Err("업무 DB 경로의 파일 형식이 올바르지 않습니다.".into());
+    }
+    Ok(())
+}
+fn checked_operating_database(roaming:&std::path::Path,requested:&std::path::Path)->Result<PathBuf,String>{
+    if !roaming.is_absolute()||!requested.is_absolute(){
+        return Err("운영 DB는 표준 절대 경로만 사용할 수 있습니다.".into());
+    }
+    let canonical_root=roaming.canonicalize().map_err(|_|"APPDATA 경로를 확인할 수 없습니다.")?;
+    let standard=tauri_database_path(roaming)?;
+    let canonical=tauri_database_path(&canonical_root)?;
+    // Do not accept a different alias even when it resolves to the same file.
+    if requested!=standard && requested!=canonical{
+        return Err("지정한 DB가 기존 반도허브 운영 DB 경로와 일치하지 않습니다.".into());
+    }
+    reject_retired_workspace(requested)?;
+    plain_entry(canonical.parent().ok_or("업무 DB 폴더 오류")?,true)?;
+    plain_entry(&canonical,false)?;
+    if canonical.canonicalize().map_err(|_|"운영 DB 경로 확인 실패")?!=canonical{
+        return Err("운영 DB 경로가 표준 위치와 일치하지 않습니다.".into());
+    }
+    for suffix in ["-wal","-shm","-journal"]{
+        let mut name=canonical.as_os_str().to_os_string();
+        name.push(suffix);
+        let sidecar=PathBuf::from(name);
+        match std::fs::symlink_metadata(&sidecar){
+            Ok(_)=>plain_entry(&sidecar,false)?,
+            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>{},
+            Err(_)=>return Err("운영 DB 보조 파일 경로 확인 실패".into()),
+        }
+    }
+    Ok(canonical)
+}
+fn validate_business_schema(conn:&Connection)->Result<(),String>{
+    let version:i64=conn.query_row(
+        "SELECT version FROM core_schema WHERE key='business-core'",[],|r|r.get(0)
+    ).map_err(|_|"운영 DB 스키마 버전을 확인하지 못했습니다.")?;
+    if version!=2{return Err("지원되지 않는 운영 DB 스키마입니다. 자동 변경하지 않았습니다.".into())}
+    Ok(())
+}
+fn validate_existing_database(path:&std::path::Path)->Result<(),String>{
+    let conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|_|"기존 업무 DB를 읽기 전용으로 열지 못했습니다.")?;
+    conn.execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=2000;")
+        .map_err(|_|"기존 업무 DB 읽기 전용 검증 실패")?;
+    validate_business_schema(&conn)
+}
+fn checked_configured_path(path:&std::path::Path)->Result<PathBuf,String>{
+    if test_launch(){
+        let actual=path.canonicalize().map_err(|_|"테스트 DB 경로 확인 실패")?;
+        if actual!=test_path()?{return Err("테스트 실행은 격리 테스트 DB만 사용할 수 있습니다.".into())}
+        return Ok(actual);
+    }
+    reject_retired_workspace(path)?;
+    // Existing compiled integration tests explicitly supply synthetic DBs.
+    // This exception does not exist in the distributed executable.
+    if cfg!(test){
+        if !path.is_file(){return Err("지정한 테스트 DB 파일이 없습니다.".into())}
+        return Ok(path.to_path_buf());
+    }
+    if !cfg!(windows){return Err("운영 DB 연결은 Windows에서만 지원합니다.".into())}
+    let roaming=std::env::var_os("APPDATA").filter(|v|!v.is_empty()).ok_or("APPDATA 누락")?;
+    checked_operating_database(std::path::Path::new(&roaming),path)
+}
+pub(crate) fn authorized_business_read_path()->Result<PathBuf,String>{
+    if std::env::var_os("BANDO_EGUI_CLIENT_INDEX").is_some_and(|v|!v.is_empty()){
+        return Err("JSON 거래처 인덱스와 운영 DB를 동시에 사용할 수 없습니다.".into());
+    }
+    if !test_launch()&&std::env::var("BANDO_HUB_GATEWAY").ok().is_some_and(|v|v.trim().eq_ignore_ascii_case("http")){
+        return Err("HTTP 연결에서는 로컬 운영 DB를 사용할 수 없습니다.".into());
+    }
+    let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB").filter(|v|!v.is_empty())
+        .map(PathBuf::from).ok_or("운영 DB가 연결되지 않았습니다.")?;
+    checked_configured_path(&path)
+}
+/// Open an already authorized business DB without CREATE, then validate the
+/// schema on that same handle before any business mutation or query.
+pub(crate) fn open_business_connection(path:impl AsRef<std::path::Path>,flags:OpenFlags)->Result<Connection,String>{
+    let supplied=path.as_ref();
+    let allowed=if flags.contains(OpenFlags::SQLITE_OPEN_READ_WRITE){
+        authorized_business_write_path()?
+    }else{authorized_business_read_path()?};
+    if supplied!=allowed{return Err("업무 DB 연결 경로가 변경되었습니다.".into())}
+    if flags!=OpenFlags::SQLITE_OPEN_READ_ONLY&&flags!=OpenFlags::SQLITE_OPEN_READ_WRITE{
+        return Err("업무 DB 연결 모드가 올바르지 않습니다.".into())
+    }
+    let conn=Connection::open_with_flags(&allowed,flags)
+        .map_err(|_|"기존 업무 DB를 열지 못했습니다.")?;
+    conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(|e|e.to_string())?;
+    if flags==OpenFlags::SQLITE_OPEN_READ_ONLY{
+        conn.execute_batch("PRAGMA query_only=ON;").map_err(|e|e.to_string())?;
+    }
+    validate_business_schema(&conn)?;
+    Ok(conn)
+}
+
 /// Existing DB read-only auto-binding happens once at the app entrypoint,
 /// before any workers start. Explicit configured DB/index or HTTP gateway wins.
 /// Debug builds cannot silently bind the production database.
@@ -148,8 +259,12 @@ pub fn bind_existing_tauri_database() -> Result<Option<PathBuf>,String>{
     }
     if let Some(path)=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
         .filter(|v|!v.is_empty()){
-        let path=PathBuf::from(path);
-        reject_retired_workspace(&path)?;
+        let path=checked_configured_path(&PathBuf::from(path))?;
+        validate_existing_database(&path)?;
+        if std::env::var_os("BANDO_EGUI_CLIENT_INDEX").is_some_and(|v|!v.is_empty()){
+            return Err("JSON 거래처 인덱스와 운영 DB를 동시에 사용할 수 없습니다.".into());
+        }
+        std::env::set_var("BANDO_EGUI_BUSINESS_DB",&path);
         return Ok(Some(path));
     }
     if std::env::var_os("BANDO_EGUI_CLIENT_INDEX")
@@ -161,23 +276,13 @@ pub fn bind_existing_tauri_database() -> Result<Option<PathBuf>,String>{
     };
     if cfg!(debug_assertions){return Ok(None);}
     let path=tauri_database_path(std::path::Path::new(&roaming))?;
-    if !path.is_file(){
-        return Ok(None);
+    match std::fs::symlink_metadata(&path){
+        Ok(_)=>{},
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>return Ok(None),
+        Err(_)=>return Err("기존 운영 DB 경로 확인 실패".into()),
     }
-    // A malformed existing file is NOT a reason to silently load a preview
-    // seed. Fail here without touching it; Tauri owns all migrations.
-    let connection=Connection::open_with_flags(
-        &path,OpenFlags::SQLITE_OPEN_READ_ONLY
-    ).map_err(|_|"기존 Tauri 업무 DB를 읽기 전용으로 열지 못했습니다.".to_owned())?;
-    connection.execute_batch("PRAGMA query_only=ON;")
-        .map_err(|_|"기존 업무 DB를 읽기 전용으로 검증하지 못했습니다.".to_owned())?;
-    let version:i64=connection.query_row(
-        "SELECT version FROM core_schema WHERE key='business-core'",[],|r|r.get(0)
-    ).map_err(|_|"기존 Tauri DB의 업무 스키마를 확인하지 못했습니다.".to_owned())?;
-    if version!=2{
-        return Err("기존 Tauri DB의 업무 스키마 버전이 지원되지 않습니다. 자동 변경하지 않았습니다.".into());
-    }
-    drop(connection);
+    let path=checked_operating_database(std::path::Path::new(&roaming),&path)?;
+    validate_existing_database(&path)?;
     std::env::set_var("BANDO_EGUI_BUSINESS_DB",&path);
     Ok(Some(path))
 }
@@ -186,25 +291,10 @@ pub fn bind_existing_tauri_database() -> Result<Option<PathBuf>,String>{
 /// Debug application builds are read-only; compiled test harnesses retain
 /// explicitly supplied isolated fixtures. No retired developer workspace.
 pub fn authorized_business_write_path() -> Result<PathBuf,String> {
-    let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-        .filter(|v|!v.is_empty()).map(PathBuf::from)
-        .ok_or("운영 DB가 연결되지 않았습니다.")?;
-    if std::env::var_os("BANDO_EGUI_CLIENT_INDEX").is_some_and(|v|!v.is_empty()){
-        return Err("거래처 JSON 인덱스를 운영 DB 저장과 함께 사용할 수 없습니다.".into());
-    }
-    if !path.is_file(){
-        return Err("지정한 업무 DB 파일이 없습니다. 새 DB를 만들지 않았습니다.".into());
-    }
-    if test_launch(){
-        let actual=path.canonicalize().map_err(|e|e.to_string())?;
-        if actual!=test_path()?{return Err("테스트 실행은 격리 테스트 DB에만 저장할 수 있습니다.".into());}
-        return Ok(actual);
-    }
-    reject_retired_workspace(&path)?;
-    if cfg!(debug_assertions) && !cfg!(test){
+    if !test_launch()&&cfg!(debug_assertions)&&!cfg!(test){
         return Err("디버그 빌드에서는 운영 DB에 저장할 수 없습니다. Release 실행파일을 사용하세요.".into());
     }
-    Ok(path)
+    authorized_business_read_path()
 }
 
 /// Explicit startup maintenance, separate from read-only DB binding.
@@ -213,8 +303,7 @@ pub fn authorized_business_write_path() -> Result<PathBuf,String> {
 pub fn migrate_bound_product_colors() -> Result<usize,String> {
     let path=authorized_business_write_path()?;
     let root=path.parent().ok_or("상품 색상 정리 백업 경로를 확인할 수 없습니다.")?;
-    let mut conn=Connection::open_with_flags(&path,OpenFlags::SQLITE_OPEN_READ_WRITE)
-        .map_err(|e|e.to_string())?;
+    let mut conn=open_business_connection(&path,OpenFlags::SQLITE_OPEN_READ_WRITE)?;
     conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(|e|e.to_string())?;
     conn.execute_batch("PRAGMA foreign_keys=ON").map_err(|e|e.to_string())?;
     bando_data_access::product_colors::migrate_v2(&mut conn,root)
@@ -252,21 +341,8 @@ pub fn load_export_metadata()->Result<Value,String>{
 enum ReadScope{Full,Catalog,ReceptionCatalog,Settings,Exports}
 
 fn load_projection(scope:ReadScope) -> Result<Value,String> {
-    let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-        .filter(|p|!p.is_empty())
-        .map(PathBuf::from)
-        .ok_or("기존 운영 DB를 찾지 못했습니다. 원본 DB를 새로 생성하거나 초기화하지 않았습니다.")?;
-    if test_launch(){
-        if path.canonicalize().map_err(|e|e.to_string())?!=test_path()?{
-            return Err("테스트 실행은 격리 테스트 DB만 조회할 수 있습니다.".into());
-        }
-    }else{reject_retired_workspace(&path)?;}
-    if std::env::var_os("BANDO_EGUI_CLIENT_INDEX").is_some_and(|p|!p.is_empty()) {
-        return Err("JSON 거래처 인덱스는 주문 가격 변경의 근거가 될 수 없습니다. 운영 DB 읽기 전용 연결을 사용하세요.".into());
-    }
-    if !path.is_file() {return Err("연결한 운영 DB 파일을 찾지 못했습니다.".into());}
-    let conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(|_|"운영 DB를 읽기 전용으로 열지 못했습니다.".to_owned())?;
+    let path=authorized_business_read_path()?;
+    let conn=open_business_connection(&path,OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     conn.execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=2000; BEGIN DEFERRED TRANSACTION;")
         .map_err(|_|"운영 DB 읽기 전용 트랜잭션을 열지 못했습니다.".to_owned())?;
     // Keep all table reads inside ONE consistent snapshot. Concurrent
@@ -319,6 +395,76 @@ fn load_projection(scope:ReadScope) -> Result<Value,String> {
 #[cfg(test)]
 mod auto_database_location_tests {
     use super::*;
+    struct TempRoot(PathBuf);
+    impl TempRoot{
+        fn new()->Self{
+            let p=std::env::temp_dir().join(format!("bando-db-path-test-{}",uuid::Uuid::new_v4()));
+            std::fs::create_dir(&p).unwrap();
+            Self(p)
+        }
+        fn fixture(&self)->PathBuf{
+            let db=tauri_database_path(&self.0).unwrap();
+            std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+            let conn=Connection::open(&db).unwrap();
+            conn.execute_batch("CREATE TABLE core_schema(key TEXT PRIMARY KEY,version INTEGER);
+                INSERT INTO core_schema VALUES('business-core',2);").unwrap();
+            db
+        }
+    }
+    impl Drop for TempRoot{fn drop(&mut self){let _=std::fs::remove_dir_all(&self.0);}}
+    #[test]
+    fn standard_existing_db_is_accepted_but_other_valid_sqlite_is_not(){
+        let t=TempRoot::new();
+        let db=t.fixture();
+        let other=db.with_file_name("other.sqlite");
+        std::fs::copy(&db,&other).unwrap();
+        assert_eq!(checked_operating_database(&t.0,&db).unwrap(),db.canonicalize().unwrap());
+        assert!(validate_existing_database(&db).is_ok());
+        assert!(checked_operating_database(&t.0,&other).is_err());
+        assert!(checked_operating_database(&t.0,std::path::Path::new("bando-hub-v001.sqlite")).is_err());
+    }
+    #[test]
+    fn missing_or_invalid_schema_does_not_create_or_change_database(){
+        let t=TempRoot::new();
+        let db=tauri_database_path(&t.0).unwrap();
+        assert!(checked_operating_database(&t.0,&db).is_err());
+        assert!(!db.exists());
+        std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+        std::fs::write(&db,b"synthetic non-database").unwrap();
+        assert!(validate_existing_database(&db).is_err());
+        assert_eq!(std::fs::read(&db).unwrap(),b"synthetic non-database");
+    }
+    #[test]
+    fn wrong_schema_version_rejected_read_only(){
+        let t=TempRoot::new();let db=t.fixture();
+        let c=Connection::open(&db).unwrap();
+        c.execute("UPDATE core_schema SET version=1",[]).unwrap();drop(c);
+        assert!(validate_existing_database(&db).is_err());
+        let c=Connection::open(&db).unwrap();
+        assert_eq!(c.query_row("SELECT version FROM core_schema",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+    }
+    #[test]
+    fn non_file_sidecar_rejected(){
+        let t=TempRoot::new();let db=t.fixture();
+        let mut side=db.as_os_str().to_os_string();side.push("-wal");
+        std::fs::create_dir(PathBuf::from(side)).unwrap();
+        assert!(checked_operating_database(&t.0,&db).is_err());
+    }
+    #[cfg(unix)]
+    #[test]
+    fn symlink_database_and_directory_are_rejected(){
+        use std::os::unix::fs::symlink;
+        let t=TempRoot::new();let db=t.fixture();
+        let elsewhere=t.0.join("other.sqlite");
+        std::fs::rename(&db,&elsewhere).unwrap();
+        symlink(&elsewhere,&db).unwrap();
+        assert!(checked_operating_database(&t.0,&db).is_err());
+        std::fs::remove_file(&db).unwrap();
+        let dir=db.parent().unwrap();let moved=t.0.join("other-dir");
+        std::fs::rename(dir,&moved).unwrap();
+        symlink(&moved,dir).unwrap();
+        assert!(checked_operating_database(&t.0,&db).is_err());
+    }
     #[test]
     fn resolves_only_the_existing_operating_database(){
         let root=std::path::Path::new("roaming-root");

@@ -23,7 +23,7 @@ pub(crate) fn open_db()->Result<(Connection,PathBuf),String>{
     if !excel_service::writable(){return Err(bando_data_access::terminology::FACTORY_REPLY_WRITE_DENIED.into())}
     let path=business_state::authorized_business_write_path()?;
     let base=path.parent().ok_or("업무 DB 경로 오류")?.to_path_buf();
-    let conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE).map_err(|e|e.to_string())?;
+    let conn=crate::business_state::open_business_connection(path,OpenFlags::SQLITE_OPEN_READ_WRITE).map_err(|e|e.to_string())?;
     conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;").map_err(|e|e.to_string())?;
     let v:i64=conn.query_row("SELECT version FROM core_schema WHERE key='business-core'",[],|r|r.get(0)).map_err(|e|e.to_string())?;
     if v!=2{return Err("지원하지 않는 업무 DB 버전".into())}

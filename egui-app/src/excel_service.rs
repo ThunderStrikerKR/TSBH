@@ -111,7 +111,7 @@ pub(crate) fn save_factory_test_export(root:&Path,preview:&Value)->Result<PathBu
 }
 fn conn()->Result<Connection,String>{
     let path=business_state::authorized_business_write_path()?;
-    let db=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
+    let db=crate::business_state::open_business_connection(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
         .map_err(|_|"운영 Excel 이력 DB를 열지 못했습니다.")?;
     db.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
     db.execute_batch("PRAGMA foreign_keys=ON;").map_err(|e|e.to_string())?;

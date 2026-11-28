@@ -334,9 +334,9 @@ impl BandoGateway for LocalGateway {
         if std::env::var_os("BANDO_EGUI_CLIENT_INDEX").is_some_and(|p|!p.is_empty()){
             return Err("JSON 거래처 인덱스와 운영 DB를 동시에 사용할 수 없습니다.".into());
         }
-        let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB").ok_or("업무 DB 연결 없음")?;
-        let mut conn=rusqlite::Connection::open_with_flags(std::path::PathBuf::from(path),
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e|e.to_string())?;
+        let path=crate::business_state::authorized_business_read_path()?;
+        let mut conn=crate::business_state::open_business_connection(path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         conn.busy_timeout(std::time::Duration::from_secs(2)).map_err(|e|e.to_string())?;
         conn.execute_batch("PRAGMA query_only=ON").map_err(|e|e.to_string())?;
         let tx=conn.transaction().map_err(|e|e.to_string())?;
@@ -407,9 +407,9 @@ impl BandoGateway for LocalGateway {
         // The settings CLI is no longer involved in saving model families.
         // The shared service implements the original per-key CAS + native
         // Rust model-group validation inside one revision-checked writer.
-        use rusqlite::{Connection,OpenFlags};
+        use rusqlite::OpenFlags;
         let path=crate::business_state::authorized_business_write_path()?;
-        let mut conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
+        let mut conn=crate::business_state::open_business_connection(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
             .map_err(|_|"운영 DB를 열 수 없습니다.".to_owned())?;
         conn.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(|e|e.to_string())?;
@@ -438,7 +438,7 @@ impl BandoGateway for LocalGateway {
     }
     fn mutate_product(&self,revision:u64,action:&str,data:Value)
         -> Result<Value,String>{
-        use rusqlite::{Connection,OpenFlags};
+        use rusqlite::OpenFlags;
         if !self.product_write_enabled(){
             return Err("운영 상품을 수정할 수 있는 연결이 아닙니다.".into());
         }
@@ -452,7 +452,7 @@ impl BandoGateway for LocalGateway {
         if request.to_string().len()>limit{
             return Err("상품 변경 요청이 허용 크기를 초과했습니다.".into());
         }
-        let mut conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
+        let mut conn=crate::business_state::open_business_connection(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
             .map_err(|_|"운영 DB를 열 수 없습니다.".to_owned())?;
         conn.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(|e|e.to_string())?;
@@ -539,9 +539,7 @@ impl BandoGateway for LocalGateway {
         // Use the native backup service, the same authorized business DB
         // path, and then the existing revision-checked product writer.
         let path=crate::business_state::authorized_business_write_path()?;
-        let conn=rusqlite::Connection::open_with_flags(
-            &path,rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
-        ).map_err(|_|"운영 DB를 열 수 없습니다.".to_owned())?;
+        let conn=crate::business_state::open_business_connection(&path,rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE).map_err(|_|"운영 DB를 열 수 없습니다.".to_owned())?;
         conn.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(|e|e.to_string())?;
         conn.execute_batch("PRAGMA foreign_keys=ON;")
@@ -558,7 +556,7 @@ impl BandoGateway for LocalGateway {
     }
     fn mutate_shipping(&self,revision:u64,action:&str,data:Value)
         -> Result<Value,String> {
-        use rusqlite::{Connection,OpenFlags};
+        use rusqlite::OpenFlags;
         if !self.shipping_write_enabled() {
             return Err("운영 운임을 변경할 수 있는 연결이 아닙니다.".into());
         }
@@ -574,9 +572,7 @@ impl BandoGateway for LocalGateway {
             return Err("운임 변경 요청 크기가 허용 범위를 초과했습니다.".into());
         }
         // Direct native Rust call. No Tauri EXE or process IPC is involved.
-        let mut conn=Connection::open_with_flags(
-            &path,OpenFlags::SQLITE_OPEN_READ_WRITE
-        ).map_err(|_|"운영 DB를 열 수 없습니다.".to_owned())?;
+        let mut conn=crate::business_state::open_business_connection(&path,OpenFlags::SQLITE_OPEN_READ_WRITE).map_err(|_|"운영 DB를 열 수 없습니다.".to_owned())?;
         conn.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(|e|e.to_string())?;
         conn.execute_batch("PRAGMA foreign_keys=ON;")
@@ -635,7 +631,7 @@ impl BandoGateway for LocalGateway {
     fn mutate_workflow(
         &self,expected_revision:u64,action:&str,args:Value
     )->Result<Value,String>{
-        use rusqlite::{Connection,OpenFlags};
+        use rusqlite::OpenFlags;
         // These are the existing React/Rust actions, not UI-invented stages.
         let group_delete=matches!(action,"delete_group"|"restore_group");
         if !group_delete && !matches!(
@@ -648,9 +644,7 @@ impl BandoGateway for LocalGateway {
             return Err("지원하지 않는 주문 묶음 작업입니다.".into());
         }
         let path=crate::business_state::authorized_business_write_path()?;
-        let mut conn=Connection::open_with_flags(
-            path,OpenFlags::SQLITE_OPEN_READ_WRITE
-        ).map_err(|_|"업무 DB를 쓰기 모드로 열 수 없습니다.".to_owned())?;
+        let mut conn=crate::business_state::open_business_connection(path,OpenFlags::SQLITE_OPEN_READ_WRITE).map_err(|_|"업무 DB를 쓰기 모드로 열 수 없습니다.".to_owned())?;
         conn.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(|error|error.to_string())?;
         conn.execute_batch("PRAGMA foreign_keys=ON;")

@@ -32,9 +32,7 @@ pub fn load()->Result<Value,String>{
             // Read-only previews never open an operational DB for writes.
             let path=crate::business_state::authorized_client_write_path()?;
             let base=path.parent().ok_or("거래처 DB 폴더를 확인할 수 없습니다.")?;
-            let mut conn=Connection::open_with_flags(
-                &path,OpenFlags::SQLITE_OPEN_READ_WRITE
-            ).map_err(|e|e.to_string())?;
+            let mut conn=crate::business_state::open_business_connection(&path,OpenFlags::SQLITE_OPEN_READ_WRITE).map_err(|e|e.to_string())?;
             conn.busy_timeout(Duration::from_secs(5))
                 .map_err(|e|e.to_string())?;
             bando_data_access::client_names::migrate_v2(&mut conn,base)?;
@@ -75,7 +73,7 @@ pub fn mutate(expected:Value,action:&str,client:Value)->Result<Value,String>{
         return Err("거래처 저장 권한이 없거나 운영 DB가 연결되지 않았습니다.".into());
     }
     let path=crate::business_state::authorized_client_write_path()?;
-    let mut conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
+    let mut conn=crate::business_state::open_business_connection(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
         .map_err(|_|"업무 거래처 DB를 쓰기 모드로 열 수 없습니다.".to_owned())?;
     conn.busy_timeout(Duration::from_secs(5))
         .map_err(|e|e.to_string())?;
@@ -136,7 +134,7 @@ pub fn apply_workbook(reviewed:Value)->Result<Value,String>{
     if !editable(){return Err("거래처 Excel 저장 권한이 없습니다.".into());}
     let path=crate::business_state::authorized_client_write_path()?;
     let base=path.parent().ok_or("백업 경로 누락")?;
-    let mut conn=Connection::open_with_flags(&path,OpenFlags::SQLITE_OPEN_READ_WRITE)
+    let mut conn=crate::business_state::open_business_connection(&path,OpenFlags::SQLITE_OPEN_READ_WRITE)
         .map_err(|e|e.to_string())?;
     conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
     conn.execute_batch("PRAGMA foreign_keys=ON;").map_err(|e|e.to_string())?;
