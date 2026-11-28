@@ -24,12 +24,68 @@ struct Evidence {
     item_id: Option<String>,
 }
 
+// Physical lines and logical record slices are distinct. The physical
+// line index includes blank lines and never changes when a record splits.
 #[derive(Clone, Debug)]
-struct Line<'a> {
+struct PhysicalLine<'a> {
     text: &'a str,
     start: usize,
     number: usize,
     paragraph: usize,
+    terminator_end: usize,
+}
+
+#[derive(Clone, Debug)]
+struct RecordSlice<'a> {
+    text: &'a str,
+    start: usize,
+    number: usize,
+    paragraph: usize,
+}
+impl<'a> PhysicalLine<'a>{
+    fn record(&self)->RecordSlice<'a>{
+        RecordSlice{text:self.text,start:self.start,number:self.number,paragraph:self.paragraph}
+    }
+}
+
+// One coordinate index per order. Only Unicode scalar boundaries are
+// valid source offsets; do not silently round an invalid byte offset.
+struct SourceGeometry<'a>{
+    raw:&'a str,
+    lines:Vec<PhysicalLine<'a>>,
+    utf16_boundaries:Vec<(usize,usize)>,
+}
+impl<'a> SourceGeometry<'a>{
+    fn new(raw:&'a str)->Self{
+        let mut utf16_boundaries=Vec::with_capacity(raw.len().min(4096));
+        let mut units=0;
+        for (offset,c) in raw.char_indices(){
+            utf16_boundaries.push((offset,units));
+            units+=c.len_utf16();
+        }
+        utf16_boundaries.push((raw.len(),units));
+        let lines=physical_lines(raw);
+        debug_assert_eq!(lines.last().map(|line|line.terminator_end),Some(raw.len()));
+        Self{raw,lines,utf16_boundaries}
+    }
+    fn utf16(&self,offset:usize)->usize{
+        let index=self.utf16_boundaries.binary_search_by_key(&offset,|&(byte,_)|byte)
+            .expect("recognition source must be a Unicode scalar boundary");
+        self.utf16_boundaries[index].1
+    }
+    fn content_lines(&self)->impl Iterator<Item=RecordSlice<'a>>+'_{
+        self.lines.iter().filter(|line|!line.text.trim().is_empty()).map(PhysicalLine::record)
+    }
+    fn evidence_line(&self,e:&Evidence)->&'a str{
+        let start=self.lines[e.line].start;
+        // Memo evidence may extend across more than one physical line.
+        let end_index=self.lines.partition_point(|line|line.start<=e.end).saturating_sub(1);
+        let last=&self.lines[end_index.max(e.line)];
+        &self.raw[start..last.start+last.text.len()]
+    }
+    fn gap(&self,earlier:usize,later:usize)->InterveningLines{
+        intervening_lines(&self.lines,earlier,later)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -109,10 +165,8 @@ fn utf16(raw: &str, byte_index: usize) -> usize {
 }
 /// Copy source order-evidence.ts reason contracts rather than exporting
 /// internal Rust recognition diagnostics into the UI evidence list.
-fn ts_evidence_reason(raw: &str,e:&Evidence) -> String {
-    let start=raw[..e.start].rfind('\n').map_or(0,|i|i+1);
-    let end=e.end+raw[e.end..].find('\n').unwrap_or(raw.len()-e.end);
-    let line=raw[start..end].trim();
+fn ts_evidence_reason(geometry:&SourceGeometry<'_>,e:&Evidence)->String {
+    let line=geometry.evidence_line(e).trim();
     let base=match (e.kind,e.reason) {
         ("product",_)=>"상품 코드 / 별칭 / 옵션 인식 결과; 귀속은 별도 판정",
         ("quantity","상품 행에 명시된 수량") if
@@ -175,15 +229,16 @@ fn ts_evidence_reason(raw: &str,e:&Evidence) -> String {
     } else {base.to_owned()}
 }
 
-fn e_json(raw: &str, e: &Evidence) -> Value {
-    let start = utf16(raw, e.start);
-    let end = utf16(raw, e.end);
+fn e_json(geometry:&SourceGeometry<'_>,e:&Evidence)->Value {
+    let raw=geometry.raw;
+    let start=geometry.utf16(e.start);
+    let end=geometry.utf16(e.end);
     let mut result = json!({
         "id": format!("{}:{}:{}", e.kind, start, end),
         "text": &raw[e.start..e.end],
         "start": start, "end": end,
         "line": e.line, "paragraph": e.paragraph,
-        "kind": e.kind, "value": e.value, "reason": ts_evidence_reason(raw,e),
+        "kind": e.kind, "value": e.value, "reason": ts_evidence_reason(geometry,e),
     });
     if let Some(recipient) = e.recipient {
         result["recipientId"] = json!(format!("recognition:recipient:{recipient}"));
@@ -198,7 +253,7 @@ fn add_evidence(events: &mut Vec<Evidence>, e: Evidence) -> usize {
     events.push(e);
     events.len() - 1
 }
-fn add_match(events: &mut Vec<Evidence>, line: &Line<'_>, start: usize,
+fn add_match(events: &mut Vec<Evidence>, line: &RecordSlice<'_>, start: usize,
     end: usize, kind: &'static str, value: String, reason: &'static str) -> usize {
     add_evidence(events, Evidence {
         kind, value, start: line.start + start, end: line.start + end,
@@ -206,27 +261,38 @@ fn add_match(events: &mut Vec<Evidence>, line: &Line<'_>, start: usize,
         recipient: None, item_id: None,
     })
 }
-fn physical_lines(raw: &str) -> Vec<Line<'_>> {
-    let regex = Regex::new(r"[^\r\n]+").expect("physical lines");
-    let mut paragraph = 0;
-    let mut line_number = 0;
-    let mut previous = 0;
-    // Whitespace-only lines are blank separators, not discarded evidence.
-    let mut skipped_blank = false;
-    regex.find_iter(raw).filter_map(|m| {
-        let gap = &raw[previous..m.start()];
-        let newlines = gap.bytes().filter(|b| *b == b'\n').count();
-        line_number += newlines;
-        previous = m.end();
-        if m.as_str().trim().is_empty() {
-            skipped_blank = true;
-            return None;
+fn physical_lines(raw:&str)->Vec<PhysicalLine<'_>>{
+    let mut lines=Vec::new();
+    let bytes=raw.as_bytes();
+    let mut start=0;
+    let mut paragraph=0;
+    let mut blank_since_content=false;
+    let mut prior_content=false;
+    let mut leading_whitespace=false;
+    loop{
+        let end=start+bytes[start..].iter().position(|&b|b==b'\r'||b==b'\n')
+            .unwrap_or(bytes.len()-start);
+        let terminator_end=if end==bytes.len(){end}
+            else if bytes[end]==b'\r'&&bytes.get(end+1)==Some(&b'\n'){end+2}
+            else{end+1};
+        let text=&raw[start..end];
+        let number=lines.len();
+        if text.trim().is_empty(){
+            blank_since_content=true;
+            if !prior_content&&!text.is_empty(){leading_whitespace=true;}
+        }else{
+            // Preserve the historical paragraph numbering for LF/CRLF,
+            // including leading whitespace, while supporting bare CR.
+            if (prior_content&&blank_since_content)
+                ||(!prior_content&&(number>1||leading_whitespace)){paragraph+=1;}
+            prior_content=true;
+            blank_since_content=false;
         }
-        if newlines > 1 || (skipped_blank && newlines > 0) { paragraph += 1; }
-        skipped_blank = false;
-        Some(Line { text: m.as_str(), start: m.start(), number: line_number,
-            paragraph })
-    }).collect()
+        lines.push(PhysicalLine{text,start,number,paragraph,terminator_end});
+        if end==bytes.len(){break;}
+        start=terminator_end;
+    }
+    lines
 }
 
 // Source geometry stays independent of source-value interpretation. Preserve
@@ -237,12 +303,12 @@ struct InterveningLines {
     blank_lines: usize,
     max_consecutive_blank_lines: usize,
 }
-fn intervening_lines(raw: &str, earlier: usize, later: usize) -> InterveningLines {
+fn intervening_lines(lines:&[PhysicalLine<'_>], earlier:usize, later:usize)->InterveningLines {
     let mut result = InterveningLines::default();
     if later <= earlier + 1 { return result; }
     let mut current_blank_run = 0usize;
-    for line in raw.split('\n').skip(earlier + 1).take(later - earlier - 1) {
-        if line.trim().is_empty() {
+    for line in lines.iter().skip(earlier+1).take(later-earlier-1) {
+        if line.text.trim().is_empty() {
             result.blank_lines += 1;
             current_blank_run += 1;
             result.max_consecutive_blank_lines =
@@ -514,10 +580,10 @@ fn project_name<'a>(line:&'a str,proposals:&[NameProposal],search:&mut ProductSe
 // A physical line can contain several explicit records. These are
 // non-owning slices, never synthetic newlines. Offsets and line geometry
 // remain those of the original document.
-fn record_slice<'a>(line:&Line<'a>,a:usize,b:usize)->Line<'a>{
-    Line{text:&line.text[a..b],start:line.start+a,number:line.number,paragraph:line.paragraph}
+fn record_slice<'a>(line:&RecordSlice<'a>,a:usize,b:usize)->RecordSlice<'a>{
+    RecordSlice{text:&line.text[a..b],start:line.start+a,number:line.number,paragraph:line.paragraph}
 }
-fn recipient_records<'a>(line:&Line<'a>,label:&Regex,phone:&Regex)->Option<Vec<Line<'a>>>{
+fn recipient_records<'a>(line:&RecordSlice<'a>,label:&Regex,phone:&Regex)->Option<Vec<RecordSlice<'a>>>{
     if !line.text.contains([';','；'])||line.text.contains('|'){return None;}
     let mut ranges=Vec::new();
     let mut start=0;
@@ -537,8 +603,8 @@ fn recipient_records<'a>(line:&Line<'a>,label:&Regex,phone:&Regex)->Option<Vec<L
     }){return None;}
     Some(ranges.into_iter().map(|(a,b)|record_slice(line,a,b)).collect())
 }
-fn product_records<'a>(line:&Line<'a>,quantities:&[quantity::Quantity],
-    label:&Regex,phone:&Regex,search:&mut ProductSearch<'a,'_>)->Option<Vec<(Line<'a>,Vec<quantity::Quantity>)>>{
+fn product_records<'a>(line:&RecordSlice<'a>,quantities:&[quantity::Quantity],
+    label:&Regex,phone:&Regex,search:&mut ProductSearch<'a,'_>)->Option<Vec<(RecordSlice<'a>,Vec<quantity::Quantity>)>>{
     let text=line.text;
     if quantities.len()<2||quantities.len()>16||label.is_match(text)||phone.is_match(text)
         ||address_begin(text).is_some()||text.contains('|')||is_money_or_header(text)
@@ -576,7 +642,7 @@ struct ContactCandidate{
     value:String,
 }
 struct LineCandidates<'a>{
-    line:Line<'a>,
+    line:RecordSlice<'a>,
     raw_address:Option<usize>,
     address:Option<usize>,
     explicit_name:Option<(usize,usize)>,
@@ -592,7 +658,7 @@ struct LineCandidates<'a>{
 // All physical lines, including sender and unrecognized lines, survive
 // discovery. The old recipient projection may exclude them, but it no
 // longer determines which recipient proposals are discovered.
-fn collect_document<'a>(raw:&'a str,phone:&Regex,label:&Regex,
+fn collect_document<'a>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Regex,
     search:&mut ProductSearch<'a,'_>)->Vec<LineCandidates<'a>>{
     let sender=Regex::new(r"^(?:보내는\s*(?:분|사람|곳)|송하인(?:명)?)\s*[:：]").expect("sender prefix");
     let mut sender_section=false;
@@ -600,7 +666,7 @@ fn collect_document<'a>(raw:&'a str,phone:&Regex,label:&Regex,
     // Use one physical-line pass. Reuse each discovered quantity when a
     // bare product row is split; explicit recipient records are scanned
     // only within their original slices.
-    for line in physical_lines(raw){
+    for line in geometry.content_lines(){
         let text=line.text;
         let sender_heading=sender.is_match(text.trim());
         let recipient_heading=label.find(text).is_some_and(|m|m.as_str().contains([':', '：']));
@@ -701,9 +767,10 @@ fn product_signal(text: &str, decision: &Value, _state: &Value) -> bool {
     product_category.is_match(t)
         && (quantity::extract(t).len()>0 || t.contains("BANDO") || t.contains("반도"))
 }
-fn source_json(raw: &str, e: &Evidence, recipient_id: &str, target_id: &str) -> Value {
+fn source_json(geometry:&SourceGeometry<'_>,e:&Evidence,recipient_id:&str,target_id:&str)->Value {
+    let raw=geometry.raw;
     json!({
-        "start": utf16(raw,e.start), "end": utf16(raw,e.end),
+        "start": geometry.utf16(e.start), "end": geometry.utf16(e.end),
         "field": e.kind, "targetId": target_id,
         "recipientId":recipient_id, "text": &raw[e.start..e.end],
     })
@@ -756,14 +823,14 @@ fn address_info(value: &str) -> (String, String, Value) {
     }
     (kind.into(), status.into(), parts)
 }
-fn blank_recipient(id: &str, name: &str, anchor: Option<&Evidence>, raw: &str) -> Value {
+fn blank_recipient(id:&str,name:&str,anchor:Option<&Evidence>,geometry:&SourceGeometry<'_>)->Value {
     let mut value = json!({
         "id":id, "name":name, "address":"", "phone":"", "mobile":"", "note":"",
         "items":[], "sources":[], "candidates":[],
     });
     if let Some(a) = anchor {
-        value["evidence"] = json!({"anchorId": format!("{}:{}:{}",a.kind,utf16(raw,a.start),utf16(raw,a.end)),
-            "start":utf16(raw,a.start),"end":utf16(raw,a.end)});
+        value["evidence"] = json!({"anchorId": format!("{}:{}:{}",a.kind,geometry.utf16(a.start),geometry.utf16(a.end)),
+            "start":geometry.utf16(a.start),"end":geometry.utf16(a.end)});
     }
     value
 }
@@ -776,7 +843,7 @@ fn owner_index(anchors: &[usize], events: &[Evidence], offset: usize) -> usize {
 // to that next recipient when the preceding name is in another paragraph.
 // Distances are supporting evidence only: they never create recipients.
 fn recipient_owner_index(
-    anchors: &[usize], events: &[Evidence], evidence_index: usize, raw: &str
+    anchors: &[usize], events: &[Evidence], evidence_index: usize, geometry:&SourceGeometry<'_>
 ) -> usize {
     let candidate=&events[evidence_index];
     let previous=owner_index(anchors,events,candidate.start);
@@ -807,8 +874,8 @@ fn recipient_owner_index(
     if !previous_has_delivery {return previous;}
     // A separating line containing only spaces/tabs counts as a block
     // boundary too. This is a conservative overlay on the existing gates.
-    let previous_gap=intervening_lines(raw,preceding.line,candidate.line);
-    let following_gap=intervening_lines(raw,candidate.line,following.line);
+    let previous_gap=geometry.gap(preceding.line,candidate.line);
+    let following_gap=geometry.gap(candidate.line,following.line);
     if following_gap.blank_lines>0 {return previous;}
     let next_distance=following.line.saturating_sub(candidate.line);
     if next_distance>3 {return previous;}
@@ -1028,7 +1095,8 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     let phone=phone_regex();
     let person_label=recipient_label();
     let mut search=ProductSearch::new(state,client_id);
-    let rows=collect_document(raw,&phone,&person_label,&mut search);
+    let geometry=SourceGeometry::new(raw);
+    let rows=collect_document(&geometry,&phone,&person_label,&mut search);
     let mut events:Vec<Evidence>=Vec::new();
     let mut product_hits:Vec<ProductHit>=Vec::new();
     // Direct translation of order-evidence.ts:140-170: parenthesized
@@ -1303,21 +1371,21 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     let mut recipients: Vec<Value> = anchors.iter().enumerate().map(|(i,a)| {
         let e = &events[*a];
         blank_recipient(&format!("recognition:recipient:{i}"),
-            if e.kind=="name" {&e.value} else {""},Some(e),raw)
+            if e.kind=="name" {&e.value} else {""},Some(e),&geometry)
     }).collect();
     if recipients.is_empty() {
-        recipients.push(blank_recipient("recognition:recipient:0","",None,raw));
+        recipients.push(blank_recipient("recognition:recipient:0","",None,&geometry));
     }
     let mut postcodes=vec![HashSet::<String>::new();recipients.len()];
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
-        let row_index = recipient_owner_index(&anchors,&events,index,raw);
+        let row_index = recipient_owner_index(&anchors,&events,index,&geometry);
         let rid = recipients[row_index]["id"].as_str().unwrap_or("").to_owned();
         let e = &events[index];
         let kind = e.kind;
         if kind=="address" {
-            if let Some((line_index,line))=rows.iter().map(|row|&row.line).enumerate()
-                .find(|(_,line)|line.number==e.line&&line.start<=e.start
+            if let Some(line)=rows.iter().map(|row|&row.line)
+                .find(|line|line.number==e.line&&line.start<=e.start
                     &&e.start<line.start+line.text.len()){
                 let prefix=&raw[line.start..e.start];
                 if let Some(code)=postcode::before_address(prefix){
@@ -1329,8 +1397,8 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                 }
                 // A standalone labelled code belongs only to an unambiguous
                 // immediately adjacent address in the same paragraph.
-                for adjacent in [line_index.checked_sub(1),line_index.checked_add(1)]
-                    .into_iter().flatten().filter_map(|i|rows.get(i).map(|row|&row.line)){
+                for adjacent in [e.line.checked_sub(1),e.line.checked_add(1)]
+                    .into_iter().flatten().filter_map(|i|geometry.lines.get(i)){
                     if adjacent.paragraph!=line.paragraph ||
                         adjacent.number.abs_diff(line.number)!=1{continue;}
                     if let Some(code)=postcode::labelled_line(adjacent.text){
@@ -1369,13 +1437,13 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                 other
             } else {kind}
         } else {kind};
-        let mut src=source_json(raw,e,&rid,&rid);
+        let mut src=source_json(&geometry,e,&rid,&rid);
         src["field"]=json!(effective_field);
         recipients[row_index]["sources"].as_array_mut().expect("sources").push(src);
         recipients[row_index]["candidates"].as_array_mut().expect("candidates")
-            .push(json!({"id":format!("{}:{}:{}",kind,utf16(raw,e.start),utf16(raw,e.end)),
+            .push(json!({"id":format!("{}:{}:{}",kind,geometry.utf16(e.start),geometry.utf16(e.end)),
                 "field":effective_field,"value":e.value,"label":e.value,
-                "start":utf16(raw,e.start),"end":utf16(raw,e.end)}));
+                "start":geometry.utf16(e.start),"end":geometry.utf16(e.end)}));
         events[index].recipient = Some(row_index);
     }
     for (row,codes) in recipients.iter_mut().zip(postcodes) {
@@ -1403,7 +1471,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         } else { vec![owner] };
         for idx in attach_to {
             let (display_raw,display_start)=ts_product_display(hit,&events);
-            let id = format!("recognition:item:{}:{}", utf16(raw,events[hit.evidence].start),idx);
+            let id = format!("recognition:item:{}:{}", geometry.utf16(events[hit.evidence].start),idx);
             let rid = recipients[idx]["id"].as_str().unwrap_or("").to_owned();
             // Direct port of order-evidence.ts:534-560:
             // - non-common goods keep their own line quantity
@@ -1512,7 +1580,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             if !reason.is_null() {item["recognitionReason"]=reason;}
             apply_registered_item(&mut item,state,client,
                 hit.decision.get("color").and_then(Value::as_str).unwrap_or(""));
-            let mut product_source=source_json(raw,&events[hit.evidence],&rid,&id);
+            let mut product_source=source_json(&geometry,&events[hit.evidence],&rid,&id);
             // parser.ts::productNameEvidence returns the registered model
             // token rather than the surrounding "(블랙)" color hint. Keep
             // recognition's original evidence intact; correct only the
@@ -1534,8 +1602,8 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                         if let Some((begin,end))=spans.first().copied() {
                             let start=hit.source_start+begin;
                             let finish=hit.source_start+end;
-                            product_source["start"]=json!(utf16(raw,start));
-                            product_source["end"]=json!(utf16(raw,finish));
+                            product_source["start"]=json!(geometry.utf16(start));
+                            product_source["end"]=json!(geometry.utf16(finish));
                             product_source["text"]=json!(&hit.raw[begin..end]);
                             // TS analyzes product NameEvidence once and
                             // exposes the same narrowed source span in both
@@ -1549,7 +1617,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             }
             let mut sources=vec![product_source];
             if let Some(qi)=selected_qty {
-                sources.push(source_json(raw,&events[qi],&rid,&id));
+                sources.push(source_json(&geometry,&events[qi],&rid,&id));
                 events[qi].item_id=Some(id.clone());
                 events[qi].recipient=Some(idx);
             }
@@ -1583,7 +1651,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                     issues.retain(|s|!s.as_str().unwrap_or("").contains("수량"));
                 }
                 recipients[idx]["items"][item_idx]["sources"].as_array_mut().expect("item sources")
-                    .push(source_json(raw,&events[q],&rid,&id));
+                    .push(source_json(&geometry,&events[q],&rid,&id));
                 events[q].recipient=Some(idx);
                 events[q].item_id=Some(id);
             }
@@ -1597,7 +1665,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     ordered.sort_by_key(|e|(e.start,e.end));
     let mut unassigned=Vec::new();
     for e in &ordered {
-        if e.recipient.is_none(){unassigned.push(e_json(raw,e)["id"].clone());}
+        if e.recipient.is_none(){unassigned.push(e_json(&geometry,e)["id"].clone());}
     }
     for e in &events {
         if (e.kind=="product" || e.kind=="quantity") && e.recipient.is_none() {
@@ -1610,11 +1678,11 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                 recipients[idx]["unassignedEvidence"]=json!([]);
             }
             recipients[idx]["unassignedEvidence"].as_array_mut()
-                .expect("unassigned evidence array").push(e_json(raw,e));
+                .expect("unassigned evidence array").push(e_json(&geometry,e));
         }
     }
     let candidates: Vec<Value> = ordered.iter().map(|e| {
-        let mut candidate=e_json(raw,e);
+        let mut candidate=e_json(&geometry,e);
         if let Some(idx) = e.recipient {
             candidate["recipientId"]=recipients[idx]["id"].clone();
         }
@@ -1786,7 +1854,7 @@ mod tests {
         let state=state();
         let raw="GT-1 010-1234-5678\n709 2개 김가상 010-2345-6789\n송하인: 가상상사\n010-3456-7890";
         let mut search=ProductSearch::new(&state,"");
-        let rows=collect_document(raw,&phone_regex(),&recipient_label(),&mut search);
+        let rows=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
         assert_eq!(rows.len(),4);
         assert_eq!(&rows[0].line.text[rows[0].names[0].span.0..rows[0].names[0].span.1],"GT-1");
         assert_eq!(rows[0].names[0].requirement,NameRequirement::NotProduct);
@@ -1805,7 +1873,7 @@ mod tests {
         let state=state();
         let raw="수취인: 김가상 010-1234-5678； 수취인: 이가상 010-2345-6789";
         let mut search=ProductSearch::new(&state,"");
-        let rows=collect_document(raw,&phone_regex(),&recipient_label(),&mut search);
+        let rows=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
         assert_eq!(rows.len(),2);
         assert_eq!(rows[0].line.number,rows[1].line.number);
         assert!(rows[0].line.start<rows[1].line.start);
@@ -1830,7 +1898,7 @@ mod tests {
         let state=state();
         let raw="709 2개 / GT-1 3개";
         let mut search=ProductSearch::new(&state,"");
-        let rows=collect_document(raw,&phone_regex(),&recipient_label(),&mut search);
+        let rows=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
         assert_eq!(rows.len(),2);
         assert_eq!(rows[0].line.number,rows[1].line.number);
         assert!(search.probes.values().all(|p|matches!(p,ProductProbe::Collected(_))));
@@ -1843,14 +1911,14 @@ mod tests {
         assert_eq!(items[1]["quantity"],3);
         let ambiguous="709 2개 구성 / GT-1 3개";
         let mut other=ProductSearch::new(&state,"");
-        assert_eq!(collect_document(ambiguous,&phone_regex(),&recipient_label(),&mut other).len(),1);
+        assert_eq!(collect_document(&SourceGeometry::new(ambiguous),&phone_regex(),&recipient_label(),&mut other).len(),1);
     }
     #[test]
     fn sender_candidates_survive_discovery_without_leaking_into_recipient_projection(){
         let state=state();
         let raw="송하인: 가상상사\n010-1111-2222\n2개\n수취인: 김가상 010-2345-6789\n709 1개";
         let mut search=ProductSearch::new(&state,"");
-        let rows=collect_document(raw,&phone_regex(),&recipient_label(),&mut search);
+        let rows=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
         assert_eq!(rows[1].zone,SourceZone::Sender);
         assert_eq!(rows[2].quantities[0].value,2);
         assert_eq!(rows[3].zone,SourceZone::Recipient);
@@ -1861,6 +1929,41 @@ mod tests {
         assert_eq!(r["items"][0]["quantity"],1);
         assert!(!result["candidates"].as_array().unwrap().iter()
             .any(|c|c["text"]=="2개"||c["text"]=="010-1111-2222"));
+    }
+    #[test]
+    fn source_geometry_preserves_mixed_newlines_blank_lines_and_utf16(){
+        let raw="😀가\r\n \t\r나\n\r\n끝\r";
+        let geometry=SourceGeometry::new(raw);
+        assert_eq!(geometry.lines.len(),6);
+        assert_eq!(geometry.lines.iter().map(|line|line.text).collect::<Vec<_>>(),
+            vec!["😀가"," \t","나","","끝",""]);
+        assert_eq!(geometry.content_lines().map(|line|(line.number,line.paragraph)).collect::<Vec<_>>(),
+            vec![(0,0),(2,1),(4,2)]);
+        let rebuilt=geometry.lines.iter().map(|line|&raw[line.start..line.terminator_end]).collect::<String>();
+        assert_eq!(rebuilt,raw);
+        for (byte,_) in raw.char_indices(){
+            assert_eq!(geometry.utf16(byte),raw[..byte].encode_utf16().count());
+        }
+        assert_eq!(geometry.utf16(raw.len()),raw.encode_utf16().count());
+        assert_eq!(geometry.gap(0,4),InterveningLines{content_lines:1,blank_lines:2,max_consecutive_blank_lines:1});
+        assert_eq!(geometry.gap(2,2),InterveningLines::default());
+    }
+    #[test]
+    fn physical_geometry_is_independent_of_record_partition(){
+        let state=state();
+        let raw="수취인: 김가상 010-1234-5678；수취인: 이가상 010-2345-6789\r\n\r\n709 2개 / GT-1 3개";
+        let geometry=SourceGeometry::new(raw);
+        let mut search=ProductSearch::new(&state,"");
+        let rows=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut search);
+        assert_eq!(geometry.lines.len(),3);
+        assert_eq!(rows.len(),4);
+        assert_eq!(rows.iter().map(|row|row.line.number).collect::<Vec<_>>(),vec![0,0,2,2]);
+        for row in &rows{
+            let physical=&geometry.lines[row.line.number];
+            assert!(row.line.start>=physical.start);
+            assert!(row.line.start+row.line.text.len()<=physical.start+physical.text.len());
+        }
+        assert_eq!(geometry.gap(0,2).blank_lines,1);
     }
     #[test]
     fn contract_rejects_incomplete_state() {
@@ -2060,14 +2163,15 @@ mod tests {
     #[test]
     fn content_blank_and_whitespace_only_lines_are_distinct_evidence() {
         let raw="김가상\n배송 전 연락\n  \n\t\n010-1234-5678";
-        assert_eq!(intervening_lines(raw,0,4),InterveningLines {
+        assert_eq!(SourceGeometry::new(raw).gap(0,4),InterveningLines {
             content_lines:1,blank_lines:2,max_consecutive_blank_lines:2,
         });
         let crlf="김가상\r\n  \r\n서울특별시 마포구 월드컵로 20";
-        assert_eq!(intervening_lines(crlf,0,2),InterveningLines {
+        assert_eq!(SourceGeometry::new(crlf).gap(0,2),InterveningLines {
             content_lines:0,blank_lines:1,max_consecutive_blank_lines:1,
         });
-        let content=physical_lines("김가상\n배송 전 연락\n010-1234-5678");
+        let geometry=SourceGeometry::new("김가상\n배송 전 연락\n010-1234-5678");
+        let content=geometry.content_lines().collect::<Vec<_>>();
         assert_eq!(content.len(),3);
         assert_eq!(content[0].paragraph,content[2].paragraph,
             "ordinary content must not invent a block boundary");
