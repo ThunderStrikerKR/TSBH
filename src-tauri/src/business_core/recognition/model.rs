@@ -135,8 +135,9 @@ fn term_regex(pattern:&str)->Option<Regex>{
 pub(crate) fn find_term(text:&str,term:&str,is_model:bool)->Option<(usize,usize)>{
     if term.trim().is_empty(){return None;}
     let re=term_regex(&spell(term.trim(),is_model))?;
-    re.find_iter(text).find(|m|is_boundary(text,m.start(),m.end()))
-        .map(|m|(m.start(),m.end()))
+    let found=re.find_iter(text).find(|m|is_boundary(text,m.start(),m.end()))
+        .map(|m|(m.start(),m.end()));
+    found
 }
 // Equivalent registered spellings share a single scan within this probe.
 // Store every accepted occurrence rather than only the first match.
