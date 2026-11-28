@@ -84,6 +84,22 @@ def admission_required(sources, stage, requested=False):
                    for source in sources.values()))
 
 
+def type_collection_violations(sources):
+    fn = functions(sources["mod.rs"])
+    collect = fn.get("collect_document", "")
+    slice_body = fn.get("product_slice", "")
+    failures = []
+    # Source guard is deliberately narrow; the required behavioral test
+    # checks positional preservation and legacy output together.
+    if re.search(r"row\.(?:note|explicit_name)\s*\.\s*is_none\s*\(|row\.zone\s*!=\s*SourceZone::Sender|!\s*row\.(?:ignored|labelled_postcode|dispatch)", collect):
+        failures.append("Type-dependent product discovery exclusion")
+    if call_count(slice_body, "is_money_or_header") or re.search(r'"(?:배송비|택배비|운임)"', slice_body):
+        failures.append("Product slice filters business types before projection")
+    if call_count(collect, "search.prepare") < 2:
+        failures.append("Full-row and name-probe collection required")
+    return failures
+
+
 def phase02_debt(sources):
     """Audited source blockers, not a complete Rust call graph."""
     mod = production(sources["mod.rs"])
@@ -100,9 +116,8 @@ def phase02_debt(sources):
     flag(bool(re.search(r"rows\s*\.\s*get\s*\(\s*i\s*\+\s*1|rows\s*\[\s*i\s*-\s*1", collect))
          or call_count(collect, "physical_line_contexts") != 1,
          "02-02", "candidate adjacency must use one physical-line context index")
-    flag("row.note.is_none()" in collect or "row.explicit_name.is_none()" in collect
-         or "row.zone!=SourceZone::Sender" in collect,
-         "02-03", "legacy projection filters discovery by predicted information type")
+    for reason in type_collection_violations(sources):
+        flag(True, "02-03", reason)
     flag("address_candidate:Option<TextCandidate>" in mod,
          "02-03", "single address candidate excludes competing address ranges")
     flag("model_before_address(" in analyze or "quantity::extract(" in analyze,
@@ -134,6 +149,11 @@ def phase02_self_test():
     })
     for task in ("02-02", "02-03", "02-07"):
         assert any(x.startswith(task + ":") for x in negative), negative
+    assert type_collection_violations({"mod.rs":
+        "fn collect_document() { if row.note.is_none() { search.prepare(text); } search.prepare(text); }"})
+    assert type_collection_violations({"mod.rs":
+        "fn collect_document() { search.prepare(text); search.prepare(text); }\n"
+        "fn product_slice() { if is_money_or_header(text) { return None; } }"})
     # Missing and ignored tests cannot count as certified admission.
     names = [name for group in PHASE02_TESTS.values() for name in group]
     assert verify_discovery("", "", False, True)
@@ -176,7 +196,7 @@ def call_count(source, name):
 
 
 def audit(sources, final=False):
-    errors, debt = [], {}
+    errors, debt = type_collection_violations(sources), {}
     model = functions(sources["model.rs"])
     for name in ("collect", "evaluate", "decide"):
         if name not in model:
@@ -257,6 +277,7 @@ def verify_discovery(listed, ignored, final, phase02=False):
         "common_lexical_candidates_precede_document_evaluation",
         "repeated_registered_terms_and_aliases_preserve_each_occurrence",
         "physical_line_contexts_are_partition_invariant",
+        "competing_information_types_survive_legacy_projection",
     ]
     if phase02 or final:
         required.extend(name for names in PHASE02_TESTS.values() for name in names)

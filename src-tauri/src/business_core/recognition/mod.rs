@@ -680,10 +680,9 @@ fn product_slice<'a>(line:&RecordSlice<'a>,address:Option<usize>,name:Option<(us
         &line.text[..end]
     }else{&line.text[..product_end]};
     let text=part.trim();
-    if text.is_empty()||is_money_or_header(text)
-        ||(text.contains('|')&&text.split('|').any(|c|matches!(c.trim(),"배송비"|"택배비"|"운임"))){
-        return None;
-    }
+    // Empty source is not a candidate. Business-type exclusions belong
+    // to projection, never to this lexical slice collector.
+    if text.is_empty(){return None;}
     let offset=part.len()-part.trim_start().len();
     let matching=ts_semantics::table_product_prefix(text);
     search.prepare(text);
@@ -721,6 +720,7 @@ struct LineCandidates<'a>{
     after_label:bool,
     zone:SourceZone,
     names:Vec<NameProposal>,
+    legacy_name_count:usize,
     contact_spans:Vec<(usize,usize)>,
     contacts:Vec<ContactCandidate>,
     quantities:Vec<quantity::Quantity>,
@@ -937,7 +937,7 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
         let ignored=is_money_or_header(text);
         let labelled_postcode=postcode::labelled_line(text).is_some();
         LineCandidates{line,raw_address,address,explicit_name,label_only,near_delivery:false,
-            after_label:false,zone,names:vec![],contact_spans,contacts,quantities,
+            after_label:false,zone,names:vec![],legacy_name_count:0,contact_spans,contacts,quantities,
             address_candidate,note,dispatch,address_detail,ignored,labelled_postcode,
             product_slices:HashMap::new()}
     }).collect::<Vec<_>>();
@@ -946,33 +946,36 @@ fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Rege
         let line=&row.line;
         let PhysicalLineContext{near_delivery,after_label}=contexts[line.number];
         let text=line.text;
-        let names=if let Some(span)=row.explicit_name{
+        let alternatives=recipient_proposals(text,row.address,row.contact_spans.first().map(|s|s.0),near_delivery);
+        // Keep the historical name projection order, but do not discard
+        // other proposals when a label already provides a preferred name.
+        let mut names=if let Some(span)=row.explicit_name{
             vec![NameProposal{span,requirement:NameRequirement::Structural}]
         }else if after_label&&row.address.is_none()&&row.contact_spans.is_empty()&&!other_recipient_field(text.trim()){
             trim_span(text,0,text.len()).into_iter().map(|span|NameProposal{span,requirement:NameRequirement::Structural}).collect()
         }else{
-            recipient_proposals(text,row.address,row.contact_spans.first().map(|s|s.0),near_delivery)
+            alternatives.clone()
         };
-        // Do not scan the catalog for rows which the existing business
-        // projection cannot consume. Their lexical candidates remain.
-        if row.zone!=SourceZone::Sender&&!is_money_or_header(text.trim())&&postcode::labelled_line(text.trim()).is_none(){
-            for proposal in &names{
-                if let Some(probe)=proposal.probe(text){search.prepare(probe);}
+        row.legacy_name_count=names.len();
+        for proposal in alternatives{
+            if !names.iter().any(|p|p.span==proposal.span&&p.requirement==proposal.requirement){
+                names.push(proposal);
             }
         }
-        // Collect competing legacy product boundaries without evaluation.
+        // Always retain full-record catalog hypotheses, even in sender,
+        // note, header, postcode, dispatch and explicit-recipient rows.
+        search.prepare(line.text);
+        for proposal in &names{
+            if let Some(probe)=proposal.probe(text){search.prepare(probe);}
+        }
         let mut slices=HashMap::new();
-        if row.zone!=SourceZone::Sender&&!row.ignored&&!row.labelled_postcode
-            &&!row.dispatch&&row.note.is_none()&&row.explicit_name.is_none(){
-            let mut boundaries=vec![None];
-            boundaries.extend(names.iter().map(|p|Some(p.span)));
-            for boundary in boundaries{
-                if slices.contains_key(&boundary){continue;}
-                if let Some(slice)=product_slice(line,row.address,boundary,phone,search){
-                    slices.insert(boundary,slice);
-                }
+        let mut boundaries=vec![None];
+        boundaries.extend(names.iter().map(|p|Some(p.span)));
+        for boundary in boundaries{
+            if slices.contains_key(&boundary){continue;}
+            if let Some(slice)=product_slice(line,row.address,boundary,phone,search){
+                slices.insert(boundary,slice);
             }
-            search.prepare(line.text);
         }
         row.near_delivery=near_delivery;
         row.after_label=after_label;
@@ -1416,7 +1419,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                 candidate.value.clone(),"배송주소 원문 구간");
         }
 
-        let name_span=project_name(line.text,&row.names,&mut search);
+        let name_span=project_name(line.text,&row.names[..row.legacy_name_count],&mut search);
         if let Some((begin,end))=name_span{
             let span=DocumentSpan::in_record(line,(begin,end));
             debug_assert!(document.contains_span("name",span));
@@ -1449,6 +1452,11 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         }
         let Some(slice)=row.product_slices.get(&name_span)else{continue;};
         let trimmed=slice.text;
+        // Preserve legacy product eligibility at selection, not collection.
+        if is_money_or_header(trimmed)
+            ||(trimmed.contains('|')&&trimmed.split('|').any(|c|matches!(c.trim(),"배송비"|"택배비"|"운임"))){
+            continue;
+        }
         let decision=search.decision(trimmed);
         if ts_semantics::only_contact_or_identity(trimmed,&slice.contact_spans)
             && slice.explicit_quantities.is_empty()
@@ -2128,6 +2136,38 @@ mod tests {
         assert_eq!(r["items"][0]["quantity"],1);
         assert!(!result["candidates"].as_array().unwrap().iter()
             .any(|c|c["text"]=="2개"||c["text"]=="010-1111-2222"));
+    }
+    #[test]
+    fn competing_information_types_survive_legacy_projection(){
+        let state=state();
+        let raw=concat!(
+            "수취인: GT-1 010-2345-6789\n",
+            "메모: GT-1 2개 확인\n",
+            "합계: GT-1 3개\n",
+            "709 1개\n",
+            "송하인: GT-1\n",
+            "GT-1 4개");
+        let geometry=SourceGeometry::new(raw);
+        let mut search=ProductSearch::new(&state,"");
+        let document=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut search);
+        assert!(!document.incomplete);
+        assert!(search.probes.values().all(|p|p.evaluated.is_none()));
+        let expected=raw.match_indices("GT-1").map(|(start,term)|
+            DocumentSpan{start,end:start+term.len()}).collect::<BTreeSet<_>>();
+        let actual=document.occurrences.iter().filter(|c|
+            c.kind=="registered"&&c.product==Some("pgt"))
+            .map(|c|c.span).collect::<BTreeSet<_>>();
+        assert_eq!(actual,expected);
+        for row in document.legacy_rows(){
+            assert!(search.probes.contains_key(row.line.text));
+        }
+        let result=analyze(raw,&state,None).unwrap();
+        let recipient=&result["recipients"][0];
+        assert_eq!(recipient["name"],"GT-1");
+        assert_eq!(recipient["items"].as_array().unwrap().len(),1);
+        assert_eq!(recipient["items"][0]["quantity"],1);
+        assert!(!result["candidates"].as_array().unwrap().iter()
+            .any(|c|c["text"]=="3개"||c["text"]=="4개"));
     }
     #[test]
     fn source_geometry_preserves_mixed_newlines_blank_lines_and_utf16(){
