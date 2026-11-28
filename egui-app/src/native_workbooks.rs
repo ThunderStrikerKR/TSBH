@@ -34,6 +34,112 @@ const MAX_XLSX_ENTRIES:usize=4096;
 const MAX_XLSX_PART_BYTES:u64=64*1024*1024;
 const MAX_XLSX_EXPANDED_BYTES:u64=128*1024*1024;
 
+// Excel coordinate limits are format limits, not additional business row limits.
+// The dense-area ceiling protects Calamine Range/StyleRange allocations.
+const XLSX_ROWS:u32=1_048_576;
+const XLSX_COLUMNS:u32=16_384;
+const MAX_XLSX_DENSE_CELLS:u64=1_000_000;
+const COORD_ERROR:&str="XLSX 셀 좌표 또는 범위가 올바르지 않습니다.";
+const AREA_ERROR:&str="XLSX 셀 범위가 너무 넓어 안전하게 읽을 수 없습니다.";
+
+#[derive(Default)]
+struct SheetBudget{
+    min:Option<(u32,u32)>,
+    max:Option<(u32,u32)>,
+    count:u64,
+}
+impl SheetBudget{
+    fn record(&mut self,pos:Option<(u32,u32)>)->Result<(),String>{
+        self.count+=1;
+        if self.count>MAX_XLSX_DENSE_CELLS{return Err(AREA_ERROR.into())}
+        if let Some((r,c))=pos{
+            if r>=XLSX_ROWS||c>=XLSX_COLUMNS{return Err(COORD_ERROR.into())}
+            let lo=self.min.map_or((r,c),|(a,b)|(a.min(r),b.min(c)));
+            let hi=self.max.map_or((r,c),|(a,b)|(a.max(r),b.max(c)));
+            let area=(u64::from(hi.0-lo.0)+1)*(u64::from(hi.1-lo.1)+1);
+            if area>MAX_XLSX_DENSE_CELLS{return Err(AREA_ERROR.into())}
+            self.min=Some(lo);self.max=Some(hi);
+        }
+        Ok(())
+    }
+}
+fn row_coordinate(raw:&[u8])->Result<u32,String>{
+    if raw.is_empty(){return Err(COORD_ERROR.into())}
+    let mut row=0u32;
+    for &b in raw{
+        if !b.is_ascii_digit(){return Err(COORD_ERROR.into())}
+        row=row.checked_mul(10).and_then(|v|v.checked_add(u32::from(b-b'0')))
+            .filter(|v|*v<=XLSX_ROWS).ok_or(COORD_ERROR)?;
+    }
+    row.checked_sub(1).ok_or_else(||COORD_ERROR.into())
+}
+fn cell_coordinate(raw:&[u8])->Result<(u32,u32),String>{
+    let split=raw.iter().position(|b|!b.is_ascii_alphabetic()).unwrap_or(raw.len());
+    if split==0||split==raw.len(){return Err(COORD_ERROR.into())}
+    let mut col=0u32;
+    for &b in &raw[..split]{
+        col=col.checked_mul(26).and_then(|v|v.checked_add(u32::from(b.to_ascii_uppercase()-b'A')+1))
+            .filter(|v|*v<=XLSX_COLUMNS).ok_or(COORD_ERROR)?;
+    }
+    Ok((row_coordinate(&raw[split..])?,col-1))
+}
+fn validate_reference(raw:&[u8])->Result<(),String>{
+    let mut parts=raw.split(|b|*b==b':');
+    let start=cell_coordinate(parts.next().ok_or(COORD_ERROR)?)?;
+    if let Some(end)=parts.next(){
+        let end=cell_coordinate(end)?;
+        if end.0<start.0||end.1<start.1||parts.next().is_some(){return Err(COORD_ERROR.into())}
+    }
+    Ok(())
+}
+// Inspect worksheet XML before Calamine parses numeric references. The part
+// name is deliberately not used: a workbook relationship can point elsewhere.
+fn validate_sheet_xml<R:std::io::BufRead>(input:R)->Result<(),String>{
+    use quick_xml::{Reader,events::Event};
+    let mut xml=Reader::from_reader(input);
+    let mut buf=Vec::new();
+    let mut root_seen=false;
+    let mut budget=SheetBudget::default();
+    let invalid=||"XLSX 시트 XML을 읽을 수 없습니다.".to_owned();
+    loop{
+        buf.clear();
+        match xml.read_event_into(&mut buf).map_err(|_|invalid())?{
+            Event::Start(e)|Event::Empty(e)=>{
+                let tag=e.local_name();
+                if !root_seen{
+                    root_seen=true;
+                    if tag.as_ref()!=b"worksheet"{return Ok(())}
+                }
+                let mut pos=None;
+                for attr in e.attributes(){
+                    let attr=attr.map_err(|_|invalid())?;
+                    match (tag.as_ref(),attr.key.as_ref()){
+                        (b"row",b"r")=>{row_coordinate(attr.value.as_ref())?;},
+                        (b"c",b"r")=>{pos=Some(cell_coordinate(attr.value.as_ref())?);},
+                        (b"dimension"|b"mergeCell"|b"f",b"ref")=>validate_reference(attr.value.as_ref())?,
+                        _=>{}
+                    }
+                }
+                if tag.as_ref()==b"c"{budget.record(pos)?;}
+            }
+            Event::Eof=>return Ok(()),
+            _=>{}
+        }
+    }
+}
+// Also validate the actual parser's positions (including implicit references).
+// Call only for worksheets that are about to be converted to a dense range.
+pub(crate) fn guard_sheet(book:&mut Xlsx<Cursor<&[u8]>>,name:&str)->Result<(),String>{
+    let mut cells=book.worksheet_cells_reader(name)
+        .map_err(|_|"XLSX 시트 좌표를 확인할 수 없습니다.".to_owned())?;
+    let mut budget=SheetBudget::default();
+    while let Some((cell,_))=cells.next_cell_with_style_id()
+        .map_err(|_|"XLSX 셀 좌표를 확인할 수 없습니다.".to_owned())?{
+        budget.record(Some(cell.get_position()))?;
+    }
+    Ok(())
+}
+
 fn validate_archive(bytes:&[u8],entry_limit:usize,part_limit:u64,total_limit:u64)->Result<(),String>{
     let invalid=||"XLSX 압축 구조가 손상되었거나 읽을 수 없습니다.".to_owned();
     let mut zip=zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_|invalid())?;
@@ -70,6 +176,18 @@ fn validate_archive(bytes:&[u8],entry_limit:usize,part_limit:u64,total_limit:u64
             return Err("XLSX 압축 해제 크기가 선언된 정보와 일치하지 않습니다.".into());
         }
         actual=actual.checked_add(count).ok_or("XLSX 전체 압축 해제 한도 초과")?;
+    }
+    // Check XML worksheet coordinate syntax only after the byte limits passed.
+    // Non-worksheet parts and binary attachments are not subjected to cell rules.
+    use std::io::{BufRead,BufReader};
+    for i in 0..zip.len(){
+        let entry=zip.by_index(i).map_err(|_|invalid())?;
+        let mut input=BufReader::new(entry);
+        let head=input.fill_buf().map_err(|_|invalid())?;
+        let head=head.strip_prefix(b"\xef\xbb\xbf").unwrap_or(head);
+        if head.iter().copied().find(|b|!b.is_ascii_whitespace())==Some(b'<'){
+            validate_sheet_xml(input)?;
+        }
     }
     Ok(())
 }
@@ -118,6 +236,47 @@ mod xlsx_resource_tests{
     #[test]
     fn malformed_zip_fails_before_workbook_parse(){
         assert!(open_book(b"PK invalid",1024).is_err());
+    }
+    #[test]
+    fn rejects_sparse_wide_workbook_before_dense_range(){
+        let mut workbook=Workbook::new();
+        let sheet=workbook.add_worksheet();
+        sheet.write_string(0,0,"header").unwrap();
+        sheet.write_string(10000,16383,"far").unwrap();
+        let bytes=workbook.save_to_buffer().unwrap();
+        assert!(read_factory_reply("synthetic.xlsx",&bytes).unwrap_err().contains("셀 범위가 너무 넓어"));
+    }
+    #[test]
+    fn rejects_invalid_coordinates_and_reversed_range(){
+        for raw in [b"A0".as_slice(),b"XFE1",b"A1048577",b"A42949672960",b"ZZZZZZZZZZZ1",b"1A"]{
+            assert!(cell_coordinate(raw).is_err());
+        }
+        assert_eq!(cell_coordinate(b"XFD1048576").unwrap(),(1048575,16383));
+        assert!(validate_reference(b"B2:A1").is_err());
+        assert!(validate_reference(b"A1:B2:C3").is_err());
+    }
+    #[test]
+    fn rejects_malformed_raw_sheet_coordinates_without_parser_allocation(){
+        for xml in [
+            r#"<worksheet><dimension ref="A42949672960"/></worksheet>"#,
+            r#"<worksheet><sheetData><row r="0"><c r="A1"/></row></sheetData></worksheet>"#,
+            r#"<worksheet><sheetData><row r="1"><c r="XFE1"/></row></sheetData></worksheet>"#,
+            r#"<worksheet><mergeCells><mergeCell ref="B2:A1"/></mergeCells></worksheet>"#,
+        ]{
+            assert!(validate_sheet_xml(Cursor::new(xml.as_bytes())).is_err());
+        }
+    }
+    #[test]
+    fn accepts_full_sheet_dimension_when_real_cells_are_small(){
+        let xml=br#"<worksheet><dimension ref="A1:XFD1048576"/><sheetData><row r="1"><c r="A1"/><c r="Q1"/></row></sheetData></worksheet>"#;
+        assert!(validate_sheet_xml(Cursor::new(xml)).is_ok());
+    }
+    #[test]
+    fn rejects_implicit_and_style_only_coordinate_span_via_budget(){
+        let mut budget=SheetBudget::default();
+        budget.record(Some((0,0))).unwrap();
+        assert!(budget.record(Some((9999,16383))).is_err());
+        assert!(SheetBudget::default().record(Some((XLSX_ROWS,0))).is_err());
     }
     #[test]
     fn ordinary_reply_with_formula_and_merge_remains_readable(){
@@ -242,6 +401,8 @@ pub fn export_clients(state:&Value)->Result<Vec<u8>,String>{
 #[cfg(any(windows,test))]
 pub fn read_clients(bytes:&[u8])->Result<Value,String>{
     let mut book=open_book(bytes,20*1024*1024)?;
+    guard_sheet(&mut book,META)?;
+    guard_sheet(&mut book,CLIENT_SHEET)?;
     safe_sheet(&mut book,META)?;
     safe_sheet(&mut book,CLIENT_SHEET)?;
     let meta=book.worksheet_range(META).map_err(|e|e.to_string())?;
@@ -301,6 +462,7 @@ pub fn read_factory_reply(filename:&str,bytes:&[u8])->Result<Value,String>{
     }
     let mut book=open_book(bytes,FACTORY_REPLY_MAX_BYTES)?;
     let name=book.sheet_names().first().cloned().ok_or("회신 시트 누락")?;
+    guard_sheet(&mut book,&name)?;
     // Merged cells outside shipping data are irrelevant. Do not propagate
     // merged values into another shipment; validate each row's saved values.
     let sheet=book.worksheet_range(&name).map_err(|e|e.to_string())?;

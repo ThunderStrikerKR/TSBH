@@ -336,6 +336,7 @@ dependencies = [
  "eframe",
  "image",
  "open",
+ "quick-xml 0.42.0",
  "regex",
  "reqwest",
  "rfd",

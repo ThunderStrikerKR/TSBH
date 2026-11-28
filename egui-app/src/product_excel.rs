@@ -197,6 +197,8 @@ pub fn read(path:&Path)->Result<Value,String>{
        !book.sheet_names().iter().any(|n|n=="__반도허브_관리정보"){
         return Err("상품 Excel 형식이 다릅니다. 통합 상품 목록을 새로 다운로드하여 사용하세요.".into());
     }
+    crate::native_workbooks::guard_sheet(&mut book,"__반도허브_관리정보")?;
+    crate::native_workbooks::guard_sheet(&mut book,"상품 목록")?;
     let meta=book.worksheet_range("__반도허브_관리정보")
         .map_err(|_|"상품 Excel 관리정보를 확인할 수 없습니다.".to_owned())?;
     let fmt=meta.get_value((0,1))

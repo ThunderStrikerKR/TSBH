@@ -103,4 +103,5 @@ jobs:
           $code = $LASTEXITCODE
           Write-Host $output
           if ($code -ne 0) { exit $code }
-          if ($output -notmatch 'test result: ok\. [6-9]\d* passed; 0 failed') { throw 'Expected at least six passing XLSX resource regression tests.' }
+          $matches = [regex]::Matches($output,'test result: ok\. (\d+) passed; 0 failed')
+          if (!($matches | Where-Object { [int]$_.Groups[1].Value -ge 11 })) { throw 'Expected at least eleven passing XLSX resource regression tests.' }
