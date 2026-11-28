@@ -707,10 +707,10 @@ pub(super) fn evaluate_with_trace(text:&str,hypotheses:&ProductHypotheses<'_>,tr
         else if ambiguous { Some("여러 독립 상품 후보가 있습니다. 발주서의 상품과 색상을 확인하세요.".to_owned()) }
         else if chosen.is_none() { Some("등록된 모델명 또는 별칭과 일치하지 않습니다.".to_owned()) }
         else { None };
-    let mut names = HashMap::<String, Value>::new();
+    let mut candidate_json = HashMap::<String, Value>::new();
     for e in &available {
         let p = e.p;
-        names.entry(str_field(p,"id").to_owned()).or_insert_with(|| json!({
+        candidate_json.entry(str_field(p,"id").to_owned()).or_insert_with(|| json!({
             "id": format!("candidate:{}",str_field(p,"id")),
             "field": "product", "value": str_field(p,"id"), "label": str_field(p,"name"),
             "start": text[..e.span.0].encode_utf16().count(),
@@ -720,7 +720,7 @@ pub(super) fn evaluate_with_trace(text:&str,hypotheses:&ProductHypotheses<'_>,tr
         }));
     }
     let candidates: Vec<_> = available.iter()
-        .filter_map(|e| names.remove(str_field(e.p,"id"))).take(20).collect();
+        .filter_map(|e| candidate_json.remove(str_field(e.p,"id"))).take(20).collect();
     let (product_id, variant_id, name, origin) = if let Some(ref entry) = chosen {
         let p = entry.p;
         // domain.ts::itemFromProduct: only a single sale variant without
