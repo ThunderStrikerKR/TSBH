@@ -539,6 +539,22 @@ pub(super) fn collect<'a>(text:&str,state:&'a Value,client_id:&str)->ProductHypo
     let known_brand=known_brand(text,state);
     ProductHypotheses{verified,names,aliases,lead_spans,color_hint,color_codes,semantic,branded,known_brand}
 }
+// Borrow every currently discovered positioned identity. The document
+// supplies its absolute source offset; no regex or SKU evaluation here.
+pub(super) fn visit_occurrences<'s>(pool:&ProductHypotheses<'s>,
+    mut visit:impl FnMut(&'static str,&'s str,Option<&'s str>,(usize,usize))){
+    for (kind,entries) in [("registered",&pool.names),("color",&pool.color_codes),
+        ("semantic",&pool.semantic)]{
+        for e in entries{
+            visit(kind,str_field(e.p,"id"),None,e.span);
+        }
+    }
+    for a in &pool.aliases{
+        for &span in &a.spans{
+            visit("alias",str_field(a.product,"id"),Some(str_field(a.alias,"id")),span);
+        }
+    }
+}
 pub(super) fn has_registered_model(pool:&ProductHypotheses<'_>)->bool{
     !pool.lead_spans.is_empty()
 }

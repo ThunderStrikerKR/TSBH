@@ -9,7 +9,7 @@ mod postcode;
 
 use regex::Regex;
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 #[derive(Clone, Debug)]
 struct Evidence {
@@ -534,15 +534,29 @@ struct ProductSearch<'a,'s>{
     state:&'s Value,
     client:&'s str,
     probes:HashMap<&'a str,ProductProbe<'s>>,
+    source:Option<&'a str>,
+    // Cache equality is textual; source occurrence identity is positional.
+    source_ranges:BTreeSet<(usize,usize)>,
     // Saturation is explicit. The existing fallback preserves classification
     // behavior, but an incomplete batch cannot certify complete discovery.
     truncated:bool,
 }
 impl<'a,'s> ProductSearch<'a,'s>{
     fn new(state:&'s Value,client:&'s str)->Self{
-        Self{state,client,probes:HashMap::new(),truncated:false}
+        Self{state,client,probes:HashMap::new(),source:None,
+            source_ranges:BTreeSet::new(),truncated:false}
     }
     fn prepare(&mut self,text:&'a str){
+        if let Some(raw)=self.source{
+            // Every input here is a borrowed substring, not a normalized
+            // allocation. Check provenance before translating its offset.
+            let start=(text.as_ptr() as usize).checked_sub(raw.as_ptr() as usize)
+                .expect("product probe precedes document source");
+            let end=start.checked_add(text.len()).expect("product probe overflow");
+            assert_eq!(raw.get(start..end).map(str::as_ptr),Some(text.as_ptr()),
+                "product probe must be a document source slice");
+            self.source_ranges.insert((start,end));
+        }
         if self.probes.contains_key(text){return;}
         if self.truncated||self.probes.len()>=512{
             self.truncated=true;
@@ -718,11 +732,99 @@ struct LineCandidates<'a>{
     labelled_postcode:bool,
     product_slices:HashMap<Option<(usize,usize)>,ProductSlice<'a>>,
 }
+// Absolute half-open byte span. UTF-16, line and paragraph are derived
+// from the same SourceGeometry, not a second representation of the text.
+#[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord,Hash)]
+struct DocumentSpan{
+    start:usize,
+    end:usize,
+}
+impl DocumentSpan{
+    fn in_record(line:&RecordSlice<'_>,(a,b):(usize,usize))->Self{
+        assert!(a<=b&&line.text.get(a..b).is_some(),"invalid candidate source span");
+        Self{start:line.start+a,end:line.start+b}
+    }
+    fn text<'a>(self,raw:&'a str)->&'a str{
+        &raw[self.start..self.end]
+    }
+}
+#[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord,Hash)]
+struct DocumentOccurrence<'s>{
+    span:DocumentSpan,
+    kind:&'static str,
+    // A product can have multiple competing identities at one position.
+    product:Option<&'s str>,
+    alias:Option<&'s str>,
+}
+// Own the document's record view and positional candidate view together.
+// Legacy projection still consumes row-local values; later common analysis
+// can read this immutable occurrence index without parsing the source.
+struct DocumentCandidates<'a,'s>{
+    rows:Vec<LineCandidates<'a>>,
+    occurrences:Vec<DocumentOccurrence<'s>>,
+    incomplete:bool,
+}
+impl<'a,'s> DocumentCandidates<'a,'s>{
+    fn new(geometry:&SourceGeometry<'a>,rows:Vec<LineCandidates<'a>>,
+        search:&ProductSearch<'a,'s>)->Self{
+        let mut occurrences=BTreeSet::new();
+        for row in &rows{
+            let mut add=|kind,span|{
+                occurrences.insert(DocumentOccurrence{
+                    span:DocumentSpan::in_record(&row.line,span),kind,
+                    product:None,alias:None});
+            };
+            for name in &row.names{add("name",name.span);}
+            for contact in &row.contacts{add(contact.kind,contact.span);}
+            // Retain lexical contacts even if normalization rejected them.
+            for &span in &row.contact_spans{add("contact_lexical",span);}
+            for q in &row.quantities{add("quantity",(q.start,q.end));}
+            if let Some(address)=&row.address_candidate{add("address",address.span);}
+            if let Some(note)=&row.note{add("note",note.span);}
+            let trim=row.line.text.trim();
+            let begin=row.line.text.len()-row.line.text.trim_start().len();
+            if row.dispatch{add("dispatch",(begin,begin+trim.len()));}
+            if row.address_detail{add("address_detail",(begin,begin+trim.len()));}
+            if row.labelled_postcode{add("postcode",(begin,begin+trim.len()));}
+            for slice in row.product_slices.values(){
+                for q in slice.quantities.iter().chain(&slice.explicit_quantities)
+                    .chain(slice.table_quantities.iter().map(|t|&t.quantity)){
+                    add("quantity",(slice.offset+q.start,slice.offset+q.end));
+                }
+                for &(a,b) in &slice.contact_spans{
+                    add("contact_lexical",(slice.offset+a,slice.offset+b));
+                }
+            }
+        }
+        for &(start,end) in &search.source_ranges{
+            let source=&geometry.raw[start..end];
+            if let Some(probe)=search.probes.get(source){
+                model::visit_occurrences(&probe.hypotheses,|kind,product,alias,(a,b)|{
+                    assert!(a<=b&&source.get(a..b).is_some(),"invalid model occurrence");
+                    occurrences.insert(DocumentOccurrence{
+                        span:DocumentSpan{start:start+a,end:start+b},kind,
+                        product:Some(product),alias});
+                });
+            }
+        }
+        Self{rows,occurrences:occurrences.into_iter().collect(),incomplete:search.truncated}
+    }
+    // Keep existing projection call sites and tests as row views, not a
+    // separate collection pipeline.
+    fn legacy_rows(&self)->&[LineCandidates<'a>]{&self.rows}
+    fn contains_span(&self,kind:&str,span:DocumentSpan)->bool{
+        // Occurrences are sorted by absolute span, then family/identity.
+        let first=self.occurrences.partition_point(|c|c.span<span);
+        self.occurrences[first..].iter().take_while(|c|c.span==span)
+            .any(|c|c.kind==kind)
+    }
+}
 // All physical lines, including sender and unrecognized lines, survive
 // discovery. The old recipient projection may exclude them, but it no
 // longer determines which recipient proposals are discovered.
-fn collect_document<'a>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Regex,
-    search:&mut ProductSearch<'a,'_>)->Vec<LineCandidates<'a>>{
+fn collect_document<'a,'s>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Regex,
+    search:&mut ProductSearch<'a,'s>)->DocumentCandidates<'a,'s>{
+    search.source=Some(geometry.raw);
     let sender=Regex::new(r"^(?:보내는\s*(?:분|사람|곳)|송하인(?:명)?)\s*[:：]").expect("sender prefix");
     let mut sender_section=false;
     let note_label=Regex::new(
@@ -838,7 +940,7 @@ fn collect_document<'a>(geometry:&SourceGeometry<'a>,phone:&Regex,label:&Regex,
         rows[i].names=names;
         rows[i].product_slices=slices;
     }
-    rows
+    DocumentCandidates::new(geometry,rows,search)
 }
 fn is_money_or_header(text: &str) -> bool { ts_semantics::ignored_document_line(text) }
 fn product_signal(text: &str, decision: &Value, _state: &Value) -> bool {
@@ -1192,11 +1294,15 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     let person_label=recipient_label();
     let mut search=ProductSearch::new(state,client_id);
     let geometry=SourceGeometry::new(raw);
-    let rows=collect_document(&geometry,&phone,&person_label,&mut search);
+    let document=collect_document(&geometry,&phone,&person_label,&mut search);
+    let rows=document.legacy_rows();
+    // This is only the cache-completeness signal, not certification that
+    // all competing record/zone/type hypotheses have been discovered.
+    debug_assert_eq!(document.incomplete,search.truncated);
     let mut events:Vec<Evidence>=Vec::new();
     let mut product_hits:Vec<ProductHit>=Vec::new();
     let mut note_continuation: Option<usize>=None;
-    for row in &rows{
+    for row in rows{
         let line=&row.line;
         let text=line.text.trim();
         let explicit_name=row.explicit_name;
@@ -1238,6 +1344,8 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             note_continuation=None;
         }
         if let Some(note)=&row.note{
+            let span=DocumentSpan::in_record(line,note.span);
+            debug_assert!(document.contains_span("note",span));
             let i=add_match(&mut events,line,note.span.0,note.span.1,"note",
                 note.value.clone(),"배송 요청사항 표제어");
             note_continuation=Some(i);
@@ -1263,19 +1371,24 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
 
         let address=row.address;
         if let Some(candidate)=&row.address_candidate{
+            let span=DocumentSpan::in_record(line,candidate.span);
+            debug_assert!(document.contains_span("address",span));
             add_match(&mut events,line,candidate.span.0,candidate.span.1,"address",
                 candidate.value.clone(),"배송주소 원문 구간");
         }
 
         let name_span=project_name(line.text,&row.names,&mut search);
         if let Some((begin,end))=name_span{
-            add_match(&mut events,line,begin,end,"name",line.text[begin..end].to_owned(),
+            let span=DocumentSpan::in_record(line,(begin,end));
+            debug_assert!(document.contains_span("name",span));
+            add_match(&mut events,line,begin,end,"name",span.text(raw).to_owned(),
                 if explicit_name.is_some()||after_label{"명시적 수취인 이름"}
                 else{"수취인 필드 경계에서 원문 전체 보존"});
         }
         for contact in &row.contacts{
             let (a,b)=contact.span;
             if name_span.is_some_and(|(start,end)|start<b&&a<end){continue;}
+            debug_assert!(document.contains_span(contact.kind,DocumentSpan::in_record(line,(a,b))));
             add_match(&mut events,line,a,b,contact.kind,contact.value.clone(),"연락처 원문 구간");
         }
         let contact_spans=&row.contact_spans;
@@ -1331,6 +1444,8 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         let mut quantity_indexes = Vec::new();
         let offset=slice.offset;
         for q in quantity_values {
+            debug_assert!(document.contains_span("quantity",
+                DocumentSpan::in_record(line,(offset+q.start,offset+q.end))));
             quantity_indexes.push(add_match(&mut events, line, offset+q.start,offset+q.end,
                 "quantity",q.value.to_string(),"상품 행에 명시된 수량"));
         }
@@ -1373,7 +1488,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         }
     }
     // A generic quantity line is evidence but cannot itself prove which SKU was ordered.
-    for row in &rows{
+    for row in rows{
         if row.zone==SourceZone::Sender{continue;}
         let line=&row.line;
         if events.iter().any(|e| e.kind == "quantity" && e.start>=line.start
@@ -1385,8 +1500,9 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             // An independently scanned quantity must not reuse characters
             // already owned by a recognized address/name/contact/memo span.
             // Preserve separately positioned quantities in mixed-field rows.
-            let start=line.start+q.start;
-            let end=line.start+q.end;
+            let span=DocumentSpan::in_record(line,(q.start,q.end));
+            let (start,end)=(span.start,span.end);
+            debug_assert!(document.contains_span("quantity",span));
             let overlaps_field=events.iter().any(|e|
                 matches!(e.kind,"address"|"name"|"phone"|"mobile"|"note")
                     && e.start < end && start < e.end);
@@ -1894,7 +2010,8 @@ mod tests {
         let state=state();
         let raw="GT-1 010-1234-5678\n709 2개 김가상 010-2345-6789\n송하인: 가상상사\n010-3456-7890";
         let mut search=ProductSearch::new(&state,"");
-        let rows=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
+        let document=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
+        let rows=document.legacy_rows();
         assert_eq!(rows.len(),4);
         assert_eq!(&rows[0].line.text[rows[0].names[0].span.0..rows[0].names[0].span.1],"GT-1");
         assert_eq!(rows[0].names[0].requirement,NameRequirement::NotProduct);
@@ -1913,7 +2030,8 @@ mod tests {
         let state=state();
         let raw="수취인: 김가상 010-1234-5678； 수취인: 이가상 010-2345-6789";
         let mut search=ProductSearch::new(&state,"");
-        let rows=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
+        let document=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
+        let rows=document.legacy_rows();
         assert_eq!(rows.len(),2);
         assert_eq!(rows[0].line.number,rows[1].line.number);
         assert!(rows[0].line.start<rows[1].line.start);
@@ -1938,7 +2056,8 @@ mod tests {
         let state=state();
         let raw="709 2개 / GT-1 3개";
         let mut search=ProductSearch::new(&state,"");
-        let rows=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
+        let document=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
+        let rows=document.legacy_rows();
         assert_eq!(rows.len(),2);
         assert_eq!(rows[0].line.number,rows[1].line.number);
         assert!(search.probes.values().all(|p|p.evaluated.is_none()));
@@ -1951,14 +2070,15 @@ mod tests {
         assert_eq!(items[1]["quantity"],3);
         let ambiguous="709 2개 구성 / GT-1 3개";
         let mut other=ProductSearch::new(&state,"");
-        assert_eq!(collect_document(&SourceGeometry::new(ambiguous),&phone_regex(),&recipient_label(),&mut other).len(),1);
+        assert_eq!(collect_document(&SourceGeometry::new(ambiguous),&phone_regex(),&recipient_label(),&mut other).legacy_rows().len(),1);
     }
     #[test]
     fn sender_candidates_survive_discovery_without_leaking_into_recipient_projection(){
         let state=state();
         let raw="송하인: 가상상사\n010-1111-2222\n2개\n수취인: 김가상 010-2345-6789\n709 1개";
         let mut search=ProductSearch::new(&state,"");
-        let rows=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
+        let document=collect_document(&SourceGeometry::new(raw),&phone_regex(),&recipient_label(),&mut search);
+        let rows=document.legacy_rows();
         assert_eq!(rows[1].zone,SourceZone::Sender);
         assert_eq!(rows[2].quantities[0].value,2);
         assert_eq!(rows[3].zone,SourceZone::Recipient);
@@ -1994,11 +2114,12 @@ mod tests {
         let raw="수취인: 김가상 010-1234-5678；수취인: 이가상 010-2345-6789\r\n\r\n709 2개 / GT-1 3개";
         let geometry=SourceGeometry::new(raw);
         let mut search=ProductSearch::new(&state,"");
-        let rows=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut search);
+        let document=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut search);
+        let rows=document.legacy_rows();
         assert_eq!(geometry.lines.len(),3);
         assert_eq!(rows.len(),4);
         assert_eq!(rows.iter().map(|row|row.line.number).collect::<Vec<_>>(),vec![0,0,2,2]);
-        for row in &rows{
+        for row in rows{
             let physical=&geometry.lines[row.line.number];
             assert!(row.line.start>=physical.start);
             assert!(row.line.start+row.line.text.len()<=physical.start+physical.text.len());
@@ -2039,7 +2160,8 @@ mod tests {
         let raw="서울특별시 마포구 월드컵로 20 010-1234-5678\n메모: 문 앞 배송\n709 | 2 | 3 | 4 | 가상\nGT-1 5\n미분류 안내";
         let geometry=SourceGeometry::new(raw);
         let mut search=ProductSearch::new(&state,"");
-        let rows=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut search);
+        let document=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut search);
+        let rows=document.legacy_rows();
         assert!(search.probes.values().all(|p|p.evaluated.is_none()));
         let address=rows[0].address_candidate.as_ref().unwrap();
         assert_eq!(address.value,"서울특별시 마포구 월드컵로 20");
@@ -2049,6 +2171,37 @@ mod tests {
         assert_eq!(rows[3].product_slices[&None].quantities[0].value,5);
         assert_eq!(rows[4].line.text,"미분류 안내");
         assert!(rows.iter().all(|r|r.line.text==&raw[r.line.start..r.line.start+r.line.text.len()]));
+    }
+    #[test]
+    fn document_candidates_keep_all_absolute_source_spans(){
+        let state=state();
+        let raw="😀 가상 안내\r\n\r\nGT-1 2개 / GT-1 2개\n수취인: 김가상 010-1234-5678\n메모: 문 앞 배송\nGT-1 2개";
+        let geometry=SourceGeometry::new(raw);
+        let mut search=ProductSearch::new(&state,"");
+        let document=collect_document(&geometry,&phone_regex(),&recipient_label(),&mut search);
+        assert!(!document.incomplete);
+        assert!(search.probes.values().all(|p|p.evaluated.is_none()));
+        let product_spans=document.occurrences.iter()
+            .filter(|c|c.kind=="registered"&&c.product==Some("pgt"))
+            .map(|c|c.span).collect::<BTreeSet<_>>();
+        let expected=raw.match_indices("GT-1").map(|(start,term)|
+            DocumentSpan{start,end:start+term.len()}).collect::<BTreeSet<_>>();
+        assert_eq!(product_spans,expected);
+        assert_eq!(search.probes.keys().filter(|&&t|t=="GT-1 2개").count(),1);
+        for (kind,value) in [("name","김가상"),("mobile","010-1234-5678"),
+            ("note","문 앞 배송"),("quantity","2개")]{
+            assert!(document.occurrences.iter().any(|c|
+                c.kind==kind&&c.span.text(raw)==value),"{kind}");
+        }
+        let units=raw.encode_utf16().collect::<Vec<_>>();
+        for c in &document.occurrences{
+            let span=c.span;
+            assert_eq!(String::from_utf16(&units[geometry.utf16(span.start)..geometry.utf16(span.end)])
+                .unwrap(),span.text(raw));
+        }
+        let before=document.occurrences.clone();
+        let _=search.decision("GT-1 2개");
+        assert_eq!(document.occurrences,before);
     }
     #[test]
     fn contract_rejects_incomplete_state() {
