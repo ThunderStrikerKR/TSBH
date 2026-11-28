@@ -2033,7 +2033,7 @@ fn analyze_with_profile(raw:&str,state:&Value,client:Option<&Value>,include_trac
             }
         }
         if kind=="address" {
-            if let Some(line)=rows.iter().map(|row|&row.line)
+            if let Some(line)=rows.iter().map(|row|&row.row.line)
                 .find(|line|line.number==e.line&&line.start<=e.start
                     &&e.start<line.start+line.text.len()){
                 let prefix=&raw[line.start..e.start];
